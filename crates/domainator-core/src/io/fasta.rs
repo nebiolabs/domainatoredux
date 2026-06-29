@@ -7,10 +7,22 @@ use std::io::{self, BufRead, BufReader, Write};
 use crate::io::bgzf::open_at;
 use crate::seq::{Annotations, SeqRecord, Topology};
 
-/// Read all records from an uncompressed FASTA file. `molecule_type` is applied to
-/// every record (FASTA carries no molecule type; defaults to "protein").
+/// Read all records from an uncompressed FASTA file.
 pub fn read_fasta(path: &str, molecule_type: Option<&str>) -> io::Result<Vec<SeqRecord>> {
-    let mut reader = BufReader::new(open_at(path, 0, false)?);
+    read_fasta_partition(path, 0, false, u64::MAX, molecule_type)
+}
+
+/// Read up to `max_recs` records from `path` starting at `offset` (a byte offset,
+/// or a BGZF virtual offset when `compressed`). `molecule_type` is applied to
+/// every record (FASTA carries no molecule type; defaults to "protein").
+pub fn read_fasta_partition(
+    path: &str,
+    offset: u64,
+    compressed: bool,
+    max_recs: u64,
+    molecule_type: Option<&str>,
+) -> io::Result<Vec<SeqRecord>> {
+    let mut reader = BufReader::new(open_at(path, offset, compressed)?);
     let mol = molecule_type.unwrap_or("protein").to_string();
     let mut out: Vec<SeqRecord> = Vec::new();
 
@@ -44,6 +56,9 @@ pub fn read_fasta(path: &str, molecule_type: Option<&str>) -> io::Result<Vec<Seq
         }
         if line.first() == Some(&b'>') {
             flush(&mut out, &mut title, &mut seq, &mol);
+            if out.len() as u64 >= max_recs {
+                return Ok(out); // partition limit reached; don't start the next record
+            }
             let raw = &line[1..];
             let end = raw.iter().rposition(|&b| b != b'\n' && b != b'\r').map_or(0, |i| i + 1);
             title = Some(String::from_utf8_lossy(&raw[..end]).into_owned());
@@ -55,7 +70,9 @@ pub fn read_fasta(path: &str, molecule_type: Option<&str>) -> io::Result<Vec<Seq
             }
         }
     }
-    flush(&mut out, &mut title, &mut seq, &mol);
+    if (out.len() as u64) < max_recs {
+        flush(&mut out, &mut title, &mut seq, &mol);
+    }
     Ok(out)
 }
 

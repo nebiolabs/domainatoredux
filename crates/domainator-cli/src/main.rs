@@ -11,7 +11,7 @@ use clap::{Parser, Subcommand};
 use domainator_core::io::genbank::{read_genbank, write_genbank};
 use domainator_core::io::{detect_filetype, fasta, FileType};
 use domainator_core::seq::SeqRecord;
-use domainator_core::tools::domainate;
+use domainator_core::tools::{domain_search, domainate};
 
 #[derive(Parser)]
 #[command(name = "domainator", version, about = "Domainator (Rust): protein-domain / SSN analysis")]
@@ -55,6 +55,33 @@ enum Command {
         /// Maximum fractional domain overlap before filtering (>=1 disables).
         #[arg(long, default_value_t = 1.0)]
         max_overlap: f64,
+    },
+    /// Search references against a (possibly sharded/BGZF/indexed) database.
+    DomainSearch {
+        /// Input database (GenBank or FASTA; logical name resolves shards).
+        #[arg(short, long)]
+        input: PathBuf,
+        /// Reference `.hmm` file(s).
+        #[arg(short, long, num_args = 1..)]
+        references: Vec<PathBuf>,
+        /// Output GenBank file.
+        #[arg(short, long)]
+        output: PathBuf,
+        /// E-value threshold.
+        #[arg(short = 'e', long, default_value_t = 0.001)]
+        evalue: f64,
+        /// E-value search space size (-Z).
+        #[arg(short = 'Z', long = "z", default_value_t = 1000.0)]
+        z: f64,
+        /// Add full Domainator annotations, not just the best-hit feature.
+        #[arg(long)]
+        add_annotations: bool,
+        /// Cap on total hit contigs returned (top-N by best domain score).
+        #[arg(long)]
+        max_hits: Option<usize>,
+        /// Approximate CDSs per partition.
+        #[arg(long, default_value_t = 10000)]
+        batch_size: u64,
     },
 }
 
@@ -100,6 +127,22 @@ fn main() -> Result<()> {
             let out = output.to_str().context("non-UTF8 path")?;
             write_genbank(out, &annotated).context("writing GenBank")?;
             println!("wrote {} records to {}", annotated.len(), output.display());
+        }
+        Command::DomainSearch { input, references, output, evalue, z, add_annotations, max_hits, batch_size } => {
+            let ref_files: Vec<String> = references
+                .iter()
+                .map(|p| p.to_str().map(str::to_string).context("non-UTF8 path"))
+                .collect::<Result<_>>()?;
+            let dbs = domainate::read_hmm_references(&ref_files).context("reading HMM references")?;
+            let input_str = input.to_str().context("non-UTF8 path")?.to_string();
+            let opts = domain_search::DomainSearchOptions {
+                z, evalue, add_annotations, max_hits, batch_size, ..Default::default()
+            };
+            let hits = domain_search::domain_search(&[input_str], &dbs, &opts)
+                .context("running domain_search")?;
+            let out = output.to_str().context("non-UTF8 path")?;
+            write_genbank(out, &hits).context("writing GenBank")?;
+            println!("wrote {} hit contigs to {}", hits.len(), output.display());
         }
     }
     Ok(())
