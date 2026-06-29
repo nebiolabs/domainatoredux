@@ -1,0 +1,14 @@
+[package]
+name = "domainator-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Core data model, sequence I/O, and tool logic for the Domainator Rust rewrite."
+
+[dependencies]
+hmmer-pure-rs.workspace = true
+bgzf.workspace = true
+libdeflater.workspace = true
+memchr.workspace = true
+thiserror.workspace = true
