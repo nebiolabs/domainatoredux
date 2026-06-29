@@ -10,7 +10,7 @@ rust-version = "1.89"
 
 [workspace.dependencies]
 hmmer-pure-rs = "0.7"
-gb-io = "0.9"
+hdf5-pure = "0.20"
 bgzf = "0.3"
 libdeflater = "1.25"
 memchr = "2"

@@ -213,6 +213,7 @@ name = "domainator-core"
 version = "0.1.0"
 dependencies = [
  "bgzf",
+ "hdf5-pure",
  "hmmer-pure-rs",
  "libdeflater",
  "memchr",
@@ -239,6 +240,16 @@ checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
+]
+
+[[package]]
+name = "hdf5-pure"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f3407818fd0cf883f3b40ebccde6d21c7704c8de3c669fb2def67c6296d2526"
+dependencies = [
+ "byteorder",
+ "flate2",
 ]
 
 [[package]]
