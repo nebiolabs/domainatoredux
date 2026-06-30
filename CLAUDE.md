@@ -45,7 +45,7 @@ Core module map:
 - `io/` — own GenBank `parse`/`reader`/`writer`/`offsets`, `fasta`, `bgzf` (random access + virtual offsets), `didx` (`.didx` index), `shards`, `partition`.
 - `search/` — `hmmer` (hmmsearch for domainate), `seq_compare` (phmmer/hmmsearch scoring), `hmm_compare` (profile-vs-profile Viterbi), `results` (`SearchResult` → GenBank feature).
 - `matrix/` — `DataMatrix` (dense/CSR) + `hdf5_io`, `text` (TSV), `transform` (`--mode`s).
-- `tools/` — `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `hmmer_compare`, `neighborhood` (select_by_cds).
+- `tools/` — `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `hmmer_compare`, `neighborhood` (select_by_cds). `seq_dist`'s `diamond_*` algorithms shell out to the external **`diamond`** binary (the only non-pure-Rust runtime dependency): build a db from the reference, then `blastp --outfmt 6 qseqid sseqid bitscore --algo 0 --max-hsps 1`, with the hit table streamed line-by-line into the per-cell max map (never a temp output file). The binary is located via `$DOMAINATOR_DIAMOND`/`$DIAMOND`, then a bundled `external/diamond/diamond` (searched upward from the exe, then cwd), then bare `diamond` on `PATH`. The normalized query/db FASTA + db live in a self-cleaning temp dir.
 - `parallel.rs` — `with_threads(cpu, f)` wrapper (`cpu == 0` → all cores). Tools parallelize with rayon over their natural unit (profiles / references / partitions / rows); output is **deterministic** regardless of thread count (results funnel through order-independent maps/sorts).
 
 Key cross-cutting invariants (these gate parity — grep the modules for details before changing):
@@ -62,6 +62,6 @@ Key cross-cutting invariants (these gate parity — grep the modules for details
 
 ## Scope / status
 
-The approved plan is at `/home/sean/.claude/plans/make-a-plan-for-kind-brooks.md`. The prioritized SSN pipeline (README steps 1–3) is complete and Python-verified: GenBank/FASTA I/O, `domainate`, `domain_search` (shards/BGZF/`.didx`, `-Z 0`, neighborhood extraction for linear **and** circular contigs, `--translate`, strand filter, overlap dedup), `seq_dist` (hmmsearch / phmmer / hmmer_compare + dense/sparse/TSV), `compare_contigs` (JI/AI), the standalone `hmmer-compare` (with alignments), and rayon multithreading.
+The approved plan is at `/home/sean/.claude/plans/make-a-plan-for-kind-brooks.md`. The prioritized SSN pipeline (README steps 1–3) is complete and Python-verified: GenBank/FASTA I/O, `domainate`, `domain_search` (shards/BGZF/`.didx`, `-Z 0`, neighborhood extraction for linear **and** circular contigs, `--translate`, strand filter, overlap dedup), `seq_dist` (DIAMOND `diamond_*` via the external binary — now the default `--algorithm`, exact-parity-verified against the Python tool when both use the same diamond version; plus hmmsearch / phmmer / hmmer_compare + dense/sparse/TSV), `compare_contigs` (JI/AI), the standalone `hmmer-compare` (with alignments), and rayon multithreading.
 
-Deferred (per plan / no clean path): DIAMOND (`seq_dist --algorithm diamond_*`; no Rust crate — `diamond-rs` is GitHub-only/early), the ward-clustered GenBank report (`compare_contigs -o`) + `--mst_knn`, gene-calling (`prodigal-rs`), Infernal/Foldseek/ESM, and the Tauri GUI (README step 4).
+Deferred (per plan / no clean path): the ward-clustered GenBank report (`compare_contigs -o`) + `--mst_knn`, gene-calling (`prodigal-rs`), Infernal/Foldseek/ESM, and the Tauri GUI (README step 4).

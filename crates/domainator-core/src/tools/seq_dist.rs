@@ -1,11 +1,15 @@
 //! `seq_dist`: compute a similarity matrix between input and reference
-//! sequences/profiles. M3 scope: the `hmmer` algorithm — `hmmsearch` when the
-//! reference is an HMM file, `phmmer` when it is a sequence file (including the
-//! all-vs-all `input == reference` case that feeds the SSN). DIAMOND and
-//! `hmmer_compare` are deferred with a clear error.
+//! sequences/profiles. Algorithms (`--algorithm`, mirroring the Python suite):
+//! `diamond_*` (DIAMOND `blastp` at varying sensitivity, via the external
+//! `diamond` binary — the default), `hmmer` (`hmmsearch` when the reference is an
+//! HMM file, `phmmer` when it is a sequence file, including the all-vs-all
+//! `input == reference` case that feeds the SSN), and `hmmer_compare`
+//! (profile-vs-profile Viterbi; auto-selected for HMM-vs-HMM).
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use crate::io::{detect_filetype, fasta, genbank::read_genbank, FileType};
 use crate::matrix::mst_knn::apply_mst_knn;
@@ -36,6 +40,60 @@ pub fn detect_kind(path: &Path) -> Option<InputKind> {
     match detect_filetype(path)? {
         FileType::Fasta => Some(InputKind::Fasta),
         FileType::Genbank => Some(InputKind::Genbank),
+    }
+}
+
+/// Scoring algorithm, selected by `--algorithm`. Mirrors the Python suite's
+/// `diamond_*` / `hmmer` / `hmmer_compare` choices.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Algorithm {
+    /// DIAMOND `blastp` at the given sensitivity (external `diamond` binary).
+    Diamond(Sensitivity),
+    /// pyhmmer-style `phmmer` (sequence reference) or `hmmsearch` (HMM reference).
+    Hmmer,
+    /// Profile-vs-profile Viterbi comparison (HMM input and reference).
+    HmmerCompare,
+}
+
+/// DIAMOND sensitivity preset (the suffix on `diamond_*`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Sensitivity {
+    Fast,
+    Default,
+    MidSensitive,
+    Sensitive,
+    MoreSensitive,
+    VerySensitive,
+    UltraSensitive,
+}
+
+/// Parse an `--algorithm` value into an [`Algorithm`].
+pub fn parse_algorithm(s: &str) -> Result<Algorithm, String> {
+    Ok(match s {
+        "diamond_f" => Algorithm::Diamond(Sensitivity::Fast),
+        "diamond_d" => Algorithm::Diamond(Sensitivity::Default),
+        "diamond_mids" => Algorithm::Diamond(Sensitivity::MidSensitive),
+        "diamond_s" => Algorithm::Diamond(Sensitivity::Sensitive),
+        "diamond_mors" => Algorithm::Diamond(Sensitivity::MoreSensitive),
+        "diamond_vs" => Algorithm::Diamond(Sensitivity::VerySensitive),
+        "diamond_us" => Algorithm::Diamond(Sensitivity::UltraSensitive),
+        "hmmer" => Algorithm::Hmmer,
+        "hmmer_compare" => Algorithm::HmmerCompare,
+        other => return Err(format!("unknown algorithm '{other}'")),
+    })
+}
+
+/// DIAMOND CLI flag(s) for a sensitivity preset (`d`/default takes none). Mirrors
+/// `seq_dist.diamond`'s `mode_to_arg`.
+fn sensitivity_args(s: Sensitivity) -> &'static [&'static str] {
+    match s {
+        Sensitivity::Fast => &["--fast"],
+        Sensitivity::Default => &[],
+        Sensitivity::MidSensitive => &["--mid-sensitive"],
+        Sensitivity::Sensitive => &["--sensitive"],
+        Sensitivity::MoreSensitive => &["--more-sensitive"],
+        Sensitivity::VerySensitive => &["--very-sensitive"],
+        Sensitivity::UltraSensitive => &["--ultra-sensitive"],
     }
 }
 
@@ -100,6 +158,8 @@ fn load_hmms(path: &str) -> std::io::Result<(Vec<hmmer_pure_rs::Hmm>, NameIndex)
 
 /// Options for [`seq_dist`].
 pub struct SeqDistOptions {
+    /// `--algorithm` (e.g. `"diamond_us"`, `"hmmer"`, `"hmmer_compare"`).
+    pub algorithm: String,
     /// Matrix value type / `--mode` (`"score"`, `"bool"`, `"norm_score"`, ...).
     pub mode: String,
     /// Round raw scores `<= lb` down to zero (applies before any mode transform).
@@ -116,7 +176,14 @@ pub struct SeqDistOptions {
 
 impl Default for SeqDistOptions {
     fn default() -> Self {
-        SeqDistOptions { mode: "score".to_string(), lb: 0.0, k: None, mst_knn: None, cpu: 0 }
+        SeqDistOptions {
+            algorithm: "diamond_us".to_string(),
+            mode: "score".to_string(),
+            lb: 0.0,
+            k: None,
+            mst_knn: None,
+            cpu: 0,
+        }
     }
 }
 
@@ -152,73 +219,126 @@ pub fn seq_dist(
         }
     }
 
-    // HMM input is only valid against an HMM reference (the hmmer_compare path).
-    if input_kind == InputKind::Hmm && ref_kind != InputKind::Hmm {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "seq_dist: an HMM input requires an HMM reference (hmmer_compare)",
-        ));
+    // Resolve the algorithm. An HMM-vs-HMM comparison is always hmmer_compare
+    // (mirrors the Python suite, which coerces it with a warning).
+    let mut algorithm = parse_algorithm(&opts.algorithm)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    if input_kind == InputKind::Hmm
+        && ref_kind == InputKind::Hmm
+        && algorithm != Algorithm::HmmerCompare
+    {
+        eprintln!(
+            "Warning: input and reference are both HMM files; using --algorithm hmmer_compare."
+        );
+        algorithm = Algorithm::HmmerCompare;
     }
 
-    // Score and collect results plus the row (input) and column (reference) indices.
-    // The scoring is parallelized over the `--cpu` thread pool.
-    let (results, row_index, col_index): (Vec<CmpResult>, NameIndex, NameIndex) =
-        crate::parallel::with_threads(opts.cpu, || -> std::io::Result<_> {
-            if input_kind == InputKind::Hmm {
-                // hmmer_compare: profile-vs-profile Viterbi alignment.
-                let (q_hmms, row_index) = load_hmms(input)?;
-                if same {
-                    let results = hmm_compare_scores(&q_hmms, &q_hmms, opts.lb);
-                    let col_index = clone_index(&row_index);
-                    Ok((results, row_index, col_index))
-                } else {
-                    let (r_hmms, col_index) = load_hmms(ref_path)?;
-                    let results = hmm_compare_scores(&q_hmms, &r_hmms, opts.lb);
-                    Ok((results, row_index, col_index))
-                }
-            } else {
-                let input_seqs = load_seqs(input, input_kind)?;
-                if ref_kind == InputKind::Hmm {
-                    let (hmms, col_index) = load_hmms(ref_path)?;
-                    let results = hmmsearch_scores(&input_seqs.records, &hmms, opts.lb);
-                    Ok((results, input_seqs.index, col_index))
-                } else if same {
-                    let col_index = clone_index(&input_seqs.index);
-                    let results = phmmer_scores(&input_seqs.records, &input_seqs.records, opts.lb);
-                    Ok((results, input_seqs.index, col_index))
-                } else {
-                    let ref_seqs = load_seqs(ref_path, ref_kind)?;
-                    let results = phmmer_scores(&input_seqs.records, &ref_seqs.records, opts.lb);
-                    Ok((results, input_seqs.index, ref_seqs.index))
-                }
+    // Validate the algorithm against the input/reference kinds.
+    match algorithm {
+        Algorithm::Diamond(_) => {
+            if input_kind == InputKind::Hmm || ref_kind == InputKind::Hmm {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "diamond algorithms require sequence (FASTA/GenBank) input and reference; \
+                     for HMM files use --algorithm hmmer or hmmer_compare",
+                ));
             }
-        })?;
+        }
+        Algorithm::Hmmer => {
+            if input_kind == InputKind::Hmm {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "--algorithm hmmer requires a sequence (FASTA/GenBank) input; \
+                     for HMM-vs-HMM use --algorithm hmmer_compare",
+                ));
+            }
+        }
+        Algorithm::HmmerCompare => {
+            if input_kind != InputKind::Hmm || ref_kind != InputKind::Hmm {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "--algorithm hmmer_compare requires HMM input and reference",
+                ));
+            }
+        }
+    }
+
+    let bool_mode = opts.mode == "bool";
+
+    // Score every (input, reference) pair and reduce to one max value per cell,
+    // keyed by (row, col) index. The diamond path streams the subprocess output
+    // straight into the cell map (no large intermediate table); the hmmer paths
+    // score in a rayon `--cpu` pool.
+    let (cells, row_index, col_index): (HashMap<(i64, i64), f64>, NameIndex, NameIndex) =
+        match algorithm {
+            Algorithm::Diamond(sensitivity) => run_diamond(
+                input, input_kind, ref_path, ref_kind, same, sensitivity, opts, bool_mode,
+            )?,
+            _ => crate::parallel::with_threads(opts.cpu, || -> std::io::Result<_> {
+                let (results, row_index, col_index): (Vec<CmpResult>, NameIndex, NameIndex) =
+                    if algorithm == Algorithm::HmmerCompare {
+                        // hmmer_compare: profile-vs-profile Viterbi alignment.
+                        let (q_hmms, row_index) = load_hmms(input)?;
+                        if same {
+                            let results = hmm_compare_scores(&q_hmms, &q_hmms, opts.lb);
+                            let col_index = clone_index(&row_index);
+                            (results, row_index, col_index)
+                        } else {
+                            let (r_hmms, col_index) = load_hmms(ref_path)?;
+                            let results = hmm_compare_scores(&q_hmms, &r_hmms, opts.lb);
+                            (results, row_index, col_index)
+                        }
+                    } else {
+                        let input_seqs = load_seqs(input, input_kind)?;
+                        if ref_kind == InputKind::Hmm {
+                            let (hmms, col_index) = load_hmms(ref_path)?;
+                            let results = hmmsearch_scores(&input_seqs.records, &hmms, opts.lb);
+                            (results, input_seqs.index, col_index)
+                        } else if same {
+                            let col_index = clone_index(&input_seqs.index);
+                            let results =
+                                phmmer_scores(&input_seqs.records, &input_seqs.records, opts.lb);
+                            (results, input_seqs.index, col_index)
+                        } else {
+                            let ref_seqs = load_seqs(ref_path, ref_kind)?;
+                            let results =
+                                phmmer_scores(&input_seqs.records, &ref_seqs.records, opts.lb);
+                            (results, input_seqs.index, ref_seqs.index)
+                        }
+                    };
+
+                // Max-dedup per (row, col).
+                let mut cells: HashMap<(i64, i64), f64> = HashMap::new();
+                for r in &results {
+                    let (Some(&ri), Some(&ci)) =
+                        (row_index.idx.get(&r.query), col_index.idx.get(&r.subject))
+                    else {
+                        continue;
+                    };
+                    let v = if bool_mode { 1.0 } else { r.score };
+                    let e = cells.entry((ri as i64, ci as i64)).or_insert(f64::NEG_INFINITY);
+                    if v > *e {
+                        *e = v;
+                    }
+                }
+                Ok((cells, row_index, col_index))
+            })?,
+        };
 
     let nrows = row_index.names.len();
     let ncols = col_index.names.len();
-    let bool_mode = opts.mode == "bool";
-
-    // Max-dedup per (row, col).
-    let mut cells: HashMap<(i64, i64), f64> = HashMap::new();
-    for r in &results {
-        let (Some(&ri), Some(&ci)) = (row_index.idx.get(&r.query), col_index.idx.get(&r.subject))
-        else {
-            continue;
-        };
-        let v = if bool_mode { 1.0 } else { r.score };
-        let key = (ri as i64, ci as i64);
-        let e = cells.entry(key).or_insert(f64::NEG_INFINITY);
-        if v > *e {
-            *e = v;
-        }
-    }
 
     // Optional top-k per row (by score desc, then column asc — matches the
     // Python `(-score, reference)` ordering with column index standing in for
     // the reference name order).
     // `--mst_knn` bypasses per-row top-k so the pruning sees the full candidate
-    // set (matching the Python streaming path's `k=None`).
-    let k = if opts.mst_knn.is_some() { None } else { opts.k };
+    // set (matching the Python streaming path's `k=None`). The diamond path
+    // already capped targets per query via `--max-target-seqs`.
+    let k = if opts.mst_knn.is_some() || matches!(algorithm, Algorithm::Diamond(_)) {
+        None
+    } else {
+        opts.k
+    };
     let mut rows_v: Vec<i64> = Vec::new();
     let mut cols_v: Vec<i64> = Vec::new();
     let mut vals_v: Vec<f64> = Vec::new();
@@ -263,4 +383,245 @@ pub fn seq_dist(
         matrix = apply_mst_knn(&matrix, mst_knn, 0.0);
     }
     Ok(matrix)
+}
+
+/// Run DIAMOND `blastp` for the diamond algorithms and reduce the streamed hit
+/// table into one max score per (row, col) cell. Mirrors `seq_dist.diamond`:
+/// build a DIAMOND db from the reference, then `blastp` the input against it with
+/// `--outfmt 6 qseqid sseqid bitscore --algo 0 --max-hsps 1`, parsing the
+/// subprocess stdout line by line (no large intermediate file).
+#[allow(clippy::too_many_arguments)]
+fn run_diamond(
+    input: &str,
+    input_kind: InputKind,
+    ref_path: &str,
+    ref_kind: InputKind,
+    same: bool,
+    sensitivity: Sensitivity,
+    opts: &SeqDistOptions,
+    bool_mode: bool,
+) -> std::io::Result<(HashMap<(i64, i64), f64>, NameIndex, NameIndex)> {
+    let diamond_bin = find_diamond();
+    let tmp = TempDir::new("domainator_diamond")?;
+
+    // Normalize input/reference to FASTA whose header first token is the record
+    // id, so DIAMOND's `qseqid`/`sseqid` match the name index exactly.
+    let input_seqs = load_seqs(input, input_kind)?;
+    let input_fasta = tmp.path().join("input.fasta");
+    write_diamond_fasta(&input_seqs.records, &input_fasta)?;
+    let row_index = input_seqs.index;
+
+    let (ref_fasta, col_index) = if same {
+        (input_fasta.clone(), clone_index(&row_index))
+    } else {
+        let ref_seqs = load_seqs(ref_path, ref_kind)?;
+        let ref_fasta = tmp.path().join("ref.fasta");
+        write_diamond_fasta(&ref_seqs.records, &ref_fasta)?;
+        (ref_fasta, ref_seqs.index)
+    };
+
+    // Build the reference database (db.dmnd) under the temp dir.
+    let dbpath = tmp.path().join("db");
+    let makedb = Command::new(&diamond_bin)
+        .arg("makedb")
+        .arg("--in")
+        .arg(&ref_fasta)
+        .arg("-d")
+        .arg(&dbpath)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| diamond_spawn_error(e, &diamond_bin))?;
+    if !makedb.status.success() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("diamond makedb failed:\n{}", String::from_utf8_lossy(&makedb.stderr)),
+        ));
+    }
+
+    // `--cpu 0` means "all cores"; resolve to a concrete count for diamond `-p`.
+    let threads = if opts.cpu > 0 {
+        opts.cpu
+    } else {
+        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+    };
+    // `--mst_knn` prunes after scoring, so it must see every candidate edge (-k is
+    // ignored, matching the hmmer path); otherwise cap targets per query at -k.
+    // `--max-target-seqs 0` means "report all targets".
+    let max_target_seqs = if opts.mst_knn.is_some() { 0 } else { opts.k.unwrap_or(0) };
+
+    let mut cmd = Command::new(&diamond_bin);
+    cmd.arg("blastp")
+        .arg("-q")
+        .arg(&input_fasta)
+        .arg("-d")
+        .arg(&dbpath)
+        .arg("-p")
+        .arg(threads.to_string())
+        .arg("--outfmt")
+        .arg("6")
+        .arg("qseqid")
+        .arg("sseqid")
+        .arg("bitscore")
+        .arg("--algo")
+        .arg("0")
+        .arg("--max-hsps")
+        .arg("1")
+        .arg("--max-target-seqs")
+        .arg(max_target_seqs.to_string());
+    if opts.lb > 0.0 {
+        cmd.arg("--min-score").arg(format!("{}", opts.lb));
+    }
+    for a in sensitivity_args(sensitivity) {
+        cmd.arg(a);
+    }
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| diamond_spawn_error(e, &diamond_bin))?;
+    let stdout = child.stdout.take().expect("diamond stdout is piped");
+    let stderr = child.stderr.take().expect("diamond stderr is piped");
+    // Drain stderr on a side thread so a full stderr pipe can't deadlock stdout.
+    let stderr_handle = std::thread::spawn(move || {
+        let mut buf = String::new();
+        let _ = BufReader::new(stderr).read_to_string(&mut buf);
+        buf
+    });
+
+    // Stream the tab-separated hit table (qseqid, sseqid, bitscore) straight into
+    // the per-cell max map.
+    let mut cells: HashMap<(i64, i64), f64> = HashMap::new();
+    let reader = BufReader::new(stdout);
+    for line in reader.lines() {
+        let line = line?;
+        let mut it = line.split('\t');
+        // Require exactly three fields (matches the Python `len(parts) == 3` gate).
+        let (Some(q), Some(s), Some(b), None) = (it.next(), it.next(), it.next(), it.next())
+        else {
+            continue;
+        };
+        let Ok(score) = b.trim().parse::<f64>() else {
+            continue;
+        };
+        if score <= opts.lb {
+            continue;
+        }
+        let (Some(&ri), Some(&ci)) = (row_index.idx.get(q), col_index.idx.get(s)) else {
+            continue;
+        };
+        let v = if bool_mode { 1.0 } else { score };
+        let e = cells.entry((ri as i64, ci as i64)).or_insert(f64::NEG_INFINITY);
+        if v > *e {
+            *e = v;
+        }
+    }
+
+    let status = child.wait()?;
+    let stderr_text = stderr_handle.join().unwrap_or_default();
+    if !status.success() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("diamond blastp failed:\n{stderr_text}"),
+        ));
+    }
+
+    Ok((cells, row_index, col_index))
+}
+
+/// Write `(id, residues)` records as FASTA whose header is just the id, so
+/// DIAMOND's `qseqid`/`sseqid` columns equal the record id.
+fn write_diamond_fasta(records: &[(String, Vec<u8>)], path: &Path) -> std::io::Result<()> {
+    let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
+    for (id, seq) in records {
+        writeln!(w, ">{id}")?;
+        for chunk in seq.chunks(60) {
+            w.write_all(chunk)?;
+            w.write_all(b"\n")?;
+        }
+    }
+    w.flush()
+}
+
+/// Locate the `diamond` executable: `$DOMAINATOR_DIAMOND` / `$DIAMOND`, then a
+/// bundled `external/diamond/diamond` (searched upward from the running
+/// executable and in the current directory), then bare `diamond` on `PATH`.
+fn find_diamond() -> PathBuf {
+    let exe_name = if cfg!(windows) { "diamond.exe" } else { "diamond" };
+    for var in ["DOMAINATOR_DIAMOND", "DIAMOND"] {
+        if let Ok(p) = std::env::var(var) {
+            if !p.is_empty() {
+                return PathBuf::from(p);
+            }
+        }
+    }
+    let bundled = |base: &Path| base.join("external").join("diamond").join(exe_name);
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.parent();
+        while let Some(d) = dir {
+            let cand = bundled(d);
+            if cand.is_file() {
+                return cand;
+            }
+            dir = d.parent();
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let cand = bundled(&cwd);
+        if cand.is_file() {
+            return cand;
+        }
+    }
+    PathBuf::from(exe_name)
+}
+
+/// Turn a "diamond not found" spawn failure into an actionable error.
+fn diamond_spawn_error(e: std::io::Error, bin: &Path) -> std::io::Error {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "could not run diamond ('{}'): executable not found. Set $DOMAINATOR_DIAMOND to \
+                 the diamond binary, place it at external/diamond/diamond, or add diamond to PATH.",
+                bin.display()
+            ),
+        )
+    } else {
+        e
+    }
+}
+
+/// A uniquely-named temporary directory removed (recursively) on drop. Avoids a
+/// `tempfile` dependency; uniqueness comes from pid + nanosecond clock + a retry
+/// counter.
+struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    fn new(prefix: &str) -> std::io::Result<Self> {
+        let base = std::env::temp_dir();
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        for n in 0u32.. {
+            let cand = base.join(format!("{prefix}_{pid}_{nanos}_{n}"));
+            match std::fs::create_dir(&cand) {
+                Ok(()) => return Ok(TempDir { path: cand }),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        unreachable!("u32 range exhausted creating a temp dir")
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
 }

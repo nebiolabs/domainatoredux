@@ -141,6 +141,15 @@ enum Command {
         /// Write a sparse (CSR) HDF5 matrix here.
         #[arg(long)]
         sparse: Option<PathBuf>,
+        /// Distance metric. diamond_*: f=fast, d=default, mids=mid-sensitive,
+        /// s=sensitive, mors=more-sensitive, vs=very-sensitive, us=ultra-sensitive
+        /// (needs the external diamond binary). hmmer: phmmer/hmmsearch.
+        /// hmmer_compare: HMM-vs-HMM (auto for two HMM files).
+        #[arg(long, default_value = "diamond_us", value_parser = [
+            "diamond_f", "diamond_d", "diamond_mids", "diamond_s", "diamond_mors",
+            "diamond_vs", "diamond_us", "hmmer", "hmmer_compare",
+        ])]
+        algorithm: String,
         /// Matrix value type.
         #[arg(long, default_value = "score")]
         mode: String,
@@ -308,7 +317,7 @@ fn main() -> Result<()> {
             write_genbank(out, &hits).context("writing GenBank")?;
             println!("wrote {} hit contigs to {}", hits.len(), output.display());
         }
-        Command::SeqDist { input, reference, dense, dense_text, sparse, mode, lb, k, mst_knn, cpu } => {
+        Command::SeqDist { input, reference, dense, dense_text, sparse, algorithm, mode, lb, k, mst_knn, cpu } => {
             if dense.is_none() && dense_text.is_none() && sparse.is_none() {
                 anyhow::bail!("no output specified: pass at least one of --dense, --dense_text, --sparse");
             }
@@ -322,7 +331,7 @@ fn main() -> Result<()> {
                 ),
                 None => None,
             };
-            let opts = SeqDistOptions { mode, lb, k, mst_knn, cpu };
+            let opts = SeqDistOptions { algorithm, mode, lb, k, mst_knn, cpu };
             let matrix = seq_dist(input_str, input_kind, ref_str, ref_kind, &opts)
                 .context("running seq_dist")?;
             if let Some(p) = &dense {
