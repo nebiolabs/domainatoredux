@@ -3,13 +3,14 @@
 //! (shared consecutive domain *pairs*) indices, combined by weight. Mirrors
 //! `domainator.compare_contigs` (the matrix path).
 //!
-//! M4 scope: the JI/AI similarity matrix and sparse/dense/TSV reports. The
-//! hierarchically-clustered GenBank report (`-o`, scipy ward `optimal_ordering`)
-//! and `--mst_knn` are deferred.
+//! M4 scope: the JI/AI similarity matrix and sparse/dense/TSV reports, including
+//! `--mst_knn` (MST ∪ OR-symmetric kNN pruning). The hierarchically-clustered
+//! GenBank report (`-o`, scipy ward `optimal_ordering`) is deferred.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::io::genbank::read_genbank;
+use crate::matrix::mst_knn::apply_mst_knn;
 use crate::matrix::{build_sparse_max, DataMatrix, Storage};
 use crate::seq::SeqRecord;
 use crate::DOMAIN_FEATURE_NAME;
@@ -34,13 +35,17 @@ pub struct CompareContigsOptions {
     pub k: Option<usize>,
     /// Zero out final scores `<= lb`.
     pub lb: f64,
+    /// Prune the output to MST ∪ OR-symmetric kNN edges (integer > 1). When set,
+    /// `k` is ignored (the pruning sees the full candidate set). Mirrors
+    /// `compare_contigs --mst_knn`.
+    pub mst_knn: Option<usize>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
 }
 
 impl Default for CompareContigsOptions {
     fn default() -> Self {
-        CompareContigsOptions { ji_weight: 0.5, ai_weight: 0.5, databases: None, k: None, lb: 0.0, cpu: 0 }
+        CompareContigsOptions { ji_weight: 0.5, ai_weight: 0.5, databases: None, k: None, lb: 0.0, mst_knn: None, cpu: 0 }
     }
 }
 
@@ -135,8 +140,9 @@ fn intersection_size(a: &[u32], b: &[u32]) -> usize {
     n
 }
 
-/// Compute the combined JI/AI similarity matrix for `recs`.
-fn combined_matrix(recs: &[SeqRecord], opts: &CompareContigsOptions) -> DataMatrix {
+/// Compute the combined JI/AI similarity matrix for `recs`. `k` is the per-row
+/// top-N cap (`None` keeps every non-zero entry — used by `--mst_knn`).
+fn combined_matrix(recs: &[SeqRecord], opts: &CompareContigsOptions, k: Option<usize>) -> DataMatrix {
     let n = recs.len();
     let mut metrics: Vec<(f64, Vec<Vec<u32>>)> = Vec::new();
     if opts.ji_weight != 0.0 {
@@ -183,7 +189,7 @@ fn combined_matrix(recs: &[SeqRecord], opts: &CompareContigsOptions) -> DataMatr
                 // Optional top-k per row (by score desc, then column asc — matching
                 // Python's `np.lexsort((target_indices, -row_scores))`), then `lb`.
                 let mut entries: Vec<(usize, f64)> = row_scores.into_iter().collect();
-                if let Some(k) = opts.k {
+                if let Some(k) = k {
                     entries.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
                     entries.truncate(k);
                 }
@@ -238,7 +244,8 @@ pub fn compare_contigs(
     }
 
     // k == 0 -> empty matrix (no self either, matching the Python early return).
-    if opts.k == Some(0) {
+    // `--mst_knn` ignores `k`, so this guard does not apply when it is set.
+    if opts.mst_knn.is_none() && opts.k == Some(0) {
         let names: Vec<String> = recs.iter().map(|r| r.id.clone()).collect();
         return Ok(DataMatrix {
             rows: names.clone(),
@@ -250,5 +257,12 @@ pub fn compare_contigs(
         });
     }
 
-    Ok(combined_matrix(&recs, opts))
+    // `--mst_knn` bypasses per-row top-k so the pruning sees the full candidate set.
+    let k = if opts.mst_knn.is_some() { None } else { opts.k };
+    let matrix = combined_matrix(&recs, opts, k);
+
+    match opts.mst_knn {
+        Some(mst_knn) => Ok(apply_mst_knn(&matrix, mst_knn, opts.lb)),
+        None => Ok(matrix),
+    }
 }

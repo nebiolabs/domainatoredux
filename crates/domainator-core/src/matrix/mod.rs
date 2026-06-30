@@ -4,6 +4,7 @@
 //! CSR layout (zeros eliminated, indices sorted, duplicate `(row,col)` max-merged).
 
 pub mod hdf5_io;
+pub mod mst_knn;
 pub mod text;
 pub mod transform;
 

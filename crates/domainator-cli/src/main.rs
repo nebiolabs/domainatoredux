@@ -150,6 +150,10 @@ enum Command {
         /// Keep at most this many non-zero entries per input row.
         #[arg(short = 'k', long)]
         k: Option<usize>,
+        /// Prune to MST + OR-symmetric kNN edges (integer > 1; requires reference
+        /// == input and --mode score/bool/efi_score). When set, -k is ignored.
+        #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
+        mst_knn: Option<usize>,
         /// Worker threads (0 = all cores).
         #[arg(long, default_value_t = 0)]
         cpu: usize,
@@ -183,6 +187,9 @@ enum Command {
         /// Zero out final scores <= this.
         #[arg(long, default_value_t = 0.0)]
         lb: f64,
+        /// Prune to MST + OR-symmetric kNN edges (integer > 1). When set, -k is ignored.
+        #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
+        mst_knn: Option<usize>,
         /// Worker threads (0 = all cores).
         #[arg(long, default_value_t = 0)]
         cpu: usize,
@@ -211,6 +218,16 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         cpu: usize,
     },
+}
+
+/// Parse `--mst_knn`: an integer greater than 1 (mirrors
+/// `transform_matrix._mst_knn_arg`).
+fn parse_mst_knn(value: &str) -> std::result::Result<usize, String> {
+    let v: i64 = value.parse().map_err(|_| format!("`{value}` is not an integer"))?;
+    if v <= 1 {
+        return Err("--mst_knn must be an integer greater than 1".to_string());
+    }
+    Ok(v as usize)
 }
 
 fn load(input: &PathBuf) -> Result<Vec<SeqRecord>> {
@@ -291,7 +308,7 @@ fn main() -> Result<()> {
             write_genbank(out, &hits).context("writing GenBank")?;
             println!("wrote {} hit contigs to {}", hits.len(), output.display());
         }
-        Command::SeqDist { input, reference, dense, dense_text, sparse, mode, lb, k, cpu } => {
+        Command::SeqDist { input, reference, dense, dense_text, sparse, mode, lb, k, mst_knn, cpu } => {
             if dense.is_none() && dense_text.is_none() && sparse.is_none() {
                 anyhow::bail!("no output specified: pass at least one of --dense, --dense_text, --sparse");
             }
@@ -305,7 +322,7 @@ fn main() -> Result<()> {
                 ),
                 None => None,
             };
-            let opts = SeqDistOptions { mode, lb, k, cpu };
+            let opts = SeqDistOptions { mode, lb, k, mst_knn, cpu };
             let matrix = seq_dist(input_str, input_kind, ref_str, ref_kind, &opts)
                 .context("running seq_dist")?;
             if let Some(p) = &dense {
@@ -319,7 +336,7 @@ fn main() -> Result<()> {
             }
             println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
         }
-        Command::CompareContigs { input, dense, dense_text, sparse, ji, ai, databases, k, lb, cpu } => {
+        Command::CompareContigs { input, dense, dense_text, sparse, ji, ai, databases, k, lb, mst_knn, cpu } => {
             if dense.is_none() && dense_text.is_none() && sparse.is_none() {
                 anyhow::bail!("no output specified: pass at least one of --dense, --dense_text, --sparse");
             }
@@ -336,6 +353,7 @@ fn main() -> Result<()> {
                 databases: if databases.is_empty() { None } else { Some(databases.into_iter().collect()) },
                 k,
                 lb,
+                mst_knn,
                 cpu,
             };
             let matrix = compare_contigs(&genbanks, &opts).context("running compare_contigs")?;

@@ -8,8 +8,14 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::io::{detect_filetype, fasta, genbank::read_genbank, FileType};
+use crate::matrix::mst_knn::apply_mst_knn;
 use crate::matrix::transform::apply_mode;
 use crate::matrix::{build_sparse_max, DataMatrix};
+
+/// `--mode` values whose post-transform value is computable per edge (no global
+/// matrix maxima), and therefore compatible with `--mst_knn`. Mirrors
+/// `seq_dist.MST_KNN_STREAMABLE_MODES`.
+pub const MST_KNN_STREAMABLE_MODES: [&str; 3] = ["score", "bool", "efi_score"];
 use crate::search::hmm_compare::hmm_compare_scores;
 use crate::search::seq_compare::{hmmsearch_scores, phmmer_scores, CmpResult};
 
@@ -100,13 +106,17 @@ pub struct SeqDistOptions {
     pub lb: f64,
     /// Keep at most this many non-zero entries per input row (top-N by score).
     pub k: Option<usize>,
+    /// Prune the output to MST ∪ OR-symmetric kNN edges (integer > 1). Requires a
+    /// square symmetric comparison (reference == input) and a streamable `--mode`.
+    /// When set, `k` is ignored. Mirrors `seq_dist --mst_knn`.
+    pub mst_knn: Option<usize>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
 }
 
 impl Default for SeqDistOptions {
     fn default() -> Self {
-        SeqDistOptions { mode: "score".to_string(), lb: 0.0, k: None, cpu: 0 }
+        SeqDistOptions { mode: "score".to_string(), lb: 0.0, k: None, mst_knn: None, cpu: 0 }
     }
 }
 
@@ -122,6 +132,25 @@ pub fn seq_dist(
     let ref_path = reference.unwrap_or(input);
     let ref_kind = reference_kind.unwrap_or(input_kind);
     let same = ref_path == input;
+
+    if opts.mst_knn.is_some() {
+        if !MST_KNN_STREAMABLE_MODES.contains(&opts.mode.as_str()) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "--mst_knn is only supported with --mode {:?} (modes that normalize \
+                     against global matrix maxima cannot be pruned per edge); got '{}'",
+                    MST_KNN_STREAMABLE_MODES, opts.mode
+                ),
+            ));
+        }
+        if !same {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "--mst_knn requires a square, symmetric comparison (reference must be the same file as input)",
+            ));
+        }
+    }
 
     // HMM input is only valid against an HMM reference (the hmmer_compare path).
     if input_kind == InputKind::Hmm && ref_kind != InputKind::Hmm {
@@ -187,10 +216,13 @@ pub fn seq_dist(
     // Optional top-k per row (by score desc, then column asc — matches the
     // Python `(-score, reference)` ordering with column index standing in for
     // the reference name order).
+    // `--mst_knn` bypasses per-row top-k so the pruning sees the full candidate
+    // set (matching the Python streaming path's `k=None`).
+    let k = if opts.mst_knn.is_some() { None } else { opts.k };
     let mut rows_v: Vec<i64> = Vec::new();
     let mut cols_v: Vec<i64> = Vec::new();
     let mut vals_v: Vec<f64> = Vec::new();
-    if let Some(k) = opts.k {
+    if let Some(k) = k {
         let mut by_row: HashMap<i64, Vec<(i64, f64)>> = HashMap::new();
         for (&(ri, ci), &v) in &cells {
             by_row.entry(ri).or_default().push((ci, v));
@@ -223,5 +255,12 @@ pub fn seq_dist(
     };
 
     apply_mode(&mut matrix, &opts.mode);
+
+    // Prune to MST ∪ OR-symmetric kNN. The raw-score lower bound was already
+    // applied during scoring (`opts.lb`), so the pruning runs at lower_bound=0
+    // on the post-mode values (matching the Python streaming path).
+    if let Some(mst_knn) = opts.mst_knn {
+        matrix = apply_mst_knn(&matrix, mst_knn, 0.0);
+    }
     Ok(matrix)
 }
