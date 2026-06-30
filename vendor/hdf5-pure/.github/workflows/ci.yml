@@ -1,0 +1,301 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }} / ${{ matrix.config.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # `default` and `full` run on every platform so we exercise both the
+        # minimal and maximal feature sets on Linux, macOS, and Windows.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        config:
+          - name: default
+            flags: ""
+          # `matio-crosscheck` is intentionally excluded: it links against the
+          # system libmatio and is meant for maintainer-local crosscheck runs.
+          - name: full
+            flags: --features "serde zfp fast-deflate provenance parallel ndarray"
+        # The single-feature isolation configs only need to run on one platform;
+        # they are subsets of `full`, which already runs everywhere.
+        include:
+          - os: ubuntu-latest
+            config:
+              name: serde
+              flags: --features serde
+          - os: ubuntu-latest
+            config:
+              name: zfp
+              flags: --features zfp
+          - os: ubuntu-latest
+            config:
+              name: ndarray
+              flags: --features ndarray
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}-${{ matrix.config.name }}
+      - run: cargo test --locked ${{ matrix.config.flags }}
+
+  # Run every example end-to-end. The examples are self-checking (each ends in
+  # `assert!`s and panics on mismatch), so a regression in the public API surfaces
+  # here as a failed job. `cargo clippy --all-targets` in the `lint` job already
+  # compiles them; this additionally *executes* them (issue #71).
+  examples:
+    name: Examples (run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: examples
+      - name: Run every example
+        run: |
+          set -euo pipefail
+          # Enumerate example targets from cargo metadata so a newly added
+          # example is covered automatically (no hand-maintained list to drift).
+          # The feature set is the superset the examples need: `ndarray_io`
+          # requires `ndarray` and `matlab_fixtures` requires `serde`; the rest
+          # ignore the extra features.
+          examples=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[].targets[] | select(.kind[] == "example") | .name')
+          for ex in $examples; do
+            echo "::group::cargo run --example $ex"
+            cargo run --locked --features "serde ndarray" --example "$ex"
+            echo "::endgroup::"
+          done
+
+  no-std-check:
+    name: Check (no_std)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: no-std
+      - run: cargo check --locked --no-default-features
+
+  wasm:
+    name: Build (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm32
+      - name: Check (no default features)
+        run: cargo check --locked --target wasm32-unknown-unknown --no-default-features
+      - name: Check (default features)
+        run: cargo check --locked --target wasm32-unknown-unknown
+
+  lint:
+    name: Lint (fmt, clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: lint
+      - name: Rustfmt
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --locked --features "serde ndarray" --all-targets -- -D warnings
+
+  shear:
+    name: Unused dependencies (cargo-shear)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-shear
+      - run: cargo shear
+
+  # Detect accidental or unversioned public-API changes by diffing the crate
+  # against the latest version published to crates.io. A breaking change (e.g.
+  # removing a `pub fn`) fails the job unless the version in Cargo.toml is
+  # bumped accordingly (under 0.x, breaking changes require a minor bump).
+  #
+  # `parallel_read`/`lane_partition` are gated behind `parallel`, so the feature
+  # set below must enable the public-API-bearing features to see their surface.
+  # `fast-deflate` is omitted (a flate2 backend swap, no API delta) along with
+  # `matio-crosscheck` (test-only, links system libmatio).
+  semver-checks:
+    name: SemVer (cargo-semver-checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: semver-checks
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          feature-group: default-features
+          features: serde,zfp,provenance,parallel,ndarray
+
+  # ===========================================================================
+  # 32-bit / no_std compatibility (issue #27).
+  #
+  # hdf5-pure indexes the in-memory file image with `usize`. On a 32-bit target
+  # `usize` is 32 bits, so a 64-bit HDF5 offset/length above 4 GiB cast with
+  # `as usize` would silently truncate and read the wrong bytes. The reader now
+  # routes every file-derived narrowing through `crate::convert`
+  # (`to_usize`/`slice_range`/`u32_from`), which errors instead of truncating.
+  # The jobs below keep the crate building and running on a 32-bit pointer width
+  # and on bare-metal no_std, and ratchet down stray narrowing casts.
+  # ===========================================================================
+
+  # The library must stay type-clean on a 32-bit pointer width. `clippy --target`
+  # is a check (no linker/QEMU), so this is fast and reliable.
+  check-32bit:
+    name: Check (i686-unknown-linux-gnu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: i686-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: i686
+      - name: Clippy (lib, default features)
+        run: cargo clippy --locked --target i686-unknown-linux-gnu --lib -- -D warnings
+      - name: Clippy (lib, full features minus C-backed ones)
+        run: >
+          cargo clippy --locked --target i686-unknown-linux-gnu --lib
+          --features "serde zfp provenance parallel ndarray" -- -D warnings
+
+  # 32-bit narrowing-cast gate (issue #72). On i686 clippy flags every potential
+  # `u64 as usize`-style narrowing. Each such cast in the library is either
+  # routed through `crate::convert` (`to_usize`/`slice_range`/`u32_from`, which
+  # errors instead of truncating) or annotated at its site with
+  # `#[expect(clippy::cast_possible_truncation | cast_possible_wrap, reason = "...")]`
+  # stating why it cannot lose information. This job denies both lints, so a PR
+  # cannot introduce an unannotated narrowing cast, and denies
+  # `unfulfilled_lint_expectations`, so an `#[expect]` left behind after its cast
+  # is fixed or removed also fails — the annotations are self-cleaning.
+  #
+  # This replaces the earlier count-based ratchet, which a genuinely new cast
+  # could slip past as long as an unrelated one was removed in the same PR.
+  cast-deny-32bit:
+    name: 32-bit narrowing-cast gate (i686)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned so the set of flagged casts is stable against clippy-version
+      # drift; bump deliberately and re-check the annotations when raising it.
+      - uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: clippy
+          targets: i686-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cast-deny-i686
+      - name: Deny 32-bit narrowing casts
+        run: |
+          set -euo pipefail
+          # Force a fresh compile of OUR crate for the i686 target so clippy
+          # re-evaluates the lints (a cached build emits nothing, which would let
+          # a new cast slip through); dependencies stay cached. Target-scoped.
+          cargo clean -p hdf5-pure --target i686-unknown-linux-gnu
+          cargo clippy --locked --target i686-unknown-linux-gnu --lib \
+            --features "serde zfp provenance parallel ndarray" \
+            -- -D clippy::cast_possible_truncation \
+               -D clippy::cast_possible_wrap \
+               -D unfulfilled_lint_expectations
+
+  # Real 32-bit execution under QEMU. The reference HDF5 C library
+  # (`hdf5-metno`) is a 64-bit-only dev-dependency, so the C-crosscheck tests
+  # compile out here and the pure-Rust library tests run on a true 32-bit
+  # pointer width, exercising the checked `u64 -> usize` conversions. The
+  # `fast-deflate` (zlib-ng) feature is C code and is intentionally omitted.
+  test-32bit:
+    name: Test (i686, QEMU via cross)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cross-i686
+      - name: cross test (pure-Rust library + roundtrip suite on i686)
+        run: >
+          cross test --locked --target i686-unknown-linux-gnu
+          --no-default-features
+          --features "std checksum deflate zfp serde ndarray provenance"
+          --lib --test write_read_roundtrip --test serde_roundtrip --test zfp_roundtrip
+          --test streaming_reader
+
+  # Bare-metal no_std build: proves the crate links without `std` on a genuine
+  # `none` target (the existing no-std-check only runs on the std-capable host).
+  no-std-bare-metal:
+    name: Build (thumbv7em-none-eabi, no_std)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: thumbv7em
+      - run: cargo build --locked --no-default-features --target thumbv7em-none-eabi
+
+  # ===========================================================================
+  # Undefined-behavior sanitizing with Miri (issue #26).
+  #
+  # The library is almost entirely safe Rust; the unsafe that exists is the
+  # cache-line-aligned chunk buffer in `chunk_cache` (manual global-allocator
+  # `alloc_zeroed`/`dealloc`, `slice::from_raw_parts[_mut]`, and `unsafe impl
+  # Send`/`Sync` for `CacheAlignedBuffer`). Miri interprets that allocation and
+  # the surrounding pointer arithmetic under Stacked Borrows + strict provenance,
+  # catching aliasing / out-of-bounds / leak UB that the normal test run cannot
+  # observe.
+  #
+  # Scoped to the `chunk_cache` unit tests on purpose: most other tests touch the
+  # filesystem and the crosscheck tests call into the libhdf5 C library, neither
+  # of which Miri can execute. Widen the `--lib` test filter as more
+  # pure-in-memory unsafe lands (the single-threaded `nosync::Mutex` is the next
+  # candidate, once the crate's no_std unit-test harness compiles).
+  miri:
+    name: Miri (undefined behavior)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@miri
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: miri
+      - name: Miri test (chunk_cache unsafe)
+        # `--no-default-features --features std` keeps the interpreted build
+        # minimal: the `chunk_cache` tests are pure in-memory, so there is no
+        # need to compile the `deflate` (flate2/miniz_oxide) or `checksum` code
+        # that Miri never executes. Smaller, more deterministic surface.
+        run: cargo miri test --locked --no-default-features --features std --lib chunk_cache
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance

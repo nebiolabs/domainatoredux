@@ -1,0 +1,340 @@
+//! HMM-vs-HMM comparison (`seq_dist --algorithm hmmer_compare`): a 5-state
+//! Viterbi profile-profile local alignment (Söding / HH-suite style), ported from
+//! `domainator.hmmer_search.compare_hmmer`. The score is a log-odds co-emission
+//! sum maximized over a local alignment of the two profiles.
+//!
+//! hmmer-pure-rs exposes match-emission probabilities (`Hmm.mat`), transition
+//! probabilities (`Hmm.t`, indices `MM..DD` matching the Python layout), and the
+//! Swiss-Prot background (`Bg::new(&abc).f`) — so this is a direct, dependency-free
+//! port. Alignment traceback output is deferred (only the score is needed for the
+//! distance matrix).
+
+use rayon::prelude::*;
+
+use hmmer_pure_rs::hmm::{DD, DM, II, IM, MD, MI, MM};
+use hmmer_pure_rs::{Alphabet, Bg, Hmm};
+
+use super::seq_compare::CmpResult;
+
+// DP state indices (S{query}{reference}); MM=match/match, etc.
+const SMM: usize = 0;
+const SMI: usize = 1;
+const SIM: usize = 2;
+const SDG: usize = 3;
+const SGD: usize = 4;
+
+fn round2(x: f64) -> f64 {
+    (x * 100.0).round() / 100.0
+}
+
+/// `-ln` of each of the 7 transition probabilities (impossible transitions -> +inf).
+fn neg_log7(t: &[f32; 7]) -> [f32; 7] {
+    let mut out = [0.0f32; 7];
+    for i in 0..7 {
+        out[i] = -t[i].ln();
+    }
+    out
+}
+
+/// Co-emission log-odds score for two match-emission distributions:
+/// `log( sum_a q_a * r_a / bg_a )`. Mirrors `hmmer_search.Saa`.
+fn saa(q: &[f32], r: &[f32], bg: &[f32], k: usize) -> f32 {
+    let mut s = 0.0f32;
+    for a in 0..k {
+        s += q[a] * r[a] / bg[a];
+    }
+    s.ln()
+}
+
+#[inline]
+fn max5(a: f32, b: f32, c: f32, d: f32, e: f32) -> f32 {
+    a.max(b).max(c).max(d).max(e)
+}
+
+/// Viterbi profile-profile local-alignment score between query `q` and
+/// reference `r`. `bg` is the background residue frequency array (length `K`).
+pub fn compare_hmmer(q: &Hmm, r: &Hmm, bg: &[f32]) -> f32 {
+    let nq = q.mat.len(); // M_q + 1 (row 0 unused)
+    let nr = r.mat.len(); // M_r + 1
+    let k = q.abc_k;
+    if nq < 2 || nr < 2 {
+        return 0.0;
+    }
+
+    let qt: Vec<[f32; 7]> = q.t.iter().map(neg_log7).collect();
+    let rt: Vec<[f32; 7]> = r.t.iter().map(neg_log7).collect();
+
+    // scores[qi][ri][state]; boundary row/col stay 0 (local-alignment start).
+    let mut scores = vec![vec![[0.0f32; 5]; nr]; nq];
+    let mut best = 0.0f32;
+
+    for qi in 1..nq {
+        for ri in 1..nr {
+            // SMM: best diagonal predecessor (or a fresh local start at 0), plus the
+            // co-emission match score.
+            let smm_prev = max5(
+                scores[qi - 1][ri - 1][SMM] - qt[qi - 1][MM] - rt[ri - 1][MM],
+                scores[qi - 1][ri - 1][SMI] - qt[qi - 1][MM] - rt[ri - 1][IM],
+                scores[qi - 1][ri - 1][SIM] - qt[qi - 1][IM] - rt[ri - 1][MM],
+                scores[qi - 1][ri - 1][SDG] - qt[qi - 1][DM] - rt[ri - 1][MM],
+                scores[qi - 1][ri - 1][SGD] - qt[qi - 1][MM] - rt[ri - 1][DM],
+            )
+            .max(0.0);
+            let match_score = saa(&q.mat[qi], &r.mat[ri], bg, k);
+            let smm = smm_prev + match_score;
+            scores[qi][ri][SMM] = smm;
+
+            // SGD: gap in query, delete in reference.
+            let sgd = (scores[qi][ri - 1][SMM] - rt[ri - 1][MD])
+                .max(scores[qi][ri - 1][SGD] - rt[ri - 1][DD]);
+            scores[qi][ri][SGD] = sgd;
+
+            // SIM: insert in query relative to reference match.
+            let sim = (scores[qi][ri - 1][SMM] - qt[qi][MI] - rt[ri - 1][MM])
+                .max(scores[qi][ri - 1][SIM] - qt[qi][II] - rt[ri - 1][MM]);
+            scores[qi][ri][SIM] = sim;
+
+            // SDG: delete in query, gap in reference.
+            let sdg = (scores[qi - 1][ri][SMM] - qt[qi - 1][MD])
+                .max(scores[qi - 1][ri][SDG] - qt[qi - 1][DD]);
+            scores[qi][ri][SDG] = sdg;
+
+            // SMI: match in query, insert in reference.
+            let smi = (scores[qi - 1][ri][SMM] - qt[qi - 1][MM] - rt[ri][MI])
+                .max(scores[qi - 1][ri][SMI] - qt[qi - 1][MM] - rt[ri][II]);
+            scores[qi][ri][SMI] = smi;
+
+            best = best.max(max5(smm, smi, sim, sdg, sgd));
+        }
+    }
+    best
+}
+
+/// Backtrace sentinel for a local-alignment start (mirrors `_STOP_FLAG`).
+const STOP: u8 = u8::MAX;
+
+/// A rendered profile-profile alignment (HH-suite style three-line block).
+pub struct Alignment {
+    pub score: f32,
+    pub text: String,
+}
+
+/// HH-suite midline symbol for a per-column match log-odds score.
+fn midline_symbol(score: f32) -> char {
+    if score < -1.5 {
+        '='
+    } else if score < -0.5 {
+        '-'
+    } else if score < 0.5 {
+        '.'
+    } else if score < 1.5 {
+        '+'
+    } else {
+        '|'
+    }
+}
+
+/// Viterbi profile-profile alignment that also records the traceback and renders
+/// the alignment text. Mirrors `compare_hmmer` + `hmmer_search.traceback`.
+pub fn compare_hmmer_aligned(q: &Hmm, r: &Hmm, bg: &[f32]) -> Alignment {
+    let nq = q.mat.len();
+    let nr = r.mat.len();
+    let k = q.abc_k;
+    if nq < 2 || nr < 2 {
+        return Alignment { score: 0.0, text: String::new() };
+    }
+
+    let qt: Vec<[f32; 7]> = q.t.iter().map(neg_log7).collect();
+    let rt: Vec<[f32; 7]> = r.t.iter().map(neg_log7).collect();
+
+    let mut scores = vec![vec![[0.0f32; 5]; nr]; nq];
+    let mut bt = vec![vec![[STOP; 5]; nr]; nq];
+    let mut msc = vec![vec![0.0f32; nr]; nq];
+    let mut best = 0.0f32;
+    let mut max_index = (0usize, 0usize, SMM as u8);
+
+    for qi in 1..nq {
+        for ri in 1..nr {
+            // SMM with backtrace, replicating max6's exact tie-break order
+            // (STOP/SMM init, then SIM, SMI, SDG, SGD on strict >).
+            let cmm = scores[qi - 1][ri - 1][SMM] - qt[qi - 1][MM] - rt[ri - 1][MM];
+            let cmi = scores[qi - 1][ri - 1][SMI] - qt[qi - 1][MM] - rt[ri - 1][IM];
+            let cim = scores[qi - 1][ri - 1][SIM] - qt[qi - 1][IM] - rt[ri - 1][MM];
+            let cdg = scores[qi - 1][ri - 1][SDG] - qt[qi - 1][DM] - rt[ri - 1][MM];
+            let cgd = scores[qi - 1][ri - 1][SGD] - qt[qi - 1][MM] - rt[ri - 1][DM];
+            let (mut sc, mut layer): (f32, u8) =
+                if 0.0 > cmm { (0.0, STOP) } else { (cmm, SMM as u8) };
+            if cim > sc {
+                sc = cim;
+                layer = SIM as u8;
+            }
+            if cmi > sc {
+                sc = cmi;
+                layer = SMI as u8;
+            }
+            if cdg > sc {
+                sc = cdg;
+                layer = SDG as u8;
+            }
+            if cgd > sc {
+                sc = cgd;
+                layer = SGD as u8;
+            }
+            let match_score = saa(&q.mat[qi], &r.mat[ri], bg, k);
+            msc[qi][ri] = match_score;
+            scores[qi][ri][SMM] = sc + match_score;
+            bt[qi][ri][SMM] = layer;
+
+            // SGD
+            let a = scores[qi][ri - 1][SMM] - rt[ri - 1][MD];
+            let b = scores[qi][ri - 1][SGD] - rt[ri - 1][DD];
+            scores[qi][ri][SGD] = a.max(b);
+            bt[qi][ri][SGD] = if a > b { SMM as u8 } else { SGD as u8 };
+
+            // SIM
+            let a = scores[qi][ri - 1][SMM] - qt[qi][MI] - rt[ri - 1][MM];
+            let b = scores[qi][ri - 1][SIM] - qt[qi][II] - rt[ri - 1][MM];
+            scores[qi][ri][SIM] = a.max(b);
+            bt[qi][ri][SIM] = if a > b { SMM as u8 } else { SIM as u8 };
+
+            // SDG
+            let a = scores[qi - 1][ri][SMM] - qt[qi - 1][MD];
+            let b = scores[qi - 1][ri][SDG] - qt[qi - 1][DD];
+            scores[qi][ri][SDG] = a.max(b);
+            bt[qi][ri][SDG] = if a > b { SMM as u8 } else { SDG as u8 };
+
+            // SMI
+            let a = scores[qi - 1][ri][SMM] - qt[qi - 1][MM] - rt[ri][MI];
+            let b = scores[qi - 1][ri][SMI] - qt[qi - 1][MM] - rt[ri][II];
+            scores[qi][ri][SMI] = a.max(b);
+            bt[qi][ri][SMI] = if a > b { SMM as u8 } else { SMI as u8 };
+
+            // argmax (C-order: state layer 0..4) with strict-> (first occurrence wins).
+            for layer in 0..5usize {
+                if scores[qi][ri][layer] > best {
+                    best = scores[qi][ri][layer];
+                    max_index = (qi, ri, layer as u8);
+                }
+            }
+        }
+    }
+
+    let text = render_traceback(q, r, &bt, &msc, max_index);
+    Alignment { score: best, text }
+}
+
+const POSITION_PADDING: usize = 10;
+
+/// Render the three-line alignment block by walking the backtrace from `start`.
+fn render_traceback(
+    q: &Hmm,
+    r: &Hmm,
+    bt: &[Vec<[u8; 5]>],
+    msc: &[Vec<f32>],
+    start: (usize, usize, u8),
+) -> String {
+    let qcons = q.consensus.as_deref().unwrap_or(&[]);
+    let rcons = r.consensus.as_deref().unwrap_or(&[]);
+    let qc = |i: usize| -> char { qcons.get(i).map(|&b| b as char).unwrap_or('?') };
+    let rc = |i: usize| -> char { rcons.get(i).map(|&b| b as char).unwrap_or('?') };
+
+    let (qend, rend) = (start.0, start.1);
+    let (mut qstart, mut rstart) = (start.0, start.1);
+    let mut ptr = start;
+    let mut prev = bt[ptr.0][ptr.1][ptr.2 as usize];
+
+    let mut qline: Vec<char> = Vec::new();
+    let mut midline: Vec<char> = Vec::new();
+    let mut rline: Vec<char> = Vec::new();
+
+    loop {
+        let (qi, ri, layer) = ptr;
+        let next: (usize, usize, u8) = match layer as usize {
+            SMM => {
+                qline.push(qc(qi));
+                rline.push(rc(ri));
+                qstart = qi;
+                rstart = ri;
+                midline.push(midline_symbol(msc[qi][ri]));
+                (qi - 1, ri - 1, prev)
+            }
+            SMI => {
+                qline.push(qc(qi));
+                rline.push('-');
+                midline.push(' ');
+                qstart = qi;
+                (qi - 1, ri, prev)
+            }
+            SIM => {
+                qline.push('-');
+                rline.push(rc(ri));
+                midline.push(' ');
+                rstart = ri;
+                (qi, ri - 1, prev)
+            }
+            SDG => {
+                qline.push(qc(qi));
+                rline.push('-');
+                midline.push(' ');
+                qstart = qi;
+                (qi - 1, ri, prev)
+            }
+            SGD => {
+                qline.push('-');
+                rline.push(rc(ri));
+                midline.push(' ');
+                rstart = ri;
+                (qi, ri - 1, prev)
+            }
+            _ => unreachable!(),
+        };
+        if prev == STOP {
+            break;
+        }
+        ptr = next;
+        prev = bt[ptr.0][ptr.1][ptr.2 as usize];
+    }
+
+    let rev: fn(&[char]) -> String = |v| v.iter().rev().collect();
+    let pad = POSITION_PADDING;
+    format!(
+        "{:<pad$}{}{:>pad$}\n{}{}{}\n{:<pad$}{}{:>pad$}",
+        qstart.to_string(),
+        rev(&qline),
+        qend.to_string(),
+        " ".repeat(pad),
+        rev(&midline),
+        " ".repeat(pad),
+        rstart.to_string(),
+        rev(&rline),
+        rend.to_string(),
+        pad = pad,
+    )
+}
+
+/// Score every query HMM against every reference HMM, keeping pairs with
+/// `score > lb`. `query == subject` orientation: row = input HMM, col = reference HMM.
+pub fn hmm_compare_scores(query: &[Hmm], reference: &[Hmm], lb: f64) -> Vec<CmpResult> {
+    if query.is_empty() || reference.is_empty() {
+        return Vec::new();
+    }
+    let abc = Alphabet::new(query[0].abc_type);
+    let bg = Bg::new(&abc);
+
+    // Each (query, reference) comparison is independent; parallelize over queries
+    // (the bg and reference set are shared read-only).
+    query
+        .par_iter()
+        .flat_map_iter(|q| {
+            let mut row = Vec::new();
+            for r in reference {
+                let score = round2(compare_hmmer(q, r, &bg.f) as f64);
+                if score <= lb {
+                    continue;
+                }
+                row.push(CmpResult { score, query: q.name.clone(), subject: r.name.clone() });
+            }
+            row.into_iter()
+        })
+        .collect()
+}

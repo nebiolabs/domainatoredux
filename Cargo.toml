@@ -11,6 +11,7 @@ rust-version = "1.89"
 [workspace.dependencies]
 hmmer-pure-rs = "0.7"
 hdf5-pure = "0.20"
+rayon = "1"
 bgzf = "0.3"
 libdeflater = "1.25"
 memchr = "2"
@@ -22,3 +23,10 @@ clap = { version = "4", features = ["derive"] }
 opt-level = 3
 lto = true
 codegen-units = 1
+
+# Vendored hdf5-pure carrying a local patch: a scalar variable-length UTF-8
+# string attribute (`AttrValue::VarLenUtf8`) so the matrix HDF5 attrs
+# (ARRAY_TYPE/DATA_TYPE/MATRIX_FILE_VERSION) read back as Python `str`, which
+# the published 0.20.0 only exposes as fixed-length strings (h5py -> bytes).
+[patch.crates-io]
+hdf5-pure = { path = "vendor/hdf5-pure" }

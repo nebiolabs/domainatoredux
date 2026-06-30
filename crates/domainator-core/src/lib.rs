@@ -6,6 +6,8 @@
 
 pub mod seq;
 pub mod io;
+pub mod matrix;
+pub mod parallel;
 pub mod search;
 pub mod tools;
 

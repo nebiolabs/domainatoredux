@@ -217,6 +217,7 @@ dependencies = [
  "hmmer-pure-rs",
  "libdeflater",
  "memchr",
+ "rayon",
  "thiserror 2.0.18",
 ]
 
@@ -245,8 +246,6 @@ dependencies = [
 [[package]]
 name = "hdf5-pure"
 version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f3407818fd0cf883f3b40ebccde6d21c7704c8de3c669fb2def67c6296d2526"
 dependencies = [
  "byteorder",
  "flate2",

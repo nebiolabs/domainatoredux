@@ -59,15 +59,15 @@ pub fn write_dense(path: &str, m: &DataMatrix) -> io::Result<()> {
     let symmetric = m.symmetric_labels();
 
     let mut builder = FileBuilder::new();
-    builder.set_attr(MATRIX_FILE_VERSION_ATTR, AttrValue::String(MATRIX_FILE_VERSION.into()));
-    builder.set_attr(ARRAY_TYPE_ATTR, AttrValue::String(DENSE.into()));
+    builder.set_attr(MATRIX_FILE_VERSION_ATTR, AttrValue::VarLenUtf8(MATRIX_FILE_VERSION.into()));
+    builder.set_attr(ARRAY_TYPE_ATTR, AttrValue::VarLenUtf8(DENSE.into()));
     builder
         .create_dataset(DENSE_DATA)
         .with_f64_data(&flat)
         .with_shape(&[nr as u64, nc as u64]);
     add_labels_and_lengths(&mut builder, m, symmetric);
     builder.set_attr(SYMMETRIC_LABELS_ATTR, AttrValue::I64(symmetric as i64));
-    builder.set_attr(DATA_TYPE_ATTR, AttrValue::String(m.data_type.clone()));
+    builder.set_attr(DATA_TYPE_ATTR, AttrValue::VarLenUtf8(m.data_type.clone()));
     builder.write(Path::new(path)).map_err(write_err)
 }
 
@@ -98,13 +98,13 @@ pub fn write_sparse(path: &str, m: &DataMatrix) -> io::Result<()> {
     };
 
     let mut builder = FileBuilder::new();
-    builder.set_attr(MATRIX_FILE_VERSION_ATTR, AttrValue::String(MATRIX_FILE_VERSION.into()));
-    builder.set_attr(ARRAY_TYPE_ATTR, AttrValue::String(SPARSE_CSR.into()));
+    builder.set_attr(MATRIX_FILE_VERSION_ATTR, AttrValue::VarLenUtf8(MATRIX_FILE_VERSION.into()));
+    builder.set_attr(ARRAY_TYPE_ATTR, AttrValue::VarLenUtf8(SPARSE_CSR.into()));
     builder.create_dataset(SPARSE_VALUES).with_f64_data(&values);
     builder.create_dataset(SPARSE_CSR_INDICES).with_i32_data(&indices);
     builder.create_dataset(SPARSE_CSR_INDPTR).with_i32_data(&indptr);
     add_labels_and_lengths(&mut builder, m, symmetric);
     builder.set_attr(SYMMETRIC_LABELS_ATTR, AttrValue::I64(symmetric as i64));
-    builder.set_attr(DATA_TYPE_ATTR, AttrValue::String(m.data_type.clone()));
+    builder.set_attr(DATA_TYPE_ATTR, AttrValue::VarLenUtf8(m.data_type.clone()));
     builder.write(Path::new(path)).map_err(write_err)
 }

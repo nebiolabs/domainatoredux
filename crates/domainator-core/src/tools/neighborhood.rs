@@ -1,0 +1,829 @@
+//! Gene-neighborhood extraction for `domain_search` (the `select_by_cds`
+//! `_from_domain_search` path): given a Domainator-annotated contig with CDS
+//! hits, emit the contig region around each hit CDS — `--cds_range` (N CDSs
+//! up/downstream) or `--kb_range` (kb up/downstream), or the whole contig.
+//!
+//! Faithful port of `domainator.select_by_cds.{get_cds_neighborhood,select_by_cds}`
+//! plus `utils.{pad_location,slice_record_from_location}` and
+//! `select_by_cds.pad_circular_cds`, for linear and circular topologies, with
+//! `normalize_direction` (reverse-complement reverse-strand neighborhoods).
+
+use crate::seq::location::{CompoundOp, Location};
+use crate::seq::translate::revcomp;
+use crate::seq::{SeqFeature, SeqRecord, Topology};
+use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
+
+/// Which neighborhood window to extract.
+#[derive(Clone, Copy)]
+pub enum Range {
+    /// `(upstream, downstream)` count of CDSs.
+    Cds(i64, i64),
+    /// `(upstream, downstream)` in kb.
+    Kb(f64, f64),
+    /// The whole contig.
+    Whole,
+    /// Just the hit CDS.
+    None,
+}
+
+/// A single-part location envelope: half-open `[start, end)` with a strand.
+#[derive(Clone, Copy, Debug)]
+struct Env {
+    start: i64,
+    end: i64,
+    strand: i32,
+}
+
+/// A CDS on the contig. `intervals` are its forward sub-spans (within `[0,L)`),
+/// so an origin-crossing CDS keeps both pieces.
+struct Cds {
+    intervals: Vec<(i64, i64)>,
+    strand: i32,
+    /// `cds_id` (`get_cds_unique_name`), used to attach domain features.
+    cds_id: String,
+    /// True if this CDS carries a `Domain_Search` best-hit feature.
+    is_focus: bool,
+}
+
+impl Cds {
+    /// Lowest forward coordinate (ignores origin wrap).
+    fn start(&self) -> i64 {
+        self.intervals.iter().map(|x| x.0).min().unwrap_or(0)
+    }
+    /// Highest forward coordinate (ignores origin wrap).
+    fn end(&self) -> i64 {
+        self.intervals.iter().map(|x| x.1).max().unwrap_or(0)
+    }
+    /// Sort key matching Python's `location.stranded_start`: the gene's reading
+    /// start — `end` of the covering arc on the reverse strand, else `start`.
+    fn sort_key(&self, l: i64) -> i64 {
+        let (a, b) = min_covering_arc(&self.intervals, l);
+        if self.strand == -1 {
+            b.rem_euclid(l)
+        } else {
+            a.rem_euclid(l)
+        }
+    }
+}
+
+/// Minimal arc covering `intervals` on a circle of length `l` — the circle minus
+/// its largest empty gap. Returns `(lo, hi)` unwrapped: `hi - lo` is the arc
+/// length (`<= l`) and `hi` may exceed `l` when the arc crosses the origin.
+/// Correctly collapses an origin-crossing gene (e.g. `[0,130)+[1842,2552)`) into a
+/// single arc (`[1842, 2682)`).
+fn min_covering_arc(intervals: &[(i64, i64)], l: i64) -> (i64, i64) {
+    let mut segs: Vec<(i64, i64)> =
+        intervals.iter().map(|&(s, e)| if s <= e { (s, e) } else { (e, s) }).collect();
+    segs.sort();
+    let mut merged: Vec<(i64, i64)> = Vec::new();
+    for (s, e) in segs {
+        if let Some(last) = merged.last_mut() {
+            if s <= last.1 {
+                last.1 = last.1.max(e);
+                continue;
+            }
+        }
+        merged.push((s, e));
+    }
+    let n = merged.len();
+    if n == 0 {
+        return (0, 0);
+    }
+    if n == 1 {
+        return (merged[0].0, merged[0].1);
+    }
+    // Largest circular gap between consecutive merged segments.
+    let (mut max_gap, mut gap_after) = (-1i64, 0usize);
+    for i in 0..n {
+        let gap_start = merged[i].1;
+        let gap_end = if i + 1 == n { merged[0].0 + l } else { merged[i + 1].0 };
+        let gap = gap_end - gap_start;
+        if gap > max_gap {
+            max_gap = gap;
+            gap_after = i;
+        }
+    }
+    let lo = merged[(gap_after + 1) % n].0;
+    let mut hi = merged[gap_after].1;
+    if hi <= lo {
+        hi += l;
+    }
+    (lo, hi)
+}
+
+/// A gene arc `[a, b)` (b may exceed `l`) as forward sub-parts within `[0, l)`,
+/// high part first then the wrapped low part — the order Python's
+/// `circular_envelope` produces for an origin-crossing gene.
+fn arc_to_forward_parts(a: i64, b: i64, l: i64) -> Vec<(i64, i64)> {
+    if b <= l {
+        vec![(a, b)]
+    } else {
+        vec![(a, l), (0, b - l)]
+    }
+}
+
+/// Directed circular envelope of forward intervals taken **in connection order**
+/// (left neighbor → focus → right neighbor), mirroring `circular_envelope` for the
+/// all-forward case: each part is extended forward to the next, crossing the origin
+/// when the next part lies behind it. Returns the covering arc as `(w_lo, w_hi)`
+/// unwrapped (`w_hi - w_lo >= l` means the whole circle).
+fn ordered_circular_envelope(parts: &[(i64, i64)], l: i64) -> (i64, i64) {
+    let mut acc: Vec<(i64, i64)> = vec![parts[0]];
+    for &(ns, ne) in &parts[1..] {
+        let (ts, te) = *acc.last().unwrap();
+        let touches = ns <= te && ts <= ne;
+        if touches || ns >= te {
+            let last = acc.last_mut().unwrap();
+            *last = (ts.min(ns), te.max(ne));
+        } else {
+            // Next part lies behind the current end: cross the origin.
+            acc.last_mut().unwrap().1 = l;
+            acc.push((0, ne));
+        }
+    }
+    acc.sort();
+    let mut merged: Vec<(i64, i64)> = Vec::new();
+    for (s, e) in acc {
+        if let Some(last) = merged.last_mut() {
+            if s <= last.1 {
+                last.1 = last.1.max(e);
+                continue;
+            }
+        }
+        merged.push((s, e));
+    }
+    if merged.len() == 1 {
+        return (merged[0].0, merged[0].1);
+    }
+    // Two parts -> origin-crossing arc [(0, x), (y, l)] => window [y, x + l).
+    (merged[1].0, merged[0].1 + l)
+}
+
+/// Turn an unwrapped window `[w_lo, w_hi)` (length `<= l`) into a [`SliceLoc`]:
+/// forward sub-parts within `[0, l)` sorted ascending, tagged `strand`, with the
+/// stranded `(name_start, name_end)` for the coordinate suffix.
+fn build_slice_from_window(w_lo: i64, w_hi: i64, l: i64, strand: i32) -> SliceLoc {
+    let len = (w_hi - w_lo).min(l);
+    let lo0 = w_lo.rem_euclid(l);
+    let mut parts: Vec<Env> = Vec::new();
+    let first_end = (lo0 + len).min(l);
+    parts.push(Env { start: lo0, end: first_end, strand });
+    let rem = len - (first_end - lo0);
+    if rem > 0 {
+        parts.push(Env { start: 0, end: rem, strand });
+    }
+    parts.sort_by_key(|p| p.start);
+    let first = parts[0];
+    let last = *parts.last().unwrap();
+    let (ns, ne) = if strand == -1 { (first.end, last.start) } else { (first.start, last.end) };
+    SliceLoc { parts, name_start: ns, name_end: ne, overall_strand: strand }
+}
+
+/// Recompute a CDS feature's `cds_id` (1-based strand-aware coords), matching
+/// `utils.get_cds_unique_name` so we can pair CDS features with the `cds_id`
+/// qualifier carried on `Domainator`/`Domain_Search` features.
+fn cds_unique_name(feature: &SeqFeature) -> String {
+    let parts: Vec<String> = feature
+        .location
+        .parts
+        .iter()
+        .map(|&(s, e, strand, _, _)| {
+            let (lo, hi) = if s <= e { (s, e) } else { (e, s) };
+            if strand == -1 {
+                format!("{}_{}_{}", hi, strand, lo + 1)
+            } else {
+                format!("{}_{}_{}", lo + 1, strand, hi)
+            }
+        })
+        .collect();
+    parts.join(" ")
+}
+
+/// Slice `[lo, hi)` of `contig`, reverse-complemented when `strand == -1`.
+fn extract(contig: &[u8], lo: i64, hi: i64, strand: i32) -> Vec<u8> {
+    let sub = &contig[lo as usize..hi as usize];
+    if strand == -1 {
+        revcomp(sub)
+    } else {
+        sub.to_vec()
+    }
+}
+
+/// Pad a single-part `env` by `up`/`down` bases on a **linear** contig, clamped
+/// to `[0, rec_len)`; returns the padded part and `(upstream_ext, downstream_ext)`.
+fn pad_linear(env: Env, rec_len: i64, up: i64, down: i64) -> (Env, (i64, i64)) {
+    if up == 0 && down == 0 {
+        return (env, (0, 0));
+    }
+    if env.strand == -1 {
+        let min_coord = (env.start - down).max(0);
+        let down_ext = env.start - min_coord;
+        let max_coord = (env.end + up).min(rec_len);
+        let up_ext = max_coord - env.end;
+        (Env { start: min_coord, end: max_coord, strand: env.strand }, (up_ext, down_ext))
+    } else {
+        let min_coord = (env.start - up).max(0);
+        let up_ext = env.start - min_coord;
+        let max_coord = (env.end + down).min(rec_len);
+        let down_ext = max_coord - env.end;
+        (Env { start: min_coord, end: max_coord, strand: env.strand }, (up_ext, down_ext))
+    }
+}
+
+/// `pad_circular_cds`: indices of the left/right-most CDS in a circular CDS-range
+/// window around `center`, dividing overlap when the window wraps the origin.
+fn pad_circular_cds(center: i64, size: i64, left_pad: i64, right_pad: i64) -> (i64, i64) {
+    let (mut left_pad, mut right_pad) = (left_pad, right_pad);
+    if size == 1 {
+        left_pad = 0;
+        right_pad = 0;
+    }
+    let end_to_origin = size - (center + 1);
+    let mut min_coord = center - left_pad;
+    let mut max_coord = center + right_pad;
+    if min_coord >= 0 && max_coord < size {
+        return (min_coord, max_coord);
+    }
+    if min_coord < 0 && (-min_coord > end_to_origin) {
+        min_coord = -end_to_origin;
+    }
+    if max_coord >= size && (max_coord - size >= center) {
+        max_coord = size + (center - 1);
+    }
+    let min_shifted = 0;
+    let mut max_shifted = max_coord - min_coord;
+    let overlap = (max_shifted + 1) - size;
+    let mut min_shifted = min_shifted;
+    if overlap > 0 {
+        min_shifted += overlap / 2;
+        max_shifted -= overlap / 2;
+        if overlap % 2 == 1 {
+            max_shifted -= 1;
+        }
+    }
+    max_coord = max_shifted + min_coord;
+    min_coord = min_shifted + min_coord;
+    if min_coord < 0 {
+        min_coord += size;
+    }
+    (min_coord, max_coord.rem_euclid(size))
+}
+
+/// Resolve `--cds_range`/`--cds_up`/`--cds_down`/`--kb_range`/`--kb_up`/`--kb_down`
+/// into a [`Range`], mirroring `select_by_cds.validate_range`. `whole` overrides
+/// to the whole-contig window. Returns an error on conflicting/negative options.
+pub fn validate_range(
+    whole: bool,
+    kb_range: Option<f64>,
+    kb_up: Option<f64>,
+    kb_down: Option<f64>,
+    cds_range: Option<i64>,
+    cds_up: Option<i64>,
+    cds_down: Option<i64>,
+) -> Result<Range, String> {
+    let neg_f = |x: Option<f64>| x.is_some_and(|v| v < 0.0);
+    let neg_i = |x: Option<i64>| x.is_some_and(|v| v < 0);
+    if neg_f(kb_range) || neg_f(kb_up) || neg_f(kb_down) {
+        return Err("kb_range must be >= 0".into());
+    }
+    if neg_i(cds_range) || neg_i(cds_up) || neg_i(cds_down) {
+        return Err("cds_range must be >= 0".into());
+    }
+
+    let mut cds_seen = false;
+    let mut cds_out = (0i64, 0i64);
+    if cds_up.is_some() || cds_down.is_some() {
+        cds_seen = true;
+        cds_out = (cds_up.unwrap_or(0), cds_down.unwrap_or(0));
+    }
+    if let Some(c) = cds_range {
+        if cds_seen {
+            return Err("Cannot specify cds_range with cds_down or cds_up".into());
+        }
+        cds_seen = true;
+        cds_out = (c, c);
+    }
+
+    let kb_present = kb_range.is_some() || kb_up.is_some() || kb_down.is_some();
+    if cds_seen && kb_present {
+        return Err("Cannot specify kb_range and cds_range".into());
+    }
+
+    let mut kb_seen = false;
+    let mut kb_out = (0.0f64, 0.0f64);
+    if kb_up.is_some() || kb_down.is_some() {
+        kb_seen = true;
+        kb_out = (kb_up.unwrap_or(0.0), kb_down.unwrap_or(0.0));
+    }
+    if let Some(k) = kb_range {
+        if kb_seen {
+            return Err("Cannot specify kb_range with kb_down or kb_up".into());
+        }
+        kb_seen = true;
+        kb_out = (k, k);
+    }
+
+    if whole {
+        return Ok(Range::Whole);
+    }
+    if cds_seen {
+        Ok(Range::Cds(cds_out.0, cds_out.1))
+    } else if kb_seen {
+        Ok(Range::Kb(kb_out.0, kb_out.1))
+    } else {
+        Ok(Range::None)
+    }
+}
+
+/// Result of computing a neighborhood: the ordered slice parts (each
+/// `[start,end)` + strand) and the human-readable `(start, end)` for naming.
+struct SliceLoc {
+    parts: Vec<Env>,
+    name_start: i64,
+    name_end: i64,
+    overall_strand: i32,
+}
+
+/// Compute the slice location for the focus CDS at `focus_idx` in the
+/// stranded-start-sorted `cds_list`. Mirrors `get_cds_neighborhood`.
+fn cds_neighborhood(
+    rec_len: i64,
+    circular: bool,
+    cds_list: &[Cds],
+    focus_idx: usize,
+    range: Range,
+) -> SliceLoc {
+    let focus = &cds_list[focus_idx];
+    let strand = focus.strand;
+
+    if !circular {
+        let envelope = Env { start: focus.start(), end: focus.end(), strand };
+        let (mut up, mut down) = (0i64, 0i64);
+        match range {
+            Range::Whole => {
+                up = rec_len;
+                down = rec_len;
+            }
+            Range::Kb(u, d) => {
+                up = (u * 1000.0) as i64;
+                down = (d * 1000.0) as i64;
+            }
+            Range::Cds(cu, cd) => {
+                let n = cds_list.len() as i64;
+                let (left_cds, right_cds) = if strand == -1 {
+                    ((focus_idx as i64 - cd).max(0), (focus_idx as i64 + cu).min(n - 1))
+                } else {
+                    ((focus_idx as i64 - cu).max(0), (focus_idx as i64 + cd).min(n - 1))
+                };
+                let left_coord = cds_list[left_cds as usize].start();
+                let right_coord = cds_list[right_cds as usize].end();
+                let left_pad = (focus.start() - left_coord).max(0);
+                let right_pad = (right_coord - focus.end()).max(0);
+                if strand == -1 {
+                    up = right_pad;
+                    down = left_pad;
+                } else {
+                    up = left_pad;
+                    down = right_pad;
+                }
+            }
+            Range::None => {}
+        }
+        let (padded, _) = pad_linear(envelope, rec_len, up, down);
+        let (ns, ne) = if padded.strand == -1 {
+            (padded.end, padded.start)
+        } else {
+            (padded.start, padded.end)
+        };
+        return SliceLoc { parts: vec![padded], name_start: ns, name_end: ne, overall_strand: strand };
+    }
+
+    // Circular topology. Work with the gene's covering arc [A, B) (B may exceed L
+    // when the gene crosses the origin) and compute an unwrapped window [w_lo, w_hi).
+    let l = rec_len;
+    let (a, b) = min_covering_arc(&focus.intervals, l);
+    let (w_lo, w_hi) = match range {
+        Range::None => (a, b),
+        Range::Kb(u, d) => {
+            let (pu, pd) = ((u * 1000.0) as i64, (d * 1000.0) as i64);
+            if strand == -1 {
+                (a - pd, b + pu)
+            } else {
+                (a - pu, b + pd)
+            }
+        }
+        Range::Cds(cu, cd) => {
+            let n = cds_list.len() as i64;
+            let (li, ri) = if strand == -1 {
+                pad_circular_cds(focus_idx as i64, n, cd, cu)
+            } else {
+                pad_circular_cds(focus_idx as i64, n, cu, cd)
+            };
+            // Window = directed circular envelope of the left neighbor, focus, and
+            // right neighbor gene arcs, extended in that order (matching Python's
+            // `left_env + focus_env + right_env` then `circular_envelope`).
+            let arc = |c: &Cds| {
+                let (ca, cb) = min_covering_arc(&c.intervals, l);
+                arc_to_forward_parts(ca, cb, l)
+            };
+            let mut nbhd: Vec<(i64, i64)> = Vec::new();
+            nbhd.extend(arc(&cds_list[li as usize]));
+            nbhd.extend(arc_to_forward_parts(a, b, l));
+            nbhd.extend(arc(&cds_list[ri as usize]));
+            ordered_circular_envelope(&nbhd, l)
+        }
+        Range::Whole => (a, b), // replaced below
+    };
+
+    // Whole contig (or any window covering the full circle): the whole circle,
+    // split at the midpoint of the gap opposite the focus.
+    let is_whole = matches!(range, Range::Whole) || (w_hi - w_lo) >= l;
+    if is_whole {
+        let split = ((a + b + l) / 2).rem_euclid(l);
+        return build_slice_from_window(split, split + l, l, strand);
+    }
+    build_slice_from_window(w_lo, w_hi, l, strand)
+}
+
+/// Slice `rec` to `slice`, keeping `keep_features` that are fully contained
+/// (source features are truncated to the overlap), remapping coordinates. Port of
+/// `slice_record_from_location`.
+fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[SeqFeature]) -> SeqRecord {
+    // Build sequence and per-part coordinate shifts.
+    let mut seq = Vec::new();
+    let mut shifts = Vec::with_capacity(slice.parts.len());
+    let mut acc = 0i64;
+    for p in &slice.parts {
+        shifts.push(acc);
+        seq.extend(extract(&rec.seq, p.start, p.end, p.strand));
+        acc += p.end - p.start;
+    }
+
+    let mut new_features: Vec<SeqFeature> = Vec::new();
+    for f in keep_features {
+        let is_source = f.kind == "source";
+        let mut remapped_parts: Vec<(i64, i64, i32, bool, bool)> = Vec::new();
+        let mut all_contained = true;
+        for &(fs0, fe0, fstrand, before, after) in &f.location.parts {
+            let (fs, fe) = if fs0 <= fe0 { (fs0, fe0) } else { (fe0, fs0) };
+            let mut found = false;
+            for (li, lp) in slice.parts.iter().enumerate() {
+                let (ls, le) = (lp.start, lp.end);
+                let contained = ls <= fs && le >= fe;
+                let overlaps = fs < le && ls < fe;
+                if contained || (is_source && overlaps) {
+                    let new_start = (fs - ls).max(0);
+                    let new_end = (fe - ls).min(le - ls);
+                    let part_len = le - ls;
+                    let (mut a, mut b, mut st) = (new_start, new_end, fstrand);
+                    if lp.strand == -1 {
+                        // flip within this part
+                        let (fa, fb) = (part_len - b, part_len - a);
+                        a = fa;
+                        b = fb;
+                        st = -st;
+                    }
+                    a += shifts[li];
+                    b += shifts[li];
+                    remapped_parts.push((a, b, st, before, after));
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                all_contained = false;
+            }
+        }
+        if remapped_parts.is_empty() {
+            continue;
+        }
+        if !all_contained && !is_source {
+            continue;
+        }
+        // Sort parts by start to keep them ordered after a reverse-strand flip.
+        remapped_parts.sort_by_key(|p| p.0);
+        let operator = if remapped_parts.len() > 1 { Some(CompoundOp::Join) } else { None };
+        let location = Location { operator, between: false, parts: remapped_parts };
+        new_features.push(SeqFeature {
+            kind: f.kind.clone(),
+            location,
+            qualifiers: f.qualifiers.clone(),
+        });
+    }
+
+    // slice_record_from_location keeps only molecule_type, source, organism, and
+    // taxonomy (plus the accession identity for ACCESSION/VERSION); everything else
+    // (keywords, division, date, comment, references, structured_comment, ...) is
+    // dropped so the writer emits defaults, matching the Python slice.
+    let src = &rec.annotations;
+    let annotations = crate::seq::Annotations {
+        accessions: src.accessions.clone(),
+        sequence_version: src.sequence_version,
+        source: src.source.clone(),
+        organism: src.organism.clone(),
+        taxonomy: src.taxonomy.clone(),
+        ..Default::default()
+    };
+
+    let mut out = SeqRecord {
+        id: rec.id.clone(),
+        name: rec.name.clone(),
+        description: rec.description.clone(),
+        seq,
+        molecule_type: rec.molecule_type.clone(),
+        topology: Topology::Linear,
+        annotations,
+        features: new_features,
+    };
+    out.features.sort_by_key(|f| f.location.start());
+    out
+}
+
+/// Extract neighborhoods around every hit CDS in `rec` (a nucleotide contig that
+/// came out of `domainate(hits_only, best_annotation)`). Mirrors the
+/// `_from_domain_search` branch of `select_by_cds`.
+pub fn select_by_cds_hits(
+    rec: &SeqRecord,
+    range: Range,
+    normalize_direction: bool,
+    strand_filter: Option<i32>,
+    max_region_overlap: f64,
+) -> std::io::Result<Vec<SeqRecord>> {
+    let rec_len = rec.seq.len() as i64;
+    let circular = rec.topology == Topology::Circular;
+
+    // cds_ids carrying a Domain_Search best-hit feature (the focus CDSs).
+    let mut focus_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for f in &rec.features {
+        if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME {
+            if let Some(cid) = f.get_first("cds_id") {
+                focus_ids.insert(cid.to_string());
+            }
+        }
+    }
+
+    // Build the CDS list, keeping each CDS's forward intervals and cds_id.
+    let mut cds_list: Vec<Cds> = Vec::new();
+    for f in &rec.features {
+        if f.kind != "CDS" {
+            continue;
+        }
+        let cid = cds_unique_name(f);
+        let intervals: Vec<(i64, i64)> = f
+            .location
+            .parts
+            .iter()
+            .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
+            .collect();
+        let is_focus = focus_ids.contains(&cid);
+        cds_list.push(Cds { intervals, strand: f.location.strand(), cds_id: cid, is_focus });
+    }
+    // Sort by stranded_start (matches Python's cds_list ordering).
+    cds_list.sort_by_key(|c| c.sort_key(rec_len));
+
+    // Non-Domainator features (CDS, gene, source, ...) — slice_record filters these
+    // by containment. Domainator features and the focus Domain_Search feature are
+    // attached per CDS below.
+    let non_dom: Vec<&SeqFeature> = rec
+        .features
+        .iter()
+        .filter(|f| f.kind != DOMAIN_FEATURE_NAME && f.kind != DOMAIN_SEARCH_BEST_HIT_NAME)
+        .collect();
+    let dom_by_cid: Vec<(&SeqFeature, String)> = rec
+        .features
+        .iter()
+        .filter(|f| f.kind == DOMAIN_FEATURE_NAME)
+        .filter_map(|f| f.get_first("cds_id").map(|c| (f, c.to_string())))
+        .collect();
+    let search_by_cid: Vec<(&SeqFeature, String)> = rec
+        .features
+        .iter()
+        .filter(|f| f.kind == DOMAIN_SEARCH_BEST_HIT_NAME)
+        .filter_map(|f| f.get_first("cds_id").map(|c| (f, c.to_string())))
+        .collect();
+
+    let mut out: Vec<SeqRecord> = Vec::new();
+    let mut selected: Vec<SliceLoc> = Vec::new();
+
+    for focus_idx in 0..cds_list.len() {
+        let cds = &cds_list[focus_idx];
+        if !cds.is_focus {
+            continue;
+        }
+        if let Some(sf) = strand_filter {
+            if cds.strand != sf {
+                continue;
+            }
+        }
+        let focus_cid = cds.cds_id.clone();
+
+        let slice = cds_neighborhood(rec_len, circular, &cds_list, focus_idx, range);
+
+        // The set of cds_ids whose CDS is fully contained in the slice.
+        let contained: std::collections::HashSet<&str> = cds_list
+            .iter()
+            .filter(|c| slice_contains(&slice, &c.intervals))
+            .map(|c| c.cds_id.as_str())
+            .collect();
+
+        // Collect features: non-Domainator features (filtered by slice_record);
+        // Domainator features of contained CDSs; the focus CDS's Domain_Search feature.
+        let mut keep: Vec<SeqFeature> = non_dom.iter().map(|f| (*f).clone()).collect();
+        for &(domf, ref cid) in &dom_by_cid {
+            if contained.contains(cid.as_str()) {
+                keep.push(domf.clone());
+            }
+        }
+        for &(sf, ref cid) in &search_by_cid {
+            if *cid == focus_cid {
+                keep.push(sf.clone());
+            }
+        }
+
+        let mut region = slice_record(rec, &slice, &keep);
+
+        // Coordinate renaming and reverse-complement handling.
+        let (start, end) = (slice.name_start, slice.name_end);
+        let strand = slice.overall_strand;
+        // The coordinate suffix and `rc` marker go on the LOCUS name (Python's
+        // `record.id`, which the GenBank writer puts on the LOCUS line); the
+        // accession.version (`region.id`) is left unchanged.
+        let whole_fwd = start == 0 && end == rec_len && strand != -1;
+        let whole_rev = end == 0 && start == rec_len && strand == -1;
+        if !whole_fwd && !whole_rev {
+            region.name = format!("{}_{}:{}", region.name, start + 1, end);
+        }
+        if !normalize_direction && strand == -1 {
+            // Flip back to the original orientation.
+            region = reverse_complement_record(&region);
+        } else if strand == -1 {
+            region.name.push_str("rc");
+        }
+
+        if max_region_overlap < 1.0 {
+            let loc_len: i64 = slice.parts.iter().map(|p| p.end - p.start).sum();
+            let mut drop = false;
+            for other in &selected {
+                if (overlap_size(&slice, other) as f64 / loc_len as f64) > max_region_overlap {
+                    drop = true;
+                    break;
+                }
+            }
+            if drop {
+                continue;
+            }
+            selected.push(slice);
+        }
+        out.push(region);
+    }
+    Ok(out)
+}
+
+/// CDS display name: first present of `protein_id`/`gene_id`/`locus_tag`/`gene`,
+/// else the `cds_id`. Mirrors `utils.get_cds_name` with `extract_peptides`'
+/// precedence.
+fn get_cds_name(f: &SeqFeature) -> String {
+    for key in ["protein_id", "gene_id", "locus_tag", "gene"] {
+        if let Some(v) = f.get_first(key) {
+            return v.to_string();
+        }
+    }
+    cds_unique_name(f)
+}
+
+/// `--translate`: emit each hit CDS as a translated peptide record. Mirrors the
+/// `extract_peptides(_from_domain_search=True)` branch of `domain_search`. The
+/// peptide uses the CDS `/translation` qualifier when present, else a table-1
+/// translation; features are the contig's `source` features, the focus
+/// `Domain_Search` feature, the CDS's `Domainator` features, and the CDS itself
+/// (with `/translation` dropped and a `source_contig` qualifier), remapped to
+/// peptide coordinates.
+pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<SeqRecord> {
+    use crate::seq::translate::translate_dna;
+
+    let sources: Vec<&SeqFeature> = rec.features.iter().filter(|f| f.kind == "source").collect();
+    let mut search_by: std::collections::HashMap<String, &SeqFeature> =
+        std::collections::HashMap::new();
+    let mut dom_by: std::collections::HashMap<String, Vec<&SeqFeature>> =
+        std::collections::HashMap::new();
+    for f in &rec.features {
+        if let Some(cid) = f.get_first("cds_id") {
+            if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME {
+                search_by.insert(cid.to_string(), f);
+            } else if f.kind == DOMAIN_FEATURE_NAME {
+                dom_by.entry(cid.to_string()).or_default().push(f);
+            }
+        }
+    }
+
+    let mut out: Vec<SeqRecord> = Vec::new();
+    for f in &rec.features {
+        if f.kind != "CDS" {
+            continue;
+        }
+        let cid = cds_unique_name(f);
+        let Some(search) = search_by.get(&cid) else { continue };
+        let strand = f.location.strand();
+        if let Some(sf) = strand_filter {
+            if strand != sf {
+                continue;
+            }
+        }
+
+        // Slice the contig to the CDS (coding orientation), carrying the features.
+        let parts: Vec<Env> = f
+            .location
+            .parts
+            .iter()
+            .map(|&(s, e, st, _, _)| {
+                let (lo, hi) = if s <= e { (s, e) } else { (e, s) };
+                Env { start: lo, end: hi, strand: st }
+            })
+            .collect();
+        let slice = SliceLoc { parts, name_start: 0, name_end: 0, overall_strand: strand };
+
+        let mut cds_feat = f.clone();
+        cds_feat.qualifiers.retain(|(k, _)| k != "translation");
+        // `source_contig` is the contig's LOCUS name (Python's `contig.id` under the
+        // GenBank parser's LOCUS<->VERSION swap = our `name`).
+        cds_feat.set("source_contig", rec.name.clone());
+        let mut keep: Vec<SeqFeature> = sources.iter().map(|x| (*x).clone()).collect();
+        keep.push((*search).clone());
+        if let Some(ds) = dom_by.get(&cid) {
+            keep.extend(ds.iter().map(|d| (*d).clone()));
+        }
+        keep.push(cds_feat);
+
+        let mut region = slice_record(rec, &slice, &keep);
+
+        // Peptide sequence: the CDS `/translation` if present, else translate.
+        let pep = match f.get_first("translation") {
+            Some(t) if !t.is_empty() => t.to_string(),
+            _ => translate_dna(&region.seq),
+        };
+        region.seq = pep.into_bytes();
+        region.molecule_type = Some("protein".to_string());
+        // The peptide is named for the CDS, with no carried accession identity.
+        let name = get_cds_name(f);
+        region.id = name.clone();
+        region.name = name;
+        region.annotations.accessions.clear();
+        region.annotations.sequence_version = None;
+        // DNA -> peptide coordinates (start//3, end//3).
+        for feat in &mut region.features {
+            for p in &mut feat.location.parts {
+                p.0 /= 3;
+                p.1 /= 3;
+            }
+        }
+        out.push(region);
+    }
+    out
+}
+
+/// Whether every interval of a feature/CDS is fully contained in some slice part.
+fn slice_contains(slice: &SliceLoc, intervals: &[(i64, i64)]) -> bool {
+    intervals
+        .iter()
+        .all(|&(s, e)| slice.parts.iter().any(|p| p.start <= s && p.end >= e))
+}
+
+/// Total overlap (bp) between two slice locations.
+fn overlap_size(a: &SliceLoc, b: &SliceLoc) -> i64 {
+    let mut total = 0;
+    for pa in &a.parts {
+        for pb in &b.parts {
+            total += (pa.end.min(pb.end) - pa.start.max(pb.start)).max(0);
+        }
+    }
+    total
+}
+
+/// Reverse-complement a record in place (sequence + feature coordinates).
+fn reverse_complement_record(rec: &SeqRecord) -> SeqRecord {
+    let n = rec.seq.len() as i64;
+    let seq = revcomp(&rec.seq);
+    let mut features: Vec<SeqFeature> = rec
+        .features
+        .iter()
+        .map(|f| {
+            let parts = f
+                .location
+                .parts
+                .iter()
+                .map(|&(s, e, st, before, after)| {
+                    let (lo, hi) = if s <= e { (s, e) } else { (e, s) };
+                    (n - hi, n - lo, -st, after, before)
+                })
+                .collect();
+            let operator = f.location.operator;
+            SeqFeature {
+                kind: f.kind.clone(),
+                location: Location { operator, between: f.location.between, parts },
+                qualifiers: f.qualifiers.clone(),
+            }
+        })
+        .collect();
+    features.sort_by_key(|f| f.location.start());
+    SeqRecord { seq, features, ..rec.clone() }
+}

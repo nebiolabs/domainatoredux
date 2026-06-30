@@ -9,6 +9,7 @@ description = "Core data model, sequence I/O, and tool logic for the Domainator 
 [dependencies]
 hmmer-pure-rs.workspace = true
 hdf5-pure.workspace = true
+rayon.workspace = true
 bgzf.workspace = true
 libdeflater.workspace = true
 memchr.workspace = true

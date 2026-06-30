@@ -1,10 +1,10 @@
 //! `domain_search`: search a few references against a large (possibly sharded,
 //! BGZF-compressed, `.didx`-indexed) database, returning the hit contigs.
 //!
-//! M2 scope: the protein / `--whole_contig` SSN-feeding path. Each partition is
-//! seek-read independently and run through the `domainate` core with
-//! `hits_only=true, best_annotation=true`; neighborhood extraction
-//! (`--cds_range`/`--kb_range`) is deferred.
+//! Each partition is seek-read independently and run through the `domainate` core
+//! with `hits_only=true, best_annotation=true`. Nucleotide hits are then passed
+//! through neighborhood extraction (`--cds_range`/`--kb_range`/`--whole_contig`,
+//! default: the hit CDS), mirroring the Python `select_by_cds` step.
 
 use std::path::Path;
 
@@ -14,6 +14,7 @@ use crate::io::{detect_compression, detect_filetype, fasta, genbank::GenbankRead
 use crate::search::hmmer::HmmDb;
 use crate::seq::SeqRecord;
 use crate::tools::domainate::{domainate, DomainateOptions};
+use crate::tools::neighborhood::{select_by_cds_hits, Range};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
 /// Options for [`domain_search`].
@@ -30,6 +31,19 @@ pub struct DomainSearchOptions {
     pub batch_size: u64,
     /// Default molecule type for inputs lacking one (FASTA / unit-less LOCUS).
     pub fasta_type: String,
+    /// Worker threads (`0` = all available cores).
+    pub cpu: usize,
+    /// Neighborhood extraction for nucleotide hits (`Whole` = whole contig).
+    pub range: Range,
+    /// Reverse-complement reverse-strand neighborhoods so the hit reads forward.
+    pub normalize_direction: bool,
+    /// Restrict hit CDSs to a strand (`Some(1)`/`Some(-1)`); `None` = both.
+    pub strand: Option<i32>,
+    /// Max fractional overlap between emitted regions (`>= 1` disables).
+    pub max_region_overlap: f64,
+    /// Translate nucleotide CDS hits to peptide records (incompatible with
+    /// neighborhood extraction; `range` must be `None`).
+    pub translate: bool,
 }
 
 impl Default for DomainSearchOptions {
@@ -43,6 +57,12 @@ impl Default for DomainSearchOptions {
             max_hits: None,
             batch_size: 10000,
             fasta_type: "protein".to_string(),
+            cpu: 0,
+            range: Range::None,
+            normalize_direction: true,
+            strand: None,
+            max_region_overlap: 1.0,
+            translate: false,
         }
     }
 }
@@ -82,8 +102,10 @@ pub fn domain_search(
     hmm_dbs: &[HmmDb],
     opts: &DomainSearchOptions,
 ) -> std::io::Result<Vec<SeqRecord>> {
-    let mut out: Vec<SeqRecord> = Vec::new();
-
+    // Collect every partition across all inputs/shards, then process them in
+    // parallel (each is read independently via its own file handle / BGZF offset).
+    let mut parts = Vec::new();
+    let mut total_cds: u64 = 0;
     for input in input_files {
         let shards = resolve_database_shards(Path::new(input))
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
@@ -98,26 +120,63 @@ pub fn domain_search(
                 )
             })?;
             let compression = detect_compression(&shard);
-            let (_total, parts) =
+            let (shard_total, shard_parts) =
                 partition_seqfile(shard_str, filetype, compression, opts.batch_size)?;
+            total_cds += shard_total;
+            parts.extend(shard_parts);
+        }
+    }
 
-            for p in parts {
+    // `-Z 0` means "use the actual total target count" for per-sequence E-values
+    // (the `.didx` headers / offset scan already gave us the per-shard totals).
+    let z = if opts.z == 0.0 { total_cds as f64 } else { opts.z };
+
+    let dopts = DomainateOptions {
+        z,
+        evalue: opts.evalue,
+        min_evalue: opts.min_evalue,
+        max_overlap: opts.max_overlap,
+        best_annotation: true,
+        no_annotations: !opts.add_annotations,
+        hits_only: true,
+        ..Default::default()
+    };
+
+    // Parallel map preserves partition order; results are concatenated in order.
+    let per_part: Vec<std::io::Result<Vec<SeqRecord>>> = crate::parallel::with_threads(opts.cpu, || {
+        use rayon::prelude::*;
+        parts
+            .par_iter()
+            .map(|p| {
                 let records = read_partition(
                     &p.path, p.offset, p.n_records, p.filetype, p.compressed, &opts.fasta_type,
                 )?;
-                let dopts = DomainateOptions {
-                    z: opts.z,
-                    evalue: opts.evalue,
-                    min_evalue: opts.min_evalue,
-                    max_overlap: opts.max_overlap,
-                    best_annotation: true,
-                    no_annotations: !opts.add_annotations,
-                    hits_only: true,
-                    ..Default::default()
-                };
-                out.extend(domainate(records, hmm_dbs, &dopts));
-            }
-        }
+                let mut emitted = Vec::new();
+                for rec in domainate(records, hmm_dbs, &dopts) {
+                    // Protein hits pass through whole; nucleotide hits go through
+                    // neighborhood extraction.
+                    if rec.molecule_type.as_deref() == Some("protein") {
+                        emitted.push(rec);
+                    } else if opts.translate {
+                        emitted.extend(crate::tools::neighborhood::translate_peptides(&rec, opts.strand));
+                    } else {
+                        emitted.extend(select_by_cds_hits(
+                            &rec,
+                            opts.range,
+                            opts.normalize_direction,
+                            opts.strand,
+                            opts.max_region_overlap,
+                        )?);
+                    }
+                }
+                Ok(emitted)
+            })
+            .collect()
+    });
+
+    let mut out: Vec<SeqRecord> = Vec::new();
+    for part_result in per_part {
+        out.extend(part_result?);
     }
 
     if let Some(max_hits) = opts.max_hits {

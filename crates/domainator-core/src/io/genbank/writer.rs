@@ -159,22 +159,24 @@ fn write_qualifier<W: Write>(w: &mut W, key: &str, value: &str, has_value: bool)
         // GenBank escapes a literal `"` by doubling it.
         format!("/{key}=\"{}\"", value.replace('"', "\"\""))
     };
-    // Soft-wrap at 79 columns on whitespace where possible.
-    let mut remaining = line.as_str();
+    // Wrap at word (space) boundaries only — never split a long token, matching
+    // Biopython's `break_long_words=False`. Breaking mid-token would make the reader
+    // rejoin the pieces with a spurious space.
     let width = 79 - INDENT.len();
-    loop {
-        if remaining.len() <= width {
-            writeln!(w, "{INDENT}{remaining}")?;
-            break;
+    let mut cur = String::new();
+    for word in line.split(' ') {
+        if cur.is_empty() {
+            cur.push_str(word);
+        } else if cur.len() + 1 + word.len() <= width {
+            cur.push(' ');
+            cur.push_str(word);
+        } else {
+            writeln!(w, "{INDENT}{cur}")?;
+            cur.clear();
+            cur.push_str(word);
         }
-        let mut cut = remaining[..width].rfind(' ').unwrap_or(width);
-        if cut == 0 {
-            cut = width;
-        }
-        writeln!(w, "{INDENT}{}", &remaining[..cut])?;
-        remaining = remaining[cut..].trim_start_matches(' ');
     }
-    Ok(())
+    writeln!(w, "{INDENT}{cur}")
 }
 
 fn write_feature<W: Write>(w: &mut W, feature: &SeqFeature) -> io::Result<()> {
