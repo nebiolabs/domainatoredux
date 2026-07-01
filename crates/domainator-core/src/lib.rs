@@ -4,11 +4,12 @@
 //! it), mirroring the Python suite's "every tool is also a library function"
 //! convention. See `/home/sean/.claude/plans/make-a-plan-for-kind-brooks.md`.
 
-pub mod seq;
+pub mod app_support;
 pub mod io;
 pub mod matrix;
 pub mod parallel;
 pub mod search;
+pub mod seq;
 pub mod tools;
 
 /// Feature type for domain annotations added by domainate/domain_search

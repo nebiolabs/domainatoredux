@@ -1,0 +1,23 @@
+[package]
+name = "domainator-genbank-summary"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Small Tauri app for summarizing GenBank records by taxid or definition."
+
+[lib]
+name = "domainator_genbank_summary"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "domainator-genbank-summary"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+domainator-core = { path = "../../../crates/domainator-core" }
+rfd = "0.17.2"
+tauri = { version = "2.11.4", features = [] }

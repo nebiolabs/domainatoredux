@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Domainator GenBank Summary</title>
+  </head>
+  <body>
+    <main id="app">
+      <section class="workspace">
+        <header class="masthead">
+          <div>
+            <p class="eyebrow">Domainator</p>
+            <h1>GenBank summary</h1>
+          </div>
+          <button id="open-input" type="button">Choose GenBank</button>
+        </header>
+
+        <div class="input-path" id="input-path">No file selected</div>
+
+        <form class="controls" id="summary-form">
+          <label>
+            Group by
+            <select id="group-by">
+              <option value="taxid">taxid</option>
+              <option value="definition">Definition</option>
+            </select>
+          </label>
+
+          <label>
+            Domain names
+            <input id="domain-names" type="text" placeholder="PF00005, PF13193" autocomplete="off" />
+          </label>
+
+          <label>
+            Evalue threshold
+            <input id="evalue" type="number" value="0.001" min="0" step="any" />
+          </label>
+
+          <div class="actions">
+            <button id="run-summary" type="submit" disabled>Run</button>
+            <button id="save-output" type="button" disabled>Save TSV</button>
+          </div>
+        </form>
+
+        <div class="status" id="status" role="status"></div>
+        <textarea id="preview" spellcheck="false" readonly placeholder="TSV preview will appear here"></textarea>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

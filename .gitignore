@@ -1,2 +1,12 @@
 external/*
 target/*
+
+# Frontend/Tauri app dependencies and generated build artifacts.
+apps/*/node_modules/
+apps/*/dist/
+apps/*/src-tauri/gen/
+apps/*/src-tauri/target/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
