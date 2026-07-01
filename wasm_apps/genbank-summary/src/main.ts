@@ -55,9 +55,12 @@ function decodeBase64Bytes(base64: string): Uint8Array {
 
 async function loadWasm(): Promise<WasmExports> {
   if (!wasmPromise) {
-    wasmPromise = WebAssembly.instantiate(decodeBase64Bytes(wasmBase64), {}).then(
-      (instance) => instance.exports as WasmExports,
-    );
+    wasmPromise = WebAssembly.instantiate(decodeBase64Bytes(wasmBase64), {}).then((rawResult: unknown) => {
+      const instance = rawResult instanceof WebAssembly.Instance
+        ? rawResult
+        : (rawResult as WebAssembly.WebAssemblyInstantiatedSource).instance;
+      return instance.exports as WasmExports;
+    });
   }
   return wasmPromise;
 }
