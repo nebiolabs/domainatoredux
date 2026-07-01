@@ -18,6 +18,10 @@ memchr = "2"
 thiserror = "2"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"
 
 [profile.release]
 opt-level = 3

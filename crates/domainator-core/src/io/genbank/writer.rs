@@ -215,6 +215,50 @@ fn write_sequence<W: Write>(w: &mut W, seq: &[u8]) -> io::Result<()> {
 }
 
 /// Write a single record in GenBank format.
+/// Rebuild each CDS feature's `domainator_<db>` rollup qualifier from the
+/// `Domainator` features (in their current order, grouped by database), and drop
+/// stale `domainator_*` qualifiers. Mirrors `utils.write_genbank`'s
+/// `add_domain_cds_annotations` (and `tools::domainate::add_domain_cds_annotations`),
+/// so pass-through tools reproduce the original's rollup ordering.
+fn regenerate_domain_rollups(features: &mut [SeqFeature]) {
+    use std::collections::HashMap;
+    let mut by_cds: HashMap<String, Vec<(String, Vec<String>)>> = HashMap::new();
+    for f in features.iter() {
+        if f.kind != crate::DOMAIN_FEATURE_NAME {
+            continue;
+        }
+        let (cds_id, db, name, eval, score, desc) = match (
+            f.get_first("cds_id"), f.get_first("database"), f.get_first("name"),
+            f.get_first("evalue"), f.get_first("score"), f.get_first("description"),
+        ) {
+            (Some(c), Some(db), Some(n), Some(e), Some(s), Some(d)) => (c, db, n, e, s, d),
+            _ => continue,
+        };
+        let s = format!("{name} ({desc}, {eval}, {score})");
+        let buckets = by_cds.entry(cds_id.to_string()).or_default();
+        match buckets.iter_mut().find(|(d, _)| d == db) {
+            Some((_, v)) => v.push(s),
+            None => buckets.push((db.to_string(), vec![s])),
+        }
+    }
+    for f in features.iter_mut() {
+        if f.kind != "CDS" {
+            continue;
+        }
+        let mut seen: Vec<String> = Vec::new();
+        if let Some(cds_id) = f.get_first("cds_id").map(str::to_string) {
+            if let Some(buckets) = by_cds.get(&cds_id) {
+                for (db, strings) in buckets {
+                    let key = format!("domainator_{db}");
+                    f.set(&key, strings.join(" & "));
+                    seen.push(key);
+                }
+            }
+        }
+        f.qualifiers.retain(|(k, _)| !k.starts_with("domainator_") || seen.contains(k));
+    }
+}
+
 pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
     // Match Biopython's GenBank LOCUS column layout exactly (InsdcIO
     // `_write_the_first_line`): protein records have empty molecule type and `aa`
@@ -259,7 +303,10 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
         "LOCUS       {} {}    {:<7} {} {} {}",
         name_length, units, mol_type, topology, division, date,
     )?;
-    write_wrapped(w, "DEFINITION", if rec.description.is_empty() { "." } else { &rec.description })?;
+    // Biopython writes DEFINITION with a trailing '.' (or just '.' when empty).
+    let definition =
+        if rec.description.is_empty() { ".".to_string() } else { format!("{}.", rec.description) };
+    write_wrapped(w, "DEFINITION", &definition)?;
     let ann = &rec.annotations;
     // ACCESSION / VERSION, replicating Biopython's GenBankWriter: derive a
     // default accession from `id` (stripping a trailing `.<version>`), prefer the
@@ -311,9 +358,14 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
     write_references(w, &ann.references)?;
     write_comment(w, ann)?;
     writeln!(w, "FEATURES             Location/Qualifiers")?;
-    let mut order: Vec<&SeqFeature> = rec.features.iter().collect();
-    order.sort_by_key(|f| f.location.start());
-    for f in order {
+    // Regenerate the `domainator_<db>` CDS rollup from the current feature order
+    // and then sort by start — matching `utils.write_genbank`, which rebuilds the
+    // rollup (`add_domain_cds_annotations`) before sorting on every write. Done on
+    // a clone so the caller's record is not mutated.
+    let mut feats: Vec<SeqFeature> = rec.features.clone();
+    regenerate_domain_rollups(&mut feats);
+    feats.sort_by_key(|f| f.location.start());
+    for f in &feats {
         write_feature(w, f)?;
     }
     write_sequence(w, &rec.seq)?;
@@ -328,4 +380,106 @@ pub fn write_genbank(path: &str, records: &[SeqRecord]) -> io::Result<()> {
         write_record(&mut w, rec)?;
     }
     w.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::seq::Annotations;
+
+    fn dom(name: &str, start: i64, end: i64, db: &str) -> SeqFeature {
+        let mut f = SeqFeature::new(crate::DOMAIN_FEATURE_NAME, Location::range(start, end, 1));
+        f.set("cds_id", "C1");
+        f.set("name", name);
+        f.set("database", db);
+        f.set("evalue", "1e-5");
+        f.set("score", "10.0");
+        f.set("description", format!("desc{name}"));
+        f
+    }
+
+    fn rec(features: Vec<SeqFeature>, description: &str) -> SeqRecord {
+        SeqRecord {
+            id: "loc1".into(),
+            name: "loc1".into(),
+            description: description.into(),
+            seq: vec![b'A'; 500],
+            molecule_type: Some("DNA".into()),
+            topology: Topology::Linear,
+            annotations: Annotations::default(),
+            features,
+        }
+    }
+
+    #[test]
+    fn rollup_regenerates_in_feature_order_and_drops_stale() {
+        let mut cds = SeqFeature::new("CDS", Location::range(100, 400, 1));
+        cds.set("cds_id", "C1");
+        cds.set("domainator_OLD", "stale"); // a db with no surviving domains
+        // Domains added out of start order (B at 250 before A at 150).
+        let mut feats = vec![cds, dom("Bdom", 250, 300, "DB"), dom("Adom", 150, 200, "DB")];
+        regenerate_domain_rollups(&mut feats);
+        let cds = feats.iter().find(|f| f.kind == "CDS").unwrap();
+        // Rollup follows feature order (B then A), grouped by database.
+        assert_eq!(
+            cds.get_first("domainator_DB"),
+            Some("Bdom (descBdom, 1e-5, 10.0) & Adom (descAdom, 1e-5, 10.0)")
+        );
+        // The stale domainator_OLD qualifier is removed.
+        assert!(cds.get_first("domainator_OLD").is_none());
+    }
+
+    #[test]
+    fn writes_definition_with_trailing_period_and_sorts_features() {
+        let cds = {
+            let mut c = SeqFeature::new("CDS", Location::range(100, 400, 1));
+            c.set("cds_id", "C1");
+            c
+        };
+        let r = rec(vec![cds, dom("Bdom", 250, 300, "DB"), dom("Adom", 150, 200, "DB")], "My definition");
+        let mut buf = Vec::new();
+        write_record(&mut buf, &r).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        assert!(text.contains("DEFINITION  My definition."), "{text}");
+        // Features are emitted in ascending start order: Adom (150) before Bdom (250).
+        let a = text.find("/name=\"Adom\"").unwrap();
+        let b = text.find("/name=\"Bdom\"").unwrap();
+        assert!(a < b, "Adom should be written before Bdom");
+    }
+
+    #[test]
+    fn empty_definition_is_a_lone_period() {
+        let r = rec(vec![], "");
+        let mut buf = Vec::new();
+        write_record(&mut buf, &r).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        assert!(text.lines().any(|l| l.trim_end() == "DEFINITION  ."), "{text}");
+    }
+
+    #[test]
+    fn genbank_round_trip_preserves_record() {
+        use crate::io::genbank::read_genbank;
+        let mut cds = SeqFeature::new("CDS", Location::range(100, 400, 1));
+        cds.set("cds_id", "C1");
+        cds.set("gene_id", "geneA");
+        let mut original = rec(vec![cds, dom("Adom", 150, 200, "DB")], "A sample definition");
+        original.molecule_type = Some("DNA".into());
+        original.seq = b"ACGTACGTACGT".repeat(50); // 600 bp, valid bases
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("dom_rt_{}.gb", std::process::id()));
+        let ps = path.to_str().unwrap();
+        write_genbank(ps, std::slice::from_ref(&original)).unwrap();
+        let back = read_genbank(ps).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(back.len(), 1);
+        let b = &back[0];
+        assert_eq!(b.name, original.name);
+        assert_eq!(b.description, original.description); // period stripped on read
+        assert_eq!(b.seq, original.seq);
+        // CDS + Domainator features survive the round trip.
+        assert_eq!(b.features.iter().filter(|f| f.kind == "CDS").count(), 1);
+        let dcds = b.features.iter().find(|f| f.kind == "CDS").unwrap();
+        assert_eq!(dcds.get_first("gene_id"), Some("geneA"));
+        assert!(dcds.get_first("domainator_DB").is_some());
+    }
 }

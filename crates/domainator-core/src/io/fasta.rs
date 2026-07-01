@@ -92,3 +92,46 @@ pub fn write_fasta(path: &str, records: &[SeqRecord]) -> io::Result<()> {
     }
     w.flush()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::seq::{Annotations, SeqRecord, Topology};
+
+    #[test]
+    fn fasta_round_trip() {
+        let recs = vec![
+            SeqRecord {
+                id: "seq1".into(),
+                name: "seq1".into(),
+                description: "seq1 a description".into(),
+                seq: b"MKAILV".to_vec(),
+                molecule_type: Some("protein".into()),
+                topology: Topology::Linear,
+                annotations: Annotations::default(),
+                features: vec![],
+            },
+            SeqRecord {
+                id: "seq2".into(),
+                name: "seq2".into(),
+                description: String::new(),
+                seq: b"ACGTACGTACGTACGT".to_vec(),
+                molecule_type: Some("protein".into()),
+                topology: Topology::Linear,
+                annotations: Annotations::default(),
+                features: vec![],
+            },
+        ];
+        let path = std::env::temp_dir().join(format!("dom_fa_{}.fasta", std::process::id()));
+        let ps = path.to_str().unwrap();
+        write_fasta(ps, &recs).unwrap();
+        let back = read_fasta(ps, Some("protein")).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(back.len(), 2);
+        // id is the first header token; sequence survives.
+        assert_eq!(back[0].id, "seq1");
+        assert_eq!(back[0].seq, b"MKAILV");
+        assert_eq!(back[1].id, "seq2");
+        assert_eq!(back[1].seq, b"ACGTACGTACGTACGT");
+    }
+}

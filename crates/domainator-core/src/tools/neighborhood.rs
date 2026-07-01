@@ -28,35 +28,35 @@ pub enum Range {
 
 /// A single-part location envelope: half-open `[start, end)` with a strand.
 #[derive(Clone, Copy, Debug)]
-struct Env {
-    start: i64,
-    end: i64,
-    strand: i32,
+pub(crate) struct Env {
+    pub(crate) start: i64,
+    pub(crate) end: i64,
+    pub(crate) strand: i32,
 }
 
 /// A CDS on the contig. `intervals` are its forward sub-spans (within `[0,L)`),
 /// so an origin-crossing CDS keeps both pieces.
-struct Cds {
-    intervals: Vec<(i64, i64)>,
-    strand: i32,
+pub(crate) struct Cds {
+    pub(crate) intervals: Vec<(i64, i64)>,
+    pub(crate) strand: i32,
     /// `cds_id` (`get_cds_unique_name`), used to attach domain features.
-    cds_id: String,
+    pub(crate) cds_id: String,
     /// True if this CDS carries a `Domain_Search` best-hit feature.
-    is_focus: bool,
+    pub(crate) is_focus: bool,
 }
 
 impl Cds {
     /// Lowest forward coordinate (ignores origin wrap).
-    fn start(&self) -> i64 {
+    pub(crate) fn start(&self) -> i64 {
         self.intervals.iter().map(|x| x.0).min().unwrap_or(0)
     }
     /// Highest forward coordinate (ignores origin wrap).
-    fn end(&self) -> i64 {
+    pub(crate) fn end(&self) -> i64 {
         self.intervals.iter().map(|x| x.1).max().unwrap_or(0)
     }
     /// Sort key matching Python's `location.stranded_start`: the gene's reading
     /// start — `end` of the covering arc on the reverse strand, else `start`.
-    fn sort_key(&self, l: i64) -> i64 {
+    pub(crate) fn sort_key(&self, l: i64) -> i64 {
         let (a, b) = min_covering_arc(&self.intervals, l);
         if self.strand == -1 {
             b.rem_euclid(l)
@@ -176,13 +176,17 @@ fn build_slice_from_window(w_lo: i64, w_hi: i64, l: i64, strand: i32) -> SliceLo
     let first = parts[0];
     let last = *parts.last().unwrap();
     let (ns, ne) = if strand == -1 { (first.end, last.start) } else { (first.start, last.end) };
-    SliceLoc { parts, name_start: ns, name_end: ne, overall_strand: strand }
+    SliceLoc { parts, name_start: ns, name_end: ne, overall_strand: strand, dist_to_start: 0, dist_to_end: 0 }
 }
 
 /// Recompute a CDS feature's `cds_id` (1-based strand-aware coords), matching
 /// `utils.get_cds_unique_name` so we can pair CDS features with the `cds_id`
-/// qualifier carried on `Domainator`/`Domain_Search` features.
-fn cds_unique_name(feature: &SeqFeature) -> String {
+/// qualifier carried on `Domainator`/`Domain_Search` features. Prefers an
+/// existing `cds_id` qualifier (as Python does), else builds from the location.
+pub(crate) fn cds_unique_name(feature: &SeqFeature) -> String {
+    if let Some(cid) = feature.get_first("cds_id") {
+        return cid.to_string();
+    }
     let parts: Vec<String> = feature
         .location
         .parts
@@ -337,16 +341,22 @@ pub fn validate_range(
 
 /// Result of computing a neighborhood: the ordered slice parts (each
 /// `[start,end)` + strand) and the human-readable `(start, end)` for naming.
-struct SliceLoc {
-    parts: Vec<Env>,
-    name_start: i64,
-    name_end: i64,
-    overall_strand: i32,
+#[derive(Clone)]
+pub(crate) struct SliceLoc {
+    pub(crate) parts: Vec<Env>,
+    pub(crate) name_start: i64,
+    pub(crate) name_end: i64,
+    pub(crate) overall_strand: i32,
+    /// Upstream / downstream extension sizes (bp) of the focus CDS within the
+    /// region, for `--pad` alignment. Only computed for linear contigs (0 for
+    /// circular, where `--pad` is unsupported).
+    pub(crate) dist_to_start: i64,
+    pub(crate) dist_to_end: i64,
 }
 
 /// Compute the slice location for the focus CDS at `focus_idx` in the
 /// stranded-start-sorted `cds_list`. Mirrors `get_cds_neighborhood`.
-fn cds_neighborhood(
+pub(crate) fn cds_neighborhood(
     rec_len: i64,
     circular: bool,
     cds_list: &[Cds],
@@ -389,13 +399,20 @@ fn cds_neighborhood(
             }
             Range::None => {}
         }
-        let (padded, _) = pad_linear(envelope, rec_len, up, down);
+        let (padded, (up_ext, down_ext)) = pad_linear(envelope, rec_len, up, down);
         let (ns, ne) = if padded.strand == -1 {
             (padded.end, padded.start)
         } else {
             (padded.start, padded.end)
         };
-        return SliceLoc { parts: vec![padded], name_start: ns, name_end: ne, overall_strand: strand };
+        return SliceLoc {
+            parts: vec![padded],
+            name_start: ns,
+            name_end: ne,
+            overall_strand: strand,
+            dist_to_start: up_ext,
+            dist_to_end: down_ext,
+        };
     }
 
     // Circular topology. Work with the gene's covering arc [A, B) (B may exceed L
@@ -448,7 +465,7 @@ fn cds_neighborhood(
 /// Slice `rec` to `slice`, keeping `keep_features` that are fully contained
 /// (source features are truncated to the overlap), remapping coordinates. Port of
 /// `slice_record_from_location`.
-fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[SeqFeature]) -> SeqRecord {
+pub(crate) fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[SeqFeature]) -> SeqRecord {
     // Build sequence and per-part coordinate shifts.
     let mut seq = Vec::new();
     let mut shifts = Vec::with_capacity(slice.parts.len());
@@ -525,7 +542,7 @@ fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[SeqFeature])
         ..Default::default()
     };
 
-    let mut out = SeqRecord {
+    let out = SeqRecord {
         id: rec.id.clone(),
         name: rec.name.clone(),
         description: rec.description.clone(),
@@ -535,7 +552,9 @@ fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[SeqFeature])
         annotations,
         features: new_features,
     };
-    out.features.sort_by_key(|f| f.location.start());
+    // Do NOT sort here: `slice_record_from_location` preserves the input feature
+    // order so the GenBank writer can rebuild the `domainator_<db>` rollup from
+    // that order before it sorts features by start for output.
     out
 }
 
@@ -740,7 +759,8 @@ pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<Se
                 Env { start: lo, end: hi, strand: st }
             })
             .collect();
-        let slice = SliceLoc { parts, name_start: 0, name_end: 0, overall_strand: strand };
+        let slice =
+            SliceLoc { parts, name_start: 0, name_end: 0, overall_strand: strand, dist_to_start: 0, dist_to_end: 0 };
 
         let mut cds_feat = f.clone();
         cds_feat.qualifiers.retain(|(k, _)| k != "translation");
@@ -782,14 +802,14 @@ pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<Se
 }
 
 /// Whether every interval of a feature/CDS is fully contained in some slice part.
-fn slice_contains(slice: &SliceLoc, intervals: &[(i64, i64)]) -> bool {
+pub(crate) fn slice_contains(slice: &SliceLoc, intervals: &[(i64, i64)]) -> bool {
     intervals
         .iter()
         .all(|&(s, e)| slice.parts.iter().any(|p| p.start <= s && p.end >= e))
 }
 
 /// Total overlap (bp) between two slice locations.
-fn overlap_size(a: &SliceLoc, b: &SliceLoc) -> i64 {
+pub(crate) fn overlap_size(a: &SliceLoc, b: &SliceLoc) -> i64 {
     let mut total = 0;
     for pa in &a.parts {
         for pb in &b.parts {
@@ -800,7 +820,7 @@ fn overlap_size(a: &SliceLoc, b: &SliceLoc) -> i64 {
 }
 
 /// Reverse-complement a record in place (sequence + feature coordinates).
-fn reverse_complement_record(rec: &SeqRecord) -> SeqRecord {
+pub(crate) fn reverse_complement_record(rec: &SeqRecord) -> SeqRecord {
     let n = rec.seq.len() as i64;
     let seq = revcomp(&rec.seq);
     let mut features: Vec<SeqFeature> = rec
@@ -826,4 +846,103 @@ fn reverse_complement_record(rec: &SeqRecord) -> SeqRecord {
         .collect();
     features.sort_by_key(|f| f.location.start());
     SeqRecord { seq, features, ..rec.clone() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pad_circular_cds_cases() {
+        // Non-wrapping window.
+        assert_eq!(pad_circular_cds(2, 5, 1, 1), (1, 3));
+        assert_eq!(pad_circular_cds(0, 5, 0, 0), (0, 0));
+        // A single CDS cannot be padded.
+        assert_eq!(pad_circular_cds(0, 1, 5, 5), (0, 0));
+        // Window wraps the origin to the left.
+        assert_eq!(pad_circular_cds(0, 5, 1, 0), (4, 0));
+    }
+
+    #[test]
+    fn validate_range_resolution() {
+        assert!(matches!(validate_range(true, None, None, None, None, None, None), Ok(Range::Whole)));
+        assert!(matches!(
+            validate_range(false, None, None, None, Some(2), None, None),
+            Ok(Range::Cds(2, 2))
+        ));
+        assert!(matches!(
+            validate_range(false, None, None, None, None, Some(1), None),
+            Ok(Range::Cds(1, 0))
+        ));
+        assert!(matches!(
+            validate_range(false, Some(0.5), None, None, None, None, None),
+            Ok(Range::Kb(a, b)) if a == 0.5 && b == 0.5
+        ));
+        assert!(matches!(validate_range(false, None, None, None, None, None, None), Ok(Range::None)));
+        // Conflicts / negatives are errors.
+        assert!(validate_range(false, None, None, None, Some(2), Some(1), None).is_err());
+        assert!(validate_range(false, Some(1.0), None, None, Some(2), None, None).is_err());
+        assert!(validate_range(false, None, None, None, Some(-1), None, None).is_err());
+    }
+
+    #[test]
+    fn min_covering_arc_origin_crossing() {
+        // An origin-crossing gene [0,130)+[1842,2552) on a length-2552 circle
+        // collapses to a single arc [1842, 2682).
+        assert_eq!(min_covering_arc(&[(0, 130), (1842, 2552)], 2552), (1842, 2682));
+        // A simple interval is unchanged.
+        assert_eq!(min_covering_arc(&[(100, 200)], 1000), (100, 200));
+    }
+
+    fn test_rec(seq: &[u8], features: Vec<SeqFeature>) -> SeqRecord {
+        SeqRecord {
+            id: "c".into(),
+            name: "c".into(),
+            description: String::new(),
+            seq: seq.to_vec(),
+            molecule_type: Some("DNA".into()),
+            topology: Topology::Linear,
+            annotations: crate::seq::Annotations::default(),
+            features,
+        }
+    }
+
+    fn slice1(start: i64, end: i64, strand: i32) -> SliceLoc {
+        SliceLoc {
+            parts: vec![Env { start, end, strand }],
+            name_start: 0,
+            name_end: 0,
+            overall_strand: strand,
+            dist_to_start: 0,
+            dist_to_end: 0,
+        }
+    }
+
+    #[test]
+    fn slice_record_forward_remap() {
+        let rec = test_rec(b"TTTTAACCCGTTTTTT", vec![SeqFeature::new("gene", Location::range(5, 8, 1))]);
+        let out = slice_record(&rec, &slice1(4, 10, 1), &rec.features);
+        assert_eq!(out.seq, b"AACCCG");
+        assert_eq!(out.features.len(), 1);
+        assert_eq!(out.features[0].location.parts, vec![(1, 4, 1, false, false)]);
+    }
+
+    #[test]
+    fn slice_record_reverse_flips_seq_and_feature() {
+        let rec = test_rec(b"TTTTAACCCGTTTTTT", vec![SeqFeature::new("gene", Location::range(5, 8, 1))]);
+        let out = slice_record(&rec, &slice1(4, 10, -1), &rec.features);
+        // revcomp("AACCCG") == "CGGGTT"; the feature flips within the part.
+        assert_eq!(out.seq, b"CGGGTT");
+        assert_eq!(out.features[0].location.parts, vec![(2, 5, -1, false, false)]);
+    }
+
+    #[test]
+    fn slice_record_drops_uncontained_nonsource() {
+        let rec = test_rec(
+            b"TTTTAACCCGTTTTTT",
+            vec![SeqFeature::new("gene", Location::range(0, 3, 1))], // outside [4,10)
+        );
+        let out = slice_record(&rec, &slice1(4, 10, 1), &rec.features);
+        assert!(out.features.is_empty());
+    }
 }

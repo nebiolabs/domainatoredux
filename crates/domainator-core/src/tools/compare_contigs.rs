@@ -266,3 +266,73 @@ pub fn compare_contigs(
         None => Ok(matrix),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::seq::{Annotations, Location, SeqFeature, Topology};
+
+    #[test]
+    fn intersection_size_of_sorted_vecs() {
+        assert_eq!(intersection_size(&[1, 2, 3], &[2, 3, 4]), 2);
+        assert_eq!(intersection_size(&[1, 5, 9], &[2, 6, 10]), 0);
+        assert_eq!(intersection_size(&[], &[1, 2]), 0);
+    }
+
+    fn contig(id: &str, domains: &[(&str, i64)]) -> SeqRecord {
+        let features = domains
+            .iter()
+            .map(|(name, start)| {
+                let mut f = SeqFeature::new(DOMAIN_FEATURE_NAME, Location::range(*start, *start + 30, 1));
+                f.set("name", *name);
+                f.set("database", "DB");
+                f
+            })
+            .collect();
+        SeqRecord {
+            id: id.into(),
+            name: id.into(),
+            description: String::new(),
+            seq: vec![b'M'; 300],
+            molecule_type: Some("protein".into()),
+            topology: Topology::Linear,
+            annotations: Annotations::default(),
+            features,
+        }
+    }
+
+    #[test]
+    fn jaccard_only_combined_matrix() {
+        // A={X,Y}, B={Y,Z}: shared 1, union 3 -> JI = 1/3.
+        let recs = vec![contig("A", &[("X", 10), ("Y", 50)]), contig("B", &[("Y", 10), ("Z", 50)])];
+        let opts = CompareContigsOptions { ji_weight: 1.0, ai_weight: 0.0, ..Default::default() };
+        let d = combined_matrix(&recs, &opts, None).densify();
+        // [A-A, A-B, B-A, B-B]
+        assert!((d[0] - 1.0).abs() < 1e-9); // diagonal = sum of weights = 1.0
+        assert!((d[1] - 1.0 / 3.0).abs() < 1e-9);
+        assert!((d[2] - 1.0 / 3.0).abs() < 1e-9); // symmetric
+        assert!((d[3] - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn adjacency_uses_consecutive_pairs() {
+        // A: X->Y->Z, B: X->Y->W. Adjacency sets {XY,YZ} vs {XY,YW}: shared 1, union 3.
+        let recs = vec![
+            contig("A", &[("X", 10), ("Y", 50), ("Z", 90)]),
+            contig("B", &[("X", 10), ("Y", 50), ("W", 90)]),
+        ];
+        let opts = CompareContigsOptions { ji_weight: 0.0, ai_weight: 1.0, ..Default::default() };
+        let d = combined_matrix(&recs, &opts, None).densify();
+        assert!((d[1] - 1.0 / 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn no_shared_domains_gives_no_offdiagonal_edge() {
+        let recs = vec![contig("A", &[("X", 10)]), contig("B", &[("Z", 10)])];
+        let opts = CompareContigsOptions { ji_weight: 0.5, ai_weight: 0.5, ..Default::default() };
+        let d = combined_matrix(&recs, &opts, None).densify();
+        assert_eq!(d[1], 0.0);
+        assert_eq!(d[2], 0.0);
+        assert!((d[0] - 1.0).abs() < 1e-9); // diagonal still 1.0 (0.5+0.5)
+    }
+}

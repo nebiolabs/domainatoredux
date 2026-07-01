@@ -147,7 +147,13 @@ pub fn parse_record(
                 rec.annotations.date = locus.date;
             }
             "DEFINITION" => {
-                rec.description = join_section_value(sec, "DEFINITION");
+                // Biopython's GenBank parser strips a single trailing '.' from
+                // DEFINITION; mirror that so `record.description` matches.
+                let mut d = join_section_value(sec, "DEFINITION");
+                if d.ends_with('.') {
+                    d.pop();
+                }
+                rec.description = d;
             }
             "ACCESSION" => {
                 let val = join_section_value(sec, "ACCESSION");

@@ -128,3 +128,43 @@ pub fn build_sparse_max(
     let indices: Vec<i32> = d_cols.iter().map(|&c| c as i32).collect();
     Storage::Sparse { values: d_vals, indices, indptr }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dm(storage: Storage) -> DataMatrix {
+        DataMatrix {
+            rows: vec!["a".into(), "b".into()],
+            cols: vec!["a".into(), "b".into()],
+            row_lengths: None,
+            col_lengths: None,
+            data_type: "score".into(),
+            storage,
+        }
+    }
+
+    #[test]
+    fn build_sparse_max_dedups_by_max_and_densifies() {
+        // (0,1) appears twice (3, 5) -> max 5; (1,0)=2.
+        let s = build_sparse_max(vec![0, 0, 1], vec![1, 1, 0], vec![3.0, 5.0, 2.0], 2, 2);
+        let m = dm(s);
+        assert_eq!(m.densify(), vec![0.0, 5.0, 2.0, 0.0]);
+    }
+
+    #[test]
+    fn build_sparse_max_empty() {
+        let s = build_sparse_max(vec![], vec![], vec![], 2, 2);
+        let m = dm(s);
+        assert_eq!(m.densify(), vec![0.0; 4]);
+    }
+
+    #[test]
+    fn symmetric_labels_detection() {
+        let sym = dm(Storage::Dense(vec![0.0; 4]));
+        assert!(sym.symmetric_labels());
+        let mut asym = dm(Storage::Dense(vec![0.0; 4]));
+        asym.cols = vec!["x".into(), "y".into()];
+        assert!(!asym.symmetric_labels());
+    }
+}

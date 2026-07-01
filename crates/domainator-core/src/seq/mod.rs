@@ -15,6 +15,8 @@
 pub mod location;
 pub mod translate;
 pub mod taxid;
+pub mod taxonomy;
+pub mod protein_analysis;
 
 pub use location::{CompoundOp, Location};
 

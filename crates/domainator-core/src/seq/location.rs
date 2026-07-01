@@ -148,3 +148,50 @@ pub fn parse_location(s: &str) -> Location {
     parse_loc(s, 1).unwrap_or(Location { operator: None, between: false, parts: vec![(0, 0, 1, false, false)] })
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple_span_is_zero_based_half_open() {
+        let l = parse_location("100..200");
+        assert_eq!(l.parts, vec![(99, 200, 1, false, false)]);
+        assert_eq!(l.start(), 99);
+        assert_eq!(l.end(), 200);
+        assert_eq!(l.strand(), 1);
+    }
+
+    #[test]
+    fn complement_flips_strand() {
+        let l = parse_location("complement(100..200)");
+        assert_eq!(l.strand(), -1);
+        assert_eq!((l.start(), l.end()), (99, 200));
+    }
+
+    #[test]
+    fn join_keeps_parts_and_operator() {
+        let l = parse_location("join(1..3,7..9)");
+        assert_eq!(l.operator, Some(CompoundOp::Join));
+        assert_eq!(l.start(), 0);
+        assert_eq!(l.end(), 9);
+        assert_eq!(l.strand(), 1);
+        assert_eq!(l.parts.len(), 2);
+    }
+
+    #[test]
+    fn complement_join_is_prereversed() {
+        // Reading order: the higher span comes first on the reverse strand.
+        let l = parse_location("complement(join(1..3,7..9))");
+        assert_eq!(l.strand(), -1);
+        assert_eq!((l.start(), l.end()), (0, 9));
+        assert_eq!(l.parts.first().map(|p| (p.0, p.1)), Some((6, 9)));
+    }
+
+    #[test]
+    fn fuzzy_markers_parse() {
+        let l = parse_location("<1..>9");
+        let p = l.parts[0];
+        assert_eq!((p.0, p.1, p.3, p.4), (0, 9, true, true));
+    }
+}

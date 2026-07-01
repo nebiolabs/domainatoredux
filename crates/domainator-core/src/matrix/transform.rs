@@ -134,3 +134,57 @@ fn efi_logs(m: &DataMatrix, nr: usize, nc: usize) -> (Vec<f64>, Vec<f64>) {
         .unwrap_or_else(|| vec![0.0; nc]);
     (rl, cl)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mat(d: Vec<f64>) -> DataMatrix {
+        DataMatrix {
+            rows: vec!["a".into(), "b".into()],
+            cols: vec!["a".into(), "b".into()],
+            row_lengths: None,
+            col_lengths: None,
+            data_type: "score".into(),
+            storage: Storage::Dense(d),
+        }
+    }
+
+    fn approx(a: &[f64], b: &[f64]) {
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b) {
+            assert!((x - y).abs() < 1e-9, "{a:?} != {b:?}");
+        }
+    }
+
+    #[test]
+    fn score_and_bool_are_noops() {
+        let mut m = mat(vec![2.0, 4.0, 1.0, 8.0]);
+        apply_mode(&mut m, "score");
+        approx(&m.densify(), &[2.0, 4.0, 1.0, 8.0]);
+        assert_eq!(m.data_type, "score");
+    }
+
+    #[test]
+    fn norm_score_divides_by_min_row_col_max() {
+        // d=[[2,4],[1,8]]; row_max=[4,8], col_max=[2,8].
+        let mut m = mat(vec![2.0, 4.0, 1.0, 8.0]);
+        apply_mode(&mut m, "norm_score");
+        approx(&m.densify(), &[1.0, 1.0, 0.5, 1.0]);
+        assert_eq!(m.data_type, "norm_score");
+    }
+
+    #[test]
+    fn row_norm_score_divides_by_row_max() {
+        let mut m = mat(vec![2.0, 4.0, 1.0, 8.0]);
+        apply_mode(&mut m, "row_norm_score");
+        approx(&m.densify(), &[0.5, 1.0, 0.125, 1.0]);
+    }
+
+    #[test]
+    fn score_dist_is_one_minus_norm() {
+        let mut m = mat(vec![2.0, 4.0, 1.0, 8.0]);
+        apply_mode(&mut m, "score_dist");
+        approx(&m.densify(), &[0.0, 0.0, 0.5, 0.0]);
+    }
+}

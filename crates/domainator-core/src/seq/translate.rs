@@ -87,3 +87,38 @@ pub fn cds_peptide(feature: &SeqFeature, seq: &[u8]) -> String {
     };
     raw.chars().filter(|c| c.is_ascii_alphanumeric()).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::seq::Location;
+
+    #[test]
+    fn codon_and_translation() {
+        assert_eq!(translate_codon(b'A', b'T', b'G'), b'M');
+        assert_eq!(translate_codon(b'T', b'A', b'A'), b'*');
+        assert_eq!(translate_codon(b'G', b'G', b'G'), b'G');
+        assert_eq!(translate_dna(b"ATGGGGTAA"), "MG*");
+        // Trailing partial codon is dropped.
+        assert_eq!(translate_dna(b"ATGG"), "M");
+    }
+
+    #[test]
+    fn revcomp_basic() {
+        assert_eq!(revcomp(b"ATGC"), b"GCAT");
+        assert_eq!(revcomp(b"AACCCG"), b"CGGGTT");
+        // Reverse-complement is an involution.
+        assert_eq!(revcomp(&revcomp(b"ACGTACGTA")), b"ACGTACGTA");
+    }
+
+    #[test]
+    fn extract_location_seq_forward_and_reverse() {
+        let contig = b"TTTTAACCCGTTTTTT";
+        // Forward [4,10) -> "AACCCG".
+        let fwd = Location::range(4, 10, 1);
+        assert_eq!(extract_location_seq(&fwd, contig), b"AACCCG");
+        // Reverse [4,10) -> revcomp("AACCCG") = "CGGGTT".
+        let rev = Location::range(4, 10, -1);
+        assert_eq!(extract_location_seq(&rev, contig), b"CGGGTT");
+    }
+}

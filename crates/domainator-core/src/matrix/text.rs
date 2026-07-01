@@ -50,3 +50,19 @@ pub fn write_dense_text(path: &str, m: &DataMatrix) -> io::Result<()> {
     }
     w.flush()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn py_float_str_formatting() {
+        assert_eq!(py_float_str(410.0), "410.0");
+        assert_eq!(py_float_str(0.0), "0.0");
+        assert_eq!(py_float_str(-2.0), "-2.0");
+        assert_eq!(py_float_str(0.5), "0.5");
+        assert_eq!(py_float_str(f64::NAN), "nan");
+        assert_eq!(py_float_str(f64::INFINITY), "inf");
+        assert_eq!(py_float_str(f64::NEG_INFINITY), "-inf");
+    }
+}
