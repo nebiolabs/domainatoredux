@@ -71,7 +71,7 @@ jobs:
 
       - name: Set up MSVC command prompt
         if: matrix.target == 'x86_64-pc-windows-msvc'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: x64
 

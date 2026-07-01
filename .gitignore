@@ -6,6 +6,11 @@ apps/*/node_modules/
 apps/*/dist/
 apps/*/src-tauri/gen/
 apps/*/src-tauri/target/
+wasm_apps/*/node_modules/
+wasm_apps/*/dist/
+wasm_apps/*/public/*.wasm
+wasm_apps/*/wasm/target/
+wasm_apps/*/*.zip
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -1,0 +1,17 @@
+{
+  "name": "domainator-genbank-summary-wasm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:wasm": "cargo build --manifest-path wasm/Cargo.toml --target wasm32-unknown-unknown --release",
+    "dev": "npm run build:wasm && vite --host 127.0.0.1 --port 1430",
+    "build": "npm run build:wasm && tsc && vite build && node scripts/embed-js-for-file-url.mjs",
+    "package:zip": "npm run build && rm -f domainator-genbank-summary-wasm.zip && cd dist && zip -qr ../domainator-genbank-summary-wasm.zip .",
+    "preview": "vite preview --host 127.0.0.1 --port 1431"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vite": "^6.4.3"
+  }
+}
