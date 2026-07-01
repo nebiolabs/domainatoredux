@@ -23,15 +23,15 @@ jobs:
             bundle_args: --bundles dmg
             artifact_globs: |
               target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-          - app_id: genbank-summary
-            app_path: apps/genbank-summary
-            package_name: domainator-genbank-summary
-            platform: macos-intel
-            os: macos-13
-            target: x86_64-apple-darwin
-            bundle_args: --bundles dmg
-            artifact_globs: |
-              target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+          # - app_id: genbank-summary
+          #   app_path: apps/genbank-summary
+          #   package_name: domainator-genbank-summary
+          #   platform: macos-intel
+          #   os: macos-13
+          #   target: x86_64-apple-darwin
+          #   bundle_args: --bundles dmg
+          #   artifact_globs: |
+          #     target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
           - app_id: genbank-summary
             app_path: apps/genbank-summary
             package_name: domainator-genbank-summary
@@ -81,7 +81,7 @@ jobs:
         run: npm run tauri build -- --target ${{ matrix.target }} ${{ matrix.bundle_args }}
 
       - name: Upload app artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.app_id }}-${{ matrix.platform }}
           if-no-files-found: error
