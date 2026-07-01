@@ -82,3 +82,14 @@ On Linux, this currently reaches the macOS Objective-C build step and fails
 without an Apple compiler/SDK toolchain. Use an Apple Silicon macOS machine or
 runner for the release bundle. Signing and notarization are not configured in
 this first app scaffold.
+
+## GitHub Actions builds
+
+The repository workflow `.github/workflows/build-gui-apps.yml` builds this app
+on GitHub-hosted macOS and Windows runners. It can be started manually from the
+Actions tab with `workflow_dispatch`, or by pushing a tag matching `gui-*`.
+
+The workflow uses a matrix with `app_id`, `app_path`, `package_name`, `platform`,
+and `target` fields. To add another small GUI tool later, add another pair of
+matrix entries pointing at that app directory. The current app produces a macOS
+ARM `.dmg` and a Windows x64 NSIS installer artifact.

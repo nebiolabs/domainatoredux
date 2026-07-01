@@ -1,0 +1,77 @@
+name: Build GUI Apps
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "gui-*"
+
+jobs:
+  build:
+    name: ${{ matrix.app_id }} (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app_id: genbank-summary
+            app_path: apps/genbank-summary
+            package_name: domainator-genbank-summary
+            platform: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            bundle_args: --bundles dmg
+            artifact_globs: |
+              target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          - app_id: genbank-summary
+            app_path: apps/genbank-summary
+            package_name: domainator-genbank-summary
+            platform: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle_args: --bundles nsis
+            artifact_globs: |
+              target/x86_64-pc-windows-msvc/release/domainator-genbank-summary.exe
+              target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ${{ matrix.app_path }}/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Windows bundler
+        if: runner.os == 'Windows'
+        run: choco install nsis -y
+
+      - name: Cache Cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          key: ${{ matrix.app_id }}-${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        working-directory: ${{ matrix.app_path }}
+        run: npm ci
+
+      - name: Build app
+        working-directory: ${{ matrix.app_path }}
+        run: npm run tauri build -- --target ${{ matrix.target }} ${{ matrix.bundle_args }}
+
+      - name: Upload app artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app_id }}-${{ matrix.platform }}
+          if-no-files-found: error
+          path: ${{ matrix.artifact_globs }}
