@@ -90,6 +90,6 @@ on GitHub-hosted macOS and Windows runners. It can be started manually from the
 Actions tab with `workflow_dispatch`, or by pushing a tag matching `gui-*`.
 
 The workflow uses a matrix with `app_id`, `app_path`, `package_name`, `platform`,
-and `target` fields. To add another small GUI tool later, add another pair of
-matrix entries pointing at that app directory. The current app produces a macOS
-ARM `.dmg` and a Windows x64 NSIS installer artifact.
+and `target` fields. To add another small GUI tool later, add another set of
+matrix entries pointing at that app directory. The current app produces macOS ARM
+and macOS Intel `.dmg` artifacts plus a Windows x64 NSIS installer artifact.

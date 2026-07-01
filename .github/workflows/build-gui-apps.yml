@@ -26,6 +26,15 @@ jobs:
           - app_id: genbank-summary
             app_path: apps/genbank-summary
             package_name: domainator-genbank-summary
+            platform: macos-intel
+            os: macos-13
+            target: x86_64-apple-darwin
+            bundle_args: --bundles dmg
+            artifact_globs: |
+              target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+          - app_id: genbank-summary
+            app_path: apps/genbank-summary
+            package_name: domainator-genbank-summary
             platform: windows-x64
             os: windows-latest
             target: x86_64-pc-windows-msvc
