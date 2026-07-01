@@ -93,3 +93,6 @@ The workflow uses a matrix with `app_id`, `app_path`, `package_name`, `platform`
 and `target` fields. To add another small GUI tool later, add another set of
 matrix entries pointing at that app directory. The current app produces macOS ARM
 and macOS Intel `.dmg` artifacts plus a Windows x64 NSIS installer artifact.
+The Windows job intentionally uses the `x86_64-pc-windows-gnu` target on Ubuntu,
+matching the locally verified cross-build path; the MSVC target failed in GitHub
+Actions with `LNK1181: cannot open input file 'm.lib'`. TODO: optimize/debug on local windows machine and switch to native non-cross compile for github actions.
