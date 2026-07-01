@@ -28,6 +28,18 @@ To validate the shared Rust summary logic from the repository root:
 cargo test -p domainator-core genbank_summary
 ```
 
+## Icons
+
+All Tauri apps in this repository should use the shared Domainator app icon
+source at `assets/icons/domainator_app_icon.svg`, which wraps the canonical glyph
+from `assets/icons/domainator_glyph.svg` in a square canvas for Tauri.
+
+Regenerate this app's platform icons from this directory with:
+
+```bash
+npm run icons
+```
+
 ## Linux prerequisites
 
 Tauri needs the platform WebView and windowing development packages. On Debian or
@@ -93,6 +105,19 @@ The workflow uses a matrix with `app_id`, `app_path`, `package_name`, `platform`
 and `target` fields. To add another small GUI tool later, add another set of
 matrix entries pointing at that app directory. The current app produces macOS ARM
 and macOS Intel `.dmg` artifacts plus a Windows x64 NSIS installer artifact.
-The Windows job intentionally uses the `x86_64-pc-windows-gnu` target on Ubuntu,
-matching the locally verified cross-build path; the MSVC target failed in GitHub
-Actions with `LNK1181: cannot open input file 'm.lib'`. TODO: optimize/debug on local windows machine and switch to native non-cross compile for github actions.
+The active Windows job uses the native `x86_64-pc-windows-msvc` target on a
+Windows runner. It creates a tiny empty `m.lib` compatibility shim before the
+build because one dependency path asks MSVC to link the Unix math library name,
+which otherwise fails with `LNK1181: cannot open input file 'm.lib'`. The
+previously verified Ubuntu/`x86_64-pc-windows-gnu` cross-build entry is kept in
+the workflow as a commented fallback.
+
+To debug the native Windows path locally, install Rust, Node, Visual Studio Build
+Tools with the Desktop development with C++ workload, and NSIS. Then run from
+this directory in a Developer PowerShell or Developer Command Prompt:
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+npm ci
+npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
+```

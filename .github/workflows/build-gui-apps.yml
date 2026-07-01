@@ -35,13 +35,23 @@ jobs:
           - app_id: genbank-summary
             app_path: apps/genbank-summary
             package_name: domainator-genbank-summary
-            platform: windows-x64
-            os: ubuntu-24.04
-            target: x86_64-pc-windows-gnu
+            platform: windows-msvc-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
             bundle_args: --bundles nsis
             artifact_globs: |
-              target/x86_64-pc-windows-gnu/release/domainator-genbank-summary.exe
-              target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe
+              target/x86_64-pc-windows-msvc/release/domainator-genbank-summary.exe
+              target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          # - app_id: genbank-summary
+          #   app_path: apps/genbank-summary
+          #   package_name: domainator-genbank-summary
+          #   platform: windows-x64
+          #   os: ubuntu-24.04
+          #   target: x86_64-pc-windows-gnu
+          #   bundle_args: --bundles nsis
+          #   artifact_globs: |
+          #     target/x86_64-pc-windows-gnu/release/domainator-genbank-summary.exe
+          #     target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe
 
     steps:
       - name: Checkout
@@ -58,6 +68,25 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Set up MSVC command prompt
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Provide MSVC m.lib compatibility shim
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $stubDir = Join-Path $env:RUNNER_TEMP 'msvc-empty-m-lib'
+          New-Item -ItemType Directory -Force -Path $stubDir | Out-Null
+          Set-Content -Path (Join-Path $stubDir 'm_stub.c') -Value 'void __domainator_empty_m_lib(void) {}'
+          Push-Location $stubDir
+          cl /nologo /c m_stub.c
+          lib /nologo /out:m.lib m_stub.obj
+          Pop-Location
+          "LIB=$stubDir;$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install Windows GNU cross-build tools
         if: matrix.target == 'x86_64-pc-windows-gnu'
