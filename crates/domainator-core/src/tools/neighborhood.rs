@@ -567,16 +567,23 @@ pub fn select_by_cds_hits(
     normalize_direction: bool,
     strand_filter: Option<i32>,
     max_region_overlap: f64,
+    decoys: Option<&std::collections::HashSet<String>>,
+    max_hits_per_contig: Option<usize>,
 ) -> std::io::Result<Vec<SeqRecord>> {
     let rec_len = rec.seq.len() as i64;
     let circular = rec.topology == Topology::Circular;
 
-    // cds_ids carrying a Domain_Search best-hit feature (the focus CDSs).
+    // cds_ids carrying a Domain_Search best-hit feature (the focus CDSs), plus
+    // the best-hit domain name per focus cds_id (for decoy filtering).
     let mut focus_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut hit_name_by_cid: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for f in &rec.features {
         if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME {
             if let Some(cid) = f.get_first("cds_id") {
                 focus_ids.insert(cid.to_string());
+                if let Some(name) = f.get_first("name") {
+                    hit_name_by_cid.insert(cid.to_string(), name.to_string());
+                }
             }
         }
     }
@@ -636,6 +643,13 @@ pub fn select_by_cds_hits(
         }
         let focus_cid = cds.cds_id.clone();
 
+        // Decoy filter: skip focus CDSs whose best hit is a decoy domain.
+        if let Some(decoys) = decoys {
+            if hit_name_by_cid.get(&focus_cid).is_some_and(|n| decoys.contains(n)) {
+                continue;
+            }
+        }
+
         let slice = cds_neighborhood(rec_len, circular, &cds_list, focus_idx, range);
 
         // The set of cds_ids whose CDS is fully contained in the slice.
@@ -694,6 +708,9 @@ pub fn select_by_cds_hits(
             selected.push(slice);
         }
         out.push(region);
+        if max_hits_per_contig.is_some_and(|m| out.len() >= m) {
+            break;
+        }
     }
     Ok(out)
 }
@@ -944,5 +961,39 @@ mod tests {
         );
         let out = slice_record(&rec, &slice1(4, 10, 1), &rec.features);
         assert!(out.features.is_empty());
+    }
+
+    /// A CDS + its `Domain_Search` best-hit feature, both tagged with `cds_id`.
+    fn hit_cds(start: i64, end: i64, cds_id: &str, hit_name: &str) -> Vec<SeqFeature> {
+        let mut cds = SeqFeature::new("CDS", Location::range(start, end, 1));
+        cds.set("cds_id", cds_id.to_string());
+        let mut ds = SeqFeature::new(DOMAIN_SEARCH_BEST_HIT_NAME, Location::range(start, end, 1));
+        ds.set("cds_id", cds_id.to_string());
+        ds.set("name", hit_name.to_string());
+        vec![cds, ds]
+    }
+
+    #[test]
+    fn select_by_cds_hits_max_hits_per_contig_caps_regions() {
+        // Two hit CDSs on a 60 bp contig; whole-contig extraction yields one region
+        // per focus CDS. max_hits_per_contig = 1 keeps only the first.
+        let mut feats = hit_cds(0, 9, "1_1_9", "A");
+        feats.extend(hit_cds(30, 39, "31_1_39", "B"));
+        let rec = test_rec(&vec![b'A'; 60], feats);
+        let all = select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, None, None).unwrap();
+        assert_eq!(all.len(), 2);
+        let capped = select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, None, Some(1)).unwrap();
+        assert_eq!(capped.len(), 1);
+    }
+
+    #[test]
+    fn select_by_cds_hits_decoy_drops_matching_focus() {
+        // Focus hit "A" is a decoy -> only the "B" hit region is emitted.
+        let mut feats = hit_cds(0, 9, "1_1_9", "A");
+        feats.extend(hit_cds(30, 39, "31_1_39", "B"));
+        let rec = test_rec(&vec![b'A'; 60], feats);
+        let decoys: std::collections::HashSet<String> = ["A".to_string()].into_iter().collect();
+        let out = select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, Some(&decoys), None).unwrap();
+        assert_eq!(out.len(), 1);
     }
 }

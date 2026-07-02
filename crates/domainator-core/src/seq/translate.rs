@@ -43,6 +43,23 @@ pub fn revcomp(seq: &[u8]) -> Vec<u8> {
         .collect()
 }
 
+/// IUPAC complement (no reversal), preserving case (matches Biopython's
+/// `Seq.complement`). Used by `deduplicate`'s both-strands hashing.
+pub fn complement(seq: &[u8]) -> Vec<u8> {
+    seq.iter()
+        .map(|&b| match b {
+            b'A' => b'T', b'T' => b'A', b'U' => b'A', b'G' => b'C', b'C' => b'G',
+            b'a' => b't', b't' => b'a', b'u' => b'a', b'g' => b'c', b'c' => b'g',
+            b'R' => b'Y', b'Y' => b'R', b'S' => b'S', b'W' => b'W', b'K' => b'M', b'M' => b'K',
+            b'r' => b'y', b'y' => b'r', b's' => b's', b'w' => b'w', b'k' => b'm', b'm' => b'k',
+            b'B' => b'V', b'V' => b'B', b'D' => b'H', b'H' => b'D',
+            b'b' => b'v', b'v' => b'b', b'd' => b'h', b'h' => b'd',
+            b'N' => b'N', b'n' => b'n',
+            other => other,
+        })
+        .collect()
+}
+
 /// Translate a nucleotide sequence to a peptide string (no trailing partial codon).
 pub fn translate_dna(seq: &[u8]) -> String {
     let mut out = Vec::with_capacity(seq.len() / 3);

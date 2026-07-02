@@ -42,6 +42,51 @@ Prioritize the pipeline for building sequence similarity networks.  and analyzin
 
 There are some dependencies that are not easily portable to Rust, such as anything using torch. Also, Infernal, and several other dependencies. These are outside the scope of the first release.
 
+### Progress
+|executable|implementation status|
+|--------------------------------|
+|build_projection.py|deferred|
+|build_ssn.py|finished|
+|build_ssn_viewer.py|finished|
+|build_tree.py|deferred|
+|clean_sequences.py|finished (byte-identical parity)|
+|color_genbank.py|planned|
+|color_table_to_legend.py|planned|
+|compare_contigs.py|done|
+|deduplicate_genbank.py|finished: hash/diamond/usearch backends (cd-hit deferred)|
+|domain_search.py|options at parity except: FASTA/CM/foldseek references, --gene_call (prodigal, GPL-deferred), --pad, --deduplicate, --max_output_gb|
+|domainate.py|options at parity except: FASTA/CM/foldseek references, --gene_call (prodigal, GPL-deferred), --batch_size/--offset/--recs_to_read|
+|domainator_db_download.py|planned|
+|domainator_format_db.py|planned|
+|enum_report.py|finished (html output deferred, need to figure out best way to integrate with tauri)|
+|extract_domains.py|finished (separate tool; parity-verified)|
+|extract_peptides.py|finished (separate tool; parity-verified)|
+|extract_unannotated.py|finished (protein-only, matches Python)|
+|filter_domains.py|finished (parity-verified)|
+|find_features.py|deferred (too many torch dependencies)|
+|genbank_to_fasta.py|finished (byte-identical parity)|
+|hmmer_build.py|planned|
+|infernal_build.py|deferred (avoiding infernal dependency for now)|
+|kmer_dist.py|planned (but not high priority)|
+|hmmer_compare.py|finished|
+|hmmer_report.py|planned|
+|hmmer_search.py|planned|
+|hmmer_select.py|planned|
+|matrix_report.py|finished|
+|partition_seqfile.py|deferred|
+|select_by_cds.py|finished|
+|select_by_coord.py|finished (parity-verified)|
+|select_by_contig.py|finished|
+|seq_dist.py|finished|
+|sort_contigs.py|finished (parity; ties may reorder)|
+|summary_report.py|planned|
+|split_by_cluster.py|planned|
+|transform_matrix.py|finished|
+|plot_contigs.py|planned (high priority, but need to make a much nicer implementation than the python one)|
+|trim_contigs.py|finished (parity-verified)|
+|domainator_server|deferred (tauri target is the alternative)|
+
+
 ### External rust dependencies
 - hmmer_pure_rs
 - prodigal-rs

@@ -49,6 +49,7 @@ pub fn hmmsearch_db(
     z: f64,
     evalue: f64,
     min_evalue: f64,
+    max_mode: bool,
 ) -> Vec<NamedHit> {
     let mut out = Vec::new();
     for hmm in &db.hmms {
@@ -58,6 +59,9 @@ pub fn hmmsearch_db(
         profile_config(hmm, &bg, &mut gm, 400, P7_LOCAL);
         let mut om = OProfile::convert(&gm);
         let mut pli = Pipeline::new();
+        // `--max_mode` (hmmsearch `--max`): skip the MSV/Viterbi/Fwd heuristic
+        // filters for maximum sensitivity.
+        pli.do_max = max_mode;
         pli.new_model(&gm);
         let mut th = TopHits::new();
 

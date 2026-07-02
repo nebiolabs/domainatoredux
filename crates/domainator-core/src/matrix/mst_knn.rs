@@ -41,15 +41,16 @@ fn for_each_entry(m: &DataMatrix, mut f: impl FnMut(usize, usize, f64)) {
 }
 
 /// Disjoint-set (union-find) with path compression, used for Kruskal's MST.
-struct UnionFind {
+/// Shared with the `ssn` module (the SSN `MaxTree` builds the same forest).
+pub(crate) struct UnionFind {
     parent: Vec<usize>,
 }
 
 impl UnionFind {
-    fn new(n: usize) -> Self {
+    pub(crate) fn new(n: usize) -> Self {
         UnionFind { parent: (0..n).collect() }
     }
-    fn find(&mut self, mut x: usize) -> usize {
+    pub(crate) fn find(&mut self, mut x: usize) -> usize {
         let mut root = x;
         while self.parent[root] != root {
             root = self.parent[root];
@@ -62,7 +63,7 @@ impl UnionFind {
         root
     }
     /// Merge the sets of `x` and `y`; returns `true` if they were distinct.
-    fn union(&mut self, x: usize, y: usize) -> bool {
+    pub(crate) fn union(&mut self, x: usize, y: usize) -> bool {
         let (rx, ry) = (self.find(x), self.find(y));
         if rx != ry {
             self.parent[rx] = ry;
@@ -81,32 +82,30 @@ impl UnionFind {
 /// endpoint's top-`k` — the OR-symmetric rule). The diagonal and the original
 /// *directional* off-diagonal values of every kept pair are written back,
 /// matching the sparse branch of the Python implementation.
-pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64) -> DataMatrix {
+/// Compute the kept undirected edge set (canonical pairs `a < b`) for MST ∪
+/// OR-symmetric kNN, along with the symmetric candidate scores `max(M[i,j],
+/// M[j,i])` per pair. Shared by [`apply_mst_knn`] (which writes the pruned
+/// matrix) and `build-ssn`'s `--mst_knn` edge list, so both select identical
+/// edges.
+pub(crate) fn mst_knn_kept(
+    m: &DataMatrix,
+    k: usize,
+    lower_bound: f64,
+) -> (HashSet<(usize, usize)>, HashMap<(usize, usize), f64>) {
     let n = m.nrows();
-
-    // Directional off-diagonal values and the diagonal (random-access lookups).
-    let mut cell: HashMap<(usize, usize), f64> = HashMap::new();
-    let mut diagonal: HashMap<usize, f64> = HashMap::new();
-    for_each_entry(m, |r, c, v| {
-        if v == 0.0 {
-            return;
-        }
-        if r == c {
-            diagonal.insert(r, v);
-        } else {
-            cell.insert((r, c), v);
-        }
-    });
 
     // Symmetric (undirected) candidate score per canonical pair (min, max).
     let mut sym: HashMap<(usize, usize), f64> = HashMap::new();
-    for (&(r, c), &v) in &cell {
+    for_each_entry(m, |r, c, v| {
+        if v == 0.0 || r == c {
+            return;
+        }
         let key = if r < c { (r, c) } else { (c, r) };
         let e = sym.entry(key).or_insert(f64::NEG_INFINITY);
         if v > *e {
             *e = v;
         }
-    }
+    });
 
     let mut kept: HashSet<(usize, usize)> = HashSet::new();
 
@@ -116,9 +115,7 @@ pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64) -> DataMatrix {
     // over lower-triangular, row-major edges).
     let mut candidates: Vec<(f64, usize, usize)> =
         sym.iter().map(|(&(a, b), &s)| (s, b, a)).collect(); // (score, larger=b, smaller=a)
-    candidates.sort_by(|x, y| {
-        y.0.total_cmp(&x.0).then(x.1.cmp(&y.1)).then(x.2.cmp(&y.2))
-    });
+    candidates.sort_by(|x, y| y.0.total_cmp(&x.0).then(x.1.cmp(&y.1)).then(x.2.cmp(&y.2)));
 
     let mut uf = UnionFind::new(n);
     for &(score, larger, smaller) in &candidates {
@@ -153,6 +150,28 @@ pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64) -> DataMatrix {
             }
         }
     }
+
+    (kept, sym)
+}
+
+pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64) -> DataMatrix {
+    let n = m.nrows();
+
+    // Directional off-diagonal values and the diagonal (random-access lookups).
+    let mut cell: HashMap<(usize, usize), f64> = HashMap::new();
+    let mut diagonal: HashMap<usize, f64> = HashMap::new();
+    for_each_entry(m, |r, c, v| {
+        if v == 0.0 {
+            return;
+        }
+        if r == c {
+            diagonal.insert(r, v);
+        } else {
+            cell.insert((r, c), v);
+        }
+    });
+
+    let (kept, _sym) = mst_knn_kept(m, k, lower_bound);
 
     // --- Assemble the pruned matrix ---
     let mut rows_v: Vec<i64> = Vec::new();

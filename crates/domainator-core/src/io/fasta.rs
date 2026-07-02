@@ -77,6 +77,33 @@ pub fn read_fasta_partition(
 }
 
 /// Write records as FASTA, wrapping sequence at 60 columns.
+/// Biopython-style FASTA title (`Bio.SeqIO.FastaIO.FastaWriter`): `id` alone when
+/// there is no description, the description alone when it already starts with the
+/// id, else `"{id} {description}"`.
+pub fn fasta_title(id: &str, description: &str) -> String {
+    let d = description.trim();
+    if d.is_empty() {
+        id.to_string()
+    } else if d.split_whitespace().next() == Some(id) {
+        d.to_string()
+    } else {
+        format!("{id} {d}")
+    }
+}
+
+/// Write records as FASTA with Biopython's header convention, taking the record
+/// **name** (LOCUS for GenBank, header for FASTA — i.e. Python's `record.id`) as
+/// the sequence identifier. Wraps sequence at 60 columns.
+pub fn write_fasta_bp<W: io::Write>(w: &mut W, records: &[SeqRecord]) -> io::Result<()> {
+    for rec in records {
+        writeln!(w, ">{}", fasta_title(&rec.name, &rec.description))?;
+        for chunk in rec.seq.chunks(60) {
+            writeln!(w, "{}", String::from_utf8_lossy(chunk))?;
+        }
+    }
+    Ok(())
+}
+
 pub fn write_fasta(path: &str, records: &[SeqRecord]) -> io::Result<()> {
     let file = std::fs::File::create(path)?;
     let mut w = io::BufWriter::new(file);

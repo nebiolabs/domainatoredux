@@ -1,12 +1,29 @@
 //! Domainator tools as library functions (CLI and GUI both call these).
 
+pub mod build_ssn;
+pub mod build_ssn_viewer;
+pub mod clean_sequences;
+pub mod color_genbank;
+pub mod color_table_to_legend;
 pub mod compare_contigs;
+pub mod deduplicate_genbank;
 pub mod domain_search;
 pub mod domainate;
+pub mod external;
+pub mod extract_common;
+pub mod extract_domains;
+pub mod extract_peptides;
+pub mod extract_unannotated;
+pub mod filter_domains;
 pub mod hmmer_compare;
+pub mod matrix_report;
 pub mod neighborhood;
 pub mod enum_report;
 pub mod select_by_cds;
 pub mod select_by_contig;
+pub mod select_by_coord;
 pub mod select_common;
 pub mod seq_dist;
+pub mod sort_contigs;
+pub mod transform_matrix;
+pub mod trim_contigs;

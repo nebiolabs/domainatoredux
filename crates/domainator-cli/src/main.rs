@@ -15,16 +15,26 @@ use config::{load_config, print_config, schema, ColumnSpec, EnumConfig};
 use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
 use domainator_core::io::{detect_filetype, fasta, FileType};
-use domainator_core::matrix::{hdf5_io, text};
+use domainator_core::matrix::{hdf5_io, read_matrix, text};
 use domainator_core::seq::taxonomy::NCBITaxonomy;
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools::enum_report::{self, needs_taxonomy, Analysis, OutputFormat};
 use domainator_core::tools::select_by_cds::{pad_records, select_by_cds, SelectByCdsOptions};
 use domainator_core::tools::select_by_contig::{select_by_contig, SelectByContigOptions};
 use domainator_core::tools::select_common::parse_name_list;
+use domainator_core::tools;
+use domainator_core::tools::deduplicate_genbank;
+use domainator_core::tools::clean_sequences;
+use domainator_core::tools::sort_contigs;
 use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
 use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
+use domainator_core::tools::build_ssn::{build_ssn, BuildSsnOptions};
+use domainator_core::tools::build_ssn_viewer::{
+    build_ssn_viewer_bundle, gzip, render_html, serialize_bundle, BuildSsnViewerOptions,
+};
+use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
 use domainator_core::tools::seq_dist::{detect_kind, seq_dist, SeqDistOptions};
+use domainator_core::tools::transform_matrix::{transform_matrix, TransformMatrixOptions, MODES};
 use domainator_core::tools::{domain_search, domainate};
 
 #[derive(Parser)]
@@ -63,12 +73,48 @@ enum Command {
         /// E-value threshold (default: 0.001).
         #[arg(short = 'e', long)]
         evalue: Option<f64>,
+        /// Drop hits with i-evalue below this (default: 0.0).
+        #[arg(long = "min_evalue")]
+        min_evalue: Option<f64>,
         /// E-value search space size (-Z) (default: 1000).
         #[arg(short = 'Z', long = "z")]
         z: Option<f64>,
         /// Maximum fractional domain overlap before filtering (>=1 disables; default 1.0).
         #[arg(long = "max_overlap")]
         max_overlap: Option<f64>,
+        /// Per-CDS domain cap (0 = unlimited).
+        #[arg(long = "max_domains")]
+        max_domains: Option<usize>,
+        /// hmmsearch --max (skip heuristic filters for maximum sensitivity).
+        #[arg(long = "max_mode")]
+        max_mode: bool,
+        /// Apply the overlap filter independently per database.
+        #[arg(long = "overlap_by_db")]
+        overlap_by_db: bool,
+        /// Output only contigs that had at least one hit.
+        #[arg(long = "hits_only")]
+        hits_only: bool,
+        /// Do not add Domainator annotations (keep only inputs).
+        #[arg(long = "no_annotations")]
+        no_annotations: bool,
+        /// Worker threads (0 = all cores).
+        #[arg(long)]
+        cpu: Option<usize>,
+        /// Treat FASTA input as this molecule type (protein/nucleotide).
+        #[arg(long = "fasta_type")]
+        fasta_type: Option<String>,
+        /// Only keep contigs with a taxid in this list (lineage-aware).
+        #[arg(long = "include_taxids", num_args = 1..)]
+        include_taxids: Vec<i64>,
+        /// Drop contigs with a taxid in this list (lineage-aware).
+        #[arg(long = "exclude_taxids", num_args = 1..)]
+        exclude_taxids: Vec<i64>,
+        /// Boolean taxid expression (& | ~), e.g. "2 & ~1224".
+        #[arg(long = "taxonomy_expr")]
+        taxonomy_expr: Option<String>,
+        /// Path to the NCBI taxonomy directory (default: /tmp/ncbi_taxonomy).
+        #[arg(long = "ncbi_taxonomy_path")]
+        ncbi_taxonomy_path: Option<String>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -90,6 +136,9 @@ enum Command {
         /// E-value threshold (default: 0.001).
         #[arg(short = 'e', long)]
         evalue: Option<f64>,
+        /// Drop hits with i-evalue below this (default: 0.0).
+        #[arg(long = "min_evalue")]
+        min_evalue: Option<f64>,
         /// E-value search space size (-Z) (default: 1000).
         #[arg(short = 'Z', long = "z")]
         z: Option<f64>,
@@ -99,12 +148,42 @@ enum Command {
         /// Cap on total hit contigs returned (top-N by best domain score).
         #[arg(long = "max_hits")]
         max_hits: Option<usize>,
+        /// Cap on independent hits emitted per contig.
+        #[arg(long = "max_hits_per_contig")]
+        max_hits_per_contig: Option<usize>,
+        /// Maximum fractional domain overlap on a CDS before filtering (>=1 disables).
+        #[arg(long = "max_overlap")]
+        max_overlap: Option<f64>,
+        /// hmmsearch --max (skip heuristic filters for maximum sensitivity).
+        #[arg(long = "max_mode")]
+        max_mode: bool,
         /// Approximate CDSs per partition (default: 10000).
         #[arg(long = "batch_size")]
         batch_size: Option<u64>,
         /// Worker threads (0 = all cores).
         #[arg(long)]
         cpu: Option<usize>,
+        /// Treat FASTA input as this molecule type (protein/nucleotide).
+        #[arg(long = "fasta_type")]
+        fasta_type: Option<String>,
+        /// Decoy domain names: drop a hit if its best hit is a decoy.
+        #[arg(long, num_args = 1..)]
+        decoys: Vec<String>,
+        /// File of decoy domain names (one per line).
+        #[arg(long = "decoys_file")]
+        decoys_file: Option<String>,
+        /// Only keep contigs with a taxid in this list (lineage-aware).
+        #[arg(long = "include_taxids", num_args = 1..)]
+        include_taxids: Vec<i64>,
+        /// Drop contigs with a taxid in this list (lineage-aware).
+        #[arg(long = "exclude_taxids", num_args = 1..)]
+        exclude_taxids: Vec<i64>,
+        /// Boolean taxid expression (& | ~), e.g. "2 & ~1224".
+        #[arg(long = "taxonomy_expr")]
+        taxonomy_expr: Option<String>,
+        /// Path to the NCBI taxonomy directory (default: /tmp/ncbi_taxonomy).
+        #[arg(long = "ncbi_taxonomy_path")]
+        ncbi_taxonomy_path: Option<String>,
         /// Extract whole matching contigs (nucleotide).
         #[arg(long = "whole_contig")]
         whole_contig: bool,
@@ -142,6 +221,455 @@ enum Command {
         #[arg(long)]
         config: Option<String>,
         /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Remove redundant sequences (hash exact-dedup, or diamond/usearch clustering).
+    Deduplicate {
+        /// Input GenBank/FASTA file(s).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output file. Writes to stdout if omitted.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Log file (default: stderr).
+        #[arg(long)]
+        log: Option<String>,
+        /// Molecule type for FASTA input (protein/nucleotide).
+        #[arg(long = "fasta_type")]
+        fasta_type: Option<String>,
+        /// Clustering algorithm: hash | diamond | usearch (cd-hit deferred).
+        #[arg(long)]
+        algorithm: Option<String>,
+        /// Path to the external clusterer binary (if not on PATH).
+        #[arg(long = "bin_path")]
+        bin_path: Option<String>,
+        /// Identity threshold in [0,1] (must be 1 for hash).
+        #[arg(long)]
+        id: Option<f64>,
+        /// Prepend "<cluster_size>-" to representative names.
+        #[arg(long = "prefix_count")]
+        prefix_count: bool,
+        /// Append "-<cluster_size>" to representative names.
+        #[arg(long = "suffix_count")]
+        suffix_count: bool,
+        /// Threads (0 = all cores).
+        #[arg(long)]
+        cpu: Option<usize>,
+        /// Extra clusterer args as an inner JSON dict, e.g. '"-s":0.9'.
+        #[arg(long)]
+        params: Option<String>,
+        /// Write output as FASTA instead of GenBank.
+        #[arg(long = "fasta_out")]
+        fasta_out: bool,
+        /// Consider both strands (nucleotide only).
+        #[arg(long = "both_strands")]
+        both_strands: bool,
+        /// Write a representative/contigs cluster-membership TSV to this path.
+        #[arg(long = "cluster_table")]
+        cluster_table: Option<String>,
+        /// Separator between contig names in the cluster table (default ' ; ').
+        #[arg(long = "cluster_sep")]
+        cluster_sep: Option<String>,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Convert GenBank record(s) to FASTA.
+    GenbankToFasta {
+        /// Input GenBank file(s) (stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output FASTA file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Clean/filter sequences: newick-safe names, dedup names, strip/filter residues.
+    CleanSequences {
+        /// Input GenBank/FASTA file(s) (stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Log file (default: stderr).
+        #[arg(long)]
+        log: Option<String>,
+        /// Molecule type for FASTA input (protein/nucleotide).
+        #[arg(long = "fasta_type")]
+        fasta_type: Option<String>,
+        /// Write output as FASTA instead of GenBank.
+        #[arg(long = "fasta_out")]
+        fasta_out: bool,
+        /// Make names newick-compatible (bad chars -> '_').
+        #[arg(long = "clean_name")]
+        clean_name: bool,
+        /// Ensure unique sequence names.
+        #[arg(long = "deduplicate_names")]
+        deduplicate_names: bool,
+        /// Strip non-canonical residues (and '*') from sequence ends.
+        #[arg(long)]
+        strip: bool,
+        /// Drop sequences containing non-canonical residues (after strip).
+        #[arg(long = "filter_by_aa")]
+        filter_by_aa: bool,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Sort contigs by best Domain_Search (or selected Domainator) score.
+    SortContigs {
+        /// Input GenBank file(s) (stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output GenBank file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Keep only the top-N contigs by score.
+        #[arg(long = "max_hits")]
+        max_hits: Option<usize>,
+        /// Sort by best Domainator score among these domain names.
+        #[arg(long, num_args = 1..)]
+        domains: Vec<String>,
+        /// With --domains, restrict to these databases.
+        #[arg(long, num_args = 1..)]
+        databases: Vec<String>,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Extract contig regions using explicit 1-based coordinate ranges from a table.
+    SelectByCoord {
+        /// Input GenBank file(s) (stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output GenBank file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Labeled coordinate table (columns: contig, start, end, strand?, file?).
+        #[arg(short = 'c', long)]
+        coords: Option<PathBuf>,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Filter Domainator/Domain_Search annotations by evalue, overlap, database, name.
+    #[command(allow_negative_numbers = true)]
+    FilterDomains {
+        /// Input GenBank file(s) (stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output GenBank file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Threshold E-value (max) for a domain hit.
+        #[arg(short, long)]
+        evalue: Option<f64>,
+        /// Maximum fraction of overlap between kept domains.
+        #[arg(short = 'm', long = "max_overlap")]
+        max_overlap: Option<f64>,
+        /// Only keep domains with these names.
+        #[arg(long, num_args = 1..)]
+        domains: Vec<String>,
+        /// File of domain names to keep (one per line).
+        #[arg(long = "domains_file")]
+        domains_file: Option<String>,
+        /// Remove annotations from all databases except these (applied first).
+        #[arg(long = "databases_keep", num_args = 1..)]
+        databases_keep: Vec<String>,
+        /// Only apply filters to these databases (others kept as-is).
+        #[arg(long = "databases_filter", num_args = 1..)]
+        databases_filter: Vec<String>,
+        /// Which annotations to filter: domainator | domain_search | all.
+        #[arg(long = "annotation_type")]
+        annotation_type: Option<String>,
+        /// Only process contigs with these names.
+        #[arg(long, num_args = 1..)]
+        contigs: Vec<String>,
+        /// File of contig names to process.
+        #[arg(long = "contigs_file")]
+        contigs_file: Option<String>,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Assign hex colors to domain and/or CDS features (Color qualifier).
+    ColorGenbank {
+        /// Input GenBank file(s) (stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output GenBank file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Only color contigs with these names.
+        #[arg(long, num_args = 1..)]
+        contigs: Vec<String>,
+        /// File of contig names to color (one per line).
+        #[arg(long = "contigs_file")]
+        contigs_file: Option<String>,
+        /// TSV (no header): key, hex color. If omitted, colors are auto-generated.
+        #[arg(long = "color_table")]
+        color_table: Option<String>,
+        /// Write the resolved color table (key, hex) to this file.
+        #[arg(long = "color_table_out")]
+        color_table_out: Option<String>,
+        /// Color to use for Domain_Search best-hit features.
+        #[arg(long = "search_hit_color")]
+        search_hit_color: Option<String>,
+        /// Remove all existing Color qualifiers before coloring.
+        #[arg(long)]
+        clear: bool,
+        /// Only use domains from these databases when determining color.
+        #[arg(long, num_args = 1..)]
+        databases: Vec<String>,
+        /// What to color: domains | cdss | domains_and_cdss (default: cdss).
+        #[arg(long)]
+        mode: Option<String>,
+        /// Color domains by their database id instead of their name.
+        #[arg(long = "domain_database")]
+        domain_database: bool,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Generate an SVG legend from a color table.
+    ColorTableToLegend {
+        /// Color table file(s) (TSV: key, hex; stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output SVG file (required).
+        #[arg(long)]
+        svg: Option<String>,
+        /// Legend title (default: "Legend").
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Trim contig ends by kb, CDS count, or by stripping end CDSs by domain.
+    TrimContigs {
+        /// Input GenBank file(s) (stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output GenBank file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// kb to trim from both sides.
+        #[arg(long = "kb_both")]
+        kb_both: Option<f64>,
+        /// kb to trim from the left side.
+        #[arg(long = "kb_left")]
+        kb_left: Option<f64>,
+        /// kb to trim from the right side.
+        #[arg(long = "kb_right")]
+        kb_right: Option<f64>,
+        /// CDSs to trim from both sides.
+        #[arg(long = "cds_both")]
+        cds_both: Option<i64>,
+        /// CDSs to trim from the left side.
+        #[arg(long = "cds_left")]
+        cds_left: Option<i64>,
+        /// CDSs to trim from the right side.
+        #[arg(long = "cds_right")]
+        cds_right: Option<i64>,
+        /// Trim end CDSs containing domains with these names.
+        #[arg(long, num_args = 1..)]
+        domains: Vec<String>,
+        /// File of domain names to trim.
+        #[arg(long = "domains_file")]
+        domains_file: Option<String>,
+        /// Trim end CDSs matching this boolean domain expression.
+        #[arg(long = "domain_expr")]
+        domain_expr: Option<String>,
+        /// Trim end CDSs with no domain annotations.
+        #[arg(long = "no_domain")]
+        no_domain: bool,
+        /// Only process contigs with these names.
+        #[arg(long, num_args = 1..)]
+        contigs: Vec<String>,
+        /// File of contig names to process.
+        #[arg(long = "contigs_file")]
+        contigs_file: Option<String>,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Extract domain-annotated regions from annotated contigs.
+    #[command(allow_negative_numbers = true)]
+    ExtractDomains {
+        /// Input GenBank file(s) (stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// E-value cutoff (max) for domains to extract.
+        #[arg(short, long)]
+        evalue: Option<f64>,
+        /// Score cutoff (min) for domains to extract.
+        #[arg(long)]
+        score: Option<f64>,
+        /// Include domains with these names.
+        #[arg(long, num_args = 1..)]
+        domains: Vec<String>,
+        /// File of domain names to include.
+        #[arg(long = "domains_file")]
+        domains_file: Option<String>,
+        /// Only these databases.
+        #[arg(long, num_args = 1..)]
+        databases: Vec<String>,
+        /// Select domains marked as search hits.
+        #[arg(long = "search_hits")]
+        search_hits: bool,
+        /// Extract this many extra residues/bases upstream of the hit.
+        #[arg(long = "pad_up")]
+        pad_up: Option<i64>,
+        /// Extract this many extra residues/bases downstream of the hit.
+        #[arg(long = "pad_down")]
+        pad_down: Option<i64>,
+        /// Extract one envelope covering all target domains per contig.
+        #[arg(long)]
+        combine: bool,
+        /// Splice target domains together, deleting intervening sequence.
+        #[arg(long)]
+        splice: bool,
+        /// Don't reverse-complement reverse-strand hits.
+        #[arg(long = "keep_direction")]
+        keep_direction: bool,
+        /// Keep original contig names (don't add coordinate suffixes).
+        #[arg(long = "keep_name")]
+        keep_name: bool,
+        /// Write FASTA instead of GenBank.
+        #[arg(long = "fasta_out")]
+        fasta_out: bool,
+        /// Only process contigs with these names.
+        #[arg(long, num_args = 1..)]
+        contigs: Vec<String>,
+        /// File of contig names to process.
+        #[arg(long = "contigs_file")]
+        contigs_file: Option<String>,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Extract peptide sequences from selected CDSs.
+    ExtractPeptides {
+        /// Input GenBank file(s) (stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Only peptides containing these domains.
+        #[arg(long, num_args = 1..)]
+        domains: Vec<String>,
+        /// File of domain names.
+        #[arg(long = "domains_file")]
+        domains_file: Option<String>,
+        /// Only consider domains from these databases.
+        #[arg(long, num_args = 1..)]
+        databases: Vec<String>,
+        /// Extract peptides from CDSs with no domain annotations.
+        #[arg(long)]
+        unannotated: bool,
+        /// Extract peptides from search hits.
+        #[arg(long = "search_hits")]
+        search_hits: bool,
+        /// Only CDSs on this strand: f | r.
+        #[arg(long)]
+        strand: Option<String>,
+        /// Invert the CDS selection criteria.
+        #[arg(long)]
+        invert: bool,
+        /// Only CDSs with these names.
+        #[arg(long, num_args = 1..)]
+        cdss: Vec<String>,
+        /// File of CDS names.
+        #[arg(long = "cdss_file")]
+        cdss_file: Option<String>,
+        /// Keep the original contig name instead of the CDS name.
+        #[arg(long = "keep_name")]
+        keep_name: bool,
+        /// CDS qualifier to prefer as the peptide name.
+        #[arg(long = "name_field")]
+        name_field: Option<String>,
+        /// E-value cutoff for domain annotations kept on the output.
+        #[arg(short, long)]
+        evalue: Option<f64>,
+        /// Write FASTA instead of GenBank.
+        #[arg(long = "fasta_out")]
+        fasta_out: bool,
+        /// Only process contigs with these names.
+        #[arg(long, num_args = 1..)]
+        contigs: Vec<String>,
+        /// File of contig names to process.
+        #[arg(long = "contigs_file")]
+        contigs_file: Option<String>,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Extract regions of proteins not containing domain annotations.
+    #[command(allow_negative_numbers = true)]
+    ExtractUnannotated {
+        /// Input GenBank file(s) (stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// E-value cutoff (max) for domains to consider.
+        #[arg(short, long)]
+        evalue: Option<f64>,
+        /// Score cutoff (min) for domains to consider.
+        #[arg(long)]
+        score: Option<f64>,
+        /// Only consider domains from these databases.
+        #[arg(long, num_args = 1..)]
+        databases: Vec<String>,
+        /// Consider domains marked as search hits.
+        #[arg(long = "search_hits")]
+        search_hits: bool,
+        /// Don't reverse-complement reverse-strand regions.
+        #[arg(long = "keep_direction")]
+        keep_direction: bool,
+        /// Keep original names (no coordinate suffixes).
+        #[arg(long = "keep_name")]
+        keep_name: bool,
+        /// Only extract the largest unannotated region per protein.
+        #[arg(long)]
+        largest: bool,
+        /// Minimum length of unannotated regions to extract.
+        #[arg(long)]
+        lb: Option<i64>,
+        /// Write FASTA instead of GenBank.
+        #[arg(long = "fasta_out")]
+        fasta_out: bool,
+        /// Only process contigs with these names.
+        #[arg(long, num_args = 1..)]
+        contigs: Vec<String>,
+        /// File of contig names to process.
+        #[arg(long = "contigs_file")]
+        contigs_file: Option<String>,
+        #[arg(long)]
+        config: Option<String>,
         #[arg(long = "print_config")]
         print_config: bool,
     },
@@ -229,6 +757,161 @@ enum Command {
         /// Worker threads (0 = all cores).
         #[arg(long)]
         cpu: Option<usize>,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Normalize / convert / sparsify a score matrix (dense<->sparse, --mode, --mst_knn).
+    TransformMatrix {
+        /// Input matrix file (HDF5 or dense TSV).
+        #[arg(short, long)]
+        input: Option<PathBuf>,
+        /// Write a dense HDF5 matrix here.
+        #[arg(long)]
+        dense: Option<PathBuf>,
+        /// Write a dense TSV matrix here.
+        #[arg(long = "dense_text")]
+        dense_text: Option<PathBuf>,
+        /// Write a sparse (CSR) HDF5 matrix here.
+        #[arg(long)]
+        sparse: Option<PathBuf>,
+        /// Output value type (default: none = pass-through). Transforms only apply
+        /// to a `score` input: score, bool, norm_score, row_norm_score, score_dist,
+        /// efi_score, efi_score_dist.
+        #[arg(long)]
+        mode: Option<String>,
+        /// Override the input matrix's declared data type.
+        #[arg(long = "input_type")]
+        input_type: Option<String>,
+        /// Zero out all values <= this after the mode transform.
+        #[arg(long)]
+        lb: Option<f64>,
+        /// Keep only MST + OR-symmetric kNN edges (integer > 1).
+        #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
+        mst_knn: Option<usize>,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Build a Cytoscape XGMML sequence-similarity network from a score matrix.
+    BuildSsn {
+        /// Input matrix file (HDF5 or dense TSV).
+        #[arg(short, long)]
+        input: Option<PathBuf>,
+        /// Write the Cytoscape XGMML network here (required).
+        #[arg(long)]
+        xgmml: Option<PathBuf>,
+        /// Exclude edges with weight <= this (default: 0).
+        #[arg(long)]
+        lb: Option<f64>,
+        /// TSV node metadata files keyed by node id.
+        #[arg(long, num_args = 1..)]
+        metadata: Vec<String>,
+        /// Only consider labels in this list (additive with --subset_file).
+        #[arg(long, num_args = 1..)]
+        subset: Vec<String>,
+        /// Text file of labels to retain.
+        #[arg(long = "subset_file")]
+        subset_file: Option<String>,
+        /// Colour nodes by this metadata column.
+        #[arg(long = "color_by")]
+        color_by: Option<String>,
+        /// TSV (no header) mapping metadata values to hex colours.
+        #[arg(long = "color_table")]
+        color_table: Option<String>,
+        /// Write the resolved colour table here.
+        #[arg(long = "color_table_out")]
+        color_table_out: Option<String>,
+        /// Add an SSN_cluster column of connected-component ids.
+        #[arg(long)]
+        cluster: bool,
+        /// Write a node->cluster TSV here (implies --cluster).
+        #[arg(long = "cluster_tsv")]
+        cluster_tsv: Option<String>,
+        /// Omit the header row from the cluster TSV.
+        #[arg(long = "no_cluster_header")]
+        no_cluster_header: bool,
+        /// Keep only maximum-spanning-tree edges.
+        #[arg(long)]
+        mst: bool,
+        /// Keep MST + OR-symmetric kNN edges (integer > 1).
+        #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
+        mst_knn: Option<usize>,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Build a compact `.ssnv` bundle (+ standalone HTML) for the interactive SSN viewer.
+    BuildSsnViewer {
+        /// Symmetric similarity matrix (HDF5 or dense TSV).
+        #[arg(short, long)]
+        input: Option<PathBuf>,
+        /// Write the gzip-JSON `.ssnv` bundle here.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Write a standalone HTML viewer shell here.
+        #[arg(long)]
+        html: Option<String>,
+        /// Embed the bundle into the HTML so the viewer autoloads it.
+        #[arg(long = "embed_data")]
+        embed_data: bool,
+        /// Display name recorded in the bundle (defaults to the output stem).
+        #[arg(long)]
+        name: Option<String>,
+        /// TSV metadata files keyed by node id.
+        #[arg(long, num_args = 1..)]
+        metadata: Vec<String>,
+        /// Only consider labels in this list (additive with --subset_file).
+        #[arg(long, num_args = 1..)]
+        subset: Vec<String>,
+        /// Text file of labels to retain.
+        #[arg(long = "subset_file")]
+        subset_file: Option<String>,
+        /// Default metadata field for node colouring in the viewer.
+        #[arg(long = "color_by")]
+        color_by: Option<String>,
+        /// Default metadata field for node labels in the viewer.
+        #[arg(long = "label_by")]
+        label_by: Option<String>,
+        /// Merge-impact metric for split events (min_child or product).
+        #[arg(long = "merge_impact_metric", value_parser = ["min_child", "product"])]
+        merge_impact_metric: Option<String>,
+        /// Max strongest merge events to embed (0 = all; default 500).
+        #[arg(long = "max_merge_events")]
+        max_merge_events: Option<usize>,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Summarize a similarity matrix (stats, cluster-vs-threshold, merge events) as text or JSON.
+    MatrixReport {
+        /// Input matrix file (HDF5 or dense TSV).
+        #[arg(short, long)]
+        input: Option<PathBuf>,
+        /// Write the human-readable text report here.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Write the agent-friendly JSON report here.
+        #[arg(long)]
+        json: Option<PathBuf>,
+        /// Merge-impact metric for split events (min_child or product).
+        #[arg(long = "merge_impact_metric", value_parser = ["min_child", "product"])]
+        merge_impact_metric: Option<String>,
+        /// Max strongest merge events to report (0 = all; default 500).
+        #[arg(long = "max_merge_events")]
+        max_merge_events: Option<usize>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -499,6 +1182,16 @@ fn load_inputs(inputs: &[PathBuf]) -> Result<Vec<SeqRecord>> {
     Ok(out)
 }
 
+/// Filter `records` in place to those whose LOCUS name (Python's `contig.id`) is
+/// in the `--contigs`/`--contigs_file` set. A no-op when both are empty.
+fn filter_contigs(records: &mut Vec<SeqRecord>, contigs: &[String], contigs_file: Option<&str>) -> Result<()> {
+    let set = parse_name_list(contigs, contigs_file)?;
+    if let Some(set) = set {
+        records.retain(|r| set.contains(&r.name));
+    }
+    Ok(())
+}
+
 /// Like [`load_inputs`] but over string paths (config-file shape).
 fn load_inputs_str(inputs: &[String]) -> Result<Vec<SeqRecord>> {
     let paths: Vec<PathBuf> = inputs.iter().map(PathBuf::from).collect();
@@ -508,6 +1201,22 @@ fn load_inputs_str(inputs: &[String]) -> Result<Vec<SeqRecord>> {
 /// Convert paths to UTF-8 strings.
 fn paths_to_strings(paths: &[PathBuf]) -> Result<Vec<String>> {
     paths.iter().map(|p| p.to_str().map(str::to_string).context("non-UTF8 path")).collect()
+}
+
+/// Read a colour table: a TSV with no header mapping a value to a hex colour.
+fn read_color_table(path: &str) -> Result<std::collections::HashMap<String, String>> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("reading color table {path}"))?;
+    let mut map = std::collections::HashMap::new();
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut it = line.splitn(2, '\t');
+        if let (Some(k), Some(v)) = (it.next(), it.next()) {
+            map.insert(k.to_string(), v.trim().to_string());
+        }
+    }
+    Ok(map)
 }
 
 /// Convert an optional path to an optional UTF-8 string.
@@ -528,6 +1237,26 @@ fn write_genbank_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result<
             for rec in records {
                 write_record(&mut h, rec)?;
             }
+            h.flush()?;
+            Ok(())
+        }
+    }
+}
+
+/// Write records as FASTA (Biopython header convention) to a file or stdout.
+fn write_fasta_bp_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result<()> {
+    match output {
+        Some(p) => {
+            let file = std::fs::File::create(p).context("creating FASTA output")?;
+            let mut w = std::io::BufWriter::new(file);
+            fasta::write_fasta_bp(&mut w, records)?;
+            w.flush()?;
+            Ok(())
+        }
+        None => {
+            let stdout = std::io::stdout();
+            let mut h = std::io::BufWriter::new(stdout.lock());
+            fasta::write_fasta_bp(&mut h, records)?;
             h.flush()?;
             Ok(())
         }
@@ -558,6 +1287,70 @@ fn write_fasta_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result<()
 /// filter/column is in use).
 fn load_taxonomy(path: &str) -> Result<NCBITaxonomy> {
     NCBITaxonomy::load(std::path::Path::new(path)).context("loading NCBI taxonomy")
+}
+
+/// Load a sequence file, treating FASTA as `fasta_type` (protein/nucleotide).
+fn load_typed(input: &std::path::Path, fasta_type: &str) -> Result<Vec<SeqRecord>> {
+    let path = input.to_str().context("non-UTF8 path")?;
+    match detect_filetype(input) {
+        Some(FileType::Genbank) => read_genbank(path).context("reading GenBank"),
+        Some(FileType::Fasta) => fasta::read_fasta(path, Some(fasta_type)).context("reading FASTA"),
+        None => anyhow::bail!("could not detect file type from extension: {}", input.display()),
+    }
+}
+
+/// Parse `deduplicate`'s `--params` (an inner JSON dict like `"-s":0.9`) into an
+/// ordered list of `(flag, value)` args. Numbers/bools are stringified; a null
+/// value means a bare flag.
+fn parse_dedup_params(s: Option<&str>) -> Result<Vec<(String, Option<String>)>> {
+    let Some(s) = s.filter(|s| !s.trim().is_empty()) else {
+        return Ok(Vec::new());
+    };
+    let wrapped = format!("{{{s}}}");
+    let val: serde_json::Value =
+        serde_json::from_str(&wrapped).context("parsing --params as a JSON dict")?;
+    let obj = val.as_object().context("--params must be a JSON object body")?;
+    let mut out = Vec::new();
+    for (k, v) in obj {
+        let sv = match v {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(s) => Some(s.clone()),
+            other => Some(other.to_string()),
+        };
+        out.push((k.clone(), sv));
+    }
+    Ok(out)
+}
+
+/// Compile `--include_taxids`/`--exclude_taxids`/`--taxonomy_expr` into an
+/// allowed-taxid set, loading the taxonomy from `path` when a filter is active.
+/// Returns `None` when no taxonomy filtering was requested.
+fn compile_allowed_taxids(
+    include: &[i64],
+    exclude: &[i64],
+    expr: Option<&str>,
+    path: Option<&str>,
+) -> Result<Option<std::collections::HashSet<i64>>> {
+    let has_expr = expr.is_some_and(|e| !e.trim().is_empty());
+    if include.is_empty() && exclude.is_empty() && !has_expr {
+        return Ok(None);
+    }
+    if has_expr && (!include.is_empty() || !exclude.is_empty()) {
+        anyhow::bail!("--taxonomy_expr is mutually exclusive with --include_taxids/--exclude_taxids.");
+    }
+    let tax = load_taxonomy(path.unwrap_or("/tmp/ncbi_taxonomy"))?;
+    let allowed = if has_expr {
+        tax.compile_taxonomy_expression(expr.unwrap())
+    } else {
+        use std::collections::HashSet;
+        let inc: HashSet<i64> = include.iter().copied().collect();
+        let exc: HashSet<i64> = exclude.iter().copied().collect();
+        tax.compile_taxonomy_filter(
+            if inc.is_empty() { None } else { Some(&inc) },
+            if exc.is_empty() { None } else { Some(&exc) },
+        )
+    };
+    Ok(allowed)
 }
 
 /// CLI-provided `enum_report` params (column order preserved), plus the
@@ -677,14 +1470,30 @@ fn main() -> Result<()> {
             write_genbank(out, &records).context("writing GenBank")?;
             println!("wrote {} records to {}", records.len(), output.display());
         }
-        Command::Domainate { input, references, output, evalue, z, max_overlap, config: config_path, print_config: do_print } => {
+        Command::Domainate {
+            input, references, output, evalue, min_evalue, z, max_overlap, max_domains, max_mode,
+            overlap_by_db, hits_only, no_annotations, cpu, fasta_type, include_taxids, exclude_taxids,
+            taxonomy_expr, ncbi_taxonomy_path, config: config_path, print_config: do_print,
+        } => {
             let cli = config::DomainateConfig {
                 input: opt_path(&input)?,
                 references: paths_to_strings(&references)?,
                 output: opt_path(&output)?,
                 evalue,
+                min_evalue,
                 z,
                 max_overlap,
+                max_domains,
+                max_mode,
+                overlap_by_db,
+                hits_only,
+                no_annotations,
+                cpu,
+                fasta_type,
+                include_taxids,
+                exclude_taxids,
+                taxonomy_expr,
+                ncbi_taxonomy_path,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::DomainateConfig>(p)?,
@@ -697,26 +1506,52 @@ fn main() -> Result<()> {
             }
             let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
             let output = cfg.output.context("missing required `output` (-o / --output or config)")?;
-            let records = load(&PathBuf::from(&input))?;
+            let fasta_type = cfg.fasta_type.as_deref().unwrap_or("protein");
+            let records = load_typed(&PathBuf::from(&input), fasta_type)?;
+            let allowed_taxids = compile_allowed_taxids(
+                &cfg.include_taxids, &cfg.exclude_taxids, cfg.taxonomy_expr.as_deref(),
+                cfg.ncbi_taxonomy_path.as_deref(),
+            )?;
             let dbs = domainate::read_hmm_references(&cfg.references).context("reading HMM references")?;
+            // Python `--max_domains 0` means unlimited.
+            let max_domains = match cfg.max_domains {
+                Some(0) | None => usize::MAX,
+                Some(n) => n,
+            };
             let opts = domainate::DomainateOptions {
                 z: cfg.z.unwrap_or(1000.0),
                 evalue: cfg.evalue.unwrap_or(0.001),
+                min_evalue: cfg.min_evalue.unwrap_or(0.0),
+                max_hits: max_domains,
                 max_overlap: cfg.max_overlap.unwrap_or(1.0),
+                no_annotations: cfg.no_annotations,
+                hits_only: cfg.hits_only,
+                overlap_by_db: cfg.overlap_by_db,
+                max_mode: cfg.max_mode,
+                allowed_taxids,
+                cpu: cfg.cpu.unwrap_or(0),
                 ..Default::default()
             };
             let annotated = domainate::domainate(records, &dbs, &opts);
             write_genbank(&output, &annotated).context("writing GenBank")?;
             println!("wrote {} records to {}", annotated.len(), output);
         }
-        Command::DomainSearch { input, references, output, evalue, z, add_annotations, max_hits, batch_size, cpu, whole_contig, cds_range, cds_up, cds_down, kb_range, kb_up, kb_down, strand, keep_direction, max_region_overlap, translate, config: config_path, print_config: do_print } => {
+        Command::DomainSearch {
+            input, references, output, evalue, min_evalue, z, add_annotations, max_hits,
+            max_hits_per_contig, max_overlap, max_mode, batch_size, cpu, fasta_type, decoys,
+            decoys_file, whole_contig, cds_range, cds_up, cds_down, kb_range, kb_up, kb_down,
+            strand, keep_direction, max_region_overlap, translate, include_taxids, exclude_taxids,
+            taxonomy_expr, ncbi_taxonomy_path, config: config_path, print_config: do_print,
+        } => {
             let cli = config::DomainSearchConfig {
                 input: opt_path(&input)?,
                 references: paths_to_strings(&references)?,
                 output: opt_path(&output)?,
-                evalue, z, add_annotations, max_hits, batch_size, cpu,
+                evalue, min_evalue, z, add_annotations, max_hits, max_hits_per_contig, max_overlap,
+                max_mode, batch_size, cpu, fasta_type,
                 whole_contig, cds_range, cds_up, cds_down, kb_range, kb_up, kb_down,
                 strand, keep_direction, translate, max_region_overlap,
+                decoys, decoys_file, include_taxids, exclude_taxids, taxonomy_expr, ncbi_taxonomy_path,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::DomainSearchConfig>(p)?,
@@ -743,24 +1578,623 @@ fn main() -> Result<()> {
                 Some(other) => anyhow::bail!("strand must be 'f' or 'r', got {other:?}"),
                 None => None,
             };
+            let allowed_taxids = compile_allowed_taxids(
+                &cfg.include_taxids, &cfg.exclude_taxids, cfg.taxonomy_expr.as_deref(),
+                cfg.ncbi_taxonomy_path.as_deref(),
+            )?;
+            let decoys = parse_name_list(&cfg.decoys, cfg.decoys_file.as_deref())?;
             let opts = domain_search::DomainSearchOptions {
                 z: cfg.z.unwrap_or(1000.0),
                 evalue: cfg.evalue.unwrap_or(0.001),
+                min_evalue: cfg.min_evalue.unwrap_or(0.0),
+                max_overlap: cfg.max_overlap.unwrap_or(1.0),
                 add_annotations: cfg.add_annotations,
                 max_hits: cfg.max_hits,
+                max_hits_per_contig: cfg.max_hits_per_contig,
                 batch_size: cfg.batch_size.unwrap_or(10000),
+                fasta_type: cfg.fasta_type.clone().unwrap_or_else(|| "protein".into()),
                 cpu: cfg.cpu.unwrap_or(0),
                 range,
                 normalize_direction: !cfg.keep_direction,
                 strand,
                 max_region_overlap: cfg.max_region_overlap.unwrap_or(1.0),
                 translate: cfg.translate,
-                ..Default::default()
+                max_mode: cfg.max_mode,
+                allowed_taxids,
+                decoys,
             };
             let hits = domain_search::domain_search(&[input], &dbs, &opts)
                 .context("running domain_search")?;
             write_genbank(&output, &hits).context("writing GenBank")?;
             println!("wrote {} hit contigs to {}", hits.len(), output);
+        }
+        Command::Deduplicate {
+            input, output, log, fasta_type, algorithm, bin_path, id, prefix_count, suffix_count,
+            cpu, params, fasta_out, both_strands, cluster_table, cluster_sep,
+            config: config_path, print_config: do_print,
+        } => {
+            let cli = config::DeduplicateConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                log,
+                fasta_type,
+                algorithm,
+                bin_path,
+                id,
+                prefix_count,
+                suffix_count,
+                cpu,
+                params,
+                fasta_out,
+                both_strands,
+                cluster_table,
+                cluster_sep,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::DeduplicateConfig>(p)?,
+                None => config::DeduplicateConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            if cfg.input.is_empty() {
+                anyhow::bail!("missing required `input` (-i / --input or config)");
+            }
+            if cfg.prefix_count && cfg.suffix_count {
+                anyhow::bail!("--prefix_count and --suffix_count are mutually exclusive");
+            }
+            let id = cfg.id.context("missing required `--id`")?;
+            let fasta_type = cfg.fasta_type.clone().unwrap_or_else(|| "protein".into());
+            let params = parse_dedup_params(cfg.params.as_deref())?;
+            // Read all inputs once (used for both clustering and output).
+            let mut records: Vec<SeqRecord> = Vec::new();
+            for p in &cfg.input {
+                records.extend(load_typed(&PathBuf::from(p), &fasta_type)?);
+            }
+            let opts = deduplicate_genbank::DeduplicateOptions {
+                algorithm: cfg.algorithm.clone().unwrap_or_else(|| "cd-hit".into()),
+                id,
+                both_strands: cfg.both_strands,
+                fasta_type: fasta_type.clone(),
+                cpu: cfg.cpu.unwrap_or(0),
+                bin_path: cfg.bin_path.clone(),
+                params,
+            };
+            let result = deduplicate_genbank::deduplicate(&records, &opts)
+                .map_err(|e| anyhow::anyhow!(e))?;
+
+            // Build output records (representatives, input order) with optional counts.
+            let count_by_rep: std::collections::HashMap<usize, usize> =
+                result.clusters.iter().map(|(r, m)| (*r, m.len())).collect();
+            let mut final_name: std::collections::HashMap<usize, String> =
+                std::collections::HashMap::new();
+            let mut out_records: Vec<SeqRecord> = Vec::new();
+            for &i in &result.representatives {
+                let mut rec = records[i].clone();
+                let base = rec.name.clone();
+                let count = count_by_rep.get(&i).copied().unwrap_or(1);
+                let newname = if cfg.prefix_count {
+                    format!("{count}-{base}")
+                } else if cfg.suffix_count {
+                    format!("{base}-{count}")
+                } else {
+                    base
+                };
+                rec.name = newname.clone();
+                if cfg.fasta_out {
+                    rec.id = newname.clone();
+                }
+                final_name.insert(i, newname);
+                out_records.push(rec);
+            }
+
+            if cfg.fasta_out {
+                write_fasta_out(&out_records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            } else {
+                write_genbank_out(&out_records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            }
+
+            if let Some(table_path) = &cfg.cluster_table {
+                let sep = cfg.cluster_sep.clone().unwrap_or_else(|| " ; ".into());
+                let mut t = String::from("representative\tcontigs\n");
+                for (rep, members) in &result.clusters {
+                    let rep_name = final_name.get(rep).cloned().unwrap_or_default();
+                    let names: Vec<String> = members.iter().map(|&m| records[m].name.clone()).collect();
+                    t.push_str(&format!("{rep_name}\t{}\n", names.join(&sep)));
+                }
+                std::fs::write(table_path, t).context("writing cluster table")?;
+            }
+
+            let log_msg = format!("Input  size: {}\nOutput size: {}\n", records.len(), out_records.len());
+            match &cfg.log {
+                Some(p) => std::fs::write(p, log_msg).context("writing log")?,
+                None => eprint!("{log_msg}"),
+            }
+        }
+        Command::GenbankToFasta { input, output, config: config_path, print_config: do_print } => {
+            let cli = config::GenbankToFastaConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::GenbankToFastaConfig>(p)?,
+                None => config::GenbankToFastaConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let records = load_inputs_str(&cfg.input)?;
+            write_fasta_bp_out(&records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+        }
+        Command::CleanSequences {
+            input, output, log, fasta_type, fasta_out, clean_name, deduplicate_names, strip,
+            filter_by_aa, config: config_path, print_config: do_print,
+        } => {
+            let cli = config::CleanSequencesConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                log,
+                fasta_type,
+                fasta_out,
+                clean_name,
+                deduplicate_names,
+                strip,
+                filter_by_aa,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::CleanSequencesConfig>(p)?,
+                None => config::CleanSequencesConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let fasta_type = cfg.fasta_type.clone().unwrap_or_else(|| "protein".into());
+            let mut records: Vec<SeqRecord> = Vec::new();
+            for p in &cfg.input {
+                records.extend(load_typed(&PathBuf::from(p), &fasta_type)?);
+            }
+            let opts = clean_sequences::CleanSequencesOptions {
+                fasta_type: fasta_type.clone(),
+                clean_name: cfg.clean_name,
+                deduplicate_names: cfg.deduplicate_names,
+                strip: cfg.strip,
+                filter_by_aa: cfg.filter_by_aa,
+            };
+            let mut stats = clean_sequences::CleaningStats::default();
+            let out = clean_sequences::clean_sequences(records, &opts, &mut stats);
+            if cfg.fasta_out {
+                write_fasta_bp_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            } else {
+                write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            }
+            let msg = format!(
+                "Input sequences:            {}\nOutput sequences:           {}\nFiltered (non-canonical):   {}\nEmpty after strip:          {}\n",
+                stats.input_count, stats.output_count, stats.filtered_count, stats.empty_after_strip_count
+            );
+            match &cfg.log {
+                Some(p) => std::fs::write(p, msg).context("writing log")?,
+                None => eprint!("{msg}"),
+            }
+        }
+        Command::SortContigs {
+            input, output, max_hits, domains, databases, config: config_path, print_config: do_print,
+        } => {
+            let cli = config::SortContigsConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                max_hits,
+                domains,
+                databases,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::SortContigsConfig>(p)?,
+                None => config::SortContigsConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let records = load_inputs_str(&cfg.input)?;
+            // Python: --max_hits 0 means "return all"; databases only apply with domains.
+            let max_hits = match cfg.max_hits {
+                Some(0) | None => None,
+                Some(n) => Some(n),
+            };
+            let domains = if cfg.domains.is_empty() { None } else { Some(cfg.domains.iter().cloned().collect()) };
+            let databases = if domains.is_none() || cfg.databases.is_empty() {
+                None
+            } else {
+                Some(cfg.databases.iter().cloned().collect())
+            };
+            let opts = sort_contigs::SortContigsOptions { max_hits, domains, databases };
+            let out = sort_contigs::sort_contigs(records, &opts).map_err(|e| anyhow::anyhow!(e))?;
+            write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+        }
+        Command::SelectByCoord { input, output, coords, config: config_path, print_config: do_print } => {
+            let cli = config::SelectByCoordConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                coords: opt_path(&coords)?,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::SelectByCoordConfig>(p)?,
+                None => config::SelectByCoordConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let coords_path = cfg.coords.clone().context("missing required `--coords` (-c)")?;
+            let table = std::fs::read_to_string(&coords_path).context("reading coordinate table")?;
+            let selections = tools::select_by_coord::parse_coordinate_table(&table)
+                .map_err(|e| anyhow::anyhow!(e))?;
+            // Load each input file keeping its basename for the file-column filter.
+            let mut records: Vec<(String, SeqRecord)> = Vec::new();
+            for p in &cfg.input {
+                let path = PathBuf::from(p);
+                let base = path.file_name().and_then(|s| s.to_str()).unwrap_or(p).to_string();
+                for rec in load_inputs(&[path.clone()])? {
+                    records.push((base.clone(), rec));
+                }
+            }
+            let out = tools::select_by_coord::select_by_coord(&records, &selections)
+                .map_err(|e| anyhow::anyhow!(e))?;
+            write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+        }
+        Command::FilterDomains {
+            input, output, evalue, max_overlap, domains, domains_file, databases_keep,
+            databases_filter, annotation_type, contigs, contigs_file,
+            config: config_path, print_config: do_print,
+        } => {
+            let cli = config::FilterDomainsConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                evalue,
+                max_overlap,
+                domains,
+                domains_file,
+                databases_keep,
+                databases_filter,
+                annotation_type,
+                contigs,
+                contigs_file,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::FilterDomainsConfig>(p)?,
+                None => config::FilterDomainsConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let mut records = load_inputs_str(&cfg.input)?;
+            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
+            let selected_domains = tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let databases_keep = if cfg.databases_keep.is_empty() { None } else { Some(cfg.databases_keep.iter().cloned().collect()) };
+            let databases_filter = if cfg.databases_filter.is_empty() { None } else { Some(cfg.databases_filter.iter().cloned().collect()) };
+            let annotation_type = tools::filter_domains::AnnotationType::parse(
+                cfg.annotation_type.as_deref().unwrap_or("all"),
+            ).map_err(|e| anyhow::anyhow!(e))?;
+            let opts = tools::filter_domains::FilterDomainsOptions {
+                evalue: cfg.evalue.unwrap_or(100000000.0),
+                max_overlap: cfg.max_overlap.unwrap_or(1.0),
+                databases_keep,
+                databases_filter,
+                selected_domains,
+                annotation_type,
+            };
+            let out = tools::filter_domains::filter_domains(records, &opts);
+            write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+        }
+        Command::ColorGenbank {
+            input, output, contigs, contigs_file, color_table, color_table_out,
+            search_hit_color, clear, databases, mode, domain_database,
+            config: config_path, print_config: do_print,
+        } => {
+            let cli = config::ColorGenbankConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                contigs,
+                contigs_file,
+                color_table,
+                color_table_out,
+                search_hit_color,
+                clear,
+                databases,
+                mode,
+                domain_database,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::ColorGenbankConfig>(p)?,
+                None => config::ColorGenbankConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let mut records = load_inputs_str(&cfg.input)?;
+            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
+
+            let targets = tools::color_genbank::ColorTargets::parse(
+                cfg.mode.as_deref().unwrap_or("cdss"),
+            ).map_err(|e| anyhow::anyhow!(e))?;
+            let color_feature = if cfg.domain_database { "database" } else { "name" }.to_string();
+
+            let mut color_map = match &cfg.color_table {
+                Some(path) => {
+                    let text = std::fs::read_to_string(path)
+                        .with_context(|| format!("reading color table {path}"))?;
+                    let table = tools::color_genbank::read_color_table(&text)
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                    tools::color_genbank::ColorMap::from_table(table)
+                }
+                None => tools::color_genbank::ColorMap::auto(),
+            };
+
+            let search_hit_color = match &cfg.search_hit_color {
+                Some(c) => Some(
+                    tools::color_genbank::normalize_color_hex(c).map_err(|e| anyhow::anyhow!(e))?,
+                ),
+                None => None,
+            };
+            let databases = if cfg.databases.is_empty() {
+                None
+            } else {
+                Some(cfg.databases.iter().cloned().collect())
+            };
+
+            let opts = tools::color_genbank::ColorGenbankOptions {
+                targets,
+                search_hit_color,
+                clear: cfg.clear,
+                databases,
+                color_feature,
+            };
+            let out = tools::color_genbank::color_genbank(records, &mut color_map, &opts);
+            write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+
+            if let Some(path) = &cfg.color_table_out {
+                use std::io::Write;
+                let mut f = std::fs::File::create(path)
+                    .with_context(|| format!("writing color table {path}"))?;
+                for (annotation, color) in color_map.items() {
+                    writeln!(f, "{annotation}\t{color}")?;
+                }
+            }
+        }
+        Command::ColorTableToLegend {
+            input, svg, title, config: config_path, print_config: do_print,
+        } => {
+            let cli = config::ColorTableToLegendConfig {
+                input: paths_to_strings(&input)?,
+                svg,
+                title,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::ColorTableToLegendConfig>(p)?,
+                None => config::ColorTableToLegendConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let svg_path = cfg.svg.as_deref().context("--svg is required")?;
+
+            // Read color table(s), merging in order (later files override keys).
+            let mut table: Vec<(String, String)> = Vec::new();
+            let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let texts: Vec<String> = if cfg.input.is_empty() {
+                use std::io::Read;
+                let mut buf = String::new();
+                std::io::stdin().read_to_string(&mut buf).context("reading stdin")?;
+                vec![buf]
+            } else {
+                let mut v = Vec::new();
+                for p in &cfg.input {
+                    v.push(std::fs::read_to_string(p).with_context(|| format!("reading {p}"))?);
+                }
+                v
+            };
+            for text in &texts {
+                let entries = tools::color_genbank::read_color_table(text)
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                for (k, v) in entries {
+                    if let Some(&i) = index.get(&k) {
+                        table[i].1 = v;
+                    } else {
+                        index.insert(k.clone(), table.len());
+                        table.push((k, v));
+                    }
+                }
+            }
+
+            let title = cfg.title.as_deref().unwrap_or("Legend");
+            let svg = tools::color_table_to_legend::color_table_to_legend(&table, title);
+            std::fs::write(svg_path, svg).with_context(|| format!("writing {svg_path}"))?;
+        }
+        Command::TrimContigs {
+            input, output, kb_both, kb_left, kb_right, cds_both, cds_left, cds_right,
+            domains, domains_file, domain_expr, no_domain, contigs, contigs_file,
+            config: config_path, print_config: do_print,
+        } => {
+            let cli = config::TrimContigsConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                kb_both, kb_left, kb_right, cds_both, cds_left, cds_right,
+                domains, domains_file, domain_expr, no_domain, contigs, contigs_file,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::TrimContigsConfig>(p)?,
+                None => config::TrimContigsConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let mut records = load_inputs_str(&cfg.input)?;
+            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
+            let (kb_truncation, cds_truncation) = tools::trim_contigs::validate_range(
+                cfg.kb_both, cfg.kb_left, cfg.kb_right, cfg.cds_both, cfg.cds_left, cfg.cds_right,
+            ).map_err(|e| anyhow::anyhow!(e))?;
+            let strip_domains = tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let opts = tools::trim_contigs::TrimContigsOptions {
+                kb_truncation,
+                cds_truncation,
+                strip_domains,
+                domain_expr: cfg.domain_expr.clone(),
+                no_domain: cfg.no_domain,
+            };
+            let out = tools::trim_contigs::trim_contigs(records, &opts).map_err(|e| anyhow::anyhow!(e))?;
+            write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+        }
+        Command::ExtractDomains {
+            input, output, evalue, score, domains, domains_file, databases, search_hits,
+            pad_up, pad_down, combine, splice, keep_direction, keep_name, fasta_out,
+            contigs, contigs_file, config: config_path, print_config: do_print,
+        } => {
+            let cli = config::ExtractDomainsConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                evalue, score, domains, domains_file, databases, search_hits,
+                pad_up, pad_down, combine, splice, keep_direction, keep_name, fasta_out,
+                contigs, contigs_file,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::ExtractDomainsConfig>(p)?,
+                None => config::ExtractDomainsConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let mut records = load_inputs_str(&cfg.input)?;
+            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
+            let selected_domains = tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let databases = if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) };
+            let opts = tools::extract_domains::ExtractDomainsOptions {
+                evalue: cfg.evalue,
+                score: cfg.score,
+                domains: selected_domains,
+                pad_up: cfg.pad_up.unwrap_or(0),
+                pad_down: cfg.pad_down.unwrap_or(0),
+                combine: cfg.combine,
+                keep_direction: cfg.keep_direction,
+                keep_name: cfg.keep_name,
+                search_hits: cfg.search_hits,
+                databases,
+                splice: cfg.splice,
+            };
+            let out = tools::extract_domains::extract_domains(&records, &opts).map_err(|e| anyhow::anyhow!(e))?;
+            if cfg.fasta_out {
+                write_fasta_bp_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            } else {
+                write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            }
+        }
+        Command::ExtractPeptides {
+            input, output, domains, domains_file, databases, unannotated, search_hits, strand,
+            invert, cdss, cdss_file, keep_name, name_field, evalue, fasta_out,
+            contigs, contigs_file, config: config_path, print_config: do_print,
+        } => {
+            let cli = config::ExtractPeptidesConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                domains, domains_file, databases, unannotated, search_hits, strand,
+                invert, cdss, cdss_file, keep_name, name_field, evalue, fasta_out,
+                contigs, contigs_file,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::ExtractPeptidesConfig>(p)?,
+                None => config::ExtractPeptidesConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let mut records = load_inputs_str(&cfg.input)?;
+            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
+            let target_domains = tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let target_cdss = tools::select_common::parse_name_list(&cfg.cdss, cfg.cdss_file.as_deref())?;
+            let databases = if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) };
+            let mut invert = cfg.invert;
+            // extract_all when no selection criteria; invert then ignored.
+            let extract_all = target_domains.is_none() && target_cdss.is_none() && !cfg.unannotated && !cfg.search_hits;
+            if extract_all && invert {
+                eprintln!("Invert supplied with no selection criteria. Invert will be ignored.");
+                invert = false;
+            }
+            let opts = tools::extract_peptides::ExtractPeptidesOptions {
+                evalue: cfg.evalue.unwrap_or(100000000.0),
+                target_domains,
+                target_cdss,
+                search_hits: cfg.search_hits,
+                strand: cfg.strand.clone(),
+                unannotated: cfg.unannotated,
+                invert,
+                databases,
+                keep_name: cfg.keep_name,
+                name_field: cfg.name_field.clone(),
+                extract_all,
+            };
+            let out = tools::extract_peptides::extract_peptides(&records, &opts);
+            if cfg.fasta_out {
+                write_fasta_bp_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            } else {
+                write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            }
+        }
+        Command::ExtractUnannotated {
+            input, output, evalue, score, databases, search_hits, keep_direction, keep_name,
+            largest, lb, fasta_out, contigs, contigs_file, config: config_path, print_config: do_print,
+        } => {
+            let cli = config::ExtractUnannotatedConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                evalue, score, databases, search_hits, keep_direction, keep_name, largest, lb, fasta_out,
+                contigs, contigs_file,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::ExtractUnannotatedConfig>(p)?,
+                None => config::ExtractUnannotatedConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let mut records = load_inputs_str(&cfg.input)?;
+            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
+            let databases = if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) };
+            let opts = tools::extract_unannotated::ExtractUnannotatedOptions {
+                evalue: cfg.evalue,
+                score: cfg.score,
+                keep_direction: cfg.keep_direction,
+                keep_name: cfg.keep_name,
+                search_hits: cfg.search_hits,
+                databases,
+                largest: cfg.largest,
+                lb: cfg.lb,
+            };
+            let out = tools::extract_unannotated::extract_unannotated(&records, &opts).map_err(|e| anyhow::anyhow!(e))?;
+            if cfg.fasta_out {
+                write_fasta_bp_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            } else {
+                write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            }
         }
         Command::SeqDist { input, reference, dense, dense_text, sparse, algorithm, mode, lb, k, mst_knn, cpu, config: config_path, print_config: do_print } => {
             let cli = config::SeqDistConfig {
@@ -871,6 +2305,305 @@ fn main() -> Result<()> {
                 hdf5_io::write_sparse(p, &matrix)?;
             }
             println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
+        }
+        Command::TransformMatrix { input, dense, dense_text, sparse, mode, input_type, lb, mst_knn, config: config_path, print_config: do_print } => {
+            let cli = config::TransformMatrixConfig {
+                input: opt_path(&input)?,
+                dense: opt_path(&dense)?,
+                dense_text: opt_path(&dense_text)?,
+                sparse: opt_path(&sparse)?,
+                mode,
+                input_type,
+                lb,
+                mst_knn,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::TransformMatrixConfig>(p)?,
+                None => config::TransformMatrixConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
+            let mode = cfg.mode.unwrap_or_else(|| "none".into());
+            if !MODES.contains(&mode.as_str()) {
+                anyhow::bail!("invalid --mode {mode:?}; choose one of {MODES:?}");
+            }
+            if cfg.dense.is_none() && cfg.dense_text.is_none() && cfg.sparse.is_none() {
+                anyhow::bail!("no output specified: pass at least one of --dense, --dense_text, --sparse");
+            }
+            if cfg.sparse.is_some() && mode == "score_dist" {
+                anyhow::bail!("sparse distance matrices not implemented (--mode score_dist with --sparse)");
+            }
+            let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
+            let opts = TransformMatrixOptions {
+                mode,
+                input_type: cfg.input_type,
+                lb: cfg.lb,
+                mst_knn: cfg.mst_knn,
+            };
+            let matrix = transform_matrix(matrix, &opts).context("running transform_matrix")?;
+            if let Some(p) = &cfg.dense {
+                hdf5_io::write_dense(p, &matrix)?;
+            }
+            if let Some(p) = &cfg.dense_text {
+                text::write_dense_text(p, &matrix)?;
+            }
+            if let Some(p) = &cfg.sparse {
+                hdf5_io::write_sparse(p, &matrix)?;
+            }
+            println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
+        }
+        Command::BuildSsn {
+            input, xgmml, lb, metadata, subset, subset_file, color_by, color_table,
+            color_table_out, cluster, cluster_tsv, no_cluster_header, mst, mst_knn,
+            config: config_path, print_config: do_print,
+        } => {
+            let cli = config::BuildSsnConfig {
+                input: opt_path(&input)?,
+                xgmml: opt_path(&xgmml)?,
+                lb,
+                metadata,
+                subset,
+                subset_file,
+                color_by,
+                color_table,
+                color_table_out,
+                cluster,
+                cluster_tsv,
+                no_cluster_header,
+                mst,
+                mst_knn,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::BuildSsnConfig>(p)?,
+                None => config::BuildSsnConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
+            let xgmml = cfg.xgmml.context("missing required `xgmml` (--xgmml or config)")?;
+            if cfg.mst && cfg.mst_knn.is_some() {
+                anyhow::bail!("--mst and --mst_knn are mutually exclusive");
+            }
+            let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
+
+            // Resolve subset labels and the optional colour table.
+            let subset_labels = if cfg.subset.is_empty() && cfg.subset_file.is_none() {
+                None
+            } else {
+                let mut set: std::collections::HashSet<String> = cfg.subset.iter().cloned().collect();
+                if let Some(f) = &cfg.subset_file {
+                    for line in std::fs::read_to_string(f)?.lines() {
+                        let l = line.trim();
+                        if !l.is_empty() {
+                            set.insert(l.to_string());
+                        }
+                    }
+                }
+                Some(set)
+            };
+            let color_table = match &cfg.color_table {
+                Some(f) => Some(read_color_table(f)?),
+                None => None,
+            };
+            let opts = BuildSsnOptions {
+                lb: cfg.lb.unwrap_or(0.0),
+                cluster: cfg.cluster || cfg.cluster_tsv.is_some(),
+                mst: cfg.mst,
+                mst_knn: cfg.mst_knn,
+                metadata_files: cfg.metadata.clone(),
+                subset_labels,
+                color_by: cfg.color_by.clone(),
+                color_table,
+            };
+            let result = build_ssn(&matrix, &opts).context("running build_ssn")?;
+
+            let name = std::path::Path::new(&xgmml)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            domainator_core::matrix::cytoscape::write_xgmml(
+                &xgmml,
+                &name,
+                &result.table,
+                &result.edges,
+                result.node_fills.as_deref(),
+            )?;
+
+            if let Some(path) = &cfg.cluster_tsv {
+                let labels = result.cluster_labels.as_ref().expect("cluster labels present");
+                let mut out = String::new();
+                if !cfg.no_cluster_header {
+                    out.push_str("contig\tcluster\n");
+                }
+                for (name, id) in result.table.names.iter().zip(labels) {
+                    out.push_str(name);
+                    out.push('\t');
+                    out.push_str(&id.to_string());
+                    out.push('\n');
+                }
+                std::fs::write(path, out)?;
+            }
+
+            if let Some(path) = &cfg.color_table_out {
+                if let Some(ct) = &result.resolved_color_table {
+                    let mut items: Vec<(&String, &String)> = ct.iter().collect();
+                    items.sort_by(|a, b| a.0.cmp(b.0));
+                    let mut out = String::new();
+                    for (k, v) in items {
+                        out.push_str(k);
+                        out.push('\t');
+                        out.push_str(v);
+                        out.push('\n');
+                    }
+                    std::fs::write(path, out)?;
+                }
+            }
+
+            println!("wrote {} nodes, {} edges to {}", result.table.names.len(), result.edges.len(), xgmml);
+        }
+        Command::BuildSsnViewer {
+            input, output, html, embed_data, name, metadata, subset, subset_file, color_by,
+            label_by, merge_impact_metric, max_merge_events, config: config_path, print_config: do_print,
+        } => {
+            let cli = config::BuildSsnViewerConfig {
+                input: opt_path(&input)?,
+                output: opt_path(&output)?,
+                html,
+                embed_data,
+                name,
+                metadata,
+                subset,
+                subset_file,
+                color_by,
+                label_by,
+                merge_impact_metric,
+                max_merge_events,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::BuildSsnViewerConfig>(p)?,
+                None => config::BuildSsnViewerConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+
+            let stem = |p: &str| {
+                std::path::Path::new(p).file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()
+            };
+
+            // Arg-combination handling mirrors the Python tool.
+            if cfg.input.is_none() {
+                if cfg.output.is_some() {
+                    anyhow::bail!("-o/--output requires -i/--input.");
+                }
+                if cfg.embed_data {
+                    anyhow::bail!("--embed_data requires -i/--input.");
+                }
+                let html = cfg.html.as_ref().context("when -i/--input is omitted, --html is required")?;
+                let name = cfg.name.clone().unwrap_or_else(|| "Domainator SSN Viewer".to_string());
+                std::fs::write(html, render_html(&name, None))?;
+                println!("wrote standalone HTML viewer to {html}");
+                return Ok(());
+            }
+
+            if cfg.output.is_none() && !cfg.embed_data {
+                anyhow::bail!("when -i/--input is supplied, provide -o/--output or --embed_data.");
+            }
+            if cfg.embed_data && cfg.html.is_none() {
+                anyhow::bail!("--embed_data requires --html.");
+            }
+
+            let input = cfg.input.clone().unwrap();
+            let name = cfg
+                .name
+                .clone()
+                .or_else(|| cfg.output.as_deref().map(stem))
+                .or_else(|| cfg.html.as_deref().map(stem))
+                .unwrap_or_else(|| "Domainator SSN Viewer".to_string());
+
+            let subset_labels = if cfg.subset.is_empty() && cfg.subset_file.is_none() {
+                None
+            } else {
+                let mut set: std::collections::HashSet<String> = cfg.subset.iter().cloned().collect();
+                if let Some(f) = &cfg.subset_file {
+                    for line in std::fs::read_to_string(f)?.lines() {
+                        let l = line.trim();
+                        if !l.is_empty() {
+                            set.insert(l.to_string());
+                        }
+                    }
+                }
+                Some(set)
+            };
+
+            let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
+            let opts = BuildSsnViewerOptions {
+                name: name.clone(),
+                metadata_files: cfg.metadata.clone(),
+                subset_labels,
+                merge_impact_metric: cfg.merge_impact_metric.clone().unwrap_or_else(|| "min_child".into()),
+                max_merge_events: cfg.max_merge_events.unwrap_or(500),
+                color_by: cfg.color_by.clone(),
+                label_by: cfg.label_by.clone(),
+            };
+            let bundle = build_ssn_viewer_bundle(&matrix, &opts).context("building SSN viewer bundle")?;
+            let compressed = gzip(&serialize_bundle(&bundle));
+
+            if let Some(out) = &cfg.output {
+                std::fs::write(out, &compressed)?;
+                println!("wrote {}-node .ssnv bundle to {out}", matrix.nrows());
+            }
+            if let Some(html) = &cfg.html {
+                let embed = if cfg.embed_data { Some(compressed.as_slice()) } else { None };
+                std::fs::write(html, render_html(&name, embed))?;
+                println!("wrote HTML viewer to {html}");
+            }
+        }
+        Command::MatrixReport {
+            input, output, json, merge_impact_metric, max_merge_events,
+            config: config_path, print_config: do_print,
+        } => {
+            let cli = config::MatrixReportConfig {
+                input: opt_path(&input)?,
+                output: opt_path(&output)?,
+                json: opt_path(&json)?,
+                merge_impact_metric,
+                max_merge_events,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::MatrixReportConfig>(p)?,
+                None => config::MatrixReportConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
+            if cfg.output.is_none() && cfg.json.is_none() {
+                anyhow::bail!("no output specified: pass --output (text) and/or --json");
+            }
+            let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
+            let metric = cfg.merge_impact_metric.clone().unwrap_or_else(|| "min_child".into());
+            let max_events = cfg.max_merge_events.unwrap_or(500);
+            let report = matrix_report(&matrix, &metric, max_events);
+            if let Some(p) = &cfg.output {
+                std::fs::write(p, render_text(&report))?;
+            }
+            if let Some(p) = &cfg.json {
+                std::fs::write(p, serde_json::to_string_pretty(&to_json(&report))?)?;
+            }
+            println!("matrix report: {} nodes, {} edges", report.n_nodes, report.n_edges);
         }
         Command::Schema { tool } => {
             println!("{}", schema(&tool)?);

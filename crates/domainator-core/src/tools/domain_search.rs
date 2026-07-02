@@ -44,6 +44,14 @@ pub struct DomainSearchOptions {
     /// Translate nucleotide CDS hits to peptide records (incompatible with
     /// neighborhood extraction; `range` must be `None`).
     pub translate: bool,
+    /// hmmsearch `--max` (skip heuristic filters for maximum sensitivity).
+    pub max_mode: bool,
+    /// Precompiled allowed-taxid set (`None` = no taxonomy filtering).
+    pub allowed_taxids: Option<std::collections::HashSet<i64>>,
+    /// Decoy domain names: if a hit CDS's best hit is a decoy, that hit is dropped.
+    pub decoys: Option<std::collections::HashSet<String>>,
+    /// Cap on independent hits emitted per contig (`None` = all).
+    pub max_hits_per_contig: Option<usize>,
 }
 
 impl Default for DomainSearchOptions {
@@ -63,8 +71,29 @@ impl Default for DomainSearchOptions {
             strand: None,
             max_region_overlap: 1.0,
             translate: false,
+            max_mode: false,
+            allowed_taxids: None,
+            decoys: None,
+            max_hits_per_contig: None,
         }
     }
+}
+
+/// The best-hit domain name for a protein record (its `Domain_Search` feature's
+/// `name`, else the highest-scoring `Domainator` feature's `name`).
+fn best_hit_name(rec: &SeqRecord) -> Option<String> {
+    if let Some(f) = rec.features.iter().find(|f| f.kind == DOMAIN_SEARCH_BEST_HIT_NAME) {
+        return f.get_first("name").map(str::to_string);
+    }
+    rec.features
+        .iter()
+        .filter(|f| f.kind == DOMAIN_FEATURE_NAME)
+        .max_by(|a, b| {
+            let sa = a.get_first("score").and_then(|s| s.parse::<f64>().ok()).unwrap_or(f64::NEG_INFINITY);
+            let sb = b.get_first("score").and_then(|s| s.parse::<f64>().ok()).unwrap_or(f64::NEG_INFINITY);
+            sa.total_cmp(&sb)
+        })
+        .and_then(|f| f.get_first("name").map(str::to_string))
 }
 
 /// A record's best domain bit-score (over its `Domainator`/`Domain_Search`
@@ -139,6 +168,8 @@ pub fn domain_search(
         best_annotation: true,
         no_annotations: !opts.add_annotations,
         hits_only: true,
+        max_mode: opts.max_mode,
+        allowed_taxids: opts.allowed_taxids.clone(),
         ..Default::default()
     };
 
@@ -156,6 +187,12 @@ pub fn domain_search(
                     // Protein hits pass through whole; nucleotide hits go through
                     // neighborhood extraction.
                     if rec.molecule_type.as_deref() == Some("protein") {
+                        // Decoy filter: drop the protein if its best hit is a decoy.
+                        if let Some(decoys) = &opts.decoys {
+                            if best_hit_name(&rec).is_some_and(|n| decoys.contains(&n)) {
+                                continue;
+                            }
+                        }
                         emitted.push(rec);
                     } else if opts.translate {
                         emitted.extend(crate::tools::neighborhood::translate_peptides(&rec, opts.strand));
@@ -166,6 +203,8 @@ pub fn domain_search(
                             opts.normalize_direction,
                             opts.strand,
                             opts.max_region_overlap,
+                            opts.decoys.as_ref(),
+                            opts.max_hits_per_contig,
                         )?);
                     }
                 }

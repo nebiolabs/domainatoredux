@@ -9,18 +9,64 @@ use super::{DataMatrix, Storage};
 /// `log10(2)`, the EFI score's per-bit factor.
 pub const LOG10_2: f64 = std::f64::consts::LOG10_2;
 
-/// Apply `--mode` to `m` in place. Unknown/`score`/`bool` modes are no-ops.
+/// Apply `--mode` to `m` in place and set `data_type = mode`. Used by `seq_dist`
+/// (which already materializes `bool`/`score` values during construction, so those
+/// are effectively no-ops there).
 pub fn apply_mode(m: &mut DataMatrix, mode: &str) {
+    transform_values(m, mode);
+    m.data_type = mode.to_string();
+}
+
+/// Apply the value transform for `mode` to `m` in place **without** touching
+/// `data_type`. `score` is a pass-through; `bool` maps every value to `1.0`/`0.0`
+/// (`v > 0`); the rest densify and normalize as in `transform_matrix.MODES`.
+pub fn transform_values(m: &mut DataMatrix, mode: &str) {
     match mode {
-        "score" | "bool" => {}
-        "norm_score" => dense_transform(m, mode),
-        "row_norm_score" => dense_transform(m, mode),
-        "score_dist" => dense_transform(m, mode),
-        "efi_score" => dense_transform(m, mode),
-        "efi_score_dist" => dense_transform(m, mode),
+        "score" => {}
+        "bool" => {
+            let mut d = m.densify();
+            for v in d.iter_mut() {
+                *v = if *v > 0.0 { 1.0 } else { 0.0 };
+            }
+            m.storage = Storage::Dense(d);
+        }
+        "norm_score" | "row_norm_score" | "score_dist" | "efi_score" | "efi_score_dist" => {
+            dense_transform(m, mode)
+        }
         _ => {}
     }
-    m.data_type = mode.to_string();
+}
+
+/// Zero out every value `<= lb` (mirrors `transform_matrix.apply_lower_bound`).
+pub fn apply_lower_bound(m: &mut DataMatrix, lb: f64) {
+    match &mut m.storage {
+        Storage::Dense(d) => {
+            for v in d.iter_mut() {
+                if *v <= lb {
+                    *v = 0.0;
+                }
+            }
+        }
+        Storage::Sparse { values, indices, indptr } => {
+            let nrows = indptr.len().saturating_sub(1);
+            let mut new_values: Vec<f64> = Vec::with_capacity(values.len());
+            let mut new_indices: Vec<i32> = Vec::with_capacity(indices.len());
+            let mut new_indptr: Vec<i32> = vec![0; nrows + 1];
+            for r in 0..nrows {
+                let (s, e) = (indptr[r] as usize, indptr[r + 1] as usize);
+                for k in s..e {
+                    if values[k] > lb {
+                        new_values.push(values[k]);
+                        new_indices.push(indices[k]);
+                    }
+                }
+                new_indptr[r + 1] = new_values.len() as i32;
+            }
+            *values = new_values;
+            *indices = new_indices;
+            *indptr = new_indptr;
+        }
+    }
 }
 
 /// Column-wise max over a row-major dense buffer.

@@ -25,6 +25,62 @@ pub fn py_float_str(x: f64) -> String {
     }
 }
 
+/// Read a dense matrix from a tab-separated file, matching
+/// `domainator.data_matrix.DenseDataMatrix._from_text`: first row is an empty
+/// cell followed by column labels; each subsequent row is a label followed by
+/// numeric values. `data_type` is empty and lengths are absent (as in Python).
+pub fn read_dense_text(path: &str) -> io::Result<DataMatrix> {
+    use super::Storage;
+    let text = std::fs::read_to_string(path)?;
+    let mut lines = text.lines();
+    let header = lines
+        .next()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Dense text matrix file is empty."))?;
+    let cols: Vec<String> = header.split('\t').skip(1).map(|s| s.to_string()).collect();
+
+    let mut rows: Vec<String> = Vec::new();
+    let mut data: Vec<f64> = Vec::new();
+    for (line_number, line) in lines.enumerate() {
+        if line.is_empty() {
+            continue;
+        }
+        let mut fields = line.split('\t');
+        let label = fields.next().unwrap_or_default().to_string();
+        let mut count = 0;
+        for f in fields {
+            let v: f64 = f.trim().parse().map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Dense text matrix values must be numeric (row {})", line_number + 2),
+                )
+            })?;
+            data.push(v);
+            count += 1;
+        }
+        if count != cols.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Dense text matrix row {} has {} values; expected {}.",
+                    line_number + 2,
+                    count,
+                    cols.len()
+                ),
+            ));
+        }
+        rows.push(label);
+    }
+
+    Ok(DataMatrix {
+        rows,
+        cols,
+        row_lengths: None,
+        col_lengths: None,
+        data_type: String::new(),
+        storage: Storage::Dense(data),
+    })
+}
+
 /// Write `m` as a dense tab-separated matrix to `path`.
 pub fn write_dense_text(path: &str, m: &DataMatrix) -> io::Result<()> {
     let (nr, nc) = (m.nrows(), m.ncols());

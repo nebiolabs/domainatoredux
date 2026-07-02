@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   is fixed-length, which h5py returns as `bytes`). Reuses the existing VL-string
   global-heap staging path. Needed so Domainator's HDF5 matrix attributes
   (`ARRAY_TYPE`/`DATA_TYPE`/`MATRIX_FILE_VERSION`) round-trip through `h5py`.
+- Enumeration attributes now decode to their underlying integer (`AttrValue::I64`/
+  `U64`, or the `*Array` forms) instead of being silently dropped from `attrs()`.
+  h5py stores a NumPy `bool_` attribute as an enum over `int8`, so `SYMMETRIC_LABELS`
+  (and any other enum attribute) was previously invisible to readers.
 
 ## [0.20.0] - 2026-06-24
 

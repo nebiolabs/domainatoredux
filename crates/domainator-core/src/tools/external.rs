@@ -1,0 +1,101 @@
+//! Shared helpers for tools that shell out to external binaries (DIAMOND for
+//! `seq_dist`/`deduplicate`, USEARCH for `deduplicate`): a self-cleaning temp
+//! directory, a binary locator (env var → bundled → PATH), a FASTA writer for
+//! `(id, residues)` records, and a friendly "not found" error.
+
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+/// Locate an external executable `name` (e.g. `"diamond"`): first the `env_vars`
+/// in order, then a bundled `external/<bundled_dir>/<name>` searched upward from
+/// the running executable and in the current directory, then bare `name` on PATH.
+pub(crate) fn find_binary(name: &str, env_vars: &[&str], bundled_dir: &str) -> PathBuf {
+    let exe_name = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
+    for var in env_vars {
+        if let Ok(p) = std::env::var(var) {
+            if !p.is_empty() {
+                return PathBuf::from(p);
+            }
+        }
+    }
+    let bundled = |base: &Path| base.join("external").join(bundled_dir).join(&exe_name);
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.parent();
+        while let Some(d) = dir {
+            let cand = bundled(d);
+            if cand.is_file() {
+                return cand;
+            }
+            dir = d.parent();
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let cand = bundled(&cwd);
+        if cand.is_file() {
+            return cand;
+        }
+    }
+    PathBuf::from(exe_name)
+}
+
+/// Turn a "binary not found" spawn failure into an actionable error with `hint`.
+pub(crate) fn spawn_error(e: std::io::Error, bin: &Path, hint: &str) -> std::io::Error {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("could not run '{}': executable not found. {hint}", bin.display()),
+        )
+    } else {
+        e
+    }
+}
+
+/// Write `(id, residues)` records as FASTA (60-column wrap).
+pub(crate) fn write_fasta_ids(records: &[(String, Vec<u8>)], path: &Path) -> std::io::Result<()> {
+    let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
+    for (id, seq) in records {
+        writeln!(w, ">{id}")?;
+        for chunk in seq.chunks(60) {
+            w.write_all(chunk)?;
+            w.write_all(b"\n")?;
+        }
+    }
+    w.flush()
+}
+
+/// A uniquely-named temporary directory removed (recursively) on drop. Avoids a
+/// `tempfile` dependency; uniqueness comes from pid + nanosecond clock + a retry
+/// counter.
+pub(crate) struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    pub(crate) fn new(prefix: &str) -> std::io::Result<Self> {
+        let base = std::env::temp_dir();
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        for n in 0u32.. {
+            let cand = base.join(format!("{prefix}_{pid}_{nanos}_{n}"));
+            match std::fs::create_dir(&cand) {
+                Ok(()) => return Ok(TempDir { path: cand }),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        unreachable!("u32 range exhausted creating a temp dir")
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}

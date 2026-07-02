@@ -10,7 +10,7 @@
 use std::io;
 use std::path::Path;
 
-use hdf5_pure::{AttrValue, FileBuilder};
+use hdf5_pure::{AttrValue, File, FileBuilder};
 
 use super::{DataMatrix, Storage};
 
@@ -34,6 +34,75 @@ const SPARSE_CSR_INDPTR: &str = "SPARSE_CSR_INDPTR";
 
 fn write_err(e: hdf5_pure::Error) -> io::Error {
     io::Error::new(io::ErrorKind::Other, format!("hdf5 write: {e:?}"))
+}
+
+fn read_err<E: std::fmt::Debug>(e: E) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, format!("hdf5 read: {e:?}"))
+}
+
+fn attr_string(attrs: &std::collections::HashMap<String, AttrValue>, key: &str) -> Option<String> {
+    match attrs.get(key)? {
+        AttrValue::VarLenUtf8(s) | AttrValue::String(s) | AttrValue::AsciiString(s) => Some(s.clone()),
+        _ => None,
+    }
+}
+
+/// Read a [`DataMatrix`] from an HDF5 file written by this module or the Python
+/// suite (`DataMatrix.{write_dense,write_sparse}`). Chooses dense vs sparse from
+/// the `ARRAY_TYPE` attribute and reconstructs `COL_*` from `ROW_*` when the
+/// matrix is symmetric (those datasets are omitted on write).
+pub fn read(path: &str) -> io::Result<DataMatrix> {
+    let reader = File::open(Path::new(path)).map_err(read_err)?;
+    let attrs = reader.root().attrs().map_err(read_err)?;
+
+    let array_type = attr_string(&attrs, ARRAY_TYPE_ATTR)
+        .ok_or_else(|| read_err(format!("missing required attribute '{ARRAY_TYPE_ATTR}'")))?;
+    let data_type = attr_string(&attrs, DATA_TYPE_ATTR).unwrap_or_default();
+
+    let rows = reader.dataset(ROW_LABELS).map_err(read_err)?.read_string().map_err(read_err)?;
+    let row_lengths = match reader.dataset(ROW_LENGTHS) {
+        Ok(ds) => Some(ds.read_i64().map_err(read_err)?),
+        Err(_) => None,
+    };
+    // Symmetry is inferred from the *presence* of COL_LABELS (both the Python and
+    // Rust writers omit COL_* exactly when the matrix is symmetric). The
+    // `SYMMETRIC_LABELS` attribute itself is unreliable here: h5py stores it as a
+    // numpy bool, which the pure-Rust HDF5 reader does not surface.
+    let (cols, col_lengths) = match reader.dataset(COL_LABELS) {
+        Ok(ds) => {
+            let cols = ds.read_string().map_err(read_err)?;
+            let col_lengths = match reader.dataset(COL_LENGTHS) {
+                Ok(ds) => Some(ds.read_i64().map_err(read_err)?),
+                Err(_) => None,
+            };
+            (cols, col_lengths)
+        }
+        Err(_) => (rows.clone(), row_lengths.clone()),
+    };
+
+    let (nr, nc) = (rows.len(), cols.len());
+    let storage = match array_type.as_str() {
+        DENSE => {
+            let flat = reader.dataset(DENSE_DATA).map_err(read_err)?.read_f64().map_err(read_err)?;
+            if flat.len() != nr * nc {
+                return Err(read_err(format!(
+                    "DENSE_DATA length {} != nrows*ncols {}",
+                    flat.len(),
+                    nr * nc
+                )));
+            }
+            Storage::Dense(flat)
+        }
+        SPARSE_CSR => {
+            let values = reader.dataset(SPARSE_VALUES).map_err(read_err)?.read_f64().map_err(read_err)?;
+            let indices = reader.dataset(SPARSE_CSR_INDICES).map_err(read_err)?.read_i32().map_err(read_err)?;
+            let indptr = reader.dataset(SPARSE_CSR_INDPTR).map_err(read_err)?.read_i32().map_err(read_err)?;
+            Storage::Sparse { values, indices, indptr }
+        }
+        other => return Err(read_err(format!("unknown ARRAY_TYPE '{other}'"))),
+    };
+
+    Ok(DataMatrix { rows, cols, row_lengths, col_lengths, data_type, storage })
 }
 
 fn add_labels_and_lengths(builder: &mut FileBuilder, m: &DataMatrix, symmetric: bool) {

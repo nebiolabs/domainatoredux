@@ -4,10 +4,11 @@
 //! (cds_id generation, translation, the `domainator_<db>` CDS rollup) and
 //! phmmer/nhmmer/infernal/foldseek follow.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::search::hmmer::{hmmsearch_db, load_hmm_dbs, HmmDb};
 use crate::search::SearchResult;
+use crate::seq::taxid::record_taxid;
 use crate::seq::translate::is_searchable_cds;
 use crate::seq::{Location, SeqFeature, SeqRecord};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
@@ -251,12 +252,20 @@ pub struct DomainateOptions {
     pub z: f64,
     pub evalue: f64,
     pub min_evalue: f64,
+    /// Per-CDS cap on emitted domains (`--max_domains`; `usize::MAX` = unlimited).
     pub max_hits: usize,
     pub max_overlap: f64,
     pub best_annotation: bool,
     pub no_annotations: bool,
     pub hits_only: bool,
     pub overlap_by_db: bool,
+    /// hmmsearch `--max` (skip heuristic filters for maximum sensitivity).
+    pub max_mode: bool,
+    /// Precompiled allowed-taxid set (`None` = no taxonomy filtering). Records
+    /// whose lineage is not in the set are dropped before searching.
+    pub allowed_taxids: Option<HashSet<i64>>,
+    /// Worker threads for the per-database search (`0` = all cores).
+    pub cpu: usize,
 }
 
 impl Default for DomainateOptions {
@@ -271,6 +280,9 @@ impl Default for DomainateOptions {
             no_annotations: false,
             hits_only: false,
             overlap_by_db: false,
+            max_mode: false,
+            allowed_taxids: None,
+            cpu: 0,
         }
     }
 }
@@ -279,6 +291,12 @@ impl Default for DomainateOptions {
 /// the annotated records (all records, or hit-only when `hits_only`).
 pub fn domainate(mut records: Vec<SeqRecord>, hmm_dbs: &[HmmDb], opts: &DomainateOptions) -> Vec<SeqRecord> {
     let empty_dropped = std::collections::HashSet::new();
+
+    // Taxonomy pre-filter: drop records whose lineage is not in the allowed set
+    // (mirrors Python `filter_by_taxonomy` applied to the input records).
+    if let Some(allowed) = &opts.allowed_taxids {
+        records.retain(|rec| allowed.contains(&record_taxid(rec)));
+    }
 
     // clean_rec: nucleotide records get cds_id + /translation on every CDS.
     for rec in records.iter_mut() {
@@ -300,10 +318,19 @@ pub fn domainate(mut records: Vec<SeqRecord>, hmm_dbs: &[HmmDb], opts: &Domainat
         }
     }
 
-    // contig index -> (cds feature index -> SearchResults).
+    // contig index -> (cds feature index -> SearchResults). Databases are searched
+    // in parallel (each independent); results are merged in database order so the
+    // output is deterministic regardless of thread count.
+    let per_db: Vec<Vec<crate::search::hmmer::NamedHit>> = crate::parallel::with_threads(opts.cpu, || {
+        use rayon::prelude::*;
+        hmm_dbs
+            .par_iter()
+            .map(|db| hmmsearch_db(db, &peptides, opts.z, opts.evalue, opts.min_evalue, opts.max_mode))
+            .collect()
+    });
     let mut hits: HashMap<usize, HashMap<usize, Vec<SearchResult>>> = HashMap::new();
-    for db in hmm_dbs {
-        for nh in hmmsearch_db(db, &peptides, opts.z, opts.evalue, opts.min_evalue) {
+    for nhs in per_db {
+        for nh in nhs {
             let mut it = nh.target.split(',');
             let ci = it.next().and_then(|s| s.parse::<usize>().ok());
             let fi = it.next().and_then(|s| s.parse::<usize>().ok());
@@ -312,6 +339,10 @@ pub fn domainate(mut records: Vec<SeqRecord>, hmm_dbs: &[HmmDb], opts: &Domainat
             }
         }
     }
+
+    // Contigs that received at least one hit in *this* search (mirrors Python's
+    // `hits.keys()`), used by `hits_only` — independent of pre-existing domains.
+    let hit_indices: HashSet<usize> = hits.keys().copied().collect();
 
     for (i, rec) in records.iter_mut().enumerate() {
         let by_cds = match hits.remove(&i) {
@@ -334,8 +365,11 @@ pub fn domainate(mut records: Vec<SeqRecord>, hmm_dbs: &[HmmDb], opts: &Domainat
     }
 
     if opts.hits_only {
-        records.retain(|r| {
-            r.features.iter().any(|f| f.kind == DOMAIN_FEATURE_NAME || f.kind == DOMAIN_SEARCH_BEST_HIT_NAME)
+        let mut idx = 0usize;
+        records.retain(|_| {
+            let keep = hit_indices.contains(&idx);
+            idx += 1;
+            keep
         });
     }
     records

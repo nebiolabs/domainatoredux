@@ -243,6 +243,37 @@ fn decode_attr_value<S: crate::source::FileSource + ?Sized>(
                 Some(AttrValue::StringArray(strings))
             }
         }
+        Datatype::Enumeration { base_type, .. } => {
+            // Decode enumeration attributes as their underlying integer value.
+            // h5py stores a NumPy `bool_` attribute as an enum over `int8`
+            // (FALSE=0/TRUE=1); without this arm such attributes were silently
+            // dropped. The on-disk bytes are the base type's storage, so decode
+            // `raw_data` with the base type directly.
+            match base_type.as_ref() {
+                Datatype::FixedPoint { signed: true, .. } => {
+                    let vals = crate::data_read::read_as_i64(&attr.raw_data, base_type).ok()?;
+                    if vals.len() == 1 {
+                        Some(AttrValue::I64(vals[0]))
+                    } else {
+                        Some(AttrValue::I64Array(vals))
+                    }
+                }
+                Datatype::FixedPoint { signed: false, .. } => {
+                    let vals = crate::data_read::read_as_u64(&attr.raw_data, base_type).ok()?;
+                    if vals.len() == 1 {
+                        Some(AttrValue::U64(vals[0]))
+                    } else {
+                        #[expect(
+                            clippy::cast_possible_wrap,
+                            reason = "no U64Array AttrValue variant; bit pattern preserved"
+                        )]
+                        let i64_vals: Vec<i64> = vals.iter().map(|&v| v as i64).collect();
+                        Some(AttrValue::I64Array(i64_vals))
+                    }
+                }
+                _ => None,
+            }
+        }
         _ => None,
     }
 }

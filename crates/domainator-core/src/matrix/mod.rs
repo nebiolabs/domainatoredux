@@ -3,8 +3,10 @@
 //! `domainator.data_matrix.{DenseDataMatrix,SparseDataMatrix}` and the canonical
 //! CSR layout (zeros eliminated, indices sorted, duplicate `(row,col)` max-merged).
 
+pub mod cytoscape;
 pub mod hdf5_io;
 pub mod mst_knn;
+pub mod ssn;
 pub mod text;
 pub mod transform;
 
@@ -30,6 +32,21 @@ pub struct DataMatrix {
     pub col_lengths: Option<Vec<i64>>,
     pub data_type: String,
     pub storage: Storage,
+}
+
+/// Read a [`DataMatrix`] from `path`, choosing the format by extension the same
+/// way as `domainator.data_matrix.DataMatrix.from_file`: `.hdf5`/`.hdf`/`.h5` are
+/// HDF5 (dense or sparse per `ARRAY_TYPE`), anything else is a dense TSV.
+pub fn read_matrix(path: &str) -> std::io::Result<DataMatrix> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "hdf5" | "hdf" | "h5" => hdf5_io::read(path),
+        _ => text::read_dense_text(path),
+    }
 }
 
 impl DataMatrix {
