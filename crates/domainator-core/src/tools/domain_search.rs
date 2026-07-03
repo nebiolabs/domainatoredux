@@ -11,7 +11,7 @@ use std::path::Path;
 use crate::io::partition::partition_seqfile;
 use crate::io::shards::resolve_database_shards;
 use crate::io::{detect_compression, detect_filetype, fasta, genbank::GenbankReader, FileType};
-use crate::search::hmmer::HmmDb;
+use crate::search::references::References;
 use crate::seq::SeqRecord;
 use crate::tools::domainate::{domainate, DomainateOptions};
 use crate::tools::neighborhood::{select_by_cds_hits, Range};
@@ -128,7 +128,7 @@ fn read_partition(
 /// Search `hmm_dbs` against the `input_files` database(s), returning hit contigs.
 pub fn domain_search(
     input_files: &[String],
-    hmm_dbs: &[HmmDb],
+    refs: &References,
     opts: &DomainSearchOptions,
 ) -> std::io::Result<Vec<SeqRecord>> {
     // Collect every partition across all inputs/shards, then process them in
@@ -170,6 +170,7 @@ pub fn domain_search(
         hits_only: true,
         max_mode: opts.max_mode,
         allowed_taxids: opts.allowed_taxids.clone(),
+        max_hits_per_contig: opts.max_hits_per_contig,
         ..Default::default()
     };
 
@@ -183,7 +184,7 @@ pub fn domain_search(
                     &p.path, p.offset, p.n_records, p.filetype, p.compressed, &opts.fasta_type,
                 )?;
                 let mut emitted = Vec::new();
-                for rec in domainate(records, hmm_dbs, &dopts) {
+                for rec in domainate(records, refs, &dopts) {
                     // Protein hits pass through whole; nucleotide hits go through
                     // neighborhood extraction.
                     if rec.molecule_type.as_deref() == Some("protein") {

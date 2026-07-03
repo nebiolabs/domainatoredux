@@ -3,6 +3,8 @@
 
 pub mod hmm_compare;
 pub mod hmmer;
+pub mod nhmmer;
+pub mod references;
 pub mod results;
 pub mod seq_compare;
 

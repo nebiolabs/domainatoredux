@@ -50,14 +50,14 @@ There are some dependencies that are not easily portable to Rust, such as anythi
 |build_ssn_viewer.py|finished|
 |build_tree.py|deferred|
 |clean_sequences.py|finished (byte-identical parity)|
-|color_genbank.py|planned|
-|color_table_to_legend.py|planned|
+|color_genbank.py|finished (parity incl. auto-color)|
+|color_table_to_legend.py|finished (byte-identical SVG)|
 |compare_contigs.py|done|
 |deduplicate_genbank.py|finished: hash/diamond/usearch backends (cd-hit deferred)|
-|domain_search.py|options at parity except: FASTA/CM/foldseek references, --gene_call (prodigal, GPL-deferred), --pad, --deduplicate, --max_output_gb|
-|domainate.py|options at parity except: FASTA/CM/foldseek references, --gene_call (prodigal, GPL-deferred), --batch_size/--offset/--recs_to_read|
-|domainator_db_download.py|planned|
-|domainator_format_db.py|planned|
+|domain_search.py|protein (hmmsearch) + protein-FASTA (phmmer) + nucleotide-FASTA/HMM (nhmmer) references supported; whole-contig nhmmer hits flow through neighborhood extraction (default range + --add_annotations at parity; --whole_contig record-naming for nucleic-acid hits is a known edge-case gap). Still deferred: CM/foldseek references, --gene_call (prodigal, GPL-deferred), --pad, --deduplicate|
+|domainate.py|protein (hmmsearch) + protein-FASTA (phmmer) + nucleotide-FASTA/HMM (nhmmer, whole-contig both-strand + circular origin-wrap) references supported; nucleotide-HMM & circular nhmmer are exact parity, phmmer is exact structural parity (evalue/score within HMMER-impl tolerance), nucleotide-FASTA nhmmer diverges on weak near-threshold hits (single-seq DNA profile construction/calibration differs from pyhmmer). Still deferred: CM/foldseek references, --gene_call (prodigal, GPL-deferred), --batch_size/--offset/--recs_to_read|
+|domainator_db_download.py|deferred (network fetch + prodigal --gene_call, which is GPL-deferred)|
+|domainator_format_db.py|finished (shard/BGZF-compress/.didx-index; .didx byte-identical to Python; domain_search round-trip verified both ways. Supports plain + BGZF inputs; plain non-BGZF gzip rejected, matching the rest of the seekable-I/O layer)|
 |enum_report.py|finished (html output deferred, need to figure out best way to integrate with tauri)|
 |extract_domains.py|finished (separate tool; parity-verified)|
 |extract_peptides.py|finished (separate tool; parity-verified)|
@@ -65,13 +65,13 @@ There are some dependencies that are not easily portable to Rust, such as anythi
 |filter_domains.py|finished (parity-verified)|
 |find_features.py|deferred (too many torch dependencies)|
 |genbank_to_fasta.py|finished (byte-identical parity)|
-|hmmer_build.py|planned|
+|hmmer_build.py|deferred (needs an MSA->HMM plan7 builder, which hmmer-pure-rs does not provide)|
 |infernal_build.py|deferred (avoiding infernal dependency for now)|
-|kmer_dist.py|planned (but not high priority)|
+|kmer_dist.py|deferred (heavy; low priority per plan)|
 |hmmer_compare.py|finished|
-|hmmer_report.py|planned|
-|hmmer_search.py|planned|
-|hmmer_select.py|planned|
+|hmmer_report.py|finished (TSV byte-identical parity; column order = flag order like enum_report; HTML deferred, `--json` offered instead)|
+|hmmer_search.py|finished (filter query HMMs by best reference score; count+order parity verified across --score_cutoff/--max_hits; reuses the hmm_compare Viterbi engine + write_hmm)|
+|hmmer_select.py|finished (retained-profile set verified identical to Python across all test-file combos incl. case-sensitivity; output HMM re-readable by pyhmmer. Uses hmmer-pure-rs's writer, which emits a HMMER3/e header — semantically re-readable, not byte-identical)|
 |matrix_report.py|finished|
 |partition_seqfile.py|deferred|
 |select_by_cds.py|finished|
@@ -79,8 +79,8 @@ There are some dependencies that are not easily portable to Rust, such as anythi
 |select_by_contig.py|finished|
 |seq_dist.py|finished|
 |sort_contigs.py|finished (parity; ties may reorder)|
-|summary_report.py|planned|
-|split_by_cluster.py|planned|
+|summary_report.py|deferred (matplotlib/seaborn plots; no clean pure-Rust path yet)|
+|split_by_cluster.py|deferred (optional; skipped for now)|
 |transform_matrix.py|finished|
 |plot_contigs.py|planned (high priority, but need to make a much nicer implementation than the python one)|
 |trim_contigs.py|finished (parity-verified)|

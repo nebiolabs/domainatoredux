@@ -459,6 +459,7 @@ pub struct DomainSearchConfig {
     pub exclude_taxids: Vec<i64>,
     pub taxonomy_expr: Option<String>,
     pub ncbi_taxonomy_path: Option<String>,
+    pub max_output_gb: Option<f64>,
 }
 
 impl DomainSearchConfig {
@@ -494,6 +495,7 @@ impl DomainSearchConfig {
         merge_vec!(self, cli, exclude_taxids);
         merge_scalar!(self, cli, taxonomy_expr);
         merge_scalar!(self, cli, ncbi_taxonomy_path);
+        merge_scalar!(self, cli, max_output_gb);
     }
 }
 
@@ -1082,6 +1084,170 @@ impl HmmerCompareConfig {
     }
 }
 
+// ---------------------------------------------------------------------------
+// hmmer_report
+// ---------------------------------------------------------------------------
+
+use domainator_core::tools::hmmer_report::{
+    append_analysis as hr_append, static_analysis as hr_static, Analysis as HrAnalysis,
+};
+
+/// One ordered `hmmer_report` column (declarative form of the CLI column flags).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum HmmerReportColumn {
+    Source,
+    Acc,
+    Desc,
+    Length,
+    Consensus,
+    Append { name: String, value_type: String, value: String },
+}
+
+impl HmmerReportColumn {
+    fn static_name(&self) -> Option<&'static str> {
+        use HmmerReportColumn::*;
+        Some(match self {
+            Source => "source",
+            Acc => "acc",
+            Desc => "desc",
+            Length => "length",
+            Consensus => "consensus",
+            Append { .. } => return None,
+        })
+    }
+
+    /// The no-argument column for a flag name.
+    pub fn from_static_flag(name: &str) -> Option<HmmerReportColumn> {
+        use HmmerReportColumn::*;
+        Some(match name {
+            "source" => Source,
+            "acc" => Acc,
+            "desc" => Desc,
+            "length" => Length,
+            "consensus" => Consensus,
+            _ => return None,
+        })
+    }
+
+    /// Build the core [`HrAnalysis`] for this column.
+    pub fn to_analysis(&self) -> Result<HrAnalysis> {
+        if let Some(name) = self.static_name() {
+            return hr_static(name).with_context(|| format!("unknown hmmer_report column: {name}"));
+        }
+        Ok(match self {
+            HmmerReportColumn::Append { name, value_type, value } => {
+                hr_append(name.clone(), value_type, value).map_err(|e| anyhow::anyhow!(e))?
+            }
+            _ => unreachable!("static variants handled above"),
+        })
+    }
+}
+
+/// The full `hmmer_report` parameter set (config-file shape).
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct HmmerReportConfig {
+    pub input: Vec<String>,
+    pub output: Option<String>,
+    pub column_names: Option<Vec<String>>,
+    /// Ordered output columns.
+    pub columns: Vec<HmmerReportColumn>,
+    /// Emit a JSON array of row objects instead of TSV.
+    pub json: bool,
+}
+
+impl HmmerReportConfig {
+    pub fn merge_cli(&mut self, cli: HmmerReportConfig) {
+        merge_vec!(self, cli, input);
+        merge_scalar!(self, cli, output);
+        if cli.column_names.is_some() {
+            self.column_names = cli.column_names;
+        }
+        self.columns.extend(cli.columns);
+        self.json = self.json || cli.json;
+    }
+}
+
+/// `hmmer_select` parameters (config-file shape).
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct HmmerSelectConfig {
+    pub input: Vec<String>,
+    pub output: Option<String>,
+    pub regex: Vec<String>,
+    pub exact: Vec<String>,
+    pub contains: Vec<String>,
+    pub field: Option<String>,
+    pub case_sensitive: bool,
+}
+
+impl HmmerSelectConfig {
+    pub fn merge_cli(&mut self, cli: HmmerSelectConfig) {
+        merge_vec!(self, cli, input);
+        merge_scalar!(self, cli, output);
+        merge_vec!(self, cli, regex);
+        merge_vec!(self, cli, exact);
+        merge_vec!(self, cli, contains);
+        merge_scalar!(self, cli, field);
+        self.case_sensitive |= cli.case_sensitive;
+    }
+}
+
+/// `hmmer_search` parameters.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct HmmerSearchConfig {
+    pub input: Vec<String>,
+    pub reference: Vec<String>,
+    pub output: Option<String>,
+    pub score_cutoff: Option<f64>,
+    pub max_hits: Option<usize>,
+    pub cpu: Option<usize>,
+    pub max_output_gb: Option<f64>,
+}
+
+impl HmmerSearchConfig {
+    pub fn merge_cli(&mut self, cli: HmmerSearchConfig) {
+        merge_vec!(self, cli, input);
+        merge_vec!(self, cli, reference);
+        merge_scalar!(self, cli, output);
+        merge_scalar!(self, cli, score_cutoff);
+        merge_scalar!(self, cli, max_hits);
+        merge_scalar!(self, cli, cpu);
+        merge_scalar!(self, cli, max_output_gb);
+    }
+}
+
+/// `format_db` (domainator_format_db) parameters (config-file shape).
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct FormatDbConfig {
+    pub input: Vec<String>,
+    pub shards: Option<usize>,
+    pub compress: bool,
+    pub index: bool,
+    pub output_dir: Option<String>,
+    pub name: Option<String>,
+    pub level: Option<u8>,
+    pub force: bool,
+    pub log: Option<String>,
+}
+
+impl FormatDbConfig {
+    pub fn merge_cli(&mut self, cli: FormatDbConfig) {
+        merge_vec!(self, cli, input);
+        merge_scalar!(self, cli, shards);
+        self.compress |= cli.compress;
+        self.index |= cli.index;
+        merge_scalar!(self, cli, output_dir);
+        merge_scalar!(self, cli, name);
+        merge_scalar!(self, cli, level);
+        self.force |= cli.force;
+        merge_scalar!(self, cli, log);
+    }
+}
+
 /// A pragmatic JSON Schema (draft-07) describing a tool's config file.
 pub fn schema(tool: &str) -> Result<String> {
     let s = match tool {
@@ -1109,8 +1275,12 @@ pub fn schema(tool: &str) -> Result<String> {
         "build-ssn" | "build_ssn" => build_ssn_schema(),
         "build-ssn-viewer" | "build_ssn_viewer" => build_ssn_viewer_schema(),
         "matrix-report" | "matrix_report" => matrix_report_schema(),
+        "hmmer-report" | "hmmer_report" => hmmer_report_schema(),
+        "hmmer-select" | "hmmer_select" => hmmer_select_schema(),
+        "hmmer-search" | "hmmer_search" => hmmer_search_schema(),
+        "format-db" | "format_db" | "domainator-format-db" | "domainator_format_db" => format_db_schema(),
         other => anyhow::bail!(
-            "no schema for tool {other:?} (have: domainate, domain-search, seq-dist, compare-contigs, hmmer-compare, transform-matrix, build-ssn, build-ssn-viewer, matrix-report, select-by-contig, select-by-cds, enum-report)"
+            "no schema for tool {other:?} (have: domainate, domain-search, seq-dist, compare-contigs, hmmer-compare, hmmer-report, hmmer-select, format-db, transform-matrix, build-ssn, build-ssn-viewer, matrix-report, select-by-contig, select-by-cds, enum-report)"
         ),
     };
     serde_json::to_string_pretty(&s).context("serializing schema")
@@ -1271,7 +1441,8 @@ fn domain_search_schema() -> serde_json::Value {
             "include_taxids": {"type": "array", "items": {"type": "integer"}},
             "exclude_taxids": {"type": "array", "items": {"type": "integer"}},
             "taxonomy_expr": {"type": ["string", "null"]},
-            "ncbi_taxonomy_path": {"type": ["string", "null"]}
+            "ncbi_taxonomy_path": {"type": ["string", "null"]},
+            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if projected uncompressed GenBank output exceeds this many GB (0 disables)"}
         }
     })
 }
@@ -1693,6 +1864,94 @@ fn hmmer_compare_schema() -> serde_json::Value {
             "k": {"type": ["integer", "null"]},
             "alignments": {"type": "boolean", "default": false},
             "cpu": {"type": "integer", "default": 0}
+        }
+    })
+}
+
+fn hmmer_report_schema() -> serde_json::Value {
+    use serde_json::json;
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "hmmer_report config",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "input": {"type": "array", "items": {"type": "string"}, "description": "Input .hmm files"},
+            "output": {"type": ["string", "null"], "description": "TSV output (stdout if omitted)"},
+            "column_names": {"type": ["array", "null"], "items": {"type": "string"}, "description": "Override output column names"},
+            "json": {"type": "boolean", "default": false, "description": "Emit a JSON array of row objects instead of TSV"},
+            "columns": {
+                "type": "array",
+                "description": "Ordered output columns (after the leading `name`); each has a `type` tag",
+                "items": {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {"enum": ["source", "acc", "desc", "length", "consensus", "append"]},
+                        "name": {"type": "string", "description": "for append"},
+                        "value_type": {"enum": ["int", "float", "str"], "description": "for append"},
+                        "value": {"type": "string", "description": "for append"}
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn hmmer_search_schema() -> serde_json::Value {
+    use serde_json::json;
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "hmmer_search config",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "input": {"type": "array", "items": {"type": "string"}, "description": "Query .hmm file(s) (the set being filtered)"},
+            "reference": {"type": "array", "items": {"type": "string"}, "description": "Reference .hmm file(s) (the filter criterion)"},
+            "output": {"type": ["string", "null"], "description": "Output .hmm (stdout if omitted)"},
+            "score_cutoff": {"type": ["number", "null"], "default": 10.0, "description": "Keep queries whose best reference score is >= this"},
+            "max_hits": {"type": ["integer", "null"], "description": "Keep top-N queries by best score"},
+            "cpu": {"type": ["integer", "null"], "description": "Threads (0 = all cores)"},
+            "max_output_gb": {"type": ["number", "null"], "description": "Fail if projected HMM output exceeds this many GB (0 disables)"}
+        }
+    })
+}
+
+fn hmmer_select_schema() -> serde_json::Value {
+    use serde_json::json;
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "hmmer_select config",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "input": {"type": "array", "items": {"type": "string"}, "description": "Input .hmm files"},
+            "output": {"type": ["string", "null"], "description": "HMM output (stdout if omitted)"},
+            "regex": {"type": "array", "items": {"type": "string"}, "description": "Regex pattern(s) to match"},
+            "exact": {"type": "array", "items": {"type": "string"}, "description": "Exact string(s) to match"},
+            "contains": {"type": "array", "items": {"type": "string"}, "description": "Substring(s) to match"},
+            "field": {"enum": ["name", "desc", "acc", "all", null], "description": "Which field(s) to search (default all)"},
+            "case_sensitive": {"type": "boolean", "default": false}
+        }
+    })
+}
+
+fn format_db_schema() -> serde_json::Value {
+    use serde_json::json;
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "format_db config",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "input": {"type": "array", "items": {"type": "string"}, "description": "GenBank/FASTA database file(s)"},
+            "shards": {"type": ["integer", "null"], "description": "Split each input into this many shards"},
+            "compress": {"type": "boolean", "default": false, "description": "Write BGZF output"},
+            "index": {"type": "boolean", "default": false, "description": "Write a .didx index per output"},
+            "output_dir": {"type": ["string", "null"]},
+            "name": {"type": ["string", "null"], "description": "Base name for the output database (single input only)"},
+            "level": {"type": "integer", "default": 6, "description": "BGZF compression level (1-12)"},
+            "force": {"type": "boolean", "default": false}
         }
     })
 }

@@ -604,6 +604,33 @@ pub fn select_by_cds_hits(
         let is_focus = focus_ids.contains(&cid);
         cds_list.push(Cds { intervals, strand: f.location.strand(), cds_id: cid, is_focus });
     }
+
+    // Whole-contig (nhmmer) hits carry `cds_id="."`; each best-hit contig feature
+    // becomes its own focus pseudo-CDS (mirrors `list_from_contig`'s
+    // `include_nucleic_acid_annotations` path). Its cds_id is a synthetic `nuc_N`
+    // so it never collides with a real CDS, and the originating feature is kept
+    // verbatim when it is the focus.
+    let mut nuc_features: std::collections::HashMap<String, &SeqFeature> = std::collections::HashMap::new();
+    let mut nuc_idx = 0usize;
+    for f in &rec.features {
+        if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME && f.get_first("cds_id") == Some(".") {
+            let cid = format!("nuc_{nuc_idx}");
+            nuc_idx += 1;
+            let intervals: Vec<(i64, i64)> = f
+                .location
+                .parts
+                .iter()
+                .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
+                .collect();
+            let strand = f.location.strand();
+            if let Some(name) = f.get_first("name") {
+                hit_name_by_cid.insert(cid.clone(), name.to_string());
+            }
+            nuc_features.insert(cid.clone(), f);
+            cds_list.push(Cds { intervals, strand, cds_id: cid, is_focus: true });
+        }
+    }
+
     // Sort by stranded_start (matches Python's cds_list ordering).
     cds_list.sort_by_key(|c| c.sort_key(rec_len));
 
@@ -667,9 +694,31 @@ pub fn select_by_cds_hits(
                 keep.push(domf.clone());
             }
         }
-        for &(sf, ref cid) in &search_by_cid {
-            if *cid == focus_cid {
-                keep.push(sf.clone());
+        // Contig-level (whole-contig nhmmer) `Domainator` features carry
+        // `cds_id="."` and aren't tied to a CDS; keep those whose span falls in
+        // the slice (mirrors `--add_annotations` for nucleic-acid hits).
+        for f in &rec.features {
+            if f.kind != DOMAIN_FEATURE_NAME || f.get_first("cds_id") != Some(".") {
+                continue;
+            }
+            let intervals: Vec<(i64, i64)> = f
+                .location
+                .parts
+                .iter()
+                .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
+                .collect();
+            if slice_contains(&slice, &intervals) {
+                keep.push(f.clone());
+            }
+        }
+        if let Some(nucf) = nuc_features.get(focus_cid.as_str()) {
+            // Nucleic-acid (whole-contig nhmmer) focus: keep just this contig hit.
+            keep.push((*nucf).clone());
+        } else {
+            for &(sf, ref cid) in &search_by_cid {
+                if *cid == focus_cid {
+                    keep.push(sf.clone());
+                }
             }
         }
 

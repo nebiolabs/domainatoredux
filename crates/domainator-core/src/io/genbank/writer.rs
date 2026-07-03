@@ -273,6 +273,10 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
     };
     let mol_type = match rec.molecule_type.as_deref() {
         Some("protein") | Some("PROTEIN") => "",
+        // "nucleotide" is the internal molecule type for a nucleotide FASTA input
+        // (from `--fasta_type nucleotide`); the GenBank LOCUS uses "DNA" (mirrors
+        // Python's write_genbank, whose Biopython writer emits DNA).
+        Some("nucleotide") => "DNA",
         Some(m) => m,
         None => "DNA",
     };

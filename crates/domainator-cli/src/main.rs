@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 mod config;
-use config::{load_config, print_config, schema, ColumnSpec, EnumConfig};
+use config::{load_config, print_config, schema, ColumnSpec, EnumConfig, HmmerReportColumn};
 
 use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
@@ -184,6 +184,9 @@ enum Command {
         /// Path to the NCBI taxonomy directory (default: /tmp/ncbi_taxonomy).
         #[arg(long = "ncbi_taxonomy_path")]
         ncbi_taxonomy_path: Option<String>,
+        /// Fail if projected uncompressed GenBank output exceeds this many GB (0 disables; default 25).
+        #[arg(long = "max_output_gb")]
+        max_output_gb: Option<f64>,
         /// Extract whole matching contigs (nucleotide).
         #[arg(long = "whole_contig")]
         whole_contig: bool,
@@ -1140,6 +1143,108 @@ enum Command {
         #[arg(long = "print_config")]
         print_config: bool,
     },
+    /// Tabulate HMM-profile metadata to TSV (column order = flag order; or --json).
+    HmmerReport {
+        /// All hmmer_report arguments (parsed in order; see the Python tool's flags).
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 0..)]
+        args: Vec<String>,
+    },
+    /// Filter an HMM file by text matches on profile NAME/DESC/ACC fields.
+    HmmerSelect {
+        /// Input `.hmm` file(s). Reads stdin if omitted (unsupported: give files).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output `.hmm` file. Writes to stdout if omitted.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Regex pattern(s) to match.
+        #[arg(long, num_args = 1..)]
+        regex: Vec<String>,
+        /// Exact string(s) to match (whole field).
+        #[arg(long, num_args = 1..)]
+        exact: Vec<String>,
+        /// Substring(s) to match.
+        #[arg(long, num_args = 1..)]
+        contains: Vec<String>,
+        /// Which field(s) to search: name, desc, acc, or all.
+        #[arg(long)]
+        field: Option<String>,
+        /// Make matching case-sensitive.
+        #[arg(long = "case_sensitive")]
+        case_sensitive: bool,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Filter query HMM profiles by best score against reference HMM profiles.
+    HmmerSearch {
+        /// Query `.hmm` file(s) — the set being filtered.
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Reference `.hmm` file(s) — the filter criterion.
+        #[arg(short, long, num_args = 1..)]
+        reference: Vec<PathBuf>,
+        /// Output `.hmm` file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Keep queries whose best reference score is >= this (default 10.0).
+        #[arg(long = "score_cutoff")]
+        score_cutoff: Option<f64>,
+        /// Keep at most this many queries, ranked by best score.
+        #[arg(long = "max_hits")]
+        max_hits: Option<usize>,
+        /// Worker threads (0 = all cores).
+        #[arg(long)]
+        cpu: Option<usize>,
+        /// Fail if projected HMM output exceeds this many GB (0 disables).
+        #[arg(long = "max_output_gb")]
+        max_output_gb: Option<f64>,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Shard / BGZF-compress / .didx-index a domain_search database.
+    FormatDb {
+        /// GenBank or FASTA database file(s) to format (plain or BGZF).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Split each input into this many shards (balanced by record count).
+        #[arg(long)]
+        shards: Option<usize>,
+        /// Write BGZF (block-gzip) output.
+        #[arg(long, alias = "bgzf")]
+        compress: bool,
+        /// Write a .didx offset index per output file.
+        #[arg(long)]
+        index: bool,
+        /// Directory to write outputs into (default: alongside each input).
+        #[arg(long = "output_dir")]
+        output_dir: Option<String>,
+        /// Base name for the output database (requires a single input).
+        #[arg(long)]
+        name: Option<String>,
+        /// BGZF/deflate compression level (1-12).
+        #[arg(long)]
+        level: Option<u8>,
+        /// Overwrite existing outputs / rebuild indexes instead of skipping.
+        #[arg(long)]
+        force: bool,
+        /// Log file (default: stderr).
+        #[arg(long)]
+        log: Option<PathBuf>,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
 }
 
 /// Parse `--mst_knn`: an integer greater than 1 (mirrors
@@ -1225,6 +1330,36 @@ fn opt_path(path: &Option<PathBuf>) -> Result<Option<String>> {
         Some(p) => Ok(Some(p.to_str().context("non-UTF8 path")?.to_string())),
         None => Ok(None),
     }
+}
+
+/// Enforce a projected-output-size guardrail (mirrors `output_guardrails`): fail
+/// if the cumulative uncompressed GenBank size of `records` exceeds `max_gb` GB.
+/// `max_gb == 0` disables the check; `max_gb < 0` is an error.
+fn enforce_output_limit_gb(records: &[SeqRecord], max_gb: f64) -> Result<()> {
+    if max_gb < 0.0 {
+        anyhow::bail!("--max_output_gb must be >= 0.");
+    }
+    if max_gb == 0.0 {
+        return Ok(());
+    }
+    let max_bytes = (max_gb * 1_000_000_000.0) as u64;
+    let mut total: u64 = 0;
+    let mut buf: Vec<u8> = Vec::new();
+    for rec in records {
+        buf.clear();
+        write_record(&mut buf, rec)?;
+        total += buf.len() as u64;
+        if total > max_bytes {
+            anyhow::bail!(
+                "Projected domain_search GenBank output size is {:.2} GB, which exceeds the \
+                 configured limit of {max_gb} GB. Reduce the projected output size or raise the \
+                 limit with --max_output_gb. Relevant options: --max_hits, --max_hits_per_contig, \
+                 --cds_range, --kb_range.",
+                total as f64 / 1_000_000_000.0
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Write records as GenBank to a file, or to stdout when `output` is None.
@@ -1449,6 +1584,67 @@ fn parse_enum_args(args: &[String]) -> Result<EnumCli> {
     Ok(EnumCli { config: cfg, config_path, print_config })
 }
 
+/// CLI-provided `hmmer_report` params (column order preserved) + control flags.
+struct HmmerReportCli {
+    config: config::HmmerReportConfig,
+    config_path: Option<String>,
+    print_config: bool,
+}
+
+/// Parse `hmmer_report` args by hand so the relative order of column flags is
+/// preserved (mirrors the Python tool's ordered argparse actions).
+fn parse_hmmer_report_args(args: &[String]) -> Result<HmmerReportCli> {
+    let is_flag = |t: &str| t == "-i" || t == "-o" || t.starts_with("--");
+    let mut cfg = config::HmmerReportConfig::default();
+    let mut config_path = None;
+    let mut print_config = false;
+
+    let mut i = 0;
+    let next = |i: &mut usize, what: &str| -> Result<String> {
+        *i += 1;
+        args.get(*i).cloned().with_context(|| format!("{what} requires a value"))
+    };
+    let consume_multi = |i: &mut usize| -> Vec<String> {
+        let mut out = Vec::new();
+        while *i + 1 < args.len() && !is_flag(&args[*i + 1]) {
+            *i += 1;
+            out.push(args[*i].clone());
+        }
+        out
+    };
+
+    while i < args.len() {
+        let a = args[i].clone();
+        match a.as_str() {
+            "-i" | "--input" => cfg.input.extend(consume_multi(&mut i)),
+            "-o" | "--output" => cfg.output = Some(next(&mut i, "--output")?),
+            "--column_names" => cfg.column_names = Some(consume_multi(&mut i)),
+            "--json" => cfg.json = true,
+            "--config" => config_path = Some(next(&mut i, "--config")?),
+            "--print_config" => print_config = true,
+            "--html" | "--html_max_height" => {
+                anyhow::bail!("hmmer_report HTML output is not supported in this port; use TSV or --json")
+            }
+            "--append" => {
+                let name = next(&mut i, "--append")?;
+                let value_type = next(&mut i, "--append")?;
+                let value = next(&mut i, "--append")?;
+                cfg.columns.push(HmmerReportColumn::Append { name, value_type, value });
+            }
+            other if other.starts_with("--") => {
+                let name = &other[2..];
+                match HmmerReportColumn::from_static_flag(name) {
+                    Some(spec) => cfg.columns.push(spec),
+                    None => anyhow::bail!("unknown hmmer_report option: {other}"),
+                }
+            }
+            other => anyhow::bail!("unexpected hmmer_report argument: {other}"),
+        }
+        i += 1;
+    }
+    Ok(HmmerReportCli { config: cfg, config_path, print_config })
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -1512,7 +1708,12 @@ fn main() -> Result<()> {
                 &cfg.include_taxids, &cfg.exclude_taxids, cfg.taxonomy_expr.as_deref(),
                 cfg.ncbi_taxonomy_path.as_deref(),
             )?;
-            let dbs = domainate::read_hmm_references(&cfg.references).context("reading HMM references")?;
+            let dbs = domainate::read_hmm_references(&cfg.references).context("reading references")?;
+            // Protein input cannot be searched with nucleotide references
+            // (mirrors validate_input_molecule_types).
+            if dbs.has_nucleotide() && records.iter().any(|r| r.is_protein()) {
+                anyhow::bail!("Cannot search protein inputs with a nucleotide reference.");
+            }
             // Python `--max_domains 0` means unlimited.
             let max_domains = match cfg.max_domains {
                 Some(0) | None => usize::MAX,
@@ -1541,7 +1742,7 @@ fn main() -> Result<()> {
             max_hits_per_contig, max_overlap, max_mode, batch_size, cpu, fasta_type, decoys,
             decoys_file, whole_contig, cds_range, cds_up, cds_down, kb_range, kb_up, kb_down,
             strand, keep_direction, max_region_overlap, translate, include_taxids, exclude_taxids,
-            taxonomy_expr, ncbi_taxonomy_path, config: config_path, print_config: do_print,
+            taxonomy_expr, ncbi_taxonomy_path, max_output_gb, config: config_path, print_config: do_print,
         } => {
             let cli = config::DomainSearchConfig {
                 input: opt_path(&input)?,
@@ -1552,6 +1753,7 @@ fn main() -> Result<()> {
                 whole_contig, cds_range, cds_up, cds_down, kb_range, kb_up, kb_down,
                 strand, keep_direction, translate, max_region_overlap,
                 decoys, decoys_file, include_taxids, exclude_taxids, taxonomy_expr, ncbi_taxonomy_path,
+                max_output_gb,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::DomainSearchConfig>(p)?,
@@ -1564,7 +1766,7 @@ fn main() -> Result<()> {
             }
             let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
             let output = cfg.output.context("missing required `output` (-o / --output or config)")?;
-            let dbs = domainate::read_hmm_references(&cfg.references).context("reading HMM references")?;
+            let dbs = domainate::read_hmm_references(&cfg.references).context("reading references")?;
             let range = domainator_core::tools::neighborhood::validate_range(
                 cfg.whole_contig, cfg.kb_range, cfg.kb_up, cfg.kb_down, cfg.cds_range, cfg.cds_up, cfg.cds_down,
             )
@@ -1605,6 +1807,8 @@ fn main() -> Result<()> {
             };
             let hits = domain_search::domain_search(&[input], &dbs, &opts)
                 .context("running domain_search")?;
+            // Output-size guardrail (uncompressed GenBank bytes; default 25 GB, 0 disables).
+            enforce_output_limit_gb(&hits, cfg.max_output_gb.unwrap_or(25.0))?;
             write_genbank(&output, &hits).context("writing GenBank")?;
             println!("wrote {} hit contigs to {}", hits.len(), output);
         }
@@ -2878,6 +3082,196 @@ fn main() -> Result<()> {
                     hmmer_compare(&cfg.input, &cfg.reference, &opts, &mut h).context("running hmmer_compare")?;
                 }
             }
+        }
+        Command::HmmerReport { args } => {
+            use domainator_core::tools::hmmer_report as hr;
+            let HmmerReportCli { config: cli_cfg, config_path, print_config: do_print } =
+                parse_hmmer_report_args(&args)?;
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::HmmerReportConfig>(p)?,
+                None => config::HmmerReportConfig::default(),
+            };
+            cfg.merge_cli(cli_cfg);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let analyses: Vec<hr::Analysis> =
+                cfg.columns.iter().map(|c| c.to_analysis()).collect::<Result<_>>()?;
+            let format = if cfg.json { hr::OutputFormat::Json } else { hr::OutputFormat::Tsv };
+            if cfg.input.is_empty() {
+                anyhow::bail!("hmmer_report requires at least one -i/--input .hmm file");
+            }
+            let records = hr::read_hmms_to_iterators(&cfg.input).map_err(|e| anyhow::anyhow!(e))?;
+            let col_names = cfg.column_names.as_deref();
+            match &cfg.output {
+                Some(p) => {
+                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
+                    hr::hmmer_report(&records, &analyses, col_names, format, &mut f)
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                    f.flush()?;
+                }
+                None => {
+                    let stdout = std::io::stdout();
+                    let mut h = stdout.lock();
+                    hr::hmmer_report(&records, &analyses, col_names, format, &mut h)
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                }
+            }
+        }
+        Command::HmmerSelect {
+            input, output, regex, exact, contains, field, case_sensitive,
+            config: config_path, print_config: do_print,
+        } => {
+            use domainator_core::tools::hmmer_select as hs;
+            let cli = config::HmmerSelectConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                regex,
+                exact,
+                contains,
+                field,
+                case_sensitive,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::HmmerSelectConfig>(p)?,
+                None => config::HmmerSelectConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            if cfg.input.is_empty() {
+                anyhow::bail!("hmmer_select requires at least one -i/--input .hmm file");
+            }
+            let fields = hs::Fields::from_field(cfg.field.as_deref().unwrap_or("all"))
+                .map_err(|e| anyhow::anyhow!(e))?;
+            let opts = hs::SelectOptions {
+                regex: cfg.regex,
+                exact: cfg.exact,
+                contains: cfg.contains,
+                fields,
+                case_sensitive: cfg.case_sensitive,
+            };
+            let found = match &cfg.output {
+                Some(p) => {
+                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
+                    let n = hs::hmmer_select(&cfg.input, &opts, &mut f).map_err(|e| anyhow::anyhow!(e))?;
+                    f.flush()?;
+                    n
+                }
+                None => {
+                    let stdout = std::io::stdout();
+                    let mut h = stdout.lock();
+                    hs::hmmer_select(&cfg.input, &opts, &mut h).map_err(|e| anyhow::anyhow!(e))?
+                }
+            };
+            eprintln!("Found {found} matching profiles.");
+        }
+        Command::HmmerSearch {
+            input, reference, output, score_cutoff, max_hits, cpu, max_output_gb,
+            config: config_path, print_config: do_print,
+        } => {
+            use domainator_core::tools::hmmer_search as hsr;
+            let cli = config::HmmerSearchConfig {
+                input: paths_to_strings(&input)?,
+                reference: paths_to_strings(&reference)?,
+                output: opt_path(&output)?,
+                score_cutoff,
+                max_hits,
+                cpu,
+                max_output_gb,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::HmmerSearchConfig>(p)?,
+                None => config::HmmerSearchConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            if cfg.reference.is_empty() {
+                anyhow::bail!("hmmer_search requires at least one -r/--reference .hmm file");
+            }
+            if cfg.input.is_empty() {
+                anyhow::bail!("hmmer_search requires at least one -i/--input .hmm file");
+            }
+            let opts = hsr::HmmerSearchOptions {
+                score_cutoff: cfg.score_cutoff.unwrap_or(10.0),
+                max_hits: cfg.max_hits,
+                cpu: cfg.cpu.unwrap_or(0),
+                max_output_gb: cfg.max_output_gb,
+            };
+            let found = match &cfg.output {
+                Some(p) => {
+                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
+                    let n = hsr::hmmer_search(&cfg.input, &cfg.reference, &opts, &mut f)
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                    f.flush()?;
+                    n
+                }
+                None => {
+                    let stdout = std::io::stdout();
+                    let mut h = stdout.lock();
+                    hsr::hmmer_search(&cfg.input, &cfg.reference, &opts, &mut h)
+                        .map_err(|e| anyhow::anyhow!(e))?
+                }
+            };
+            eprintln!("Kept {found} query profiles.");
+        }
+        Command::FormatDb {
+            input, shards, compress, index, output_dir, name, level, force, log,
+            config: config_path, print_config: do_print,
+        } => {
+            use domainator_core::tools::format_db as fdb;
+            let cli = config::FormatDbConfig {
+                input: paths_to_strings(&input)?,
+                shards,
+                compress,
+                index,
+                output_dir,
+                name,
+                level,
+                force,
+                log: opt_path(&log)?,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::FormatDbConfig>(p)?,
+                None => config::FormatDbConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            if cfg.input.is_empty() {
+                anyhow::bail!("format_db requires at least one -i/--input database file");
+            }
+            let opts = fdb::FormatDbOptions {
+                shards: cfg.shards,
+                compress: cfg.compress,
+                index: cfg.index,
+                output_dir: cfg.output_dir,
+                name: cfg.name,
+                level: cfg.level.unwrap_or(6),
+                force: cfg.force,
+            };
+            let result = match &cfg.log {
+                Some(p) => {
+                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
+                    let r = fdb::format_db(&cfg.input, &opts, &mut f);
+                    f.flush()?;
+                    r
+                }
+                None => {
+                    let stderr = std::io::stderr();
+                    let mut h = stderr.lock();
+                    fdb::format_db(&cfg.input, &opts, &mut h)
+                }
+            };
+            result.map_err(|e| anyhow::anyhow!(e))?;
         }
     }
     Ok(())

@@ -1,13 +1,18 @@
-//! `domainate`: annotate sequences with hits to reference HMMs.
+//! `domainate`: annotate sequences with hits to reference HMMs / sequences.
 //!
-//! M1 scope: the protein `hmmsearch` path (gate 1a). Nucleotide CDS handling
-//! (cds_id generation, translation, the `domainator_<db>` CDS rollup) and
-//! phmmer/nhmmer/infernal/foldseek follow.
+//! Protein references (`.hmm` -> hmmsearch, protein FASTA -> phmmer) search the
+//! input peptides (whole protein records or translated CDSs); nucleotide
+//! references (nucleotide FASTA/`.hmm` -> nhmmer) search whole nucleotide contigs
+//! on both strands and annotate contig-level hits (`cds_id="."`, circular
+//! origin-wrap handled as a `join`). Infernal `.cm` / foldseek remain deferred.
 
 use std::collections::{HashMap, HashSet};
 
-use crate::search::hmmer::{hmmsearch_db, load_hmm_dbs, HmmDb};
+use crate::search::hmmer::hmmsearch_db;
+use crate::search::nhmmer::nhmmer_db;
+use crate::search::references::{read_references, References};
 use crate::search::SearchResult;
+use crate::seq::Topology;
 use crate::seq::taxid::record_taxid;
 use crate::seq::translate::is_searchable_cds;
 use crate::seq::{Location, SeqFeature, SeqRecord};
@@ -247,6 +252,122 @@ fn add_protein_annotations(
     }
 }
 
+/// The forward `[start, end)` segments a (possibly origin-spanning) contig hit
+/// covers on a circular contig (port of `circular_hit_segments`).
+fn circular_hit_segments(start: i64, end: i64, contig_length: i64) -> Vec<(i64, i64)> {
+    if end <= contig_length {
+        vec![(start, end)]
+    } else {
+        vec![(start, contig_length), (0, end - contig_length)]
+    }
+}
+
+/// Whether `container`'s segments fully cover `contained`'s (port of
+/// `circular_hit_contains`). Used to drop origin-wrap duplicate hits.
+fn circular_hit_contains(container: &SearchResult, contained: &SearchResult, contig_length: i64) -> bool {
+    let container_segments = circular_hit_segments(container.start, container.end, contig_length);
+    for cs in circular_hit_segments(contained.start, contained.end, contig_length) {
+        if !container_segments.iter().any(|seg| seg.0 <= cs.0 && seg.1 >= cs.1) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Drop origin-wrap duplicate hits on a circular contig (port of
+/// `deduplicate_contig_hits`): keep the highest-scoring, skip any later hit of the
+/// same name/database/program contained by a kept one. No-op for linear contigs.
+fn deduplicate_contig_hits(topology: Topology, contig_length: i64, mut hits: Vec<SearchResult>) -> Vec<SearchResult> {
+    if !matches!(topology, Topology::Circular) {
+        return hits;
+    }
+    hits.sort_by(|a, b| b.score.total_cmp(&a.score));
+    let mut kept: Vec<SearchResult> = Vec::new();
+    for hit in hits {
+        let dup = kept.iter().any(|existing| {
+            existing.name == hit.name
+                && existing.database == hit.database
+                && existing.program == hit.program
+                && circular_hit_contains(existing, &hit, contig_length)
+        });
+        if !dup {
+            kept.push(hit);
+        }
+    }
+    kept
+}
+
+/// Build a contig-level hit's feature location (port of `build_contig_hit_location`):
+/// an origin-spanning hit on a circular contig becomes a `join` of two ranges,
+/// otherwise a single clamped range.
+fn build_contig_hit_location(topology: Topology, contig_length: i64, hit: &SearchResult) -> Location {
+    if matches!(topology, Topology::Circular) && hit.end > contig_length {
+        Location {
+            operator: Some(crate::seq::location::CompoundOp::Join),
+            between: false,
+            parts: vec![
+                (hit.start, contig_length, hit.strand, false, false),
+                (0, hit.end - contig_length, hit.strand, false, false),
+            ],
+        }
+    } else {
+        Location::range(hit.start, hit.end.min(contig_length), hit.strand)
+    }
+}
+
+/// Emit a contig-level `Domainator`/best-hit feature for `hit` (cds_id = ".").
+fn contig_hit_feature(topology: Topology, contig_length: i64, hit: &SearchResult, ftype: &str) -> SeqFeature {
+    let mut f = hit.to_feature(ftype, ".");
+    f.location = build_contig_hit_location(topology, contig_length, hit);
+    f
+}
+
+/// Add whole-contig `Domainator` (+ optional best-hit) features from nhmmer hits
+/// (port of `add_contig_nucleic_acid_annotations`). Hits are deduplicated for
+/// origin-wrap on circular contigs, then sorted by score desc; features carry
+/// `cds_id="."`.
+fn add_contig_nucleic_acid_annotations(
+    contig: &mut SeqRecord,
+    hits_list: Vec<SearchResult>,
+    max_hits: usize,
+    max_overlap: f64,
+    no_annotations: bool,
+    best_annotation: bool,
+    overlap_by_db: bool,
+    max_hits_per_contig: Option<usize>,
+) {
+    let topology = contig.topology;
+    let contig_length = contig.len() as i64;
+    let mut hits_list = deduplicate_contig_hits(topology, contig_length, hits_list);
+    if hits_list.is_empty() {
+        return;
+    }
+    hits_list.sort_by(|a, b| b.score.total_cmp(&a.score));
+
+    if best_annotation {
+        let capped: Vec<SearchResult> = match max_hits_per_contig {
+            Some(n) => hits_list.iter().take(n).cloned().collect(),
+            None => hits_list.clone(),
+        };
+        for hit in filter_by_overlap(capped, max_overlap, overlap_by_db) {
+            contig
+                .features
+                .push(contig_hit_feature(topology, contig_length, &hit, DOMAIN_SEARCH_BEST_HIT_NAME));
+        }
+    }
+
+    if no_annotations {
+        return;
+    }
+
+    let capped: Vec<SearchResult> = hits_list.into_iter().take(max_hits).collect();
+    for hit in filter_by_overlap(capped, max_overlap, overlap_by_db) {
+        contig
+            .features
+            .push(contig_hit_feature(topology, contig_length, &hit, DOMAIN_FEATURE_NAME));
+    }
+}
+
 /// Options for [`domainate`].
 pub struct DomainateOptions {
     pub z: f64,
@@ -266,6 +387,9 @@ pub struct DomainateOptions {
     pub allowed_taxids: Option<HashSet<i64>>,
     /// Worker threads for the per-database search (`0` = all cores).
     pub cpu: usize,
+    /// Cap on independent whole-contig (nhmmer) best hits per contig (`None` =
+    /// unlimited). Only affects the contig-level best-annotation path.
+    pub max_hits_per_contig: Option<usize>,
 }
 
 impl Default for DomainateOptions {
@@ -283,13 +407,16 @@ impl Default for DomainateOptions {
             max_mode: false,
             allowed_taxids: None,
             cpu: 0,
+            max_hits_per_contig: None,
         }
     }
 }
 
-/// Annotate `records` with hits from `hmm_dbs` (protein hmmsearch path). Returns
-/// the annotated records (all records, or hit-only when `hits_only`).
-pub fn domainate(mut records: Vec<SeqRecord>, hmm_dbs: &[HmmDb], opts: &DomainateOptions) -> Vec<SeqRecord> {
+/// Annotate `records` with hits from `refs`. Protein references (hmmsearch /
+/// phmmer) search the input peptides (whole protein records or translated CDSs);
+/// nucleotide references (nhmmer) search whole nucleotide contigs on both strands.
+/// Returns the annotated records (all, or hit-only when `hits_only`).
+pub fn domainate(mut records: Vec<SeqRecord>, refs: &References, opts: &DomainateOptions) -> Vec<SeqRecord> {
     let empty_dropped = std::collections::HashSet::new();
 
     // Taxonomy pre-filter: drop records whose lineage is not in the allowed set
@@ -305,7 +432,8 @@ pub fn domainate(mut records: Vec<SeqRecord>, hmm_dbs: &[HmmDb], opts: &Domainat
         }
     }
 
-    // Batch peptides across contigs. Protein: "{i},0". Nucleotide: "{i},{feature_index}".
+    // Protein search (hmmsearch + phmmer). Batch peptides across contigs.
+    // Protein record: "{i},0". Nucleotide record's CDSs: "{i},{feature_index}".
     let mut peptides: Vec<(String, Vec<u8>)> = Vec::new();
     for (i, rec) in records.iter().enumerate() {
         if rec.is_protein() {
@@ -321,45 +449,103 @@ pub fn domainate(mut records: Vec<SeqRecord>, hmm_dbs: &[HmmDb], opts: &Domainat
     // contig index -> (cds feature index -> SearchResults). Databases are searched
     // in parallel (each independent); results are merged in database order so the
     // output is deterministic regardless of thread count.
-    let per_db: Vec<Vec<crate::search::hmmer::NamedHit>> = crate::parallel::with_threads(opts.cpu, || {
-        use rayon::prelude::*;
-        hmm_dbs
-            .par_iter()
-            .map(|db| hmmsearch_db(db, &peptides, opts.z, opts.evalue, opts.min_evalue, opts.max_mode))
-            .collect()
-    });
     let mut hits: HashMap<usize, HashMap<usize, Vec<SearchResult>>> = HashMap::new();
-    for nhs in per_db {
-        for nh in nhs {
-            let mut it = nh.target.split(',');
-            let ci = it.next().and_then(|s| s.parse::<usize>().ok());
-            let fi = it.next().and_then(|s| s.parse::<usize>().ok());
-            if let (Some(ci), Some(fi)) = (ci, fi) {
-                hits.entry(ci).or_default().entry(fi).or_default().push(nh.result);
+    if !refs.protein.is_empty() && !peptides.is_empty() {
+        let per_db: Vec<Vec<crate::search::hmmer::NamedHit>> = crate::parallel::with_threads(opts.cpu, || {
+            use rayon::prelude::*;
+            refs.protein
+                .par_iter()
+                .map(|db| hmmsearch_db(db, &peptides, opts.z, opts.evalue, opts.min_evalue, opts.max_mode))
+                .collect()
+        });
+        for nhs in per_db {
+            for nh in nhs {
+                let mut it = nh.target.split(',');
+                let ci = it.next().and_then(|s| s.parse::<usize>().ok());
+                let fi = it.next().and_then(|s| s.parse::<usize>().ok());
+                if let (Some(ci), Some(fi)) = (ci, fi) {
+                    hits.entry(ci).or_default().entry(fi).or_default().push(nh.result);
+                }
+            }
+        }
+    }
+
+    // Nucleotide search (nhmmer) over whole contigs, both strands. Targets are
+    // named "{i},contig,{len}"; circular contigs are extended by the longest
+    // nucleotide reference so origin-spanning hits are found.
+    let mut contig_hits: HashMap<usize, Vec<SearchResult>> = HashMap::new();
+    if !refs.nucleotide.is_empty() {
+        let nhmmer_extension: usize = refs
+            .nucleotide
+            .iter()
+            .flat_map(|db| db.hmms.iter().map(|h| h.m))
+            .max()
+            .unwrap_or(0);
+        let mut targets: Vec<(String, Vec<u8>)> = Vec::new();
+        for (i, rec) in records.iter().enumerate() {
+            if rec.is_protein() {
+                continue;
+            }
+            let mut seq: Vec<u8> =
+                rec.seq.iter().copied().filter(|b| b.is_ascii_alphabetic()).collect();
+            if matches!(rec.topology, Topology::Circular) && nhmmer_extension > 0 {
+                let ext = nhmmer_extension.min(seq.len());
+                let prefix: Vec<u8> = seq[..ext].to_vec();
+                seq.extend_from_slice(&prefix);
+            }
+            targets.push((format!("{i},contig,{}", rec.len()), seq));
+        }
+        if !targets.is_empty() {
+            let per_db: Vec<Vec<crate::search::hmmer::NamedHit>> =
+                crate::parallel::with_threads(opts.cpu, || {
+                    use rayon::prelude::*;
+                    refs.nucleotide
+                        .par_iter()
+                        .map(|db| nhmmer_db(db, &targets, opts.evalue, opts.min_evalue, opts.max_mode))
+                        .collect()
+                });
+            for nhs in per_db {
+                for nh in nhs {
+                    if let Some(ci) = nh.target.split(',').next().and_then(|s| s.parse::<usize>().ok()) {
+                        contig_hits.entry(ci).or_default().push(nh.result);
+                    }
+                }
             }
         }
     }
 
     // Contigs that received at least one hit in *this* search (mirrors Python's
     // `hits.keys()`), used by `hits_only` — independent of pre-existing domains.
-    let hit_indices: HashSet<usize> = hits.keys().copied().collect();
+    let mut hit_indices: HashSet<usize> = hits.keys().copied().collect();
+    hit_indices.extend(contig_hits.keys().copied());
 
     for (i, rec) in records.iter_mut().enumerate() {
-        let by_cds = match hits.remove(&i) {
-            Some(m) => m,
-            None => continue,
-        };
+        let by_cds = hits.remove(&i);
+        let ncontig = contig_hits.remove(&i);
+        if by_cds.is_none() && ncontig.is_none() {
+            continue;
+        }
         if rec.is_protein() {
-            let flat: Vec<SearchResult> = by_cds.into_values().flatten().collect();
-            add_protein_annotations(
-                rec, flat, opts.max_hits, opts.max_overlap, opts.no_annotations,
-                opts.best_annotation, opts.overlap_by_db,
-            );
+            if let Some(by_cds) = by_cds {
+                let flat: Vec<SearchResult> = by_cds.into_values().flatten().collect();
+                add_protein_annotations(
+                    rec, flat, opts.max_hits, opts.max_overlap, opts.no_annotations,
+                    opts.best_annotation, opts.overlap_by_db,
+                );
+            }
         } else {
-            add_nucleic_acid_annotations(
-                rec, by_cds, opts.max_hits, opts.max_overlap, opts.no_annotations,
-                opts.best_annotation, opts.overlap_by_db,
-            );
+            if let Some(chits) = ncontig {
+                add_contig_nucleic_acid_annotations(
+                    rec, chits, opts.max_hits, opts.max_overlap, opts.no_annotations,
+                    opts.best_annotation, opts.overlap_by_db, opts.max_hits_per_contig,
+                );
+            }
+            if let Some(by_cds) = by_cds {
+                add_nucleic_acid_annotations(
+                    rec, by_cds, opts.max_hits, opts.max_overlap, opts.no_annotations,
+                    opts.best_annotation, opts.overlap_by_db,
+                );
+            }
             add_domain_cds_annotations(rec);
         }
     }
@@ -375,7 +561,71 @@ pub fn domainate(mut records: Vec<SeqRecord>, hmm_dbs: &[HmmDb], opts: &Domainat
     records
 }
 
-/// Load HMM reference databases from `.hmm` files.
-pub fn read_hmm_references(files: &[String]) -> std::io::Result<Vec<HmmDb>> {
-    load_hmm_dbs(files)
+/// Load and classify reference files (protein hmmsearch/phmmer + nucleotide
+/// nhmmer). Nucleotide references cannot be combined with protein input; that is
+/// validated by the caller once the input molecule type is known.
+pub fn read_hmm_references(files: &[String]) -> std::io::Result<References> {
+    read_references(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::seq::location::CompoundOp;
+
+    fn hit(start: i64, end: i64, strand: i32, name: &str) -> SearchResult {
+        SearchResult {
+            name: name.into(), desc: String::new(), acc: String::new(), evalue: 1e-10,
+            score: 50.0, start, end, database: "db".into(), identity: 100.0,
+            rstart: 1, rend: 10, rlen: 10, program: "nhmmer".into(), strand,
+        }
+    }
+
+    #[test]
+    fn contig_hit_location_linear_clamps_to_length() {
+        let h = hit(5, 20, 1, "q");
+        let loc = build_contig_hit_location(Topology::Linear, 15, &h);
+        assert!(loc.operator.is_none());
+        assert_eq!(loc.parts, vec![(5, 15, 1, false, false)]);
+    }
+
+    #[test]
+    fn contig_hit_location_circular_wrap_becomes_join() {
+        // On a length-100 circular contig, a hit ending at 110 spans the origin.
+        let h = hit(90, 110, 1, "q");
+        let loc = build_contig_hit_location(Topology::Circular, 100, &h);
+        assert_eq!(loc.operator, Some(CompoundOp::Join));
+        assert_eq!(
+            loc.parts,
+            vec![(90, 100, 1, false, false), (0, 10, 1, false, false)]
+        );
+    }
+
+    #[test]
+    fn contig_hit_location_circular_no_wrap_is_simple_range() {
+        let h = hit(10, 50, -1, "q");
+        let loc = build_contig_hit_location(Topology::Circular, 100, &h);
+        assert!(loc.operator.is_none());
+        assert_eq!(loc.parts, vec![(10, 50, -1, false, false)]);
+    }
+
+    #[test]
+    fn circular_dedup_drops_origin_wrap_duplicate() {
+        // A full-length hit (higher score) contains a wrapped duplicate of the
+        // same name/db/program; the duplicate is dropped on a circular contig.
+        let mut big = hit(0, 100, 1, "q");
+        big.score = 60.0;
+        let wrapped = hit(90, 110, 1, "q"); // segments (90,100),(0,10) ⊆ (0,100)
+        let kept = deduplicate_contig_hits(Topology::Circular, 100, vec![big, wrapped]);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].score, 60.0);
+    }
+
+    #[test]
+    fn circular_dedup_is_noop_on_linear() {
+        let a = hit(0, 100, 1, "q");
+        let b = hit(90, 110, 1, "q");
+        let kept = deduplicate_contig_hits(Topology::Linear, 100, vec![a, b]);
+        assert_eq!(kept.len(), 2);
+    }
 }
