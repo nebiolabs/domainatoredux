@@ -1,0 +1,219 @@
+<script lang="ts">
+  import { ws } from "./lib/state.svelte";
+  import { listTools, pickDirectory } from "./lib/api";
+  import FolderTree from "./lib/FolderTree.svelte";
+  import FileTable from "./lib/FileTable.svelte";
+  import ViewerDock from "./lib/ViewerDock.svelte";
+  import ToolDialog from "./lib/ToolDialog.svelte";
+  import DatabasesPanel from "./lib/DatabasesPanel.svelte";
+  import type { ToolMeta } from "./lib/types";
+
+  let leftWidth = $state(260);
+  let tableHeight = $state(240);
+  let tools = $state<ToolMeta[]>([]);
+  let toolsOpen = $state(false);
+  let activeTool = $state<string | null>(null);
+
+  async function chooseWorkspace() {
+    const dir = await pickDirectory();
+    if (dir) await ws.open(dir);
+  }
+
+  async function toggleTools() {
+    toolsOpen = !toolsOpen;
+    if (toolsOpen && tools.length === 0) tools = await listTools();
+  }
+
+  // Generic drag helper: while the pointer is down, feed clientX/clientY to `apply`.
+  function startDrag(apply: (e: PointerEvent) => void) {
+    return (e: PointerEvent) => {
+      e.preventDefault();
+      const move = (ev: PointerEvent) => apply(ev);
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    };
+  }
+
+  const dragLeft = startDrag((e) => {
+    leftWidth = Math.min(Math.max(160, e.clientX), 560);
+  });
+  const dragTable = startDrag((e) => {
+    // 44px accounts for the toolbar height.
+    tableHeight = Math.min(Math.max(120, e.clientY - 44), window.innerHeight - 160);
+  });
+</script>
+
+<div class="shell" style="--left-width: {leftWidth}px; --table-height: {tableHeight}px;">
+  <header class="toolbar">
+    <span class="brand">Domainator</span>
+    <button onclick={chooseWorkspace}>Open workspace…</button>
+    <div class="menu">
+      <button onclick={toggleTools} disabled={!ws.root}>Tools ▾</button>
+      {#if toolsOpen}
+        <div class="dropdown" role="menu">
+          {#each tools as t (t.id)}
+            <button
+              class="menu-item"
+              role="menuitem"
+              onclick={() => {
+                activeTool = t.id;
+                toolsOpen = false;
+              }}
+              title={t.description}>{t.label}</button
+            >
+          {/each}
+        </div>
+      {/if}
+    </div>
+    <span class="root-path" title={ws.root ?? ""}>{ws.root ?? "No workspace open"}</span>
+    {#if ws.error}
+      <span class="err">{ws.error}</span>
+    {/if}
+  </header>
+
+  {#if activeTool}
+    <ToolDialog tool={activeTool} onclose={() => (activeTool = null)} />
+  {/if}
+
+  <aside class="left">
+    <div class="tree-scroll">
+      {#if ws.tree}
+        <FolderTree node={ws.tree} depth={0} />
+      {:else}
+        <p class="empty">Open a workspace directory to browse its folders.</p>
+      {/if}
+    </div>
+    <DatabasesPanel />
+  </aside>
+
+  <div class="left-resizer" onpointerdown={dragLeft} role="separator" aria-label="Resize sidebar" tabindex="-1"></div>
+
+  <section class="main">
+    <div class="table-pane">
+      <FileTable />
+    </div>
+    <div class="row-resizer" onpointerdown={dragTable} role="separator" aria-label="Resize viewer" tabindex="-1"></div>
+    <div class="viewer-pane">
+      <ViewerDock />
+    </div>
+  </section>
+</div>
+
+<style>
+  .shell {
+    display: grid;
+    grid-template-columns: var(--left-width) 4px 1fr;
+    grid-template-rows: 44px 1fr;
+    grid-template-areas:
+      "toolbar toolbar toolbar"
+      "left    lres    main";
+    height: 100%;
+  }
+  .toolbar {
+    grid-area: toolbar;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 12px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand {
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .menu {
+    position: relative;
+  }
+  .dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    z-index: 60;
+    min-width: 180px;
+    padding: 4px;
+  }
+  .menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+  }
+  .menu-item:hover {
+    background: var(--row-hover);
+  }
+  .root-path {
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .err {
+    color: #e5484d;
+    font-size: 12px;
+  }
+  .left {
+    grid-area: left;
+    background: var(--bg-panel);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .tree-scroll {
+    flex: 1;
+    overflow: auto;
+    padding: 6px 0;
+    min-height: 0;
+  }
+  .empty {
+    color: var(--text-dim);
+    padding: 12px;
+    line-height: 1.5;
+  }
+  .left-resizer {
+    grid-area: lres;
+    cursor: col-resize;
+    background: var(--border);
+  }
+  .left-resizer:hover {
+    background: var(--accent);
+  }
+  .main {
+    grid-area: main;
+    display: grid;
+    grid-template-rows: var(--table-height) 4px 1fr;
+    min-width: 0;
+    min-height: 0;
+  }
+  .table-pane {
+    overflow: auto;
+    min-height: 0;
+  }
+  .row-resizer {
+    cursor: row-resize;
+    background: var(--border);
+  }
+  .row-resizer:hover {
+    background: var(--accent);
+  }
+  .viewer-pane {
+    overflow: hidden;
+    min-height: 0;
+    background: var(--bg);
+  }
+</style>

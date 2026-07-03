@@ -53,6 +53,40 @@ jobs:
           #     target/x86_64-pc-windows-gnu/release/domainator-genbank-summary.exe
           #     target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe
 
+          # ---- domainator-gui (the main Geneious-style GUI) ----
+          - app_id: domainator-gui
+            app_path: apps/domainator-gui
+            package_name: domainator-gui
+            platform: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            bundle_args: --bundles dmg
+            artifact_globs: |
+              target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          - app_id: domainator-gui
+            app_path: apps/domainator-gui
+            package_name: domainator-gui
+            platform: windows-msvc-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle_args: --bundles nsis
+            artifact_globs: |
+              target/x86_64-pc-windows-msvc/release/domainator-gui.exe
+              target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          # Linux -> Windows GNU cross-build (experimental, unsigned; verified to
+          # build + bundle an NSIS installer from Ubuntu). Cheaper than a Windows
+          # runner, but ship signed MSVC builds. Uncomment to enable.
+          # - app_id: domainator-gui
+          #   app_path: apps/domainator-gui
+          #   package_name: domainator-gui
+          #   platform: windows-gnu-x64
+          #   os: ubuntu-24.04
+          #   target: x86_64-pc-windows-gnu
+          #   bundle_args: --bundles nsis
+          #   artifact_globs: |
+          #     target/x86_64-pc-windows-gnu/release/domainator-gui.exe
+          #     target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5

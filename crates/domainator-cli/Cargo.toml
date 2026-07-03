@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 domainator-core = { path = "../domainator-core" }
+domainator-config = { path = "../domainator-config" }
 clap.workspace = true
 anyhow.workspace = true
 serde.workspace = true

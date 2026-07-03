@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
-mod config;
+use domainator_config as config;
 use config::{load_config, print_config, schema, ColumnSpec, EnumConfig, HmmerReportColumn};
 
 use domainator_core::io::genbank::writer::write_record;
@@ -28,13 +28,13 @@ use domainator_core::tools::clean_sequences;
 use domainator_core::tools::sort_contigs;
 use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
 use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
-use domainator_core::tools::build_ssn::{build_ssn, BuildSsnOptions};
+use domainator_core::tools::build_ssn::build_ssn;
 use domainator_core::tools::build_ssn_viewer::{
-    build_ssn_viewer_bundle, gzip, render_html, serialize_bundle, BuildSsnViewerOptions,
+    build_ssn_viewer_bundle, gzip, render_html, serialize_bundle,
 };
 use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
 use domainator_core::tools::seq_dist::{detect_kind, seq_dist, SeqDistOptions};
-use domainator_core::tools::transform_matrix::{transform_matrix, TransformMatrixOptions, MODES};
+use domainator_core::tools::transform_matrix::transform_matrix;
 use domainator_core::tools::{domain_search, domainate};
 
 #[derive(Parser)]
@@ -2647,11 +2647,10 @@ fn main() -> Result<()> {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
             }
-            let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
-            let mode = cfg.mode.unwrap_or_else(|| "none".into());
-            if !MODES.contains(&mode.as_str()) {
-                anyhow::bail!("invalid --mode {mode:?}; choose one of {MODES:?}");
-            }
+            let input = cfg.input.clone().context("missing required `input` (-i / --input or config)")?;
+            // Shared config->Options resolution (used by the GUI too, so they can't drift).
+            let opts = config::resolve::resolve_transform_matrix(&cfg)?;
+            let mode = opts.mode.clone();
             if cfg.dense.is_none() && cfg.dense_text.is_none() && cfg.sparse.is_none() {
                 anyhow::bail!("no output specified: pass at least one of --dense, --dense_text, --sparse");
             }
@@ -2659,12 +2658,6 @@ fn main() -> Result<()> {
                 anyhow::bail!("sparse distance matrices not implemented (--mode score_dist with --sparse)");
             }
             let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
-            let opts = TransformMatrixOptions {
-                mode,
-                input_type: cfg.input_type,
-                lb: cfg.lb,
-                mst_knn: cfg.mst_knn,
-            };
             let matrix = transform_matrix(matrix, &opts).context("running transform_matrix")?;
             // Output-size guardrails: estimate each requested output before writing.
             let max_gb = cfg.max_output_gb.unwrap_or(25.0);
@@ -2719,8 +2712,8 @@ fn main() -> Result<()> {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
             }
-            let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
-            let xgmml = cfg.xgmml.context("missing required `xgmml` (--xgmml or config)")?;
+            let input = cfg.input.clone().context("missing required `input` (-i / --input or config)")?;
+            let xgmml = cfg.xgmml.clone().context("missing required `xgmml` (--xgmml or config)")?;
             if cfg.mst && cfg.mst_knn.is_some() {
                 anyhow::bail!("--mst and --mst_knn are mutually exclusive");
             }
@@ -2745,16 +2738,7 @@ fn main() -> Result<()> {
                 Some(f) => Some(read_color_table(f)?),
                 None => None,
             };
-            let opts = BuildSsnOptions {
-                lb: cfg.lb.unwrap_or(0.0),
-                cluster: cfg.cluster || cfg.cluster_tsv.is_some(),
-                mst: cfg.mst,
-                mst_knn: cfg.mst_knn,
-                metadata_files: cfg.metadata.clone(),
-                subset_labels,
-                color_by: cfg.color_by.clone(),
-                color_table,
-            };
+            let opts = config::resolve::resolve_build_ssn(&cfg, subset_labels, color_table);
             let result = build_ssn(&matrix, &opts).context("running build_ssn")?;
 
             let name = std::path::Path::new(&xgmml)
@@ -2892,15 +2876,7 @@ fn main() -> Result<()> {
             };
 
             let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
-            let opts = BuildSsnViewerOptions {
-                name: name.clone(),
-                metadata_files: cfg.metadata.clone(),
-                subset_labels,
-                merge_impact_metric: cfg.merge_impact_metric.clone().unwrap_or_else(|| "min_child".into()),
-                max_merge_events: cfg.max_merge_events.unwrap_or(500),
-                color_by: cfg.color_by.clone(),
-                label_by: cfg.label_by.clone(),
-            };
+            let opts = config::resolve::resolve_build_ssn_viewer(&cfg, name.clone(), subset_labels);
             let bundle = build_ssn_viewer_bundle(&matrix, &opts).context("building SSN viewer bundle")?;
             let compressed = gzip(&serialize_bundle(&bundle));
 

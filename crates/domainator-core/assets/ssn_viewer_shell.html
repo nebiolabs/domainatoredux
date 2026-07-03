@@ -3894,6 +3894,16 @@
         tbody.innerHTML = bodyHtml;
 
         document.getElementById('selection-summary').textContent = selected.length.toLocaleString() + ' nodes selected';
+        // Domainator GUI host hook (additive; no-op when not embedded in an iframe):
+        // surface the selected node labels so the app can open their source sequences.
+        try {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'domainator-ssn-selection',
+                    labels: selected.map(i => state.bundle.graph.nodes[i])
+                }, '*');
+            }
+        } catch (e) { /* ignore */ }
         const pageStatus = document.getElementById('metadata-page-status');
         if (sortedNodeIndices.length === 0) {
             pageStatus.textContent = metadataFilterText()

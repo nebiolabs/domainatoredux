@@ -1,0 +1,139 @@
+<script lang="ts">
+  import { ws } from "./state.svelte";
+  import { viewsFor } from "./viewers/registry";
+
+  const active = $derived(ws.tabs.find((t) => t.id === ws.activeTabId) ?? null);
+  const views = $derived(active ? viewsFor(active.file.file_type) : []);
+
+  // Remember the selected sub-view per open file.
+  let subActive = $state<Record<string, string>>({});
+  const currentViewId = $derived(active ? (subActive[active.id] ?? views[0]?.id ?? "") : "");
+  const currentView = $derived(views.find((v) => v.id === currentViewId) ?? views[0] ?? null);
+</script>
+
+<div class="dock">
+  <div class="tabstrip" role="tablist">
+    {#each ws.tabs as tab (tab.id)}
+      <div class="tab" class:active={tab.id === ws.activeTabId} role="tab" aria-selected={tab.id === ws.activeTabId}>
+        <button class="tab-label" onclick={() => ws.setActive(tab.id)} title={tab.file.path}>
+          {tab.file.name}
+        </button>
+        <button class="tab-close" onclick={() => ws.closeTab(tab.id)} aria-label="Close">×</button>
+      </div>
+    {/each}
+  </div>
+
+  {#if active && views.length > 1}
+    <div class="subtabs" role="tablist">
+      {#each views as v (v.id)}
+        <button
+          class="subtab"
+          class:active={v.id === currentViewId}
+          role="tab"
+          aria-selected={v.id === currentViewId}
+          onclick={() => (subActive[active.id] = v.id)}
+        >
+          {v.label}
+        </button>
+      {/each}
+    </div>
+  {/if}
+
+  <div class="tab-body">
+    {#if !active}
+      <div class="placeholder">Open a file to view it here.</div>
+    {:else if currentView}
+      {@const View = currentView.component}
+      {#key active.id + ":" + currentView.id}
+        <View path={active.file.path} />
+      {/key}
+    {:else}
+      <div class="placeholder">
+        No viewer yet for <b>{active.file.file_type}</b> files. (Coming in a later phase.)
+      </div>
+    {/if}
+  </div>
+</div>
+
+<style>
+  .dock {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .tabstrip {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    min-height: 30px;
+  }
+  .tab {
+    display: flex;
+    align-items: center;
+    border-right: 1px solid var(--border);
+    background: var(--bg-panel);
+    max-width: 220px;
+  }
+  .tab.active {
+    background: var(--bg);
+  }
+  .tab-label {
+    border: none;
+    background: none;
+    padding: 6px 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tab-label:hover {
+    background: none;
+  }
+  .tab.active .tab-label {
+    font-weight: 600;
+  }
+  .tab-close {
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    padding: 2px 6px;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .tab-close:hover {
+    background: none;
+    color: #e5484d;
+  }
+  .subtabs {
+    display: flex;
+    gap: 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .subtab {
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
+    color: var(--text-dim);
+    padding: 5px 12px;
+  }
+  .subtab:hover {
+    background: var(--row-hover);
+  }
+  .subtab.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+  .tab-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .placeholder {
+    padding: 24px;
+    color: var(--text-dim);
+  }
+</style>

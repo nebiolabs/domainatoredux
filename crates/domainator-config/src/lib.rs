@@ -6,6 +6,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+pub mod resolve;
+
 use domainator_core::tools::enum_report::{
     append_analysis, feature_count_analysis, motif_count_analysis, named_domain_count_analysis,
     net_charge_analysis, qualifier_analysis, repeat_count_analysis, static_analysis, taxid_analysis,

@@ -781,6 +781,18 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "domainator-config",
+ "domainator-core",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
+name = "domainator-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "domainator-core",
  "serde",
  "serde_json",
@@ -798,6 +810,7 @@ dependencies = [
  "memchr",
  "rayon",
  "regex",
+ "serde",
  "serde_json",
  "thiserror 2.0.18",
 ]
@@ -808,6 +821,19 @@ version = "0.1.0"
 dependencies = [
  "domainator-core",
  "rfd",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
+name = "domainator-gui"
+version = "0.1.0"
+dependencies = [
+ "domainator-config",
+ "domainator-core",
+ "rfd",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
 ]
