@@ -718,6 +718,9 @@ enum Command {
         /// Worker threads (0 = all cores).
         #[arg(long)]
         cpu: Option<usize>,
+        /// Fail if a projected matrix output exceeds this many GB (default 25; 0 disables).
+        #[arg(long = "max_output_gb")]
+        max_output_gb: Option<f64>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -760,6 +763,9 @@ enum Command {
         /// Worker threads (0 = all cores).
         #[arg(long)]
         cpu: Option<usize>,
+        /// Fail if a projected matrix output exceeds this many GB (default 25; 0 disables).
+        #[arg(long = "max_output_gb")]
+        max_output_gb: Option<f64>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -795,6 +801,9 @@ enum Command {
         /// Keep only MST + OR-symmetric kNN edges (integer > 1).
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
+        /// Fail if a projected matrix output exceeds this many GB (default 25; 0 disables).
+        #[arg(long = "max_output_gb")]
+        max_output_gb: Option<f64>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -846,6 +855,9 @@ enum Command {
         /// Keep MST + OR-symmetric kNN edges (integer > 1).
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
+        /// Fail if the projected XGMML output exceeds this many GB (default 25; 0 disables).
+        #[arg(long = "max_output_gb")]
+        max_output_gb: Option<f64>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -891,6 +903,9 @@ enum Command {
         /// Max strongest merge events to embed (0 = all; default 500).
         #[arg(long = "max_merge_events")]
         max_merge_events: Option<usize>,
+        /// Fail if the projected .ssnv bundle output exceeds this many GB (default 25; 0 disables).
+        #[arg(long = "max_output_gb")]
+        max_output_gb: Option<f64>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -1136,6 +1151,9 @@ enum Command {
         /// Worker threads (0 = all cores).
         #[arg(long)]
         cpu: Option<usize>,
+        /// Fail if the projected TSV output exceeds this many GB (default 25; 0 disables).
+        #[arg(long = "max_output_gb")]
+        max_output_gb: Option<f64>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -1172,6 +1190,33 @@ enum Command {
         /// Make matching case-sensitive.
         #[arg(long = "case_sensitive")]
         case_sensitive: bool,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Build an HMM profile from a (Stockholm) multiple sequence alignment.
+    HmmerBuild {
+        /// Input Stockholm MSA file (stdin if omitted).
+        #[arg(short, long)]
+        input: Option<PathBuf>,
+        /// Output `.hmm` file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Profile NAME (required).
+        #[arg(long)]
+        name: Option<String>,
+        /// Profile ACC.
+        #[arg(long)]
+        acc: Option<String>,
+        /// Profile DESC.
+        #[arg(long)]
+        desc: Option<String>,
+        /// Alphabet: amino | dna | rna (inferred if omitted).
+        #[arg(long)]
+        alphabet: Option<String>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -1360,6 +1405,53 @@ fn enforce_output_limit_gb(records: &[SeqRecord], max_gb: f64) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Convert a `--max_output_gb` value (GB) to a byte budget, mirroring
+/// `output_guardrails.max_output_gb_to_bytes`: negative is an error, `0` disables
+/// (returns `None`).
+fn max_output_gb_to_bytes(max_gb: f64) -> Result<Option<u64>> {
+    if max_gb < 0.0 {
+        anyhow::bail!("--max_output_gb must be >= 0.");
+    }
+    if max_gb == 0.0 {
+        return Ok(None);
+    }
+    Ok(Some((max_gb * 1_000_000_000.0) as u64))
+}
+
+/// Fail when `actual_bytes` of an already-serialized output exceeds the byte
+/// budget for `max_gb`. `description` names the output; `mitigation` lists the
+/// relevant flags for the failure message.
+fn enforce_bytes_gb(actual_bytes: u64, max_gb: f64, description: &str, mitigation: &str) -> Result<()> {
+    let Some(max_bytes) = max_output_gb_to_bytes(max_gb)? else {
+        return Ok(());
+    };
+    if actual_bytes > max_bytes {
+        anyhow::bail!(
+            "Projected {description} size is {:.2} GB, which exceeds the configured limit of \
+             {:.2} GB. Reduce the projected output size or raise the limit with --max_output_gb. \
+             Relevant options: {mitigation}.",
+            actual_bytes as f64 / 1_000_000_000.0,
+            max_bytes as f64 / 1_000_000_000.0
+        );
+    }
+    Ok(())
+}
+
+/// Fail when the estimated size of writing `matrix` as `output_type` (`"dense"`,
+/// `"sparse"`, `"dense_text"`) to `path` exceeds the byte budget for `max_gb`.
+/// Uses the core matrix estimator (mirrors `DataMatrix.estimate_write_size`).
+fn enforce_matrix_gb(
+    matrix: &domainator_core::matrix::DataMatrix,
+    output_type: &str,
+    path: &str,
+    max_gb: f64,
+    mitigation: &str,
+) -> Result<()> {
+    let projected = domainator_core::matrix::estimate::estimate_write_size(output_type, matrix);
+    let description = format!("{output_type} matrix output '{path}'");
+    enforce_bytes_gb(projected, max_gb, &description, mitigation)
 }
 
 /// Write records as GenBank to a file, or to stdout when `output` is None.
@@ -2400,7 +2492,7 @@ fn main() -> Result<()> {
                 write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
             }
         }
-        Command::SeqDist { input, reference, dense, dense_text, sparse, algorithm, mode, lb, k, mst_knn, cpu, config: config_path, print_config: do_print } => {
+        Command::SeqDist { input, reference, dense, dense_text, sparse, algorithm, mode, lb, k, mst_knn, cpu, max_output_gb, config: config_path, print_config: do_print } => {
             let cli = config::SeqDistConfig {
                 input: opt_path(&input)?,
                 reference: opt_path(&reference)?,
@@ -2413,6 +2505,7 @@ fn main() -> Result<()> {
                 k,
                 mst_knn,
                 cpu,
+                max_output_gb,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::SeqDistConfig>(p)?,
@@ -2447,6 +2540,17 @@ fn main() -> Result<()> {
             };
             let matrix = seq_dist(&input, input_kind, cfg.reference.as_deref(), ref_kind, &opts)
                 .context("running seq_dist")?;
+            // Output-size guardrails: estimate each requested output before writing.
+            let max_gb = cfg.max_output_gb.unwrap_or(25.0);
+            if let Some(p) = &cfg.dense {
+                enforce_matrix_gb(&matrix, "dense", p, max_gb, "--sparse, -k, --lb")?;
+            }
+            if let Some(p) = &cfg.dense_text {
+                enforce_matrix_gb(&matrix, "dense_text", p, max_gb, "--sparse, -k, --lb")?;
+            }
+            if let Some(p) = &cfg.sparse {
+                enforce_matrix_gb(&matrix, "sparse", p, max_gb, "-k, --lb")?;
+            }
             if let Some(p) = &cfg.dense {
                 hdf5_io::write_dense(p, &matrix)?;
             }
@@ -2458,7 +2562,7 @@ fn main() -> Result<()> {
             }
             println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
         }
-        Command::CompareContigs { input, dense, dense_text, sparse, ji, ai, databases, k, lb, mst_knn, cpu, config: config_path, print_config: do_print } => {
+        Command::CompareContigs { input, dense, dense_text, sparse, ji, ai, databases, k, lb, mst_knn, cpu, max_output_gb, config: config_path, print_config: do_print } => {
             let cli = config::CompareContigsConfig {
                 input: paths_to_strings(&input)?,
                 dense: opt_path(&dense)?,
@@ -2471,6 +2575,7 @@ fn main() -> Result<()> {
                 lb,
                 mst_knn,
                 cpu,
+                max_output_gb,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::CompareContigsConfig>(p)?,
@@ -2499,6 +2604,17 @@ fn main() -> Result<()> {
                 cpu: cfg.cpu.unwrap_or(0),
             };
             let matrix = compare_contigs(&cfg.input, &opts).context("running compare_contigs")?;
+            // Output-size guardrails: estimate each requested output before writing.
+            let max_gb = cfg.max_output_gb.unwrap_or(25.0);
+            if let Some(p) = &cfg.dense {
+                enforce_matrix_gb(&matrix, "dense", p, max_gb, "--sparse, -k")?;
+            }
+            if let Some(p) = &cfg.dense_text {
+                enforce_matrix_gb(&matrix, "dense_text", p, max_gb, "--sparse, -k")?;
+            }
+            if let Some(p) = &cfg.sparse {
+                enforce_matrix_gb(&matrix, "sparse", p, max_gb, "--sparse, -k")?;
+            }
             if let Some(p) = &cfg.dense {
                 hdf5_io::write_dense(p, &matrix)?;
             }
@@ -2510,7 +2626,7 @@ fn main() -> Result<()> {
             }
             println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
         }
-        Command::TransformMatrix { input, dense, dense_text, sparse, mode, input_type, lb, mst_knn, config: config_path, print_config: do_print } => {
+        Command::TransformMatrix { input, dense, dense_text, sparse, mode, input_type, lb, mst_knn, max_output_gb, config: config_path, print_config: do_print } => {
             let cli = config::TransformMatrixConfig {
                 input: opt_path(&input)?,
                 dense: opt_path(&dense)?,
@@ -2520,6 +2636,7 @@ fn main() -> Result<()> {
                 input_type,
                 lb,
                 mst_knn,
+                max_output_gb,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::TransformMatrixConfig>(p)?,
@@ -2549,6 +2666,17 @@ fn main() -> Result<()> {
                 mst_knn: cfg.mst_knn,
             };
             let matrix = transform_matrix(matrix, &opts).context("running transform_matrix")?;
+            // Output-size guardrails: estimate each requested output before writing.
+            let max_gb = cfg.max_output_gb.unwrap_or(25.0);
+            if let Some(p) = &cfg.dense {
+                enforce_matrix_gb(&matrix, "dense", p, max_gb, "--sparse, --lb, --mst_knn")?;
+            }
+            if let Some(p) = &cfg.dense_text {
+                enforce_matrix_gb(&matrix, "dense_text", p, max_gb, "--sparse, --lb, --mst_knn")?;
+            }
+            if let Some(p) = &cfg.sparse {
+                enforce_matrix_gb(&matrix, "sparse", p, max_gb, "--lb, --mst_knn")?;
+            }
             if let Some(p) = &cfg.dense {
                 hdf5_io::write_dense(p, &matrix)?;
             }
@@ -2563,7 +2691,7 @@ fn main() -> Result<()> {
         Command::BuildSsn {
             input, xgmml, lb, metadata, subset, subset_file, color_by, color_table,
             color_table_out, cluster, cluster_tsv, no_cluster_header, mst, mst_knn,
-            config: config_path, print_config: do_print,
+            max_output_gb, config: config_path, print_config: do_print,
         } => {
             let cli = config::BuildSsnConfig {
                 input: opt_path(&input)?,
@@ -2580,6 +2708,7 @@ fn main() -> Result<()> {
                 no_cluster_header,
                 mst,
                 mst_knn,
+                max_output_gb,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::BuildSsnConfig>(p)?,
@@ -2633,13 +2762,23 @@ fn main() -> Result<()> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("")
                 .to_string();
-            domainator_core::matrix::cytoscape::write_xgmml(
-                &xgmml,
+            // Serialize the XGMML to a buffer first so the output-size guardrail
+            // (default 25 GB, 0 disables) can reject it before touching disk.
+            let mut xgmml_buf: Vec<u8> = Vec::new();
+            domainator_core::matrix::cytoscape::write_xgmml_to(
+                &mut xgmml_buf,
                 &name,
                 &result.table,
                 &result.edges,
                 result.node_fills.as_deref(),
             )?;
+            enforce_bytes_gb(
+                xgmml_buf.len() as u64,
+                cfg.max_output_gb.unwrap_or(25.0),
+                &format!("XGMML network output '{xgmml}'"),
+                "--lb, --mst, --mst_knn, --subset",
+            )?;
+            std::fs::write(&xgmml, &xgmml_buf)?;
 
             if let Some(path) = &cfg.cluster_tsv {
                 let labels = result.cluster_labels.as_ref().expect("cluster labels present");
@@ -2675,7 +2814,8 @@ fn main() -> Result<()> {
         }
         Command::BuildSsnViewer {
             input, output, html, embed_data, name, metadata, subset, subset_file, color_by,
-            label_by, merge_impact_metric, max_merge_events, config: config_path, print_config: do_print,
+            label_by, merge_impact_metric, max_merge_events, max_output_gb,
+            config: config_path, print_config: do_print,
         } => {
             let cli = config::BuildSsnViewerConfig {
                 input: opt_path(&input)?,
@@ -2690,6 +2830,7 @@ fn main() -> Result<()> {
                 label_by,
                 merge_impact_metric,
                 max_merge_events,
+                max_output_gb,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::BuildSsnViewerConfig>(p)?,
@@ -2764,6 +2905,13 @@ fn main() -> Result<()> {
             let compressed = gzip(&serialize_bundle(&bundle));
 
             if let Some(out) = &cfg.output {
+                // Output-size guardrail on the compressed bundle (default 25 GB, 0 disables).
+                enforce_bytes_gb(
+                    compressed.len() as u64,
+                    cfg.max_output_gb.unwrap_or(25.0),
+                    &format!("SSN viewer bundle output '{out}'"),
+                    "--subset, --subset_file",
+                )?;
                 std::fs::write(out, &compressed)?;
                 println!("wrote {}-node .ssnv bundle to {out}", matrix.nrows());
             }
@@ -3045,7 +3193,7 @@ fn main() -> Result<()> {
                 write_genbank_out(&selected, out_path.as_ref())?;
             }
         }
-        Command::HmmerCompare { input, reference, output, score_cutoff, k, alignments, cpu, config: config_path, print_config: do_print } => {
+        Command::HmmerCompare { input, reference, output, score_cutoff, k, alignments, cpu, max_output_gb, config: config_path, print_config: do_print } => {
             let cli = config::HmmerCompareConfig {
                 input: paths_to_strings(&input)?,
                 reference: paths_to_strings(&reference)?,
@@ -3054,6 +3202,7 @@ fn main() -> Result<()> {
                 k,
                 alignments,
                 cpu,
+                max_output_gb,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::HmmerCompareConfig>(p)?,
@@ -3069,12 +3218,15 @@ fn main() -> Result<()> {
                 alignments: cfg.alignments,
                 k: cfg.k,
                 cpu: cfg.cpu.unwrap_or(0),
+                max_output_gb: Some(cfg.max_output_gb.unwrap_or(25.0)),
             };
             match &cfg.output {
                 Some(p) => {
-                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
-                    hmmer_compare(&cfg.input, &cfg.reference, &opts, &mut f).context("running hmmer_compare")?;
-                    f.flush()?;
+                    // Buffer in memory so a tripped output-size guardrail leaves no
+                    // partial file (mirrors the Python tool's temp-file + rename).
+                    let mut buf: Vec<u8> = Vec::new();
+                    hmmer_compare(&cfg.input, &cfg.reference, &opts, &mut buf).context("running hmmer_compare")?;
+                    std::fs::write(p, &buf)?;
                 }
                 None => {
                     let stdout = std::io::stdout();
@@ -3168,6 +3320,51 @@ fn main() -> Result<()> {
                 }
             };
             eprintln!("Found {found} matching profiles.");
+        }
+        Command::HmmerBuild {
+            input, output, name, acc, desc, alphabet, config: config_path, print_config: do_print,
+        } => {
+            use domainator_core::tools::hmmer_build as hb;
+            let cli = config::HmmerBuildConfig {
+                input: opt_path(&input)?,
+                output: opt_path(&output)?,
+                name,
+                acc,
+                desc,
+                alphabet,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::HmmerBuildConfig>(p)?,
+                None => config::HmmerBuildConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let name = cfg.name.clone().context("missing required `--name`")?;
+            let input = cfg.input.clone().context(
+                "missing required `input` (-i / --input); stdin MSA is not yet supported, pass a file",
+            )?;
+            let opts = hb::HmmerBuildOptions {
+                name,
+                acc: cfg.acc.clone(),
+                desc: cfg.desc.clone(),
+                alphabet: cfg.alphabet.clone(),
+            };
+            let hmm = hb::hmmer_build(&PathBuf::from(&input), &opts).map_err(|e| anyhow::anyhow!(e))?;
+            match &cfg.output {
+                Some(p) => {
+                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
+                    hb::write_hmm_out(&hmm, &mut f).map_err(|e| anyhow::anyhow!(e))?;
+                    f.flush()?;
+                }
+                None => {
+                    let stdout = std::io::stdout();
+                    let mut h = stdout.lock();
+                    hb::write_hmm_out(&hmm, &mut h).map_err(|e| anyhow::anyhow!(e))?;
+                }
+            }
         }
         Command::HmmerSearch {
             input, reference, output, score_cutoff, max_hits, cpu, max_output_gb,

@@ -886,6 +886,7 @@ pub struct SeqDistConfig {
     pub k: Option<usize>,
     pub mst_knn: Option<usize>,
     pub cpu: Option<usize>,
+    pub max_output_gb: Option<f64>,
 }
 
 impl SeqDistConfig {
@@ -901,6 +902,7 @@ impl SeqDistConfig {
         merge_scalar!(self, cli, k);
         merge_scalar!(self, cli, mst_knn);
         merge_scalar!(self, cli, cpu);
+        merge_scalar!(self, cli, max_output_gb);
     }
 }
 
@@ -919,6 +921,7 @@ pub struct CompareContigsConfig {
     pub lb: Option<f64>,
     pub mst_knn: Option<usize>,
     pub cpu: Option<usize>,
+    pub max_output_gb: Option<f64>,
 }
 
 impl CompareContigsConfig {
@@ -934,6 +937,7 @@ impl CompareContigsConfig {
         merge_scalar!(self, cli, lb);
         merge_scalar!(self, cli, mst_knn);
         merge_scalar!(self, cli, cpu);
+        merge_scalar!(self, cli, max_output_gb);
     }
 }
 
@@ -949,6 +953,7 @@ pub struct TransformMatrixConfig {
     pub input_type: Option<String>,
     pub lb: Option<f64>,
     pub mst_knn: Option<usize>,
+    pub max_output_gb: Option<f64>,
 }
 
 impl TransformMatrixConfig {
@@ -961,6 +966,7 @@ impl TransformMatrixConfig {
         merge_scalar!(self, cli, input_type);
         merge_scalar!(self, cli, lb);
         merge_scalar!(self, cli, mst_knn);
+        merge_scalar!(self, cli, max_output_gb);
     }
 }
 
@@ -982,6 +988,7 @@ pub struct BuildSsnConfig {
     pub no_cluster_header: bool,
     pub mst: bool,
     pub mst_knn: Option<usize>,
+    pub max_output_gb: Option<f64>,
 }
 
 impl BuildSsnConfig {
@@ -1000,6 +1007,7 @@ impl BuildSsnConfig {
         self.no_cluster_header |= cli.no_cluster_header;
         self.mst |= cli.mst;
         merge_scalar!(self, cli, mst_knn);
+        merge_scalar!(self, cli, max_output_gb);
     }
 }
 
@@ -1040,6 +1048,7 @@ pub struct BuildSsnViewerConfig {
     pub label_by: Option<String>,
     pub merge_impact_metric: Option<String>,
     pub max_merge_events: Option<usize>,
+    pub max_output_gb: Option<f64>,
 }
 
 impl BuildSsnViewerConfig {
@@ -1056,6 +1065,7 @@ impl BuildSsnViewerConfig {
         merge_scalar!(self, cli, label_by);
         merge_scalar!(self, cli, merge_impact_metric);
         merge_scalar!(self, cli, max_merge_events);
+        merge_scalar!(self, cli, max_output_gb);
     }
 }
 
@@ -1070,6 +1080,7 @@ pub struct HmmerCompareConfig {
     pub k: Option<usize>,
     pub alignments: bool,
     pub cpu: Option<usize>,
+    pub max_output_gb: Option<f64>,
 }
 
 impl HmmerCompareConfig {
@@ -1081,6 +1092,7 @@ impl HmmerCompareConfig {
         merge_scalar!(self, cli, k);
         self.alignments |= cli.alignments;
         merge_scalar!(self, cli, cpu);
+        merge_scalar!(self, cli, max_output_gb);
     }
 }
 
@@ -1194,6 +1206,29 @@ impl HmmerSelectConfig {
     }
 }
 
+/// `hmmer_build` parameters.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct HmmerBuildConfig {
+    pub input: Option<String>,
+    pub output: Option<String>,
+    pub name: Option<String>,
+    pub acc: Option<String>,
+    pub desc: Option<String>,
+    pub alphabet: Option<String>,
+}
+
+impl HmmerBuildConfig {
+    pub fn merge_cli(&mut self, cli: HmmerBuildConfig) {
+        merge_scalar!(self, cli, input);
+        merge_scalar!(self, cli, output);
+        merge_scalar!(self, cli, name);
+        merge_scalar!(self, cli, acc);
+        merge_scalar!(self, cli, desc);
+        merge_scalar!(self, cli, alphabet);
+    }
+}
+
 /// `hmmer_search` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -1277,6 +1312,7 @@ pub fn schema(tool: &str) -> Result<String> {
         "matrix-report" | "matrix_report" => matrix_report_schema(),
         "hmmer-report" | "hmmer_report" => hmmer_report_schema(),
         "hmmer-select" | "hmmer_select" => hmmer_select_schema(),
+        "hmmer-build" | "hmmer_build" => hmmer_build_schema(),
         "hmmer-search" | "hmmer_search" => hmmer_search_schema(),
         "format-db" | "format_db" | "domainator-format-db" | "domainator_format_db" => format_db_schema(),
         other => anyhow::bail!(
@@ -1732,7 +1768,8 @@ fn seq_dist_schema() -> serde_json::Value {
             "lb": {"type": "number", "default": 0.0},
             "k": {"type": ["integer", "null"]},
             "mst_knn": {"type": ["integer", "null"], "description": "Integer > 1"},
-            "cpu": {"type": "integer", "default": 0}
+            "cpu": {"type": "integer", "default": 0},
+            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if a projected matrix output exceeds this many GB (0 disables)"}
         }
     })
 }
@@ -1773,7 +1810,8 @@ fn build_ssn_viewer_schema() -> serde_json::Value {
             "color_by": {"type": ["string", "null"]},
             "label_by": {"type": ["string", "null"]},
             "merge_impact_metric": {"enum": ["min_child", "product"], "default": "min_child"},
-            "max_merge_events": {"type": ["integer", "null"], "default": 500}
+            "max_merge_events": {"type": ["integer", "null"], "default": 500},
+            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected .ssnv bundle output exceeds this many GB (0 disables)"}
         }
     })
 }
@@ -1799,7 +1837,8 @@ fn build_ssn_schema() -> serde_json::Value {
             "cluster_tsv": {"type": ["string", "null"]},
             "no_cluster_header": {"type": "boolean", "default": false},
             "mst": {"type": "boolean", "default": false},
-            "mst_knn": {"type": ["integer", "null"], "description": "Integer > 1"}
+            "mst_knn": {"type": ["integer", "null"], "description": "Integer > 1"},
+            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected XGMML output exceeds this many GB (0 disables)"}
         }
     })
 }
@@ -1821,7 +1860,8 @@ fn transform_matrix_schema() -> serde_json::Value {
             ], "default": "none"},
             "input_type": {"type": ["string", "null"], "description": "Override the input matrix data type"},
             "lb": {"type": ["number", "null"], "description": "Zero out values <= lb after the transform"},
-            "mst_knn": {"type": ["integer", "null"], "description": "Integer > 1"}
+            "mst_knn": {"type": ["integer", "null"], "description": "Integer > 1"},
+            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if a projected matrix output exceeds this many GB (0 disables)"}
         }
     })
 }
@@ -1844,7 +1884,8 @@ fn compare_contigs_schema() -> serde_json::Value {
             "k": {"type": ["integer", "null"]},
             "lb": {"type": "number", "default": 0.0},
             "mst_knn": {"type": ["integer", "null"], "description": "Integer > 1"},
-            "cpu": {"type": "integer", "default": 0}
+            "cpu": {"type": "integer", "default": 0},
+            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if a projected matrix output exceeds this many GB (0 disables)"}
         }
     })
 }
@@ -1863,7 +1904,8 @@ fn hmmer_compare_schema() -> serde_json::Value {
             "score_cutoff": {"type": "number", "default": 0.0},
             "k": {"type": ["integer", "null"]},
             "alignments": {"type": "boolean", "default": false},
-            "cpu": {"type": "integer", "default": 0}
+            "cpu": {"type": "integer", "default": 0},
+            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected TSV output exceeds this many GB (0 disables)"}
         }
     })
 }
@@ -1894,6 +1936,24 @@ fn hmmer_report_schema() -> serde_json::Value {
                     }
                 }
             }
+        }
+    })
+}
+
+fn hmmer_build_schema() -> serde_json::Value {
+    use serde_json::json;
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "hmmer_build config",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "input": {"type": ["string", "null"], "description": "Stockholm MSA (stdin if omitted)"},
+            "output": {"type": ["string", "null"], "description": "Output .hmm (stdout if omitted)"},
+            "name": {"type": ["string", "null"], "description": "Profile NAME (required)"},
+            "acc": {"type": ["string", "null"]},
+            "desc": {"type": ["string", "null"]},
+            "alphabet": {"enum": ["amino", "dna", "rna", null], "description": "Inferred when omitted"}
         }
     })
 }

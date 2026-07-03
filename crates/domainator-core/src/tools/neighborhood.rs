@@ -160,8 +160,8 @@ fn ordered_circular_envelope(parts: &[(i64, i64)], l: i64) -> (i64, i64) {
 }
 
 /// Turn an unwrapped window `[w_lo, w_hi)` (length `<= l`) into a [`SliceLoc`]:
-/// forward sub-parts within `[0, l)` sorted ascending, tagged `strand`, with the
-/// stranded `(name_start, name_end)` for the coordinate suffix.
+/// forward sub-parts within `[0, l)`, tagged `strand`, with the stranded
+/// `(name_start, name_end)` for the coordinate suffix.
 fn build_slice_from_window(w_lo: i64, w_hi: i64, l: i64, strand: i32) -> SliceLoc {
     let len = (w_hi - w_lo).min(l);
     let lo0 = w_lo.rem_euclid(l);
@@ -172,7 +172,15 @@ fn build_slice_from_window(w_lo: i64, w_hi: i64, l: i64, strand: i32) -> SliceLo
     if rem > 0 {
         parts.push(Env { start: 0, end: rem, strand });
     }
-    parts.sort_by_key(|p| p.start);
+    // A full-circle **forward** window is rotated to start at `lo0` (Python emits
+    // the whole contig rotated to the split point, e.g. `contig_2796:2795`), so the
+    // parts must stay in rotation order `[lo0, l) + [0, lo0)`. Every other case
+    // (partial windows, and the reverse full-circle window whose reverse-complement
+    // reads correctly from ascending parts) keeps the ascending order.
+    let full_circle_forward = len >= l && strand != -1 && parts.len() > 1;
+    if !full_circle_forward {
+        parts.sort_by_key(|p| p.start);
+    }
     let first = parts[0];
     let last = *parts.last().unwrap();
     let (ns, ne) = if strand == -1 { (first.end, last.start) } else { (first.start, last.end) };

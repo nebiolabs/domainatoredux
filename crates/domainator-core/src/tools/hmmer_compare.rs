@@ -21,11 +21,13 @@ pub struct HmmerCompareOptions {
     pub k: Option<usize>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
+    /// Fail if the projected TSV output exceeds this many GB (`0`/`None` disables).
+    pub max_output_gb: Option<f64>,
 }
 
 impl Default for HmmerCompareOptions {
     fn default() -> Self {
-        HmmerCompareOptions { score_cutoff: 0.0, alignments: false, k: None, cpu: 0 }
+        HmmerCompareOptions { score_cutoff: 0.0, alignments: false, k: None, cpu: 0, max_output_gb: None }
     }
 }
 
@@ -63,7 +65,35 @@ pub fn hmmer_compare<W: Write>(
     let queries = load_all_hmms(query_files)?;
     let references = load_all_hmms(reference_files)?;
 
-    writeln!(out, "query\treference\tscore")?;
+    // Output-size guardrail (uncompressed TSV bytes; default via caller, 0/None disables).
+    let max_bytes: Option<u64> = match opts.max_output_gb {
+        Some(gb) if gb < 0.0 => {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "--max_output_gb must be >= 0."));
+        }
+        Some(gb) if gb > 0.0 => Some((gb * 1_000_000_000.0) as u64),
+        _ => None,
+    };
+    let over_limit = |projected: u64, max: u64| -> io::Error {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "Projected hmmer_compare TSV output size is {:.2} GB, which exceeds the configured \
+                 limit of {:.2} GB. Reduce the projected output size or raise the limit with \
+                 --max_output_gb. Relevant options: -k, --score_cutoff, --alignments.",
+                projected as f64 / 1_000_000_000.0,
+                max as f64 / 1_000_000_000.0
+            ),
+        )
+    };
+
+    let header = "query\treference\tscore\n";
+    let mut written: u64 = header.len() as u64;
+    if let Some(max) = max_bytes {
+        if written > max {
+            return Err(over_limit(written, max));
+        }
+    }
+    out.write_all(header.as_bytes())?;
     if queries.is_empty() || references.is_empty() {
         return Ok(());
     }
@@ -110,10 +140,18 @@ pub fn hmmer_compare<W: Write>(
 
     for hits in per_query {
         for hit in hits {
-            writeln!(out, "{}\t{}\t{:.2}", hit.query, hit.reference, hit.score)?;
-            if let Some(text) = hit.alignment {
-                writeln!(out, "{text}\n\n\n")?;
+            let mut rendered = format!("{}\t{}\t{:.2}\n", hit.query, hit.reference, hit.score);
+            if let Some(text) = &hit.alignment {
+                rendered.push_str(text);
+                rendered.push_str("\n\n\n\n");
             }
+            if let Some(max) = max_bytes {
+                written += rendered.len() as u64;
+                if written > max {
+                    return Err(over_limit(written, max));
+                }
+            }
+            out.write_all(rendered.as_bytes())?;
         }
     }
     Ok(())

@@ -89,7 +89,18 @@ pub fn write_xgmml(
 ) -> io::Result<()> {
     let file = std::fs::File::create(path)?;
     let mut w = io::BufWriter::new(file);
+    write_xgmml_to(&mut w, name, table, edges, node_fills)
+}
 
+/// Serialize the XGMML network to any writer (used by the CLI to render into a
+/// buffer for output-size guardrails before touching the filesystem).
+pub fn write_xgmml_to<W: Write>(
+    w: &mut W,
+    name: &str,
+    table: &NodeTable,
+    edges: &[(usize, usize, f64)],
+    node_fills: Option<&[Option<String>]>,
+) -> io::Result<()> {
     w.write_all(b"<?xml version='1.0' encoding='utf-8'?>\n")?;
     writeln!(
         w,
