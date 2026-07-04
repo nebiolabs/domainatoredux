@@ -181,7 +181,7 @@ export interface ExternalToolStatus {
 export interface ToolField {
   name: string;
   label: string;
-  role: "input_file" | "input_files" | "output_file" | "param" | "hmm_columns";
+  role: "input_file" | "input_files" | "output_file" | "param" | "hmm_columns" | "enum_columns";
   file_type: string | null;
   required: boolean;
 }

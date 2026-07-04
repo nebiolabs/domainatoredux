@@ -3,9 +3,13 @@
   import { cached } from "../cache";
   import type { HmmLogo, HmmSummary } from "../types";
 
-  let { path }: { path: string } = $props();
+  // `index` set → single-profile mode (a popped-out logo): show just that profile,
+  // no browser list.
+  let { path, index }: { path: string; index?: number } = $props();
 
+  const single = $derived(index !== undefined);
   let profiles = $state<HmmSummary[]>([]);
+  // Initialized to 0; the load effect sets it from `index` in single-profile mode.
   let selectedIndex = $state(0);
   let filter = $state("");
   let data = $state<HmmLogo | null>(null);
@@ -15,9 +19,13 @@
 
   const LIST_CAP = 500; // cap rendered list items (files can have 25k profiles)
 
-  // Load the profile list (cached) once per file.
+  // Load the profile list (cached) once per file — skipped in single-profile mode.
   $effect(() => {
     void path;
+    if (single) {
+      selectedIndex = index ?? 0;
+      return;
+    }
     selectedIndex = 0;
     filter = "";
     listError = null;
@@ -157,7 +165,7 @@
 </script>
 
 <div class="hmm">
-  {#if profiles.length > 1}
+  {#if !single && profiles.length > 1}
     <div class="profile-list">
       <input class="pfilter" placeholder="filter {profiles.length.toLocaleString()} profiles…" bind:value={filter} />
       <div class="plist">

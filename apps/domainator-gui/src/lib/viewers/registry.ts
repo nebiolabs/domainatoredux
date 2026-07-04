@@ -2,7 +2,7 @@ import type { Component } from "svelte";
 import type { FileType } from "../types";
 import ContigView from "./ContigView.svelte";
 import EnumReport from "./EnumReport.svelte";
-import HmmLogo from "./HmmLogo.svelte";
+import HmmReport from "./HmmReport.svelte";
 import MatrixView from "./MatrixView.svelte";
 import SsnView from "./SsnView.svelte";
 import SummaryView from "./SummaryView.svelte";
@@ -30,7 +30,8 @@ export function viewsFor(fileType: FileType): ViewDescriptor[] {
     case "ssn_viewer":
       return [{ id: "ssn", label: "SSN Viewer", component: SsnView }];
     case "hmm":
-      return [{ id: "logo", label: "HMM Logo", component: HmmLogo }];
+      // A fast profile table by default; logos pop out on demand (per row).
+      return [{ id: "report", label: "Profiles", component: HmmReport }];
     default:
       return [];
   }

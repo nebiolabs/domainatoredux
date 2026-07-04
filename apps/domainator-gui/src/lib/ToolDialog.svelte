@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { runTool, toolSchema } from "./api";
+  import { runTool, toolSchemaCached } from "./api";
   import { ws } from "./state.svelte";
   import type { JsonSchema, JsonSchemaProp, ToolMeta } from "./types";
 
@@ -22,6 +22,8 @@
   const DB_TYPE: Record<string, string> = { hmm: "hmm", genbank: "genbank", fasta: "fasta" };
   function typeMatches(fileType: string, ft: string): boolean {
     if (ft === "sequence") return fileType === "genbank" || fileType === "fasta";
+    // domainate/domain_search accept HMM or FASTA references (protein or nucleotide).
+    if (ft === "reference") return fileType === "hmm" || fileType === "fasta";
     return fileType === ft;
   }
   // Options for an input field: current-folder files of the type, plus registered
@@ -34,7 +36,17 @@
     const dbs = ws.databases
       .filter((d) => typeMatches(DB_TYPE[d.format] ?? d.format, ft))
       .map((d) => ({ value: d.path, label: `${d.name} (db)` }));
-    return [...files, ...dbs];
+    // Dedupe by path: a file can be both in the current folder AND registered as a
+    // database, which would otherwise put the same value twice in the dropdown — a
+    // duplicate `{#each}` key that crashes the render (dialog stuck at "Loading…").
+    const seen = new Set<string>();
+    const out: { value: string; label: string }[] = [];
+    for (const c of [...files, ...dbs]) {
+      if (seen.has(c.value)) continue;
+      seen.add(c.value);
+      out.push(c);
+    }
+    return out;
   }
   function stemOf(p: string): string {
     const base = p.slice(Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")) + 1);
@@ -129,6 +141,19 @@
   function removeCol(name: string, i: number) {
     (values[name] as HmmCol[]).splice(i, 1);
   }
+
+  // --- enum-report column picker (role "enum_columns") ---
+  // Static analyses that need no taxonomy DB (the *_lineage columns are omitted —
+  // they require a taxdump that this export doesn't take).
+  const ENUM_COLUMNS = [
+    "domains", "domain_descriptions", "architecture", "architecture_detailed",
+    "length", "start", "end", "strand", "topology", "score", "identity",
+    "definition", "cds_count", "domain_count", "sequence", "taxid_self", "taxname_self",
+  ];
+  function toggleEnumCol(name: string, c: string) {
+    const cur = (values[name] ?? []) as string[];
+    values[name] = cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c];
+  }
   function propType(p: JsonSchemaProp | undefined): string {
     if (!p) return "string";
     return Array.isArray(p.type) ? (p.type.find((t) => t !== "null") ?? "string") : (p.type ?? "string");
@@ -144,7 +169,7 @@
       error = `Unknown tool "${tool}".`;
       return;
     }
-    toolSchema(tool)
+    toolSchemaCached(tool)
       .then((schemaText) => {
         schema = JSON.parse(schemaText) as JsonSchema;
         const v: Record<string, any> = {};
@@ -177,6 +202,9 @@
           if (field.role === "hmm_columns") {
             v[field.name] = [{ type: "source" }, { type: "length" }];
           }
+          if (field.role === "enum_columns") {
+            v[field.name] = ["domains", "architecture", "length"];
+          }
         }
         values = v;
       })
@@ -207,6 +235,8 @@
             ? { type: "append", name: c.name ?? "", value_type: c.value_type ?? "str", value: c.value ?? "" }
             : { type: c.type },
         );
+      } else if (field.role === "enum_columns") {
+        out[field.name] = Array.isArray(val) ? val : [];
       } else {
         const prop = schemaProp(field.name);
         const t = propType(prop);
@@ -293,6 +323,22 @@
                 {/each}
                 <button type="button" class="addcol" onclick={() => addCol(field.name)}>+ Add column</button>
                 <span class="hint">A leading <code>name</code> column is always included. <code>append</code> adds a constant column.</span>
+              </div>
+            </div>
+          {:else if field.role === "enum_columns"}
+            <div class="field builder-field">
+              <span class="flabel">{field.label}</span>
+              <div class="checklist">
+                {#each ENUM_COLUMNS as c (c)}
+                  <label class="checkitem">
+                    <input
+                      type="checkbox"
+                      checked={(values[field.name] ?? []).includes(c)}
+                      onchange={() => toggleEnumCol(field.name, c)}
+                    />
+                    {c}
+                  </label>
+                {/each}
               </div>
             </div>
           {:else}
@@ -514,5 +560,18 @@
   }
   .addcol:hover {
     border-color: var(--accent);
+  }
+  .checklist {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 2px 10px;
+    min-width: 0;
+  }
+  .checkitem {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    white-space: nowrap;
   }
 </style>

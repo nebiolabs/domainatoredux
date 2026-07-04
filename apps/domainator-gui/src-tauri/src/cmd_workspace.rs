@@ -3,7 +3,8 @@
 use std::path::Path;
 
 use domainator_core::app_support::workspace::{
-    list_files, open_or_init_manifest, scan_folder_tree, FileEntry, FolderNode, Settings,
+    dot_dir, is_reserved_name, list_files, open_or_init_manifest, scan_folder_tree, FileEntry,
+    FileMeta, FolderNode, Settings, DOT_DIR,
 };
 use serde::Serialize;
 
@@ -45,12 +46,13 @@ pub async fn open_workspace(root: String) -> Result<WorkspaceInfo, String> {
     .map_err(|e| format!("opening workspace failed: {e}"))?
 }
 
-/// List the recognized data files directly inside `dir`.
+/// List the recognized data files directly inside `dir` (sidecar metadata is read
+/// from `<workspace_root>/.domainator/meta`).
 #[tauri::command]
-pub async fn list_folder(dir: String) -> Result<Vec<FileEntry>, String> {
+pub async fn list_folder(workspace_root: String, dir: String) -> Result<Vec<FileEntry>, String> {
     // Off the UI thread: classifies each file (may read first records).
     tauri::async_runtime::spawn_blocking(move || {
-        list_files(Path::new(&dir)).map_err(|e| format!("listing {dir}: {e}"))
+        list_files(Path::new(&workspace_root), Path::new(&dir)).map_err(|e| format!("listing {dir}: {e}"))
     })
     .await
     .map_err(|e| format!("listing folder failed: {e}"))?
@@ -73,10 +75,34 @@ pub fn create_folder(parent: String, name: String) -> Result<String, String> {
     if clean.is_empty() || clean == "." || clean == ".." || clean.contains('/') || clean.contains('\\') {
         return Err("invalid folder name".into());
     }
+    if is_reserved_name(clean) {
+        return Err(format!("'{DOT_DIR}' is reserved for the app"));
+    }
     let path = Path::new(&parent).join(clean);
     if path.exists() {
         return Err(format!("already exists: {clean}"));
     }
     std::fs::create_dir(&path).map_err(|e| format!("creating folder: {e}"))?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Delete a data file and its metadata sidecar. Refuses anything inside the
+/// reserved `.domainator/` machinery directory.
+#[tauri::command]
+pub async fn delete_file(workspace_root: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = Path::new(&workspace_root);
+        let p = Path::new(&path);
+        if p.starts_with(dot_dir(root)) || p.components().any(|c| c.as_os_str() == DOT_DIR) {
+            return Err("refusing to delete inside the .domainator directory".to_string());
+        }
+        if !p.is_file() {
+            return Err(format!("not a file: {path}"));
+        }
+        std::fs::remove_file(p).map_err(|e| format!("deleting {path}: {e}"))?;
+        FileMeta::remove(root, p); // best-effort sidecar cleanup
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("delete failed: {e}"))?
 }

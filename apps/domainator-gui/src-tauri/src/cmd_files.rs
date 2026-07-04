@@ -3,11 +3,13 @@
 use domainator_core::app_support::contig_view::{build_contig_file_view, ContigFileView};
 use domainator_core::app_support::hmm_logo::{list_hmms, load_logo_from_file, HmmLogo, HmmSummary};
 use domainator_core::app_support::summary_stats::{summarize, SummaryStats};
-use domainator_core::app_support::workspace::classify_file;
-use serde::Serialize;
+use domainator_core::app_support::workspace::{classify_file, ensure_dot_subdir};
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 use domainator_core::io::{detect_filetype, FileType};
-use domainator_core::io::genbank::read_genbank;
+use domainator_core::io::genbank::{read_genbank, write_genbank};
 use domainator_core::io::fasta::read_fasta;
+use domainator_core::seq::SeqRecord;
 use domainator_core::matrix::read_matrix;
 use domainator_core::tools::build_ssn_viewer::render_html;
 use domainator_core::tools::enum_report::{enum_report, static_analysis, By, OutputFormat};
@@ -260,4 +262,53 @@ pub async fn render_ssn_html(path: String) -> Result<String, String> {
     })
     .await
     .map_err(|e| format!("rendering SSN failed: {e}"))?
+}
+
+static SUBSET_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// One selected record: its source file and 0-based contig index.
+#[derive(Deserialize)]
+pub struct RecordRef {
+    pub path: String,
+    pub contig_index: usize,
+}
+
+fn load_sequence_any(path: &str) -> Result<Vec<SeqRecord>, String> {
+    match detect_filetype(std::path::Path::new(path)) {
+        Some(FileType::Genbank) => read_genbank(path).map_err(|e| format!("reading {path}: {e}")),
+        Some(FileType::Fasta) => read_fasta(path, None).map_err(|e| format!("reading {path}: {e}")),
+        None => Err(format!("unsupported sequence file: {path}")),
+    }
+}
+
+/// Build a single GenBank file containing just the selected records (possibly from
+/// several source files), written under `<root>/.domainator/subsets/`. Returns its
+/// path. The SSN viewer opens the result as one combined sequence view (contig /
+/// enum / summary tabs) instead of N whole-file windows.
+#[tauri::command]
+pub async fn extract_records(workspace_root: String, records: Vec<RecordRef>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::collections::HashMap;
+        let mut cache: HashMap<String, Vec<SeqRecord>> = HashMap::new();
+        let mut out: Vec<SeqRecord> = Vec::new();
+        for r in &records {
+            if !cache.contains_key(&r.path) {
+                cache.insert(r.path.clone(), load_sequence_any(&r.path)?);
+            }
+            if let Some(rec) = cache[&r.path].get(r.contig_index) {
+                out.push(rec.clone());
+            }
+        }
+        if out.is_empty() {
+            return Err("none of the selected records could be read".into());
+        }
+        let dir = ensure_dot_subdir(std::path::Path::new(&workspace_root), "subsets")
+            .map_err(|e| format!("creating subsets dir: {e}"))?;
+        let n = SUBSET_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = dir.join(format!("selection_{n}.gb"));
+        write_genbank(&path.to_string_lossy(), &out).map_err(|e| format!("writing subset: {e}"))?;
+        Ok(path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("extract failed: {e}"))?
 }

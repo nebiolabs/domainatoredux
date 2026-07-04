@@ -1321,7 +1321,150 @@ pub fn schema(tool: &str) -> Result<String> {
             "no schema for tool {other:?} (have: domainate, domain-search, seq-dist, compare-contigs, hmmer-compare, hmmer-report, hmmer-select, format-db, transform-matrix, build-ssn, build-ssn-viewer, matrix-report, select-by-contig, select-by-cds, enum-report)"
         ),
     };
+    let mut s = s;
+    fill_common_descriptions(&mut s);
     serde_json::to_string_pretty(&s).context("serializing schema")
+}
+
+/// Fill in a `description` for any top-level property that lacks one, from the
+/// shared [`common_help`] dictionary. Tool-specific descriptions written in the
+/// per-tool schema functions always take precedence (they're never overwritten).
+/// This gives every option a hint/tooltip in the GUI without duplicating text.
+fn fill_common_descriptions(schema: &mut serde_json::Value) {
+    let Some(props) = schema.get_mut("properties").and_then(|p| p.as_object_mut()) else {
+        return;
+    };
+    for (name, prop) in props.iter_mut() {
+        if let Some(obj) = prop.as_object_mut() {
+            if !obj.contains_key("description") {
+                if let Some(help) = common_help(name) {
+                    obj.insert("description".into(), serde_json::Value::String(help.into()));
+                }
+            }
+        }
+    }
+}
+
+/// One-line help for a parameter name, shared across every tool that uses it.
+fn common_help(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "input" => "Input file(s) for the tool.",
+        "output" => "Output file path.",
+        "references" => "Reference HMM or FASTA file(s) to search with (protein or nucleotide).",
+        "acc" => "Profile accession (ACC line) to set.",
+        "name" => "Profile NAME to set.",
+        "desc" => "Profile description (DESC line) to set.",
+        "add_annotations" => "Also add domain annotations to the extracted neighborhoods.",
+        "algorithm" => "Algorithm to use.",
+        "alignments" => "Include per-hit alignment strings in the output.",
+        "annotation_type" => "Which annotation kind to act on: all, domainator, or domain_search.",
+        "batch_size" => "Number of records to process per batch.",
+        "by" => "Report granularity: contig, cds, or domain.",
+        "case_sensitive" => "Match names case-sensitively.",
+        "cds" => "CDS names to select.",
+        "cds_file" => "File listing CDS names (one per line).",
+        "cdss" => "CDS names to extract.",
+        "cdss_file" => "File listing CDS names to extract (one per line).",
+        "cds_both" => "Trim this many CDSs from both ends.",
+        "cds_left" => "Trim this many CDSs from the left end.",
+        "cds_right" => "Trim this many CDSs from the right end.",
+        "cds_up" => "Extend the neighborhood this many CDSs upstream of the hit.",
+        "cds_down" => "Extend the neighborhood this many CDSs downstream of the hit.",
+        "cds_range" => "Extend the neighborhood this many CDSs on both sides of the hit.",
+        "cds_count_lb" => "Keep contigs with at least this many CDSs.",
+        "cds_count_ub" => "Keep contigs with at most this many CDSs.",
+        "clear" => "Clear existing colors before applying new ones.",
+        "cluster" => "Cluster nodes into connected components and add a cluster attribute.",
+        "cluster_tsv" => "Also write a TSV mapping each node to its cluster.",
+        "no_cluster_header" => "Omit the header row from the cluster TSV.",
+        "color_by" => "Node attribute to color by.",
+        "label_by" => "Node attribute to label by.",
+        "color_table" => "TSV of name→color to apply.",
+        "color_table_out" => "Write the resolved color table (name→color TSV) to this path.",
+        "search_hit_color" => "Color to use for Domain_Search best-hit features.",
+        "combine" => "Combine adjacent/overlapping domains into a single region.",
+        "splice" => "Splice multi-segment domains into a single sequence.",
+        "contigs" => "Restrict to these contig (LOCUS) names.",
+        "contigs_file" => "File listing contig names to restrict to (one per line).",
+        "contigs_regex" => "Restrict to contigs whose name matches this regex.",
+        "definition_regex" => "Keep contigs whose DEFINITION matches this regex.",
+        "sequence_regex" => "Keep contigs whose sequence matches this regex.",
+        "cpu" => "Number of CPU threads to use (0 = all cores).",
+        "databases" => "Restrict to domains from these databases.",
+        "databases_keep" => "Keep only domains from these databases.",
+        "databases_filter" => "Remove domains from these databases.",
+        "decoys" => "Decoy reference names that suppress a hit when they score best.",
+        "decoys_file" => "File listing decoy reference names (one per line).",
+        "deduplicate_names" => "Make duplicate record names unique.",
+        "dense" => "Write the matrix as a dense HDF5 file.",
+        "dense_text" => "Write the matrix as a dense TSV file.",
+        "sparse" => "Write the matrix as a sparse HDF5 file.",
+        "domain_database" => "Color by database name instead of domain name.",
+        "domain_expr" => "Boolean expression over domain names to select by.",
+        "domain_type" => "Annotation feature type to match (default 'domain').",
+        "domains" => "Domain names to select.",
+        "domains_file" => "File listing domain names to select (one per line).",
+        "evalue" => "E-value threshold.",
+        "min_evalue" => "Discard hits with an E-value below this floor.",
+        "score" => "Bit-score threshold.",
+        "score_cutoff" => "Minimum score to keep a hit.",
+        "exclude_taxids" => "Exclude records under these NCBI taxids.",
+        "include_taxids" => "Keep only records under these NCBI taxids.",
+        "taxonomy_expr" => "Boolean taxonomy expression (mutually exclusive with include/exclude taxids).",
+        "ncbi_taxonomy_path" => "Path to an NCBI taxdump directory (required for taxonomy filters).",
+        "fasta_out" => "Write FASTA instead of GenBank.",
+        "fasta_type" => "Molecule type for FASTA input: protein, dna, or rna.",
+        "first" => "Keep only the first N contigs.",
+        "include_nucleic_acids" => "Include nucleic-acid (non-CDS) regions.",
+        "invert" => "Invert the selection (keep everything that does NOT match).",
+        "k" => "Number of nearest neighbours (k) for the kNN graph.",
+        "kb_both" => "Trim this many kb from both ends.",
+        "kb_left" => "Trim this many kb from the left end.",
+        "kb_right" => "Trim this many kb from the right end.",
+        "kb_up" => "Extend the neighborhood this many kb upstream of the hit.",
+        "kb_down" => "Extend the neighborhood this many kb downstream of the hit.",
+        "kb_range" => "Extend the neighborhood this many kb on both sides of the hit.",
+        "whole_contig" => "Extract the entire contig around each hit.",
+        "keep_direction" => "Keep the original strand orientation (don't normalize direction).",
+        "keep_name" => "Keep the original record name.",
+        "largest" => "Extract only the largest unannotated region per record.",
+        "lb" => "Lower bound (minimum value or length to keep).",
+        "length_lb" => "Keep contigs at least this many bp long.",
+        "length_ub" => "Keep contigs at most this many bp long.",
+        "log" => "Write a run log/summary to this file.",
+        "max_hits" => "Maximum number of hits to keep.",
+        "max_hits_per_contig" => "Maximum number of hits to keep per contig.",
+        "max_merge_events" => "Maximum number of cluster-merge events to record.",
+        "max_mode" => "Score-aggregation mode when picking the best hit.",
+        "max_overlap" => "Maximum allowed fractional overlap between domains.",
+        "max_region_overlap" => "Maximum allowed fractional overlap between extracted regions.",
+        "overlap_by_db" => "Apply the overlap limit per-database rather than globally.",
+        "merge_impact_metric" => "Metric used to rank cluster-merge events.",
+        "metadata" => "Additional per-node metadata TSV to attach.",
+        "mode" => "Operation mode / variant (see the tool's documentation).",
+        "mst" => "Build a minimum spanning tree only.",
+        "name_field" => "Qualifier to use as the output sequence name.",
+        "no_annotations" => "Don't write domain annotations (report hits only).",
+        "no_domain" => "Drop contigs that have no matching domain.",
+        "pad" => "Pad extracted regions to equal length.",
+        "pad_up" => "Pad the extracted region this many residues upstream.",
+        "pad_down" => "Pad the extracted region this many residues downstream.",
+        "prefix_count" => "Prefix the cluster size to each representative's name.",
+        "suffix_count" => "Suffix the cluster size to each representative's name.",
+        "skip_deduplicate" => "Don't deduplicate output records by name.",
+        "search_hits" => "Operate on Domain_Search best-hit features.",
+        "search_score_lb" => "Keep contigs whose best search score is at least this.",
+        "search_score_ub" => "Keep contigs whose best search score is at most this.",
+        "strand" => "Restrict to a strand: f (forward) or r (reverse).",
+        "subset" => "Restrict the matrix to these row/column labels.",
+        "subset_file" => "File listing matrix labels to restrict to (one per line).",
+        "svg" => "Output SVG file path.",
+        "title" => "Title text.",
+        "translate" => "Translate extracted nucleotide regions to protein.",
+        "unannotated" => "Select CDSs/contigs with no domain annotation.",
+        "z" => "Effective database size (Z) used for E-value calculation.",
+        _ => return None,
+    })
 }
 
 fn enum_schema() -> serde_json::Value {

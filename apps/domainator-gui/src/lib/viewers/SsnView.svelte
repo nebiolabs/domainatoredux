@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { openSequenceWindow, renderSsnHtml, resolveRecord } from "../api";
+  import { extractRecords, renderSsnHtml, resolveRecord } from "../api";
   import { cached } from "../cache";
   import { ws } from "../state.svelte";
 
@@ -11,8 +11,6 @@
   let selectedLabels = $state<string[]>([]);
   let opening = $state(false);
   let openNote = $state<string | null>(null);
-
-  const MAX_OPEN = 12;
 
   $effect(() => {
     void path;
@@ -39,26 +37,29 @@
     return () => window.removeEventListener("message", onMessage);
   });
 
-  // Resolve each selected node label to its source sequence and open it,
-  // focusing the last one's contig.
+  // Resolve every selected node label to its source record, then open ONE combined
+  // sequence view containing just those records (with contig / enum / summary tabs).
   async function openSelected() {
     if (!ws.root || selectedLabels.length === 0) return;
     opening = true;
     openNote = null;
-    let opened = 0;
     let missing = 0;
     try {
-      for (const label of selectedLabels.slice(0, MAX_OPEN)) {
+      const recs: { path: string; contig_index: number }[] = [];
+      for (const label of selectedLabels) {
         const rec = await resolveRecord(ws.root, label);
-        if (rec) {
-          await openSequenceWindow(rec.path, rec.contig_index, rec.contig_id || label);
-          opened++;
-        } else {
-          missing++;
-        }
+        if (rec) recs.push({ path: rec.path, contig_index: rec.contig_index });
+        else missing++;
       }
-      const extra = selectedLabels.length > MAX_OPEN ? ` (first ${MAX_OPEN})` : "";
-      openNote = `Opened ${opened} window${opened === 1 ? "" : "s"}${missing ? `, ${missing} not found in workspace` : ""}${extra}.`;
+      if (recs.length === 0) {
+        openNote = "None of the selected nodes were found in the workspace.";
+        return;
+      }
+      const outPath = await extractRecords(ws.root, recs);
+      ws.openPath(outPath, "genbank");
+      openNote = `Opened a view of ${recs.length} sequence${recs.length === 1 ? "" : "s"}${
+        missing ? `, ${missing} not found` : ""
+      }.`;
     } catch (e) {
       openNote = String(e);
     } finally {

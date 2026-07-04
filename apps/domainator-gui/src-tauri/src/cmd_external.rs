@@ -19,8 +19,9 @@ pub struct ExternalToolStatus {
 }
 
 /// Status of every managed external tool (also wires up already-installed ones).
+/// `async` so its filesystem probes run off Tauri's main thread.
 #[tauri::command]
-pub fn list_external_tools(app: AppHandle) -> Vec<ExternalToolStatus> {
+pub async fn list_external_tools(app: AppHandle) -> Vec<ExternalToolStatus> {
     external_tools::ensure_env(&app);
     let plat = external_tools::platform_key().to_string();
     external_tools::specs()

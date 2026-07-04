@@ -36,6 +36,26 @@ pub fn open_sequence_window(
     Ok(())
 }
 
+/// Open a detached window showing the HMM logo for profile `index` of `path`.
+#[tauri::command]
+pub fn open_hmm_logo_window(
+    app: AppHandle,
+    pending: tauri::State<'_, PendingWindows>,
+    path: String,
+    index: usize,
+    title: String,
+) -> Result<(), String> {
+    let label = format!("hmm{}", COUNTER.fetch_add(1, Ordering::Relaxed));
+    pending.0.lock().unwrap().insert(label.clone(), (path, index));
+    WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html?view=hmmlogo".into()))
+        .title(title)
+        .inner_size(1000.0, 520.0)
+        .min_inner_size(500.0, 300.0)
+        .build()
+        .map_err(|e| format!("opening window: {e}"))?;
+    Ok(())
+}
+
 /// What a standalone window should show (called by that window on load).
 #[tauri::command]
 pub fn standalone_params(

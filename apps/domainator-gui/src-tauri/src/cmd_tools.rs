@@ -113,16 +113,20 @@ fn f(name: &str, label: &str, role: &str, file_type: Option<&str>, required: boo
 }
 
 /// Tools currently runnable from the GUI, each with its form field spec.
+///
+/// `async` so it runs on the async runtime, not Tauri's main thread — a
+/// synchronous command can't be serviced while the main thread is busy (a tool
+/// running, a big viewer painting), which would leave a tool dialog at "Loading…".
 #[tauri::command]
-pub fn list_tools() -> Vec<ToolMeta> {
+pub async fn list_tools() -> Vec<ToolMeta> {
     vec![
         ToolMeta {
             id: "domain-search".into(),
             label: "Domain search".into(),
-            description: "Search sequences with HMM references and extract hit CDSs or their genomic neighborhoods (step 1).".into(),
+            description: "Search sequences with HMM/FASTA references and extract hit CDSs or their genomic neighborhoods (step 1).".into(),
             fields: vec![
                 f("input", "Input sequences", "input_file", Some("sequence"), true),
-                f("references", "HMM references", "input_files", Some("hmm"), true),
+                f("references", "References (HMM/FASTA)", "input_files", Some("reference"), true),
                 f("output", "Output (GenBank)", "output_file", None, true),
                 f("evalue", "E-value", "param", None, false),
                 f("z", "Z (db size)", "param", None, false),
@@ -152,10 +156,10 @@ pub fn list_tools() -> Vec<ToolMeta> {
         ToolMeta {
             id: "domainate".into(),
             label: "Domainate".into(),
-            description: "Annotate sequences with domains from HMM references (step 2).".into(),
+            description: "Annotate sequences with domains from HMM/FASTA references (step 2).".into(),
             fields: vec![
                 f("input", "Input sequences", "input_file", Some("sequence"), true),
-                f("references", "HMM references", "input_files", Some("hmm"), true),
+                f("references", "References (HMM/FASTA)", "input_files", Some("reference"), true),
                 f("output", "Output (GenBank)", "output_file", None, true),
                 f("evalue", "E-value", "param", None, false),
                 f("z", "Z (db size)", "param", None, false),
@@ -521,11 +525,12 @@ pub fn list_tools() -> Vec<ToolMeta> {
         ToolMeta {
             id: "enum-report".into(),
             label: "Enum report (export)".into(),
-            description: "Export a per-contig/cds/domain TSV report from a sequence file.".into(),
+            description: "Export a per-contig/cds/domain TSV report from a sequence file with a chosen column set.".into(),
             fields: vec![
                 f("input", "Input sequences", "input_file", Some("sequence"), true),
                 f("output", "Output (TSV)", "output_file", None, true),
                 f("by", "By", "param", None, false),
+                f("columns", "Columns", "enum_columns", None, false),
             ],
         },
         ToolMeta {
@@ -580,8 +585,11 @@ pub fn list_tools() -> Vec<ToolMeta> {
 }
 
 /// The draft-07 JSON Schema for a tool's parameters (drives the form).
+///
+/// `async` so a tool dialog's schema fetch never waits on the main thread (see
+/// [`list_tools`]) — otherwise the dialog can hang at "Loading…".
 #[tauri::command]
-pub fn tool_schema(tool: String) -> Result<String, String> {
+pub async fn tool_schema(tool: String) -> Result<String, String> {
     schema(&tool).map_err(|e| e.to_string())
 }
 
@@ -1629,12 +1637,26 @@ fn basename(path: &str) -> String {
 fn run_export_enum_report(params: Value) -> Result<RunOutput, String> {
     let input = str_param(&params, "input")?.to_string();
     let output = str_param(&params, "output")?.to_string();
-    let (by, names): (By, &[&str]) = match params.get("by").and_then(|v| v.as_str()) {
+    let (by, default_names): (By, &[&str]) = match params.get("by").and_then(|v| v.as_str()) {
         Some("contig") => (By::Contig, &["length", "cds_count", "domains"]),
         Some("domain") => (By::Domain, &["start", "end", "strand", "score", "identity"]),
         _ => (By::Cds, &["domains", "architecture", "length"]),
     };
+    // Honor an explicit `columns` selection from the form; else the per-`by` default.
+    let chosen: Vec<String> = params
+        .get("columns")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let names: Vec<String> = if chosen.is_empty() {
+        default_names.iter().map(|s| s.to_string()).collect()
+    } else {
+        chosen
+    };
     let analyses: Vec<_> = names.iter().filter_map(|n| static_analysis(n)).collect();
+    if analyses.is_empty() {
+        return Err("no valid columns selected".into());
+    }
     let records = load_sequence(&input, "protein")?;
     let fname = basename(&input);
     let recs: Vec<_> = records.into_iter().map(|r| (r, fname.clone())).collect();

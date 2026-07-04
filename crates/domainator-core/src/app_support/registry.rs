@@ -11,7 +11,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::app_support::workspace::classify_file;
+use crate::app_support::workspace::{classify_file, dot_dir};
 use crate::io::shards::resolve_database_shards;
 use crate::io::{detect_filetype, FileType};
 
@@ -37,7 +37,7 @@ pub struct DatabaseRegistry {
 const REGISTRY_NAME: &str = "databases.json";
 
 fn registry_path(root: &Path) -> std::path::PathBuf {
-    root.join(REGISTRY_NAME)
+    dot_dir(root).join(REGISTRY_NAME)
 }
 
 pub fn load_registry(root: &Path) -> DatabaseRegistry {
@@ -48,6 +48,7 @@ pub fn load_registry(root: &Path) -> DatabaseRegistry {
 }
 
 pub fn save_registry(root: &Path, reg: &DatabaseRegistry) -> std::io::Result<()> {
+    fs::create_dir_all(dot_dir(root))?;
     let json = serde_json::to_vec_pretty(reg)?;
     fs::write(registry_path(root), json)
 }

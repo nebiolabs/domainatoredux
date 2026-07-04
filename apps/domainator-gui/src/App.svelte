@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ws } from "./lib/state.svelte";
-  import { listTools, pickDirectory } from "./lib/api";
+  import { listTools, pickDirectory, toolSchemaCached } from "./lib/api";
   import FolderTree from "./lib/FolderTree.svelte";
   import FileTable from "./lib/FileTable.svelte";
   import ViewerDock from "./lib/ViewerDock.svelte";
@@ -9,15 +9,18 @@
   import JobsPanel from "./lib/JobsPanel.svelte";
   import ExternalToolsPanel from "./lib/ExternalToolsPanel.svelte";
   import ContigView from "./lib/viewers/ContigView.svelte";
+  import HmmLogo from "./lib/viewers/HmmLogo.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { standaloneParams } from "./lib/api";
   import type { JobInfo, ToolMeta } from "./lib/types";
 
-  // Detached window mode: a window opened with `?view=contig` shows a single
-  // sequence (from an SSN node selection), bypassing the full workspace shell.
-  const isStandalone = new URLSearchParams(window.location.search).get("view") === "contig";
+  // Detached window mode: a window opened with `?view=contig` (a single sequence)
+  // or `?view=hmmlogo` (a single popped-out HMM profile logo) bypasses the shell.
+  const standaloneView = new URLSearchParams(window.location.search).get("view");
+  const isStandalone = standaloneView === "contig" || standaloneView === "hmmlogo";
   let standalonePath = $state<string | null>(null);
+  let standaloneIndex = $state(0);
   let standaloneErr = $state<string | null>(null);
 
   $effect(() => {
@@ -25,13 +28,27 @@
     standaloneParams(getCurrentWindow().label)
       .then((p) => {
         if (p) {
-          ws.focusContig[p[0]] = p[1];
+          standaloneIndex = p[1];
+          if (standaloneView === "contig") ws.focusContig[p[0]] = p[1];
           standalonePath = p[0];
         } else {
           standaloneErr = "window parameters not found";
         }
       })
       .catch((e) => (standaloneErr = String(e)));
+  });
+
+  // Load the tool list and prefetch every tool's JSON Schema ONCE at startup —
+  // before any workspace/GenBank viewer is open, so the main thread is idle and
+  // the fetches can't stall. Opening a tool dialog then needs no backend call,
+  // which is what previously left dialogs stuck at "Loading…" while a large
+  // GenBank contig view was rendering.
+  $effect(() => {
+    if (isStandalone) return;
+    listTools().then((t) => {
+      tools = t;
+      for (const m of t) void toolSchemaCached(m.id);
+    });
   });
 
   // Live job status from the backend JobRegistry (main window only).
@@ -97,7 +114,11 @@
   <div class="standalone">
     {#if standalonePath}
       {#key standalonePath}
-        <ContigView path={standalonePath} />
+        {#if standaloneView === "hmmlogo"}
+          <HmmLogo path={standalonePath} index={standaloneIndex} />
+        {:else}
+          <ContigView path={standalonePath} />
+        {/if}
       {/key}
     {:else if standaloneErr}
       <p class="empty">{standaloneErr}</p>

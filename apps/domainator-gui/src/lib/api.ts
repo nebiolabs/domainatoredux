@@ -21,14 +21,17 @@ export const pickDirectory = (): Promise<string | null> =>
 export const openWorkspace = (root: string): Promise<WorkspaceInfo> =>
   invoke("open_workspace", { root });
 
-export const listFolder = (dir: string): Promise<FileEntry[]> =>
-  invoke("list_folder", { dir });
+export const listFolder = (workspaceRoot: string, dir: string): Promise<FileEntry[]> =>
+  invoke("list_folder", { workspaceRoot, dir });
 
 export const rescanTree = (root: string): Promise<FolderNode> =>
   invoke("rescan_tree", { root });
 
 export const createFolder = (parent: string, name: string): Promise<string> =>
   invoke("create_folder", { parent, name });
+
+export const deleteFile = (workspaceRoot: string, path: string): Promise<void> =>
+  invoke("delete_file", { workspaceRoot, path });
 
 export const loadContigView = (path: string): Promise<ContigFileView> =>
   invoke("load_contig_view", { path });
@@ -78,6 +81,19 @@ export const openSequenceWindow = (
 export const standaloneParams = (label: string): Promise<[string, number] | null> =>
   invoke("standalone_params", { label });
 
+// Pop out a single HMM profile's logo in a detached window.
+export const openHmmLogoWindow = (
+  path: string,
+  index: number,
+  title: string,
+): Promise<void> => invoke("open_hmm_logo_window", { path, index, title });
+
+// Build a single GenBank of the selected records (SSN → combined sequence view).
+export const extractRecords = (
+  workspaceRoot: string,
+  records: { path: string; contig_index: number }[],
+): Promise<string> => invoke("extract_records", { workspaceRoot, records });
+
 // --- databases ---
 export const pickFile = (): Promise<string | null> => invoke("pick_file");
 export const listDatabases = (workspaceRoot: string): Promise<DatabaseEntry[]> =>
@@ -115,6 +131,24 @@ export const listTools = (): Promise<ToolMeta[]> => invoke("list_tools");
 
 export const toolSchema = (tool: string): Promise<string> =>
   invoke("tool_schema", { tool });
+
+// Tool JSON Schemas are static per tool, so cache them in a module singleton that
+// (unlike the viewer cache) is NEVER cleared. Prefetched at app startup — before
+// any heavy GenBank viewer is mounted — so opening a tool dialog needs no backend
+// round-trip and can't stall behind main-thread work. A rejected fetch is dropped
+// so it can be retried.
+const schemaCache = new Map<string, Promise<string>>();
+export function toolSchemaCached(tool: string): Promise<string> {
+  let p = schemaCache.get(tool);
+  if (!p) {
+    p = toolSchema(tool).catch((e) => {
+      schemaCache.delete(tool);
+      throw e;
+    });
+    schemaCache.set(tool, p);
+  }
+  return p;
+}
 
 export const runTool = (
   tool: string,

@@ -20,6 +20,13 @@
   function activate(f: FileEntry) {
     ws.openFile(f);
   }
+
+  async function remove(e: MouseEvent, f: FileEntry) {
+    e.stopPropagation();
+    if (confirm(`Delete "${f.name}"?\nThis permanently removes the file from disk.`)) {
+      await ws.deleteFile(f.path);
+    }
+  }
 </script>
 
 <div class="table" role="table">
@@ -28,6 +35,7 @@
     <div class="c-type" role="columnheader">Type</div>
     <div class="c-desc" role="columnheader">Description</div>
     <div class="c-size" role="columnheader">Size</div>
+    <div class="c-act" role="columnheader"></div>
   </div>
   {#if ws.loadingFiles}
     <div class="note">Loading…</div>
@@ -52,6 +60,9 @@
         </div>
         <div class="c-desc" role="cell" title={f.description}>{f.description}</div>
         <div class="c-size" role="cell">{fmtSize(f.size)}</div>
+        <div class="c-act" role="cell">
+          <button class="del" title="Delete file" aria-label="Delete file" onclick={(e) => remove(e, f)}>🗑</button>
+        </div>
       </div>
     {/each}
   {/if}
@@ -67,10 +78,28 @@
   .head,
   .row {
     display: grid;
-    grid-template-columns: minmax(160px, 2fr) 90px minmax(160px, 3fr) 80px;
+    grid-template-columns: minmax(160px, 2fr) 90px minmax(160px, 3fr) 80px 28px;
     align-items: center;
     gap: 8px;
     padding: 0 12px;
+  }
+  .c-act {
+    text-align: right;
+  }
+  .del {
+    border: none;
+    background: none;
+    cursor: pointer;
+    opacity: 0;
+    font-size: 12px;
+    padding: 2px;
+    line-height: 1;
+  }
+  .row:hover .del {
+    opacity: 0.6;
+  }
+  .del:hover {
+    opacity: 1;
   }
   .head {
     position: sticky;

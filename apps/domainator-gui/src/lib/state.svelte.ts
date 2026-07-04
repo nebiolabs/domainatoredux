@@ -1,6 +1,7 @@
 import {
   cancelJob as apiCancelJob,
   createFolder,
+  deleteFile,
   listDatabases,
   listFolder,
   listJobs,
@@ -9,7 +10,7 @@ import {
   rescanTree,
   unregisterDatabase,
 } from "./api";
-import { clearCache } from "./cache";
+import { clearCache, invalidatePath } from "./cache";
 import type { DatabaseEntry, FileEntry, FileType, FolderNode, JobInfo, OpenTab } from "./types";
 
 // Classify a path to a viewer file type by extension (for opening job outputs).
@@ -62,7 +63,7 @@ class WorkspaceStore {
     this.loadingFiles = true;
     this.error = null;
     try {
-      this.files = await listFolder(path);
+      this.files = await listFolder(this.root ?? path, path);
     } catch (e) {
       this.error = String(e);
       this.files = [];
@@ -143,6 +144,20 @@ class WorkspaceStore {
     if (!this.root) return;
     try {
       this.tree = await rescanTree(this.root);
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  /// Delete a data file: close its tab, drop cached views, remove from disk, refresh.
+  async deleteFile(path: string): Promise<void> {
+    if (!this.root) return;
+    this.error = null;
+    try {
+      await deleteFile(this.root, path);
+      this.closeTab(path);
+      invalidatePath(path);
+      if (this.selectedFolder) await this.selectFolder(this.selectedFolder);
     } catch (e) {
       this.error = String(e);
     }

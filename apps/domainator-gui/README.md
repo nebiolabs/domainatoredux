@@ -66,10 +66,19 @@ Linux) and use Windows only to *validate the GUI*:
 In-place browsing: the app points at a real directory; the folder tree is derived
 from the filesystem (so CLI-created files always appear). The left panel's Folders
 header has a **＋** to create a subdirectory under the selected folder
-(`create_folder` + `rescan_tree`). Data files are never
-rewritten — GUI metadata (description/tags/provenance) goes in a sibling
-`<name>.dom.json`, workspace settings in `workspace.json` at the root. Everything
-stays Python/CLI-readable.
+(`create_folder` + `rescan_tree`), and each file row has a trash button that
+deletes the file (and its metadata) via `delete_file` (with a confirm).
+
+**Reserved `.domainator/` directory.** Data files are never rewritten; instead *all*
+app machinery lives under a single hidden directory, `<root>/.domainator/`: the
+`workspace.json` manifest, the `databases.json` registry, job provenance
+(`.domainator/jobs/<id>/`), per-file metadata sidecars mirrored under
+`.domainator/meta/<rel>.dom.json`, and combined SSN subsets (`.domainator/subsets/`).
+`.domainator` is the ONLY name the app reserves (so no clashes with user files); it
+is hidden from the tree and rejected as a user folder name, and `delete_file`
+refuses to touch anything inside it. Opening a workspace created before this change
+migrates the old top-level `workspace.json`/`databases.json`/`jobs/` into it
+automatically. Everything else stays Python/CLI-readable.
 
 ## Phase status
 
@@ -176,6 +185,22 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   `load_matrix_report`, `resolve_record` (scans the workspace), `render_ssn_html`,
   `open_workspace`/`list_folder`/`rescan_tree`, `register_database`, and the GenBank
   write-back edits. Only the native pickers and light JSON reads stay synchronous.
+  `list_tools`, `tool_schema`, and `list_external_tools` are `async` too: a tool
+  dialog fetches its schema via `tool_schema`, and on Linux/WebKitGTK the main thread
+  also drives WebView layout/paint — a *synchronous* schema fetch could queue behind
+  a heavy viewer render and leave the dialog stuck at "Loading…". Running them on the
+  async runtime makes them immune to whatever the main thread is doing. (Window
+  creation — `open_sequence_window` — deliberately stays on the main thread.)
+  **Belt-and-suspenders for the tool dialog:** tool JSON Schemas are static, so the
+  frontend prefetches every tool's schema **at app startup** (before any workspace/
+  GenBank viewer is mounted, i.e. while the main thread is idle) into a dedicated
+  never-cleared cache (`toolSchemaCached` in `api.ts`, distinct from the viewer
+  `cache.ts` that `clearCache()` wipes on workspace-open). Opening a tool dialog then
+  reads its schema from memory with **no backend round-trip**, so it can't stall
+  behind a large contig view's WebView rendering — the cause of dialogs (esp. the
+  GenBank-input tools, opened while a big contig view was on screen) sitting at
+  "Loading…". This is a pure-frontend fix, so it takes effect via Vite HMR without a
+  backend restart.
 - **Jobs run off-thread** (`spawn_blocking`), tracked in a `JobRegistry` managed
   state, and broadcast as `job-update` events. The **Jobs panel** (left sidebar,
   above Databases; `JobsPanel.svelte`) shows live status (running/completed/
@@ -187,18 +212,43 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   cds/domain **TSV**, `matrix-report` writes a **text** summary + suggested cutoffs.
   (These export files to disk; the in-app Enum Report / Matrix Report *viewer* tabs
   remain the interactive views.)
-- **Cross-view navigation — DONE (detached windows).** The SSN shell posts selected
-  node labels to the host (one additive `postMessage` hook in
-  `assets/ssn_viewer_shell.html`); `SsnView` shows an "Open sequence(s)" bar;
-  `resolve_record` scans the workspace's GenBank/FASTA for a record whose id/name
-  matches the label; `open_sequence_window` (`cmd_windows.rs`) then opens each in a
-  **detached OS `WebviewWindow`** (`?view=contig`; the window reads its own label →
-  `standalone_params` → `(path, contig)`, so paths need no URL-encoding), and
-  `App.svelte`'s standalone branch renders just a focused `ContigView`. Requires the
-  `src-tauri/capabilities/default.json` capability (`core:default` for all windows)
-  — which also enables the Jobs panel's `listen("job-update")`. `resolve_record`
-  scans files (fine for modest workspaces); a `.didx`/provenance-indexed fast path
-  can replace it.
+- **Cross-view navigation — DONE (combined subset view).** The SSN shell posts
+  selected node labels to the host (one additive `postMessage` hook in
+  `assets/ssn_viewer_shell.html`); `SsnView` shows an "Open sequence(s)" bar. On
+  click it resolves *every* selected label (`resolve_record` scans the workspace's
+  GenBank/FASTA for a record whose id/name matches) and calls `extract_records`,
+  which writes just those records to a single `.domainator/subsets/selection_N.gb`;
+  that opens as **one** normal sequence tab with the full Contig / Enum Report /
+  Summary sub-tabs — instead of N whole-file windows. Requires the
+  `src-tauri/capabilities/default.json` capability (which also enables the Jobs
+  panel's `listen("job-update")`). (`open_sequence_window`/`standalone_params` +
+  `App.svelte`'s `?view=contig` standalone branch remain for a future detached-window
+  option but are no longer used by the SSN bar.) `resolve_record` scans files (fine
+  for modest workspaces); a `.didx`/provenance-indexed fast path can replace it.
+- **Enum report export has a column picker.** The Tools-menu "Enum report (export)"
+  now offers a `columns` checklist (a bespoke `enum_columns` `ToolDialog` role) of
+  the taxonomy-free static analyses, in addition to `by`; `run_export_enum_report`
+  honors the selection (falling back to the per-`by` default set).
+- **Every tool option has help text.** `ToolDialog` renders each option's schema
+  `description` as a hint. A shared dictionary (`common_help` in `domainator-config`,
+  applied by `fill_common_descriptions` in `schema()`) fills a one-line description
+  for any property a per-tool schema left blank, so all 333 options across the tools
+  have a tooltip (and the CLI's emitted schema gets them too). Per-tool schemas can
+  still override with a more specific description.
+- **domainate / domain-search accept HMM *and* FASTA references.** The references
+  field uses a `reference` pseudo file-type (`typeMatches` → hmm | fasta), matching
+  what the core `read_references` accepts (protein/nucleotide HMM or FASTA; `.cm` and
+  GenBank are not references). The dropdown lists folder files and registered
+  databases of either kind.
+- **HMM files open as a profile table, logos pop out on demand.** `.hmm` files now
+  default to `HmmReport.svelte` — a fast, filterable, row-virtualized table of every
+  profile (name / length / description) built from `list_hmm_profiles` (which never
+  computes a logo, so opening a 25k-profile file is instant). Each row has a
+  **logo ↗** button that opens that single profile's sequence logo in a detached
+  window (`open_hmm_logo_window` → `?view=hmmlogo`; `App.svelte`'s standalone branch
+  renders `HmmLogo` in single-profile mode via an `index` prop that hides the browser
+  list). This replaces the old always-loaded logo browser (slow, and there's no real
+  use case for scrolling through thousands of logos).
 - **Contig viewer renders multi-part features + circular wrap.** Each feature is
   drawn as one segment per location part (joined/multi-exon genes show boxes joined
   by thin intron connectors; only the terminal part gets the arrowhead). Because the
