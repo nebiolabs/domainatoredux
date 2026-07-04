@@ -100,6 +100,15 @@ export interface LogoPosition {
   letters: LogoLetter[];
 }
 
+export interface HmmSummary {
+  index: number;
+  name: string;
+  acc: string | null;
+  desc: string | null;
+  length: number;
+  alphabet: "amino" | "dna" | "rna";
+}
+
 export interface HmmLogo {
   name: string;
   acc: string | null;
@@ -108,6 +117,37 @@ export interface HmmLogo {
   length: number;
   max_height_bits: number;
   positions: LogoPosition[];
+}
+
+export interface NameCount {
+  name: string;
+  count: number;
+}
+
+export interface TaxNode {
+  name: string;
+  count: number;
+  children: TaxNode[];
+}
+
+export interface SummaryStats {
+  n_contigs: number;
+  is_protein: boolean;
+  total_residues: number;
+  length_min: number;
+  length_max: number;
+  length_mean: number;
+  length_median: number;
+  length_histogram: [number, number][];
+  n_cds: number;
+  n_domain_features: number;
+  distinct_domains: number;
+  top_domains: NameCount[];
+  databases: NameCount[];
+  feature_kinds: NameCount[];
+  top_organisms: NameCount[];
+  n_with_taxonomy: number;
+  taxonomy: TaxNode;
 }
 
 export interface SuggestedThreshold {
@@ -127,16 +167,45 @@ export interface DatabaseEntry {
   shards: number;
 }
 
+export interface ExternalToolStatus {
+  id: string;
+  bin_name: string;
+  version: string;
+  description: string;
+  installed: boolean;
+  path: string | null;
+  available: boolean;
+  platform: string;
+}
+
+export interface ToolField {
+  name: string;
+  label: string;
+  role: "input_file" | "input_files" | "output_file" | "param";
+  file_type: string | null;
+  required: boolean;
+}
+
 export interface ToolMeta {
   id: string;
   label: string;
   description: string;
+  fields: ToolField[];
 }
 
 export interface RunResult {
   job_id: string;
   outputs: string[];
   message: string;
+}
+
+export interface JobInfo {
+  job_id: string;
+  tool: string;
+  status: "running" | "completed" | "failed" | "cancelled";
+  message: string;
+  started_at_ms: string;
+  outputs: string[];
 }
 
 // Minimal JSON-Schema shape we render forms from (draft-07 subset).

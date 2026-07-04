@@ -7,36 +7,71 @@
 
   let meta = $state<ToolMeta | null>(null);
   let schema = $state<JsonSchema | null>(null);
-  // Dynamically typed by the tool's JSON schema, so values are `any`.
   let values = $state<Record<string, any>>({});
   let error = $state<string | null>(null);
   let result = $state<string | null>(null);
   let running = $state(false);
 
-  const activePath = $derived(ws.tabs.find((t) => t.id === ws.activeTabId)?.file.path ?? null);
+  // The current directory: outputs land here, and input dropdowns list its files.
+  const folder = $derived(ws.selectedFolder ?? ws.root ?? "");
+  const folderName = $derived(folder.split(/[\\/]/).pop() ?? folder);
 
-  function dirOf(p: string): string {
-    const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
-    return i >= 0 ? p.slice(0, i) : ".";
+  const DB_TYPE: Record<string, string> = { hmm: "hmm", genbank: "genbank", fasta: "fasta" };
+  function typeMatches(fileType: string, ft: string): boolean {
+    if (ft === "sequence") return fileType === "genbank" || fileType === "fasta";
+    return fileType === ft;
+  }
+  // Options for an input field: current-folder files of the type, plus registered
+  // databases of the matching format (so HMM references can come from the DB panel).
+  function fileChoices(ft: string | null): { value: string; label: string }[] {
+    if (!ft) return [];
+    const files = ws.files
+      .filter((f) => typeMatches(f.file_type, ft))
+      .map((f) => ({ value: f.path, label: f.name }));
+    const dbs = ws.databases
+      .filter((d) => typeMatches(DB_TYPE[d.format] ?? d.format, ft))
+      .map((d) => ({ value: d.path, label: `${d.name} (db)` }));
+    return [...files, ...dbs];
   }
   function stemOf(p: string): string {
     const base = p.slice(Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")) + 1);
     const dot = base.indexOf(".");
     return dot > 0 ? base.slice(0, dot) : base;
   }
-
-  // Suggested output path when the tool writes a derived file, based on input.
-  function suggestOutput(t: string, input: string): Record<string, string> {
-    const dir = dirOf(input);
-    const stem = stemOf(input);
-    if (t === "build-ssn-viewer") return { output: `${dir}/${stem}.ssnv` };
-    if (t === "transform-matrix") return { dense_text: `${dir}/${stem}.transformed.tsv` };
-    return {};
+  // Default output filename for a field, derived from the primary input's stem.
+  function defaultOutput(toolId: string, fieldName: string, inputPath: string): string {
+    const stem = inputPath ? stemOf(inputPath) : "output";
+    switch (`${toolId}:${fieldName}`) {
+      case "transform-matrix:dense":
+        return `${stem}.transformed.hdf5`;
+      case "build-ssn:xgmml":
+        return `${stem}.xgmml`;
+      case "build-ssn:cluster_tsv":
+        return `${stem}.clusters.tsv`;
+      case "build-ssn-viewer:output":
+        return `${stem}.ssnv`;
+      case "domain-search:output":
+        return `${stem}.search.gb`;
+      case "domainate:output":
+        return `${stem}.annotated.gb`;
+      case "seq-dist:dense":
+        return `${stem}.dist.hdf5`;
+      case "compare-contigs:dense":
+        return `${stem}.compare.hdf5`;
+      case "enum-report:output":
+        return `${stem}.enum.tsv`;
+      case "matrix-report:output":
+        return `${stem}.report.txt`;
+      default:
+        return "";
+    }
   }
-
-  function propType(p: JsonSchemaProp): string {
+  const isInputRole = (role: string) => role === "input_file" || role === "input_files";
+  function propType(p: JsonSchemaProp | undefined): string {
+    if (!p) return "string";
     return Array.isArray(p.type) ? (p.type.find((t) => t !== "null") ?? "string") : (p.type ?? "string");
   }
+  const schemaProp = (name: string): JsonSchemaProp | undefined => schema?.properties?.[name];
 
   $effect(() => {
     void tool;
@@ -45,38 +80,68 @@
     Promise.all([listTools(), toolSchema(tool)])
       .then(([tools, schemaText]) => {
         meta = tools.find((m) => m.id === tool) ?? null;
-        const s: JsonSchema = JSON.parse(schemaText);
-        schema = s;
-        // Seed defaults, then prefill input + suggested output.
-        const v: Record<string, unknown> = {};
-        for (const [k, p] of Object.entries(s.properties ?? {})) {
-          if (p.default !== undefined && p.default !== null) v[k] = p.default;
+        schema = JSON.parse(schemaText) as JsonSchema;
+        const v: Record<string, any> = {};
+        // Seed param defaults from the schema (arrays shown as comma-separated text).
+        for (const [k, p] of Object.entries(schema.properties ?? {})) {
+          if (p.default !== undefined && p.default !== null) {
+            v[k] = Array.isArray(p.default) ? p.default.join(",") : p.default;
+          }
         }
-        if (activePath && s.properties && "input" in s.properties) v.input = activePath;
-        if (activePath) Object.assign(v, suggestOutput(tool, activePath));
+        // Seed input dropdowns (prefer the active file, else the first match).
+        const active = ws.tabs.find((t) => t.id === ws.activeTabId)?.file ?? null;
+        let primaryInput = "";
+        for (const field of meta?.fields ?? []) {
+          if (isInputRole(field.role)) {
+            const choices = fileChoices(field.file_type);
+            const pick = choices.find((c) => c.value === active?.path)?.value ?? choices[0]?.value ?? "";
+            v[field.name] = pick;
+            if (field.name === "input" || (!primaryInput && pick)) primaryInput = pick;
+          }
+        }
+        // Seed output filenames from the primary input's stem.
+        for (const field of meta?.fields ?? []) {
+          if (field.role === "output_file" && field.required) {
+            v[field.name] = defaultOutput(tool, field.name, primaryInput);
+          }
+        }
         values = v;
       })
       .catch((e) => (error = String(e)));
   });
 
-  // Build the params object: include set scalars, checked bools, non-empty arrays.
+  function join(dir: string, name: string): string {
+    const sep = dir.includes("\\") ? "\\" : "/";
+    return `${dir}${sep}${name}`;
+  }
+
   function collectParams(): Record<string, unknown> {
     const out: Record<string, unknown> = {};
-    for (const [k, p] of Object.entries(schema?.properties ?? {})) {
-      const t = propType(p);
-      const val = values[k];
-      if (t === "boolean") {
-        if (val === true) out[k] = true;
-      } else if (t === "array") {
-        const list = String(val ?? "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        if (list.length) out[k] = list;
-      } else if (t === "integer" || t === "number") {
-        if (val !== "" && val !== undefined && val !== null) out[k] = Number(val);
+    for (const field of meta?.fields ?? []) {
+      const val = values[field.name];
+      if (field.role === "input_file") {
+        if (val) out[field.name] = val;
+      } else if (field.role === "input_files") {
+        if (val) out[field.name] = [val]; // config expects a list
+      } else if (field.role === "output_file") {
+        const name = String(val ?? "").trim();
+        if (name) out[field.name] = join(folder, name);
       } else {
-        if (val !== "" && val !== undefined && val !== null) out[k] = val;
+        const prop = schemaProp(field.name);
+        const t = propType(prop);
+        if (t === "boolean") {
+          if (val === true) out[field.name] = true;
+        } else if (t === "integer" || t === "number") {
+          if (val !== "" && val !== undefined && val !== null) out[field.name] = Number(val);
+        } else if (t === "array") {
+          const list = String(val ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+          if (list.length) {
+            const items = prop?.items?.type;
+            out[field.name] = items === "integer" || items === "number" ? list.map(Number) : list;
+          }
+        } else {
+          if (val !== "" && val !== undefined && val !== null) out[field.name] = val;
+        }
       }
     }
     return out;
@@ -92,8 +157,7 @@
     result = null;
     try {
       const r = await runTool(tool, collectParams(), ws.root);
-      result = `${r.message} → ${r.outputs.join(", ")}`;
-      // Refresh the current folder so new outputs appear in the table.
+      result = `${r.message} → ${r.outputs.map((o) => o.split(/[\\/]/).pop()).join(", ")}`;
       if (ws.selectedFolder) await ws.selectFolder(ws.selectedFolder);
     } catch (e) {
       error = String(e);
@@ -101,9 +165,6 @@
       running = false;
     }
   }
-
-  const entries = $derived(Object.entries(schema?.properties ?? {}));
-  const isRequired = (k: string) => schema?.required?.includes(k) ?? false;
 </script>
 
 <div
@@ -118,30 +179,47 @@
       <button class="x" onclick={onclose} aria-label="Close">×</button>
     </header>
     {#if meta}<p class="desc">{meta.description}</p>{/if}
+    <p class="folder">Directory: <code>{folderName}</code></p>
 
     {#if error}<div class="err">{error}</div>{/if}
     {#if result}<div class="ok">{result}</div>{/if}
 
-    {#if !schema}
+    {#if !meta || !schema}
       <div class="msg">Loading…</div>
     {:else}
       <div class="fields">
-        {#each entries as [key, prop] (key)}
-          {@const t = propType(prop)}
+        {#each meta.fields as field (field.name)}
+          {@const prop = schemaProp(field.name)}
           <label class="field">
-            <span class="flabel">{key}{#if isRequired(key)}<span class="req">*</span>{/if}</span>
-            {#if prop.enum}
-              <select bind:value={values[key]}>
+            <span class="flabel">{field.label}{#if field.required}<span class="req">*</span>{/if}</span>
+
+            {#if isInputRole(field.role)}
+              {@const choices = fileChoices(field.file_type)}
+              {#if choices.length === 0}
+                <span class="nofiles">No {field.file_type} files/databases available</span>
+              {:else}
+                <select bind:value={values[field.name]}>
+                  {#if !field.required}<option value="">(none)</option>{/if}
+                  {#each choices as c (c.value)}<option value={c.value}>{c.label}</option>{/each}
+                </select>
+              {/if}
+            {:else if field.role === "output_file"}
+              <input type="text" bind:value={values[field.name]} placeholder="filename" />
+            {:else if prop?.enum}
+              <select bind:value={values[field.name]}>
                 {#each prop.enum as opt (opt)}<option value={opt}>{opt}</option>{/each}
               </select>
-            {:else if t === "boolean"}
-              <input type="checkbox" bind:checked={values[key]} />
-            {:else if t === "integer" || t === "number"}
-              <input type="number" step="any" bind:value={values[key]} />
+            {:else if propType(prop) === "boolean"}
+              <input type="checkbox" bind:checked={values[field.name]} />
+            {:else if propType(prop) === "integer" || propType(prop) === "number"}
+              <input type="number" step="any" bind:value={values[field.name]} />
+            {:else if propType(prop) === "array"}
+              <input type="text" bind:value={values[field.name]} placeholder="comma, separated" />
             {:else}
-              <input type="text" bind:value={values[key]} placeholder={t === "array" ? "comma,separated" : ""} />
+              <input type="text" bind:value={values[field.name]} />
             {/if}
-            {#if prop.description}<span class="hint">{prop.description}</span>{/if}
+
+            {#if prop?.description}<span class="hint">{prop.description}</span>{/if}
           </label>
         {/each}
       </div>
@@ -191,7 +269,16 @@
   }
   .desc {
     color: var(--text-dim);
-    margin: 4px 0 12px;
+    margin: 4px 0 4px;
+  }
+  .folder {
+    margin: 0 0 12px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .folder code {
+    font-family: var(--mono);
+    color: var(--text);
   }
   .fields {
     display: flex;
@@ -205,8 +292,7 @@
     gap: 8px 10px;
   }
   .flabel {
-    font-family: var(--mono);
-    font-size: 12px;
+    font-size: 12.5px;
     text-align: right;
   }
   .req {
@@ -227,6 +313,10 @@
   }
   .field input[type="checkbox"] {
     justify-self: start;
+  }
+  .nofiles {
+    color: #e5484d;
+    font-size: 12px;
   }
   .hint {
     grid-column: 2;

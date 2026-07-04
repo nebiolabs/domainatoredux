@@ -4,22 +4,35 @@
 
 mod cmd_db;
 mod cmd_edit;
+mod cmd_external;
 mod cmd_files;
 mod cmd_tools;
+mod cmd_windows;
 mod cmd_workspace;
+mod external_tools;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(cmd_tools::JobRegistry::default())
+        .manage(cmd_windows::PendingWindows::default())
+        .setup(|app| {
+            // Wire up any already-downloaded external tools (sets their env vars).
+            external_tools::ensure_env(&app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             cmd_workspace::pick_directory,
             cmd_workspace::open_workspace,
             cmd_workspace::list_folder,
+            cmd_workspace::rescan_tree,
+            cmd_workspace::create_folder,
             cmd_files::load_contig_view,
             cmd_files::load_matrix_report,
             cmd_files::load_hmm_logo,
+            cmd_files::list_hmm_profiles,
             cmd_files::run_enum_report,
+            cmd_files::run_summary_stats,
             cmd_files::resolve_record,
             cmd_files::render_ssn_html,
             cmd_tools::list_tools,
@@ -36,6 +49,10 @@ pub fn run() {
             cmd_edit::set_color_by_name,
             cmd_edit::remove_feature,
             cmd_edit::add_feature,
+            cmd_windows::open_sequence_window,
+            cmd_windows::standalone_params,
+            cmd_external::list_external_tools,
+            cmd_external::download_external_tool,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Domainator GUI");

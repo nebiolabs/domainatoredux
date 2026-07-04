@@ -1,5 +1,28 @@
-import { listDatabases, listFolder, openWorkspace, registerDatabase, unregisterDatabase } from "./api";
-import type { DatabaseEntry, FileEntry, FileType, FolderNode, OpenTab } from "./types";
+import {
+  cancelJob as apiCancelJob,
+  createFolder,
+  listDatabases,
+  listFolder,
+  listJobs,
+  openWorkspace,
+  registerDatabase,
+  rescanTree,
+  unregisterDatabase,
+} from "./api";
+import { clearCache } from "./cache";
+import type { DatabaseEntry, FileEntry, FileType, FolderNode, JobInfo, OpenTab } from "./types";
+
+// Classify a path to a viewer file type by extension (for opening job outputs).
+function classifyPath(path: string): FileType | null {
+  const lower = path.toLowerCase().replace(/\.(gz|bgz|bgzf)$/, "");
+  const ext = lower.split(".").pop() ?? "";
+  if (["gb", "gbk", "genbank", "gbff"].includes(ext)) return "genbank";
+  if (["fasta", "fa", "fna", "faa", "pep"].includes(ext)) return "fasta";
+  if (["hmm", "hmmer"].includes(ext)) return "hmm";
+  if (["hdf5", "hdf", "h5"].includes(ext)) return "hdf5";
+  if (["ssnv", "ssnview"].includes(ext)) return "ssn_viewer";
+  return null;
+}
 
 // Central reactive shell state (Svelte 5 runes). One instance is shared across
 // all panels via the `ws` export.
@@ -17,9 +40,11 @@ class WorkspaceStore {
   focusContig = $state<Record<string, number>>({});
   databases = $state<DatabaseEntry[]>([]);
   dbError = $state<string | null>(null);
+  jobs = $state<JobInfo[]>([]);
 
   async open(root: string): Promise<void> {
     this.error = null;
+    clearCache();
     try {
       const info = await openWorkspace(root);
       this.root = info.root;
@@ -61,6 +86,45 @@ class WorkspaceStore {
     this.openFile({ path, name, file_type: fileType, description: "", size: 0, created_by_job: null });
   }
 
+  /// Open a job output in a viewer if its type is viewable (else no-op).
+  openOutput(path: string): void {
+    const t = classifyPath(path);
+    if (t) this.openPath(path, t);
+  }
+
+  // --- jobs ---
+  upsertJob(job: JobInfo): void {
+    const i = this.jobs.findIndex((j) => j.job_id === job.job_id);
+    if (i >= 0) {
+      const copy = [...this.jobs];
+      copy[i] = job;
+      this.jobs = copy;
+    } else {
+      this.jobs = [job, ...this.jobs];
+    }
+  }
+
+  async loadJobs(): Promise<void> {
+    try {
+      const list = await listJobs();
+      this.jobs = list.sort((a, b) => b.started_at_ms.localeCompare(a.started_at_ms));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async cancelJob(id: string): Promise<void> {
+    try {
+      await apiCancelJob(id);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  canOpen(path: string): boolean {
+    return classifyPath(path) !== null;
+  }
+
   closeTab(id: string): void {
     const idx = this.tabs.findIndex((t) => t.id === id);
     if (idx === -1) return;
@@ -73,6 +137,26 @@ class WorkspaceStore {
 
   setActive(id: string): void {
     this.activeTabId = id;
+  }
+
+  async refreshTree(): Promise<void> {
+    if (!this.root) return;
+    try {
+      this.tree = await rescanTree(this.root);
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  async createSubfolder(parent: string, name: string): Promise<void> {
+    this.error = null;
+    try {
+      const path = await createFolder(parent, name);
+      await this.refreshTree();
+      await this.selectFolder(path);
+    } catch (e) {
+      this.error = String(e);
+    }
   }
 
   async loadDatabases(): Promise<void> {

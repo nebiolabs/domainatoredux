@@ -64,7 +64,9 @@ Linux) and use Windows only to *validate the GUI*:
 ## Persistence model
 
 In-place browsing: the app points at a real directory; the folder tree is derived
-from the filesystem (so CLI-created files always appear). Data files are never
+from the filesystem (so CLI-created files always appear). The left panel's Folders
+header has a **＋** to create a subdirectory under the selected folder
+(`create_folder` + `rescan_tree`). Data files are never
 rewritten — GUI metadata (description/tags/provenance) goes in a sibling
 `<name>.dom.json`, workspace settings in `workspace.json` at the root. Everything
 stays Python/CLI-readable.
@@ -93,35 +95,88 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   (domainate/domain_search/seq_dist/…) still resolve inline in `main.rs`; adding
   their resolvers is future cleanup, needed only when those tools become
   GUI-runnable.
-- **Tool execution is a curated set, not generic.** `run_tool` (`cmd_tools.rs`)
-  handles **`transform-matrix`**, **`build-ssn`**, and **`build-ssn-viewer`**
-  (run build-ssn-viewer → the new `.ssnv` appears in the folder → opens in the SSN
-  tab). Adding `enum_report`/`domainate`/`domain_search`/… is future work
-  (`domainate`/`domain_search` need HMM-reference + multi-input I/O handling).
-  Forms are schema-driven (`tool_schema` → `ToolDialog.svelte`), so adding a tool
-  is: entry in `list_tools` + a `run_*` arm.
+- **Tool execution — the full SSN workflow runs from the GUI.** `run_tool`
+  (`cmd_tools.rs`) handles **`domain-search` → `domainate` → `seq-dist` (or
+  `compare-contigs`) → `transform-matrix` → `build-ssn` → `build-ssn-viewer`**.
+  Matrix-producing tools write `.hdf5` so their output is a recognized type that
+  chains into the SSN tools' input dropdowns (e.g. seq-dist → `.hdf5` →
+  build-ssn-viewer → `.ssnv` → SSN tab). Each tool declares a **field spec** in
+  `list_tools`: `input_file`/`input_files` → a dropdown of current-folder files of
+  the type **plus matching registered databases** (so HMM references come from the
+  Databases panel or a local `.hmm`); `output_file` → a filename the app prepends
+  the current directory to; `param` → rendered from the tool's JSON schema. Adding
+  a tool = a `list_tools` entry (fields) + a `run_*` arm.
+  `domain-search` exposes **neighborhood extraction** — `whole_contig`,
+  `cds_range`/`cds_up`/`cds_down`, `kb_range`/`kb_up`/`kb_down`, `strand` (f/r),
+  `keep_direction`, `translate` — so the neighborhood-based SSN path works
+  (domain-search with a CDS/kb range → neighborhood GenBank → compare-contigs or
+  seq-dist → matrix → build-ssn-viewer). Verified: none→16 CDS, whole_contig→96,
+  cds±1→48 on the pDONR fixture.
+  `domain-search`/`domainate` expose **taxonomy filters** (`include_taxids` /
+  `exclude_taxids` / `taxonomy_expr`, requiring an NCBI **taxdump directory** via
+  `ncbi_taxonomy_path`) and `domain-search` also **decoys** (`decoys` list +
+  `decoys_file`) — compiled in `cmd_tools.rs` via `NCBITaxonomy::load` +
+  `compile_taxonomy_filter`/`_expression` and `parse_name_list` (mirroring the CLI).
+  Array params (decoys/taxid lists) render as comma-separated text in the form.
+  `seq-dist` defaults to the pure-Rust `hmmer` algorithm; the `diamond_*`
+  algorithms need the external `diamond` binary — **auto-downloadable** via the
+  **External tools** panel (see below). The workflow-tool option mapping lives
+  inline in `cmd_tools.rs` (only transform/build-ssn/build-ssn-viewer share
+  `resolve.rs`).
+- **External tools (auto-download).** `external_tools.rs` is a flexible registry:
+  each `ToolSpec` describes a binary (per-platform download URL + archive kind +
+  member), and `download()` fetches (via `ureq`), extracts (`.tar.gz`/raw), stores
+  it under `<app_data>/bin/`, `chmod +x`, and sets the env var the core locator
+  checks (`DOMAINATOR_DIAMOND` → `tools::external::find_binary`). The **External
+  tools** panel (left sidebar, collapsed) lists each tool with installed/available
+  status and a Download button; `ensure_env` at startup wires up already-downloaded
+  binaries. First entry: **diamond** (Linux x64 prebuilt; macOS/Windows show
+  "n/a" — no simple official release binary). Adding a future dependency (mmseqs2,
+  foldseek, prodigal, …) is just another `ToolSpec` in `specs()`.
 - **Jobs run off-thread** (`spawn_blocking`), tracked in a `JobRegistry` managed
-  state, and broadcast as `job-update` events; `job_status`/`list_jobs`/`cancel_job`
-  commands exist. Each run writes provenance (`jobs/<id>/job.json` + output
-  `.dom.json` with `created_by_job`). Cancellation is **best-effort** (core tools
-  aren't interruptible — a cancelled job's result is discarded; these matrix tools
-  finish in ms anyway). No dedicated jobs panel yet — the events are emitted for a
-  future one; `ToolDialog` shows the run result inline.
-- **Cross-view navigation — DONE.** The SSN shell posts selected node labels to the
-  host (one additive `postMessage` hook in `assets/ssn_viewer_shell.html`);
-  `SsnView` shows an "Open sequence(s)" bar; `resolve_record` scans the workspace's
-  GenBank/FASTA for a record whose id/name matches the label, and the contig viewer
-  opens focused on it (scroll + highlight). Verified end-to-end at the data layer
-  (`FeSOD_dist` SSN node → `FeSOD_20.gb` contig 0). Opening in a **detached OS
-  window** (vs a focused tab) is a deferred enhancement — needs multi-window
-  capabilities tested with a display. `resolve_record` currently scans files (fine
-  for modest workspaces); a `.didx`/provenance-indexed fast path can replace it.
-- **Contig viewer** draws each feature's *overall span*, not its individual parts
-  — joined/multi-exon features render as one arrow (fine for prokaryotic data;
-  add per-part rendering later). Circular contigs render **linearly** with a
-  "circular" badge; origin-wrap / arc rendering is deferred.
-- **No feature virtualization.** Acceptable for the "few hundred contigs / few Mb"
-  scope; add viewport virtualization + level-of-detail if large genomes lag.
+  state, and broadcast as `job-update` events. The **Jobs panel** (left sidebar,
+  above Databases; `JobsPanel.svelte`) shows live status (running/completed/
+  failed/cancelled), the result message, and clickable output files (openable ones
+  open in a viewer); running jobs have a Cancel button (`cancel_job`, best-effort —
+  core tools aren't interruptible, so a cancelled job's result is discarded). Each
+  run writes provenance (`jobs/<id>/job.json` + output `.dom.json`).
+- **Report-export tools** (also shown as jobs): `enum-report` writes a per-contig/
+  cds/domain **TSV**, `matrix-report` writes a **text** summary + suggested cutoffs.
+  (These export files to disk; the in-app Enum Report / Matrix Report *viewer* tabs
+  remain the interactive views.)
+- **Cross-view navigation — DONE (detached windows).** The SSN shell posts selected
+  node labels to the host (one additive `postMessage` hook in
+  `assets/ssn_viewer_shell.html`); `SsnView` shows an "Open sequence(s)" bar;
+  `resolve_record` scans the workspace's GenBank/FASTA for a record whose id/name
+  matches the label; `open_sequence_window` (`cmd_windows.rs`) then opens each in a
+  **detached OS `WebviewWindow`** (`?view=contig`; the window reads its own label →
+  `standalone_params` → `(path, contig)`, so paths need no URL-encoding), and
+  `App.svelte`'s standalone branch renders just a focused `ContigView`. Requires the
+  `src-tauri/capabilities/default.json` capability (`core:default` for all windows)
+  — which also enables the Jobs panel's `listen("job-update")`. `resolve_record`
+  scans files (fine for modest workspaces); a `.didx`/provenance-indexed fast path
+  can replace it.
+- **Contig viewer renders multi-part features + circular wrap.** Each feature is
+  drawn as one segment per location part (joined/multi-exon genes show boxes joined
+  by thin intron connectors; only the terminal part gets the arrowhead). Because the
+  parser stores an origin-spanning circular feature as a multi-part join, this also
+  handles **circular wrap** — the two segments render at both ends and the
+  origin-crossing connector (a gap > half the contig) is skipped. Circular contigs
+  keep their "circular" badge; a dedicated *circular/arc* plot is still a possible
+  future view. The density-overview binning also fills per part.
+- **Contig viewer is doubly virtualized + LOD.** `load_contig_view` is async.
+  *Horizontal:* ≤800 visible features draw fully; denser contigs draw only the
+  features intersecting the scroll viewport; a very dense window (zoomed out)
+  collapses to a binned **density strip** ("overview · zoom in for detail").
+  *Vertical:* files with >150 contigs render only the vertically-visible ones in
+  fixed 96px slots (spacers preserve the scrollbar), so 100k-contig files scroll
+  smoothly. In vertical-virt mode a contig block is clipped to its slot (tall
+  multi-lane contigs show their first ~3 lanes).
+- **Viewer results are cached** (`src/lib/cache.ts`): a module-singleton keyed by
+  command + path + params memoizes enum report, matrix report, contig view, HMM
+  logo, and SSN html, so clicking between file tabs / view sub-tabs is instant
+  instead of recomputing. Edits invalidate the file's entries (`invalidatePath`);
+  opening a different workspace clears the cache.
 - **Color editing / add-remove annotations** (write-back to the `Color`
   qualifier via the GenBank writer) is deferred to Phase 4; the viewer is
   read-only for now.
@@ -136,12 +191,23 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   sequence) needs the one additive `postMessage` hook in
   `assets/ssn_viewer_shell.html` + a provenance map — deferred to Phase 3.
 - **Multi-view registry**: sequence files now expose **Contig View + Enum Report**
-  sub-tabs; the Enum Report tab (`run_enum_report`) offers by contig/cds/domain
-  with a sortable grid inferring numeric vs text columns from the JSON value kinds
-  (columns default per granularity; a column picker is future work). A **Summary**
-  dashboard tab is still to come (GUI-native stats, since the CLI `summary_report`
-  is matplotlib-deferred).
-- **HMM logo viewer** (`.hmm` → Logo tab): `app_support/hmm_logo.rs` computes
+  sub-tabs; the Enum Report tab (`run_enum_report`, async / off-thread) offers by
+  contig/cds/domain with a **row-virtualized** sortable grid (only viewport rows in
+  the DOM via spacer rows; scrollbar spans the full set), **per-column text
+  filters**, and a **column picker** (toggle any static analysis — domains,
+  architecture, score, identity, taxid/taxname lineage, etc.; defaults per
+  granularity). The **Summary** tab is a GUI-native stats dashboard
+  (`app_support/summary_stats.rs` → `run_summary_stats` → `SummaryView.svelte`):
+  stat tiles (contigs, total residues, CDS, domains, distinct domains, length
+  mean/median/range), a contig length histogram, top-N bar lists for domains /
+  databases / feature kinds / organisms, and a **taxonomy icicle plot** built from
+  each record's embedded ORGANISM lineage (`annotations.taxonomy` + organism — no
+  external taxdump needed). Pure data + client-side charts — sidesteps the
+  matplotlib dependency that keeps the CLI `summary_report` deferred.
+- **HMM logo viewer** (`.hmm` → Logo tab): multi-profile files show a filterable
+  profile list (scales to tens of thousands; list capped at 500 shown, refine by
+  filter) and lazily render the selected profile's logo (`list_hmm_profiles` +
+  per-index `load_hmm_logo`, both cached). `app_support/hmm_logo.rs` computes
   per-position IC (`log2 K − H`, uniform background), letter heights, and HMMER
   occupancy; `HmmLogo.svelte` renders stacked SVG glyphs + an occupancy strip.
   Multi-model files show the first profile only (a profile picker + true

@@ -1,22 +1,47 @@
 <script lang="ts">
-  import { loadHmmLogo } from "../api";
-  import type { HmmLogo } from "../types";
+  import { listHmmProfiles, loadHmmLogo } from "../api";
+  import { cached } from "../cache";
+  import type { HmmLogo, HmmSummary } from "../types";
 
   let { path }: { path: string } = $props();
 
+  let profiles = $state<HmmSummary[]>([]);
+  let selectedIndex = $state(0);
+  let filter = $state("");
   let data = $state<HmmLogo | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(true);
+  let listError = $state<string | null>(null);
 
+  const LIST_CAP = 500; // cap rendered list items (files can have 25k profiles)
+
+  // Load the profile list (cached) once per file.
   $effect(() => {
     void path;
+    selectedIndex = 0;
+    filter = "";
+    listError = null;
+    cached(`hmmprofiles:${path}`, () => listHmmProfiles(path))
+      .then((p) => (profiles = p))
+      .catch((e) => (listError = String(e)));
+  });
+
+  // Load the selected profile's logo (cached per index).
+  $effect(() => {
+    const idx = selectedIndex;
     loading = true;
     error = null;
     data = null;
-    loadHmmLogo(path)
+    cached(`hmmlogo:${path}:${idx}`, () => loadHmmLogo(path, idx))
       .then((d) => (data = d))
       .catch((e) => (error = String(e)))
       .finally(() => (loading = false));
+  });
+
+  const filtered = $derived.by(() => {
+    const q = filter.trim().toLowerCase();
+    const list = q ? profiles.filter((p) => p.name.toLowerCase().includes(q)) : profiles;
+    return list;
   });
 
   // Geometry
@@ -56,8 +81,32 @@
   const showLabel = (i: number, len: number) => i === 1 || i === len || i % 10 === 0;
 </script>
 
-<div class="logo">
-  {#if loading}
+<div class="hmm">
+  {#if profiles.length > 1}
+    <div class="profile-list">
+      <input class="pfilter" placeholder="filter {profiles.length.toLocaleString()} profiles…" bind:value={filter} />
+      <div class="plist">
+        {#each filtered.slice(0, LIST_CAP) as p (p.index)}
+          <button
+            class="pitem"
+            class:active={p.index === selectedIndex}
+            onclick={() => (selectedIndex = p.index)}
+            title={p.desc ?? p.name}
+          >
+            <span class="pname">{p.name}</span><span class="plen">{p.length}</span>
+          </button>
+        {/each}
+        {#if filtered.length > LIST_CAP}
+          <div class="pmore">…{(filtered.length - LIST_CAP).toLocaleString()} more — refine the filter</div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
+  <div class="logo-panel">
+    {#if listError}
+      <div class="msg err">{listError}</div>
+    {:else if loading}
     <div class="msg">Loading…</div>
   {:else if error}
     <div class="msg err">{error}</div>
@@ -103,14 +152,76 @@
       </svg>
     </div>
     <p class="legend dim">Letter height = information content (bits); lower strip = match-state occupancy.</p>
-  {/if}
+    {/if}
+  </div>
 </div>
 
 <style>
-  .logo {
+  .hmm {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+  }
+  .profile-list {
+    width: 240px;
+    flex: none;
     display: flex;
     flex-direction: column;
-    height: 100%;
+    border-right: 1px solid var(--border);
+    background: var(--bg-panel);
+    min-height: 0;
+  }
+  .pfilter {
+    margin: 6px;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 12px;
+  }
+  .plist {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+  }
+  .pitem {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    border: none;
+    background: none;
+    text-align: left;
+    padding: 4px 8px;
+    border-radius: 0;
+    font-size: 12px;
+  }
+  .pitem:hover {
+    background: var(--row-hover);
+  }
+  .pitem.active {
+    background: var(--row-selected);
+  }
+  .pname {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .plen {
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .pmore {
+    padding: 6px 8px;
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+  .logo-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
     min-height: 0;
   }
   .head {

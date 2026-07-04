@@ -1,0 +1,141 @@
+<script lang="ts">
+  import { downloadExternalTool, listExternalTools } from "./api";
+  import type { ExternalToolStatus } from "./types";
+
+  let expanded = $state(false);
+  let tools = $state<ExternalToolStatus[]>([]);
+  let busy = $state<Record<string, boolean>>({});
+  let errors = $state<Record<string, string>>({});
+
+  async function refresh() {
+    try {
+      tools = await listExternalTools();
+    } catch (e) {
+      /* ignore */ void e;
+    }
+  }
+
+  $effect(() => {
+    refresh();
+  });
+
+  async function download(id: string) {
+    busy[id] = true;
+    delete errors[id];
+    try {
+      await downloadExternalTool(id);
+      await refresh();
+    } catch (e) {
+      errors[id] = String(e);
+    } finally {
+      busy[id] = false;
+    }
+  }
+
+  const installedCount = $derived(tools.filter((t) => t.installed).length);
+</script>
+
+<div class="ext">
+  <div class="header">
+    <button class="twisty" onclick={() => (expanded = !expanded)} aria-label="Toggle external tools">
+      {expanded ? "▾" : "▸"}
+    </button>
+    <span class="title">External tools</span>
+    <span class="count">{installedCount}/{tools.length}</span>
+  </div>
+  {#if expanded}
+    {#each tools as t (t.id)}
+      <div class="tool">
+        <div class="row1">
+          <span class="name" title={t.description}>{t.id} <span class="ver">{t.version}</span></span>
+          {#if t.installed}
+            <span class="ok" title={t.path ?? ""}>installed</span>
+          {:else if !t.available}
+            <span class="na">n/a on {t.platform}</span>
+          {:else}
+            <button class="dl" disabled={busy[t.id]} onclick={() => download(t.id)}>
+              {busy[t.id] ? "downloading…" : "Download"}
+            </button>
+          {/if}
+        </div>
+        {#if errors[t.id]}<div class="err">{errors[t.id]}</div>{/if}
+      </div>
+    {/each}
+    {#if tools.length === 0}<div class="empty">No managed external tools.</div>{/if}
+  {/if}
+</div>
+
+<style>
+  .ext {
+    border-top: 1px solid var(--border);
+    font-size: 12.5px;
+    flex: none;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--bg-panel);
+  }
+  .twisty {
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    padding: 0 2px;
+    font-size: 10px;
+  }
+  .twisty:hover {
+    background: none;
+  }
+  .title {
+    font-weight: 600;
+  }
+  .count {
+    color: var(--text-dim);
+    margin-left: auto;
+  }
+  .tool {
+    padding: 4px 8px 4px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .row1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .name {
+    font-family: var(--mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ver {
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+  .ok {
+    margin-left: auto;
+    color: #06842b;
+    font-size: 11px;
+  }
+  .na {
+    margin-left: auto;
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+  .dl {
+    margin-left: auto;
+    padding: 1px 8px;
+    font-size: 11px;
+  }
+  .err {
+    color: #e5484d;
+    font-size: 11px;
+    margin-top: 2px;
+  }
+  .empty {
+    padding: 6px 12px;
+    color: var(--text-dim);
+  }
+</style>

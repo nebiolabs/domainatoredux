@@ -1,7 +1,8 @@
 //! File-inspection / viewer-data commands.
 
 use domainator_core::app_support::contig_view::{build_contig_file_view, ContigFileView};
-use domainator_core::app_support::hmm_logo::{load_logo_from_file, HmmLogo};
+use domainator_core::app_support::hmm_logo::{list_hmms, load_logo_from_file, HmmLogo, HmmSummary};
+use domainator_core::app_support::summary_stats::{summarize, SummaryStats};
 use domainator_core::app_support::workspace::classify_file;
 use serde::Serialize;
 use domainator_core::io::{detect_filetype, FileType};
@@ -19,14 +20,18 @@ use serde_json::{json, Value};
 /// resolved colors, flattened filter keys, tooltips). Errors for non-sequence
 /// file types (matrices/HMMs use their own viewers).
 #[tauri::command]
-pub fn load_contig_view(path: String) -> Result<ContigFileView, String> {
-    let kind = detect_filetype(std::path::Path::new(&path))
-        .ok_or_else(|| format!("not a sequence file: {path}"))?;
-    let records = match kind {
-        FileType::Genbank => read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?,
-        FileType::Fasta => read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?,
-    };
-    Ok(build_contig_file_view(&path, &records))
+pub async fn load_contig_view(path: String) -> Result<ContigFileView, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let kind = detect_filetype(std::path::Path::new(&path))
+            .ok_or_else(|| format!("not a sequence file: {path}"))?;
+        let records = match kind {
+            FileType::Genbank => read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?,
+            FileType::Fasta => read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?,
+        };
+        Ok(build_contig_file_view(&path, &records))
+    })
+    .await
+    .map_err(|e| format!("loading contigs failed: {e}"))?
 }
 
 /// Build a matrix report for the SSN threshold-selection view. Returns the same
@@ -77,23 +82,69 @@ fn histogram(scores: &[f64], bins: usize) -> Value {
 // Phase-2 note: the matrix report assumes a symmetric SSN-style matrix (MaxTree);
 // query×reference matrices aren't meaningfully handled yet.
 
+/// Pure-data summary statistics for a sequence file (Summary dashboard).
+#[tauri::command]
+pub async fn run_summary_stats(path: String) -> Result<SummaryStats, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let kind = detect_filetype(std::path::Path::new(&path))
+            .ok_or_else(|| format!("not a sequence file: {path}"))?;
+        let records = match kind {
+            FileType::Genbank => read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?,
+            FileType::Fasta => read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?,
+        };
+        Ok(summarize(&records))
+    })
+    .await
+    .map_err(|e| format!("summary failed: {e}"))?
+}
+
 /// Run `enum_report` on a sequence file and return a JSON array of typed row
 /// objects for a data grid. `by` is `contig` | `cds` | `domain` (default `cds`);
 /// a sensible default column set is used per granularity. Column order is
 /// preserved (serde_json `preserve_order`); the grid infers numeric vs text
 /// columns from the JSON value kinds.
 #[tauri::command]
-pub fn run_enum_report(path: String, by: Option<String>) -> Result<Value, String> {
+pub async fn run_enum_report(
+    path: String,
+    by: Option<String>,
+    columns: Option<Vec<String>>,
+) -> Result<Value, String> {
+    // Off the UI thread: an 11 MB GenBank has thousands of CDS and takes a while.
+    tauri::async_runtime::spawn_blocking(move || run_enum_report_blocking(path, by, columns))
+        .await
+        .map_err(|e| format!("enum report failed: {e}"))?
+}
+
+/// Default columns per granularity (all valid static analyses).
+pub(crate) fn default_columns(by: &str) -> Vec<String> {
+    let names: &[&str] = match by {
+        "contig" => &["length", "cds_count", "domains"],
+        "domain" => &["start", "end", "strand", "score", "identity"],
+        _ => &["domains", "architecture", "length"],
+    };
+    names.iter().map(|s| s.to_string()).collect()
+}
+
+fn run_enum_report_blocking(
+    path: String,
+    by: Option<String>,
+    columns: Option<Vec<String>>,
+) -> Result<Value, String> {
     let kind = detect_filetype(std::path::Path::new(&path))
         .ok_or_else(|| format!("not a sequence file: {path}"))?;
     let records = match kind {
         FileType::Genbank => read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?,
         FileType::Fasta => read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?,
     };
-    let (by, names): (By, &[&str]) = match by.as_deref() {
-        Some("contig") => (By::Contig, &["length", "cds_count", "domains"]),
-        Some("domain") => (By::Domain, &["start", "end", "strand", "score", "evalue"]),
-        _ => (By::Cds, &["domains", "architecture", "length"]),
+    let by_str = by.as_deref().unwrap_or("cds");
+    let by = match by_str {
+        "contig" => By::Contig,
+        "domain" => By::Domain,
+        _ => By::Cds,
+    };
+    let names = match columns {
+        Some(c) if !c.is_empty() => c,
+        _ => default_columns(by_str),
     };
     let analyses: Vec<_> = names.iter().filter_map(|n| static_analysis(n)).collect();
 
@@ -111,8 +162,18 @@ pub fn run_enum_report(path: String, by: Option<String>) -> Result<Value, String
 /// Load an HMM file and return skylign-style logo data for one profile
 /// (`index`, default 0 — the first profile in a multi-model file).
 #[tauri::command]
-pub fn load_hmm_logo(path: String, index: Option<usize>) -> Result<HmmLogo, String> {
-    load_logo_from_file(&path, index.unwrap_or(0))
+pub async fn load_hmm_logo(path: String, index: Option<usize>) -> Result<HmmLogo, String> {
+    tauri::async_runtime::spawn_blocking(move || load_logo_from_file(&path, index.unwrap_or(0)))
+        .await
+        .map_err(|e| format!("loading HMM logo failed: {e}"))?
+}
+
+/// Summaries of every profile in an HMM file (for the browser list).
+#[tauri::command]
+pub async fn list_hmm_profiles(path: String) -> Result<Vec<HmmSummary>, String> {
+    tauri::async_runtime::spawn_blocking(move || list_hmms(&path))
+        .await
+        .map_err(|e| format!("listing HMMs failed: {e}"))?
 }
 
 /// A record located in a workspace sequence file (for SSN → sequence navigation).

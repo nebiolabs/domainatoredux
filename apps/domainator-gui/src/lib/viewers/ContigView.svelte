@@ -1,5 +1,6 @@
 <script lang="ts">
   import { addFeature, loadContigView, removeFeature, setFeatureColor } from "../api";
+  import { cached, invalidatePath } from "../cache";
   import { ws } from "../state.svelte";
   import type { ContigFileView, FeatureView } from "../types";
 
@@ -15,8 +16,10 @@
   let editMsg = $state<string | null>(null);
 
   async function refetch() {
+    // The file changed on disk (edit) — drop cached views for it, then reload.
+    invalidatePath(path);
     try {
-      data = await loadContigView(path);
+      data = await cached(`contig:${path}`, () => loadContigView(path));
     } catch (e) {
       error = String(e);
     }
@@ -73,6 +76,37 @@
 
   let tooltip = $state<{ x: number; y: number; feature: FeatureView } | null>(null);
 
+  // --- viewport (for virtualization): the visible horizontal slice ---
+  let scrollEl = $state<HTMLDivElement>();
+  let viewLeft = $state(0);
+  let viewWidth = $state(1000);
+  let viewTop = $state(0);
+  let viewH = $state(600);
+  let rafPending = false;
+  // Max features drawn in detail (arrows + labels) per contig; above this the
+  // visible window collapses to a density strip.
+  const DETAIL_CAP = 800;
+  const SVG_MARGIN = 12; // must match svg margin-left in CSS
+  // Vertical virtualization: for files with many contigs, render only the
+  // vertically-visible ones in fixed-height slots (handles 100k+ contigs).
+  const VVIRT_THRESHOLD = 150;
+  const VSLOT = 96;
+  const VOVERSCAN = 4;
+
+  function onScroll() {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      if (scrollEl) {
+        viewLeft = scrollEl.scrollLeft;
+        viewWidth = scrollEl.clientWidth;
+        viewTop = scrollEl.scrollTop;
+        viewH = scrollEl.clientHeight;
+      }
+    });
+  }
+
   // --- lane-stacking (port of plot_contigs.py add_z_order) ---
   const PRECEDENCE = [
     "source",
@@ -127,34 +161,145 @@
     return true;
   }
 
-  // Reactive per-contig layout, recomputed when data or any filter/zoom changes.
+  type Placed = { f: FeatureView; lane: number };
+  type Run = { x: number; w: number; color: string };
+  type Plan = {
+    contig: ContigFileView["contigs"][number];
+    mode: "detail" | "overview";
+    placed: Placed[];
+    maxLane: number;
+    bins: Run[];
+  };
+
+  function planFor(c: ContigFileView["contigs"][number], bpL: number, bpRraw: number): Plan {
+    const feats = c.features.filter(visible);
+    if (feats.length <= DETAIL_CAP) {
+      const { placed, maxLane } = layout(feats);
+      return { contig: c, mode: "detail", placed, maxLane, bins: [] };
+    }
+    const bpR = Math.min(c.length, bpRraw);
+    const margin = (bpR - bpL) * 0.5;
+    const wL = Math.max(0, bpL - margin);
+    const wR = Math.min(c.length, bpR + margin);
+    const windowFeats = feats.filter((f) => f.end > wL && f.start < wR);
+    if (windowFeats.length <= DETAIL_CAP) {
+      const { placed, maxLane } = layout(windowFeats);
+      return { contig: c, mode: "detail", placed, maxLane, bins: [] };
+    }
+    return { contig: c, mode: "overview", placed: [], maxLane: 0, bins: densityBins(feats, bpL, bpR) };
+  }
+
+  // Doubly virtualized layout:
+  //  - VERTICAL: with many contigs, only the vertically-visible ones (fixed VSLOT
+  //    slots) are laid out/rendered; `topPad`/`bottomPad` preserve the scrollbar.
+  //  - HORIZONTAL (per contig): ≤DETAIL_CAP features → draw all; denser → window to
+  //    the horizontal viewport; very dense window → a binned density strip.
   const laidOut = $derived.by(() => {
-    if (!data) return [];
-    // touch filter state so the derivation re-runs on change
+    if (!data) return { plans: [] as Plan[], topPad: 0, bottomPad: 0, virt: false };
     void enabledKinds;
     void enabledDbs;
     void maxEvalueExp;
-    return data.contigs.map((c) => {
-      const feats = c.features.filter(visible);
-      const { placed, maxLane } = layout(feats);
-      return { contig: c, placed, maxLane };
-    });
+    const bpL = Math.max(0, (viewLeft - SVG_MARGIN) / pxPerBp);
+    const bpRraw = (viewLeft + viewWidth - SVG_MARGIN) / pxPerBp;
+    const contigs = data.contigs;
+    const virt = contigs.length > VVIRT_THRESHOLD;
+    if (!virt) {
+      return { plans: contigs.map((c) => planFor(c, bpL, bpRraw)), topPad: 0, bottomPad: 0, virt };
+    }
+    const first = Math.max(0, Math.floor(viewTop / VSLOT) - VOVERSCAN);
+    const last = Math.min(contigs.length, first + Math.ceil(viewH / VSLOT) + 2 * VOVERSCAN);
+    const plans: Plan[] = [];
+    for (let ci = first; ci < last; ci++) plans.push(planFor(contigs[ci], bpL, bpRraw));
+    return { plans, topPad: first * VSLOT, bottomPad: (contigs.length - last) * VSLOT, virt };
   });
 
   // --- geometry ---
   const xOf = (bp: number) => bp * pxPerBp;
 
-  function featurePath(f: FeatureView): string {
-    const w = Math.max(1.5, (f.end - f.start) * pxPerBp);
+  // Density strip for the visible window: fill ~1 bin per pixel with the color of
+  // the highest-precedence feature covering it, then merge into colored runs.
+  function densityBins(feats: FeatureView[], bpL: number, bpR: number): Run[] {
+    const spanBp = Math.max(1e-9, bpR - bpL);
+    const nbins = Math.max(1, Math.min(2000, Math.ceil(spanBp * pxPerBp)));
+    const colors: (string | null)[] = new Array(nbins).fill(null);
+    const ordered = [...feats].sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind));
+    for (const f of ordered) {
+      for (const p of f.parts) {
+        if (p.end <= bpL || p.start >= bpR) continue;
+        const a = Math.max(0, Math.floor(((p.start - bpL) / spanBp) * nbins));
+        const b = Math.min(nbins, Math.ceil(((p.end - bpL) / spanBp) * nbins));
+        for (let i = a; i < b; i++) colors[i] = f.color;
+      }
+    }
+    const runs: Run[] = [];
+    let i = 0;
+    while (i < nbins) {
+      if (colors[i] === null) {
+        i++;
+        continue;
+      }
+      const col = colors[i]!;
+      let j = i;
+      while (j < nbins && colors[j] === col) j++;
+      const startBp = bpL + (i / nbins) * spanBp;
+      const endBp = bpL + (j / nbins) * spanBp;
+      runs.push({ x: xOf(startBp), w: Math.max(1, xOf(endBp) - xOf(startBp)), color: col });
+      i = j;
+    }
+    return runs;
+  }
+
+  const OVERVIEW_H = RULER_H + LANE_H + 4;
+  const planHeight = (p: Plan) => (p.mode === "overview" ? OVERVIEW_H : contigHeight(p.maxLane));
+  const overviewY = RULER_H + (LANE_H - FEAT_H) / 2;
+
+  // One part's shape at absolute x. `mode`: box (interior part), or right/left
+  // arrow for the terminal part (in the feature's reading direction).
+  function partPath(x: number, w: number, mode: "box" | "right" | "left"): string {
     const h = FEAT_H;
     const head = Math.min(8, w);
-    if (f.strand === 1) {
-      const body = w - head;
-      return `M0,0 L${body},0 L${w},${h / 2} L${body},${h} L0,${h} Z`;
-    } else if (f.strand === -1) {
-      return `M${w},0 L${head},0 L0,${h / 2} L${head},${h} L${w},${h} Z`;
+    if (mode === "right") {
+      const b = x + w - head;
+      return `M${x},0 L${b},0 L${x + w},${h / 2} L${b},${h} L${x},${h} Z`;
     }
-    return `M0,0 L${w},0 L${w},${h} L0,${h} Z`;
+    if (mode === "left") {
+      return `M${x + w},0 L${x + head},0 L${x},${h / 2} L${x + head},${h} L${x + w},${h} Z`;
+    }
+    return `M${x},0 L${x + w},0 L${x + w},${h} L${x},${h} Z`;
+  }
+
+  // Segments + connector lines for a (possibly multi-part / origin-wrapping)
+  // feature. Only the terminal part gets the arrowhead; intron connectors join
+  // adjacent parts, but a huge gap (origin wrap on a circular contig) is skipped.
+  function featureParts(f: FeatureView, contigLen: number) {
+    const sp = [...f.parts].sort((a, b) => a.start - b.start);
+    let term = -1;
+    if (f.strand === 1) {
+      let maxEnd = -Infinity;
+      sp.forEach((p, i) => {
+        if (p.end > maxEnd) {
+          maxEnd = p.end;
+          term = i;
+        }
+      });
+    } else if (f.strand === -1) {
+      term = 0; // smallest start after ascending sort
+    }
+    const segs = sp.map((p, i) => ({
+      d: partPath(
+        xOf(p.start),
+        Math.max(1.5, (p.end - p.start) * pxPerBp),
+        i === term ? (f.strand === 1 ? "right" : "left") : "box",
+      ),
+    }));
+    const conns: { x1: number; x2: number }[] = [];
+    for (let i = 0; i < sp.length - 1; i++) {
+      const gapBp = sp[i + 1].start - sp[i].end;
+      if (gapBp > 0 && gapBp < contigLen * 0.5) {
+        conns.push({ x1: xOf(sp[i].end), x2: xOf(sp[i + 1].start) });
+      }
+    }
+    return { segs, conns };
   }
 
   const contigHeight = (maxLane: number) => RULER_H + (maxLane + 1) * LANE_H + 4;
@@ -194,7 +339,7 @@
     loading = true;
     error = null;
     try {
-      const d = await loadContigView(path);
+      const d = await cached(`contig:${path}`, () => loadContigView(path));
       data = d;
       enabledKinds = Object.fromEntries(d.feature_kinds.map((k) => [k, true]));
       enabledDbs = Object.fromEntries(d.databases.map((k) => [k, true]));
@@ -216,6 +361,17 @@
   $effect(() => {
     void path;
     load();
+  });
+
+  // Track the scroll viewport width (drives virtualization window).
+  $effect(() => {
+    if (!scrollEl) return;
+    viewWidth = scrollEl.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (scrollEl) viewWidth = scrollEl.clientWidth;
+    });
+    ro.observe(scrollEl);
+    return () => ro.disconnect();
   });
 
   // Scroll to (and briefly highlight) a focused contig once it has rendered.
@@ -302,52 +458,75 @@
     {/if}
     {#if editMsg}<div class="editmsg err">{editMsg}</div>{/if}
 
-    <div class="scroll">
-      {#each laidOut as { contig, placed, maxLane } (contig.index)}
-        <div class="contig" id={"contig-" + contig.index} class:focused={focused === contig.index}>
+    <div class="scroll" bind:this={scrollEl} onscroll={onScroll}>
+      {#if laidOut.topPad > 0}<div style="height: {laidOut.topPad}px"></div>{/if}
+      {#each laidOut.plans as plan (plan.contig.index)}
+        <div
+          class="contig"
+          class:virt={laidOut.virt}
+          id={"contig-" + plan.contig.index}
+          class:focused={focused === plan.contig.index}
+        >
           <div class="contig-head">
-            <span class="cid" title={contig.description}>{contig.id || contig.name}</span>
-            <span class="dim">{contig.length.toLocaleString()} {contig.is_protein ? "aa" : "bp"}</span>
-            {#if contig.topology === "circular"}<span class="topo">circular</span>{/if}
-            {#if contig.description}<span class="cdesc" title={contig.description}>{contig.description}</span>{/if}
+            <span class="cid" title={plan.contig.description}>{plan.contig.id || plan.contig.name}</span>
+            <span class="dim">{plan.contig.length.toLocaleString()} {plan.contig.is_protein ? "aa" : "bp"}</span>
+            {#if plan.contig.topology === "circular"}<span class="topo">circular</span>{/if}
+            {#if plan.mode === "overview"}<span class="ov">overview · zoom in for detail</span>{/if}
+            {#if plan.contig.description}<span class="cdesc" title={plan.contig.description}>{plan.contig.description}</span>{/if}
           </div>
           <svg
-            width={Math.max(200, xOf(contig.length))}
-            height={contigHeight(maxLane)}
+            width={Math.max(200, xOf(plan.contig.length))}
+            height={planHeight(plan)}
             role="img"
-            aria-label={"contig " + contig.id}
+            aria-label={"contig " + plan.contig.id}
           >
             <!-- ruler -->
-            <line x1="0" y1={RULER_H - 1} x2={xOf(contig.length)} y2={RULER_H - 1} class="axis" />
-            {#each ticks(contig.length) as t (t)}
+            <line x1="0" y1={RULER_H - 1} x2={xOf(plan.contig.length)} y2={RULER_H - 1} class="axis" />
+            {#each ticks(plan.contig.length) as t (t)}
               <line x1={xOf(t)} y1={RULER_H - 6} x2={xOf(t)} y2={RULER_H - 1} class="axis" />
               <text x={xOf(t) + 2} y={RULER_H - 8} class="tick">{t.toLocaleString()}</text>
             {/each}
-            <!-- features -->
-            {#each placed as { f, lane } (f.feat_index)}
-              <g
-                transform="translate({xOf(f.start)},{laneY(lane, maxLane)})"
-                onpointerenter={(e) => showTip(e, f)}
-                onpointermove={(e) => showTip(e, f)}
-                onpointerleave={hideTip}
-                onclick={() => selectFeature(contig.index, f)}
-                role="presentation"
-              >
-                <path
-                  d={featurePath(f)}
-                  fill={f.color}
-                  stroke={isSelected(contig.index, f.feat_index) ? "var(--accent)" : "rgba(0,0,0,0.35)"}
-                  stroke-width={isSelected(contig.index, f.feat_index) ? 2 : 0.5}
-                  style={canEdit ? "cursor: pointer" : ""}
-                />
-                {#if labelFits(f)}
-                  <text x="4" y={FEAT_H / 2 + 4} class="flabel">{f.label}</text>
-                {/if}
-              </g>
-            {/each}
+
+            {#if plan.mode === "overview"}
+              <!-- density strip (windowed) -->
+              {#each plan.bins as run, bi (bi)}
+                <rect x={run.x} y={overviewY} width={run.w} height={FEAT_H} fill={run.color} />
+              {/each}
+            {:else}
+              <!-- features (arrows + labels) -->
+              {#each plan.placed as { f, lane } (f.feat_index)}
+                {@const fp = featureParts(f, plan.contig.length)}
+                {@const sel = isSelected(plan.contig.index, f.feat_index)}
+                <g
+                  transform="translate(0,{laneY(lane, plan.maxLane)})"
+                  onpointerenter={(e) => showTip(e, f)}
+                  onpointermove={(e) => showTip(e, f)}
+                  onpointerleave={hideTip}
+                  onclick={() => selectFeature(plan.contig.index, f)}
+                  role="presentation"
+                >
+                  {#each fp.conns as c, ci (ci)}
+                    <line x1={c.x1} y1={FEAT_H / 2} x2={c.x2} y2={FEAT_H / 2} class="intron" />
+                  {/each}
+                  {#each fp.segs as s, si (si)}
+                    <path
+                      d={s.d}
+                      fill={f.color}
+                      stroke={sel ? "var(--accent)" : "rgba(0,0,0,0.35)"}
+                      stroke-width={sel ? 2 : 0.5}
+                      style={canEdit ? "cursor: pointer" : ""}
+                    />
+                  {/each}
+                  {#if labelFits(f)}
+                    <text x={xOf(f.start) + 4} y={FEAT_H / 2 + 4} class="flabel">{f.label}</text>
+                  {/if}
+                </g>
+              {/each}
+            {/if}
           </svg>
         </div>
       {/each}
+      {#if laidOut.bottomPad > 0}<div style="height: {laidOut.bottomPad}px"></div>{/if}
     </div>
   {/if}
 
@@ -523,6 +702,11 @@
     border-radius: 4px;
     transition: background 0.4s;
   }
+  .contig.virt {
+    margin-bottom: 0;
+    height: 96px; /* == VSLOT */
+    overflow: hidden;
+  }
   .contig.focused {
     background: var(--accent-soft);
   }
@@ -551,6 +735,11 @@
     border-radius: 8px;
     padding: 0 6px;
   }
+  .ov {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-style: italic;
+  }
   svg {
     display: block;
     margin-left: 12px;
@@ -568,6 +757,10 @@
     fill: #111;
     font-size: 10px;
     pointer-events: none;
+  }
+  .intron {
+    stroke: var(--text-dim);
+    stroke-width: 1;
   }
   .tooltip {
     position: fixed;

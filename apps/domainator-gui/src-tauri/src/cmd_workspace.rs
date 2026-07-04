@@ -42,3 +42,24 @@ pub fn open_workspace(root: String) -> Result<WorkspaceInfo, String> {
 pub fn list_folder(dir: String) -> Result<Vec<FileEntry>, String> {
     list_files(Path::new(&dir)).map_err(|e| format!("listing {dir}: {e}"))
 }
+
+/// Re-scan the folder tree (after creating/removing directories).
+#[tauri::command]
+pub fn rescan_tree(root: String) -> Result<FolderNode, String> {
+    scan_folder_tree(Path::new(&root)).map_err(|e| format!("scanning folders: {e}"))
+}
+
+/// Create a subdirectory `name` under `parent`; returns the new path.
+#[tauri::command]
+pub fn create_folder(parent: String, name: String) -> Result<String, String> {
+    let clean = name.trim();
+    if clean.is_empty() || clean == "." || clean == ".." || clean.contains('/') || clean.contains('\\') {
+        return Err("invalid folder name".into());
+    }
+    let path = Path::new(&parent).join(clean);
+    if path.exists() {
+        return Err(format!("already exists: {clean}"));
+    }
+    std::fs::create_dir(&path).map_err(|e| format!("creating folder: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}

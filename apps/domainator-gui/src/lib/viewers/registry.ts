@@ -5,6 +5,7 @@ import EnumReport from "./EnumReport.svelte";
 import HmmLogo from "./HmmLogo.svelte";
 import MatrixView from "./MatrixView.svelte";
 import SsnView from "./SsnView.svelte";
+import SummaryView from "./SummaryView.svelte";
 
 // One selectable view tab within an opened file. `component` takes a `path` prop.
 export interface ViewDescriptor {
@@ -22,6 +23,7 @@ export function viewsFor(fileType: FileType): ViewDescriptor[] {
       return [
         { id: "contig", label: "Contig View", component: ContigView },
         { id: "enum", label: "Enum Report", component: EnumReport },
+        { id: "summary", label: "Summary", component: SummaryView },
       ];
     case "hdf5":
       return [{ id: "matrix", label: "Matrix Report", component: MatrixView }];

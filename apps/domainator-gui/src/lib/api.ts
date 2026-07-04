@@ -2,10 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ContigFileView,
   DatabaseEntry,
+  ExternalToolStatus,
   FileEntry,
+  FolderNode,
   HmmLogo,
+  HmmSummary,
+  JobInfo,
   MatrixReport,
   RunResult,
+  SummaryStats,
   ToolMeta,
   WorkspaceInfo,
 } from "./types";
@@ -19,6 +24,12 @@ export const openWorkspace = (root: string): Promise<WorkspaceInfo> =>
 export const listFolder = (dir: string): Promise<FileEntry[]> =>
   invoke("list_folder", { dir });
 
+export const rescanTree = (root: string): Promise<FolderNode> =>
+  invoke("rescan_tree", { root });
+
+export const createFolder = (parent: string, name: string): Promise<string> =>
+  invoke("create_folder", { parent, name });
+
 export const loadContigView = (path: string): Promise<ContigFileView> =>
   invoke("load_contig_view", { path });
 
@@ -28,10 +39,19 @@ export const loadMatrixReport = (path: string): Promise<MatrixReport> =>
 export const loadHmmLogo = (path: string, index?: number): Promise<HmmLogo> =>
   invoke("load_hmm_logo", { path, index: index ?? null });
 
+export const listHmmProfiles = (path: string): Promise<HmmSummary[]> =>
+  invoke("list_hmm_profiles", { path });
+
 export type EnumRow = Record<string, string | number | null>;
 
-export const runEnumReport = (path: string, by: string): Promise<EnumRow[]> =>
-  invoke("run_enum_report", { path, by });
+export const runEnumReport = (
+  path: string,
+  by: string,
+  columns: string[],
+): Promise<EnumRow[]> => invoke("run_enum_report", { path, by, columns });
+
+export const runSummaryStats = (path: string): Promise<SummaryStats> =>
+  invoke("run_summary_stats", { path });
 
 export const renderSsnHtml = (path: string): Promise<string> =>
   invoke("render_ssn_html", { path });
@@ -47,6 +67,16 @@ export const resolveRecord = (
   workspaceRoot: string,
   label: string,
 ): Promise<ResolvedRecord | null> => invoke("resolve_record", { workspaceRoot, label });
+
+// --- detached sequence windows (SSN node -> new window) ---
+export const openSequenceWindow = (
+  path: string,
+  contigIndex: number,
+  title: string,
+): Promise<void> => invoke("open_sequence_window", { path, contigIndex, title });
+
+export const standaloneParams = (label: string): Promise<[string, number] | null> =>
+  invoke("standalone_params", { label });
 
 // --- databases ---
 export const pickFile = (): Promise<string | null> => invoke("pick_file");
@@ -91,3 +121,10 @@ export const runTool = (
   params: Record<string, unknown>,
   workspaceRoot: string,
 ): Promise<RunResult> => invoke("run_tool", { tool, params, workspaceRoot });
+
+export const listJobs = (): Promise<JobInfo[]> => invoke("list_jobs");
+export const cancelJob = (jobId: string): Promise<void> => invoke("cancel_job", { jobId });
+
+export const listExternalTools = (): Promise<ExternalToolStatus[]> => invoke("list_external_tools");
+export const downloadExternalTool = (id: string): Promise<string> =>
+  invoke("download_external_tool", { id });

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { loadMatrixReport } from "../api";
+  import { cached } from "../cache";
   import type { MatrixReport } from "../types";
 
   let { path }: { path: string } = $props();
@@ -15,7 +16,7 @@
     error = null;
     data = null;
     selected = null;
-    loadMatrixReport(path)
+    cached(`matrix:${path}`, () => loadMatrixReport(path))
       .then((d) => (data = d))
       .catch((e) => (error = String(e)))
       .finally(() => (loading = false));

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { renderSsnHtml, resolveRecord } from "../api";
+  import { openSequenceWindow, renderSsnHtml, resolveRecord } from "../api";
+  import { cached } from "../cache";
   import { ws } from "../state.svelte";
-  import type { FileType } from "../types";
 
   let { path }: { path: string } = $props();
 
@@ -21,7 +21,7 @@
     html = null;
     selectedLabels = [];
     openNote = null;
-    renderSsnHtml(path)
+    cached(`ssnhtml:${path}`, () => renderSsnHtml(path))
       .then((h) => (html = h))
       .catch((e) => (error = String(e)))
       .finally(() => (loading = false));
@@ -51,14 +51,14 @@
       for (const label of selectedLabels.slice(0, MAX_OPEN)) {
         const rec = await resolveRecord(ws.root, label);
         if (rec) {
-          ws.openPath(rec.path, rec.file_type as FileType, rec.contig_index);
+          await openSequenceWindow(rec.path, rec.contig_index, rec.contig_id || label);
           opened++;
         } else {
           missing++;
         }
       }
-      const extra = selectedLabels.length > MAX_OPEN ? ` (showing first ${MAX_OPEN})` : "";
-      openNote = `Opened ${opened} sequence${opened === 1 ? "" : "s"}${missing ? `, ${missing} not found in workspace` : ""}${extra}.`;
+      const extra = selectedLabels.length > MAX_OPEN ? ` (first ${MAX_OPEN})` : "";
+      openNote = `Opened ${opened} window${opened === 1 ? "" : "s"}${missing ? `, ${missing} not found in workspace` : ""}${extra}.`;
     } catch (e) {
       openNote = String(e);
     } finally {

@@ -83,6 +83,36 @@ fn occupancy(t: &[[f32; 7]], m: usize) -> Vec<f64> {
     mocc
 }
 
+/// A lightweight summary of one profile in an HMM file (for the browser list;
+/// scales to files with tens of thousands of models — no emission data returned).
+#[derive(Debug, Clone, Serialize)]
+pub struct HmmSummary {
+    pub index: usize,
+    pub name: String,
+    pub acc: Option<String>,
+    pub desc: Option<String>,
+    pub length: usize,
+    pub alphabet: String,
+}
+
+/// List all profiles in an HMM file as summaries (name/length/alphabet).
+pub fn list_hmms(path: &str) -> Result<Vec<HmmSummary>, String> {
+    let hmms = hmmer_pure_rs::hmmfile::read_hmm_file(std::path::Path::new(path))
+        .map_err(|e| format!("reading HMM: {e:?}"))?;
+    Ok(hmms
+        .iter()
+        .enumerate()
+        .map(|(i, h)| HmmSummary {
+            index: i,
+            name: h.name.clone(),
+            acc: h.acc.clone(),
+            desc: h.desc.clone(),
+            length: h.m,
+            alphabet: alphabet_name(h.abc_type).to_string(),
+        })
+        .collect())
+}
+
 /// Read an `.hmm` file and build the logo for profile `index` (0-based). Keeps the
 /// `hmmer_pure_rs` dependency inside core so callers (the GUI) don't take it on.
 pub fn load_logo_from_file(path: &str, index: usize) -> Result<HmmLogo, String> {

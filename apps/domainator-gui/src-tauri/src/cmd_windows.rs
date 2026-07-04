@@ -1,0 +1,46 @@
+//! Detached sequence-viewer windows (SSN node → open its source sequence).
+//!
+//! The new window loads the same frontend with `?view=contig`; it reads its own
+//! label and asks for the (path, contig) via `standalone_params` — so paths never
+//! need URL-encoding.
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+
+use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
+
+static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Parameters for pending standalone windows, keyed by window label.
+#[derive(Default)]
+pub struct PendingWindows(pub Mutex<HashMap<String, (String, usize)>>);
+
+/// Open a detached window showing `path` focused on `contig_index`.
+#[tauri::command]
+pub fn open_sequence_window(
+    app: AppHandle,
+    pending: tauri::State<'_, PendingWindows>,
+    path: String,
+    contig_index: usize,
+    title: String,
+) -> Result<(), String> {
+    let label = format!("seq{}", COUNTER.fetch_add(1, Ordering::Relaxed));
+    pending.0.lock().unwrap().insert(label.clone(), (path, contig_index));
+    WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html?view=contig".into()))
+        .title(title)
+        .inner_size(1100.0, 720.0)
+        .min_inner_size(700.0, 400.0)
+        .build()
+        .map_err(|e| format!("opening window: {e}"))?;
+    Ok(())
+}
+
+/// What a standalone window should show (called by that window on load).
+#[tauri::command]
+pub fn standalone_params(
+    pending: tauri::State<'_, PendingWindows>,
+    label: String,
+) -> Option<(String, usize)> {
+    pending.0.lock().unwrap().get(&label).cloned()
+}
