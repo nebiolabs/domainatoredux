@@ -123,6 +123,41 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   **External tools** panel (see below). The workflow-tool option mapping lives
   inline in `cmd_tools.rs` (only transform/build-ssn/build-ssn-viewer share
   `resolve.rs`).
+  The Tools menu also runs the **selection/filtering tools**: `select-by-cds`
+  (CDSs by name/domain/`domain_expr`/`search_hits`/`unannotated` + neighborhood
+  extraction + pad/dedup/strand/invert), `select-by-contig` (whole contigs by
+  name/regex, domain content, taxonomy, length or CDS count; `fasta_out` toggles
+  FASTA vs GenBank output), and `filter-domains` (strip domain annotations by
+  e-value/overlap/name/database, keeping the sequences). Each has a `run_*` arm in
+  `cmd_tools.rs` mirroring the CLI arm exactly (shared helpers `load_inputs`,
+  `filter_contigs`, `parse_strand`); `input` is a multi-file dropdown (`input_files`).
+  The **HMM curation** tools are also in the menu: `hmmer-select` ("HMM select" —
+  pull a subset of profiles from `.hmm` file(s) by regex/exact/substring on
+  name/desc/acc; pairs with the HMM Logo viewer) and `hmmer-build` ("HMM build" —
+  build a profile from a Stockholm MSA). `hmmer-build`'s input is a **Stockholm**
+  file (`.sto`/`.stockholm`/`.sth`), a GUI-only `classify_file` type added so MSAs
+  show up in the dropdown (no viewer tab — `viewsFor` returns none, which renders
+  the graceful "no viewer" message). Both output `.hmm`, so the result opens in the
+  HMM Logo viewer and appears in the domain-search/domainate reference dropdowns.
+  The menu additionally covers the **sequence utilities / extractors / HMM-vs-HMM**
+  tools, each a `run_*` arm mirroring its CLI arm: `genbank-to-fasta`,
+  `clean-sequences`, `sort-contigs`, `select-by-coord`, `trim-contigs`,
+  `extract-domains`, `extract-peptides`, `extract-unannotated`, `color-genbank`
+  (batch color-by-name/database + optional `color_table_out`), `color-table-to-legend`
+  (SVG), `deduplicate` (hash backend needs nothing; diamond/cd-hit/usearch need a
+  binary), `hmmer-compare`, and `hmmer-search`. FASTA-emitting tools use
+  `write_fasta_bp` (record **name** as id, matching the CLI's `write_fasta_bp_out`).
+  Two more GUI-only `classify_file` types support these: **`table`** (`.tsv`/`.csv`/
+  `.tab`) so coordinate/color tables show in dropdowns, alongside **`stockholm`**.
+- **`hmmer-report` with a column builder.** "HMM report (export)" writes a per-profile
+  TSV/JSON report from `.hmm` file(s). Its `columns` field uses a bespoke
+  **`hmm_columns`** role in `ToolDialog`: an ordered, add/remove list where each row
+  is a static column (`source`/`acc`/`desc`/`length`/`consensus`) or an `append`
+  constant column (name + value_type + value). `collectParams` serializes it to the
+  tagged `Vec<HmmerReportColumn>` the config expects (static → `{type}`, append →
+  `{type,name,value_type,value}`; static rows must omit the extras or
+  `deny_unknown_fields` rejects them). A leading `name` column is always emitted.
+  With this, **every finished CLI tool is reachable from the GUI.**
 - **External tools (auto-download).** `external_tools.rs` is a flexible registry:
   each `ToolSpec` describes a binary (per-platform download URL + archive kind +
   member), and `download()` fetches (via `ureq`), extracts (`.tar.gz`/raw), stores
@@ -130,9 +165,17 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   checks (`DOMAINATOR_DIAMOND` → `tools::external::find_binary`). The **External
   tools** panel (left sidebar, collapsed) lists each tool with installed/available
   status and a Download button; `ensure_env` at startup wires up already-downloaded
-  binaries. First entry: **diamond** (Linux x64 prebuilt; macOS/Windows show
-  "n/a" — no simple official release binary). Adding a future dependency (mmseqs2,
-  foldseek, prodigal, …) is just another `ToolSpec` in `specs()`.
+  binaries. Handles `.tar.gz` and `.zip` archives. First entry: **diamond v2.2.2**
+  (Linux/macOS `.tar.gz`, Windows `.zip` — all three platforms). Adding a future
+  dependency (mmseqs2, foldseek, prodigal, …) is just another `ToolSpec` in `specs()`.
+- **All non-trivial commands run off the main thread.** Tauri v2 runs synchronous
+  `#[tauri::command]`s on the **main thread**, so a slow one stalls *all* IPC (e.g.
+  every tool dialog would sit at "Loading…" while a matrix report or workspace scan
+  runs). The heavy commands are therefore `async` + `spawn_blocking`: `load_contig_view`,
+  `run_enum_report`, `run_summary_stats`, `load_hmm_logo`/`list_hmm_profiles`,
+  `load_matrix_report`, `resolve_record` (scans the workspace), `render_ssn_html`,
+  `open_workspace`/`list_folder`/`rescan_tree`, `register_database`, and the GenBank
+  write-back edits. Only the native pickers and light JSON reads stay synchronous.
 - **Jobs run off-thread** (`spawn_blocking`), tracked in a `JobRegistry` managed
   state, and broadcast as `job-update` events. The **Jobs panel** (left sidebar,
   above Databases; `JobsPanel.svelte`) shows live status (running/completed/
@@ -204,14 +247,23 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   each record's embedded ORGANISM lineage (`annotations.taxonomy` + organism — no
   external taxdump needed). Pure data + client-side charts — sidesteps the
   matplotlib dependency that keeps the CLI `summary_report` deferred.
+  The Enum Report column picker also offers `taxid_self` / `taxname_self` (the
+  record's own taxid + organism, from the source `db_xref` / ORGANISM — no taxdump
+  needed) alongside the `*_lineage` options.
 - **HMM logo viewer** (`.hmm` → Logo tab): multi-profile files show a filterable
   profile list (scales to tens of thousands; list capped at 500 shown, refine by
   filter) and lazily render the selected profile's logo (`list_hmm_profiles` +
   per-index `load_hmm_logo`, both cached). `app_support/hmm_logo.rs` computes
   per-position IC (`log2 K − H`, uniform background), letter heights, and HMMER
   occupancy; `HmmLogo.svelte` renders stacked SVG glyphs + an occupancy strip.
-  Multi-model files show the first profile only (a profile picker + true
-  expected-insert-length bars are future work; do NOT port GPL `Bio-HMM-Logo`).
+  The logo is **column-virtualized** (only the visible columns are in the DOM;
+  per-column glyph geometry is precomputed once, avoiding an O(n²) cumulative-sum).
+  It also paints into a **viewport-sized** `svg.viewport` (a full-width spacer div
+  carries the scrollbar; the SVG is `position:absolute` and follows `scrollLeft` via
+  CSS `left` + `viewBox`, width clamped to remaining content) rather than a
+  model-wide SVG (which was ~13k px for a 500-position model and repainted every
+  scroll frame → the earlier lag). (Do NOT port GPL `Bio-HMM-Logo`; true
+  expected-insert-length bars are future work.)
 - **Databases panel — DONE.** Workspace-global registry in `databases.json`
   (`app_support/registry.rs`); the left sidebar's Databases section lists entries
   with a molecule dot + `<molecule> <format>` label and shard count. Add via file

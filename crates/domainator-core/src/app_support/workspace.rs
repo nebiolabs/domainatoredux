@@ -28,6 +28,8 @@ pub fn classify_file(path: &Path) -> Option<&'static str> {
         "hmm" | "hmmer" => "hmm",
         "hdf5" | "hdf" | "h5" => "hdf5",
         "cm" => "cm",
+        "sto" | "stockholm" | "sth" => "stockholm",
+        "tsv" | "csv" | "tab" => "table",
         "ssnv" | "ssnview" => "ssn_viewer",
         _ => return None,
     })

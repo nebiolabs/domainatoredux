@@ -72,13 +72,88 @@
   // Nominal monospace glyph metrics (font-size 100) used to stretch letters.
   const GLYPH_W = 60;
   const GLYPH_CAP = 72;
+  const BASE_Y = TOP + PLOT_H;
 
   function axisTicks(max: number): number[] {
     const out: number[] = [];
     for (let b = 0; b <= Math.ceil(max); b++) out.push(b);
     return out;
   }
-  const showLabel = (i: number, len: number) => i === 1 || i === len || i % 10 === 0;
+
+  // Horizontal virtualization: only render columns in the scroll viewport.
+  let scrollEl = $state<HTMLDivElement>();
+  let viewLeft = $state(0);
+  let viewW = $state(900);
+  let rafPending = false;
+  function onScroll() {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      if (scrollEl) {
+        viewLeft = scrollEl.scrollLeft;
+        viewW = scrollEl.clientWidth;
+      }
+    });
+  }
+  $effect(() => {
+    if (!scrollEl) return;
+    viewW = scrollEl.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (scrollEl) viewW = scrollEl.clientWidth;
+    });
+    ro.observe(scrollEl);
+    return () => ro.disconnect();
+  });
+
+  // Viewport SVG width: only as wide as what's visible, clamped to remaining
+  // content so the absolute SVG never overflows the (full-width) spacer.
+  const vw = $derived(Math.max(1, Math.min(viewW, width - viewLeft)));
+
+  type Glyph = { char: string; color: string; x: number; yTop: number; sx: number; sy: number };
+  type Col = { index: number; glyphs: Glyph[]; occTop: number; occH: number; labelX: number; showLabel: boolean };
+
+  // Precompute per-column glyph geometry ONCE (avoids the O(n²) cumulative-sum in
+  // the template) and only for the visible column window.
+  const columns = $derived.by((): Col[] => {
+    if (!data) return [];
+    void viewLeft;
+    void viewW;
+    const len = data.length;
+    const first = Math.max(0, Math.floor((viewLeft - AXIS_W) / COL_W) - 4);
+    const last = Math.min(len, Math.ceil((viewLeft + viewW - AXIS_W) / COL_W) + 4);
+    const sx = (COL_W - 2) / GLYPH_W;
+    const out: Col[] = [];
+    for (let i = first; i < last; i++) {
+      const pos = data.positions[i];
+      if (!pos) continue;
+      const x = AXIS_W + i * COL_W;
+      const glyphs: Glyph[] = [];
+      let cum = 0; // running height from the bottom (bits)
+      for (const l of pos.letters) {
+        const hPx = l.height * yScale;
+        cum += l.height;
+        if (hPx <= 0.4) continue;
+        glyphs.push({
+          char: l.char,
+          color: colorOf(l.char),
+          x: x + 1,
+          yTop: BASE_Y - cum * yScale,
+          sx,
+          sy: hPx / GLYPH_CAP,
+        });
+      }
+      out.push({
+        index: pos.index,
+        glyphs,
+        occTop: BASE_Y + 4 + (OCC_H - 6) * (1 - pos.occupancy),
+        occH: (OCC_H - 6) * pos.occupancy,
+        labelX: x + COL_W / 2,
+        showLabel: pos.index === 1 || pos.index === len || pos.index % 10 === 0,
+      });
+    }
+    return out;
+  });
 </script>
 
 <div class="hmm">
@@ -117,39 +192,42 @@
       <span class="dim">· {data.length} positions · {data.alphabet}</span>
       {#if data.desc}<span class="desc" title={data.desc}>{data.desc}</span>{/if}
     </div>
-    <div class="scroll">
-      <svg {width} {height} role="img" aria-label="HMM sequence logo">
+    <div class="scroll" bind:this={scrollEl} onscroll={onScroll}>
+      <!-- Full-width spacer carries the scrollbar; the SVG is only viewport-sized
+           and follows scrollLeft (via CSS left + viewBox), so the browser never
+           has to paint a model-wide (10k+ px) SVG layer while scrolling. -->
+      <div class="spacer" style="width:{width}px; height:{height}px;">
+      <svg
+        class="viewport"
+        width={vw}
+        {height}
+        viewBox="{viewLeft} 0 {vw} {height}"
+        style="left:{viewLeft}px;"
+        role="img"
+        aria-label="HMM sequence logo"
+      >
         <!-- y-axis (bits) -->
         {#each axisTicks(data.max_height_bits) as b (b)}
-          <line x1={AXIS_W} y1={TOP + PLOT_H - b * yScale} x2={width} y2={TOP + PLOT_H - b * yScale} class="grid" />
-          <text x={AXIS_W - 5} y={TOP + PLOT_H - b * yScale + 3} class="tick" text-anchor="end">{b}</text>
+          <line x1={AXIS_W} y1={BASE_Y - b * yScale} x2={width} y2={BASE_Y - b * yScale} class="grid" />
+          <text x={AXIS_W - 5} y={BASE_Y - b * yScale + 3} class="tick" text-anchor="end">{b}</text>
         {/each}
         <text class="axis-label" transform="translate(10,{TOP + PLOT_H / 2}) rotate(-90)" text-anchor="middle">bits</text>
 
-        {#each data.positions as pos (pos.index)}
-          {@const x = AXIS_W + (pos.index - 1) * COL_W}
-          <!-- stacked letters (ascending height, so tallest ends on top) -->
-          {@const _base = TOP + PLOT_H}
-          {#each pos.letters as letter, li (li)}
-            {@const hPx = letter.height * yScale}
-            {@const yTop = _base - pos.letters.slice(0, li + 1).reduce((s, l) => s + l.height, 0) * yScale}
-            {#if hPx > 0.4}
-              <g transform="translate({x + 1},{yTop}) scale({(COL_W - 2) / GLYPH_W},{hPx / GLYPH_CAP})">
-                <text x="0" y={GLYPH_CAP} font-size="100" class="glyph" fill={colorOf(letter.char)}>{letter.char}</text>
-              </g>
-            {/if}
+        {#each columns as col (col.index)}
+          {#each col.glyphs as g, gi (gi)}
+            <g transform="translate({g.x},{g.yTop}) scale({g.sx},{g.sy})">
+              <text x="0" y={GLYPH_CAP} font-size="100" class="glyph" fill={g.color}>{g.char}</text>
+            </g>
           {/each}
-          <!-- occupancy bar -->
-          {@const occTop = TOP + PLOT_H + 4 + (OCC_H - 6) * (1 - pos.occupancy)}
-          <rect x={x + 3} y={occTop} width={COL_W - 6} height={(OCC_H - 6) * pos.occupancy} class="occ" />
-          <!-- position label -->
-          {#if showLabel(pos.index, data.length)}
-            <text x={x + COL_W / 2} y={height - 6} class="tick" text-anchor="middle">{pos.index}</text>
+          <rect x={col.labelX - COL_W / 2 + 3} y={col.occTop} width={COL_W - 6} height={col.occH} class="occ" />
+          {#if col.showLabel}
+            <text x={col.labelX} y={height - 6} class="tick" text-anchor="middle">{col.index}</text>
           {/if}
         {/each}
-        <line x1={AXIS_W} y1={TOP + PLOT_H} x2={width} y2={TOP + PLOT_H} class="axis" />
-        <text x={AXIS_W - 5} y={TOP + PLOT_H + OCC_H} class="tick" text-anchor="end">occ</text>
+        <line x1={AXIS_W} y1={BASE_Y} x2={width} y2={BASE_Y} class="axis" />
+        <text x={AXIS_W - 5} y={BASE_Y + OCC_H} class="tick" text-anchor="end">occ</text>
       </svg>
+      </div>
     </div>
     <p class="legend dim">Letter height = information content (bits); lower strip = match-state occupancy.</p>
     {/if}
@@ -246,7 +324,12 @@
     overflow: auto;
     padding: 8px 0;
   }
-  svg {
+  .spacer {
+    position: relative;
+  }
+  svg.viewport {
+    position: absolute;
+    top: 0;
     display: block;
   }
   .glyph {

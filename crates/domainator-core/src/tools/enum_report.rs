@@ -63,6 +63,10 @@ enum Kind {
     TaxidLineage,
     TaxnameLineage,
     RankLineage,
+    /// The record's own taxid (from the source `db_xref`; no taxonomy DB needed).
+    TaxidSelf,
+    /// The record's own organism name (from the ORGANISM annotation).
+    TaxnameSelf,
     Taxid(Vec<String>),
     Taxname(Vec<String>),
     Qualifier(String, String),
@@ -101,6 +105,8 @@ pub fn static_analysis(name: &str) -> Option<Analysis> {
         "taxid_lineage" => one("taxid_lineage", ColType::Str, Kind::TaxidLineage),
         "taxname_lineage" => one("taxname_lineage", ColType::Str, Kind::TaxnameLineage),
         "rank_lineage" => one("rank_lineage", ColType::Str, Kind::RankLineage),
+        "taxid_self" => one("taxid_self", ColType::Int, Kind::TaxidSelf),
+        "taxname_self" => one("taxname_self", ColType::Str, Kind::TaxnameSelf),
         "isoelectric_point" => one("isoelectric_point", ColType::Float, Kind::IsoelectricPoint),
         "starts_with" => one("starts_with", ColType::Str, Kind::StartsWith),
         "molecular_weight" => one("molecular_weight", ColType::Float, Kind::MolecularWeight),
@@ -388,6 +394,11 @@ impl Analysis {
             Kind::RankLineage => {
                 vec![Value::Str(lineage_str(ctx.tax, |t| t.ranks.iter().skip(1).cloned().collect()))]
             }
+            Kind::TaxidSelf => vec![Value::Int(record_taxid(rec))],
+            Kind::TaxnameSelf => vec![match &rec.annotations.organism {
+                Some(o) => Value::Str(o.clone()),
+                None => Value::Null,
+            }],
             Kind::Taxid(ranks) => ranks
                 .iter()
                 .map(|r| match ctx.tax.and_then(|t| t.taxid_at(r)) {

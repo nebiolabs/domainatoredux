@@ -39,19 +39,26 @@ pub async fn load_contig_view(path: String) -> Result<ContigFileView, String> {
 /// parity-locked to the Python output) plus a GUI-only `histogram` of edge scores
 /// computed here from `MatrixReport.scores_desc`.
 #[tauri::command]
-pub fn load_matrix_report(path: String) -> Result<Value, String> {
-    let matrix = read_matrix(&path).map_err(|e| format!("reading matrix: {e}"))?;
-    let report = matrix_report(&matrix, DEFAULT_MERGE_IMPACT_METRIC, DEFAULT_MAX_MERGE);
-    let histogram = histogram(&report.scores_desc, 40);
-    let mut payload = to_json(&report);
-    if let Value::Object(map) = &mut payload {
-        map.insert("histogram".into(), histogram);
-        map.insert("n_rows".into(), json!(matrix.nrows()));
-        map.insert("n_cols".into(), json!(matrix.ncols()));
-        map.insert("data_type".into(), json!(matrix.data_type));
-        map.insert("symmetric".into(), json!(matrix.symmetric_labels()));
-    }
-    Ok(payload)
+pub async fn load_matrix_report(path: String) -> Result<Value, String> {
+    // Off the UI thread: reading + reporting a large matrix is expensive, and a
+    // synchronous command runs on Tauri's main thread — blocking it stalls ALL
+    // other IPC (so every tool dialog would sit at "Loading…" meanwhile).
+    tauri::async_runtime::spawn_blocking(move || {
+        let matrix = read_matrix(&path).map_err(|e| format!("reading matrix: {e}"))?;
+        let report = matrix_report(&matrix, DEFAULT_MERGE_IMPACT_METRIC, DEFAULT_MAX_MERGE);
+        let histogram = histogram(&report.scores_desc, 40);
+        let mut payload = to_json(&report);
+        if let Value::Object(map) = &mut payload {
+            map.insert("histogram".into(), histogram);
+            map.insert("n_rows".into(), json!(matrix.nrows()));
+            map.insert("n_cols".into(), json!(matrix.ncols()));
+            map.insert("data_type".into(), json!(matrix.data_type));
+            map.insert("symmetric".into(), json!(matrix.symmetric_labels()));
+        }
+        Ok(payload)
+    })
+    .await
+    .map_err(|e| format!("matrix report failed: {e}"))?
 }
 
 /// Bin `scores` (any order) into `bins` equal-width buckets over [min,max].
@@ -191,50 +198,66 @@ pub struct ResolvedRecord {
 /// cross-view "open the source sequence" resolver; a `.didx`/provenance-indexed
 /// fast path can replace the scan later for large workspaces.
 #[tauri::command]
-pub fn resolve_record(workspace_root: String, label: String) -> Result<Option<ResolvedRecord>, String> {
-    let mut stack = vec![std::path::PathBuf::from(&workspace_root)];
-    while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Ok(ft) = entry.file_type() else { continue };
-            if ft.is_dir() {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if !name.starts_with('.') && name != "jobs" {
-                    stack.push(path);
+pub async fn resolve_record(
+    workspace_root: String,
+    label: String,
+) -> Result<Option<ResolvedRecord>, String> {
+    // Off the UI thread: this reads every GenBank/FASTA in the workspace, so on a
+    // real workspace it can take seconds — a synchronous command would freeze the
+    // whole app (all IPC) while it scans.
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut stack = vec![std::path::PathBuf::from(&workspace_root)];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Ok(ft) = entry.file_type() else { continue };
+                if ft.is_dir() {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if !name.starts_with('.') && name != "jobs" {
+                        stack.push(path);
+                    }
+                    continue;
                 }
-                continue;
-            }
-            let Some(kind) = detect_filetype(&path) else { continue };
-            let path_str = path.to_string_lossy().into_owned();
-            let records = match kind {
-                FileType::Genbank => read_genbank(&path_str).ok(),
-                FileType::Fasta => read_fasta(&path_str, None).ok(),
-            };
-            let Some(records) = records else { continue };
-            for (i, rec) in records.iter().enumerate() {
-                if rec.id == label || rec.name == label {
-                    return Ok(Some(ResolvedRecord {
-                        path: path_str,
-                        file_type: classify_file(&path).unwrap_or("genbank").to_string(),
-                        contig_index: i,
-                        contig_id: rec.id.clone(),
-                    }));
+                let Some(kind) = detect_filetype(&path) else { continue };
+                let path_str = path.to_string_lossy().into_owned();
+                let records = match kind {
+                    FileType::Genbank => read_genbank(&path_str).ok(),
+                    FileType::Fasta => read_fasta(&path_str, None).ok(),
+                };
+                let Some(records) = records else { continue };
+                for (i, rec) in records.iter().enumerate() {
+                    if rec.id == label || rec.name == label {
+                        return Ok(Some(ResolvedRecord {
+                            path: path_str,
+                            file_type: classify_file(&path).unwrap_or("genbank").to_string(),
+                            contig_index: i,
+                            contig_id: rec.id.clone(),
+                        }));
+                    }
                 }
             }
         }
-    }
-    Ok(None)
+        Ok(None)
+    })
+    .await
+    .map_err(|e| format!("resolve record failed: {e}"))?
 }
 
 /// Render the self-contained SSN viewer HTML for a `.ssnv` bundle, with the
 /// bundle embedded so it autoloads. Hosted by the frontend in an `<iframe>`.
 #[tauri::command]
-pub fn render_ssn_html(path: String) -> Result<String, String> {
-    let bytes = std::fs::read(&path).map_err(|e| format!("reading SSN bundle: {e}"))?;
-    let title = std::path::Path::new(&path)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "SSN".into());
-    Ok(render_html(&title, Some(&bytes)))
+pub async fn render_ssn_html(path: String) -> Result<String, String> {
+    // Off the UI thread: an .ssnv bundle can be large, and embedding it into the
+    // HTML shell is a big string build — keep it off Tauri's main thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = std::fs::read(&path).map_err(|e| format!("reading SSN bundle: {e}"))?;
+        let title = std::path::Path::new(&path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "SSN".into());
+        Ok(render_html(&title, Some(&bytes)))
+    })
+    .await
+    .map_err(|e| format!("rendering SSN failed: {e}"))?
 }

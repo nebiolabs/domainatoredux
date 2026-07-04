@@ -18,6 +18,8 @@ pub enum Archive {
     Raw,
     /// A `.tar.gz`; extract `member` (matched by file name).
     TarGz,
+    /// A `.zip`; extract `member` (matched by file name).
+    Zip,
 }
 
 /// A per-platform download.
@@ -55,13 +57,22 @@ pub fn platform_key() -> &'static str {
 pub fn specs() -> Vec<ToolSpec> {
     let exe = |n: &str| if cfg!(windows) { format!("{n}.exe") } else { n.to_string() };
 
-    // DIAMOND publishes a prebuilt Linux x64 binary; macOS/Windows have no simple
-    // official release binary (install via conda/brew), so they're unavailable here.
+    // DIAMOND v2.2.2 ships prebuilt binaries for Linux, macOS, and Windows.
     let diamond_asset = match platform_key() {
         "linux-x64" => Some(Asset {
-            url: "https://github.com/bbuchfink/diamond/releases/download/v2.1.9/diamond-linux64.tar.gz",
+            url: "https://github.com/bbuchfink/diamond/releases/download/v2.2.2/diamond-linux64.tar.gz",
             archive: Archive::TarGz,
             member: "diamond",
+        }),
+        "macos-arm64" | "macos-x64" => Some(Asset {
+            url: "https://github.com/bbuchfink/diamond/releases/download/v2.2.2/diamond-macos.tar.gz",
+            archive: Archive::TarGz,
+            member: "diamond",
+        }),
+        "windows-x64" => Some(Asset {
+            url: "https://github.com/bbuchfink/diamond/releases/download/v2.2.2/diamond-windows.zip",
+            archive: Archive::Zip,
+            member: "diamond.exe",
         }),
         _ => None,
     };
@@ -70,7 +81,7 @@ pub fn specs() -> Vec<ToolSpec> {
         id: "diamond",
         bin_name: exe("diamond"),
         env_var: "DOMAINATOR_DIAMOND",
-        version: "2.1.9",
+        version: "2.2.2",
         description: "DIAMOND — fast protein aligner, for seq-dist diamond_* algorithms.",
         asset: diamond_asset,
     }]
@@ -121,6 +132,12 @@ pub fn download(app: &AppHandle, spec: &ToolSpec) -> Result<PathBuf, String> {
             std::io::copy(&mut reader, &mut out).map_err(|e| format!("writing: {e}"))?;
         }
         Archive::TarGz => extract_targz_member(reader, asset.member, &dest)?,
+        Archive::Zip => {
+            // ZipArchive needs Read + Seek, so buffer the (small) archive first.
+            let mut buf = Vec::new();
+            reader.read_to_end(&mut buf).map_err(|e| format!("downloading: {e}"))?;
+            extract_zip_member(&buf, asset.member, &dest)?;
+        }
     }
 
     #[cfg(unix)]
@@ -150,4 +167,19 @@ fn extract_targz_member(reader: impl Read, member: &str, dest: &Path) -> Result<
         }
     }
     Err(format!("'{member}' not found in archive"))
+}
+
+/// Extract the archive member whose file name is `member` from a `.zip`.
+fn extract_zip_member(bytes: &[u8], member: &str, dest: &Path) -> Result<(), String> {
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| format!("opening zip: {e}"))?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).map_err(|e| format!("zip entry: {e}"))?;
+        let name = entry.name().to_string();
+        if Path::new(&name).file_name().and_then(|n| n.to_str()) == Some(member) {
+            let mut out = std::fs::File::create(dest).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+            std::io::copy(&mut entry, &mut out).map_err(|e| format!("extracting: {e}"))?;
+            return Ok(());
+        }
+    }
+    Err(format!("'{member}' not found in zip"))
 }

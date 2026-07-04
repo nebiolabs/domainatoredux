@@ -135,7 +135,11 @@
   </header>
 
   {#if activeTool}
-    <ToolDialog tool={activeTool} onclose={() => (activeTool = null)} />
+    <ToolDialog
+      tool={activeTool}
+      meta={tools.find((m) => m.id === activeTool) ?? null}
+      onclose={() => (activeTool = null)}
+    />
   {/if}
 
   <aside class="left">

@@ -9,7 +9,8 @@
   const ALL_COLUMNS = [
     "domains", "domain_descriptions", "architecture", "architecture_detailed",
     "length", "start", "end", "strand", "topology", "score", "identity",
-    "definition", "cds_count", "domain_count", "sequence", "taxid_lineage", "taxname_lineage",
+    "definition", "cds_count", "domain_count", "sequence",
+    "taxid_self", "taxname_self", "taxid_lineage", "taxname_lineage",
   ];
   function defaultColumns(b: string): string[] {
     if (b === "contig") return ["length", "cds_count", "domains"];

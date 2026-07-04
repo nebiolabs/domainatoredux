@@ -19,14 +19,23 @@ pub fn list_databases(workspace_root: String) -> Vec<DatabaseEntry> {
 
 /// Classify `path` and add/replace it in the workspace registry.
 #[tauri::command]
-pub fn register_database(workspace_root: String, path: String) -> Result<DatabaseEntry, String> {
-    let entry = classify_database(&path)?;
-    let root = Path::new(&workspace_root);
-    let mut reg = load_registry(root);
-    reg.databases.retain(|d| d.path != entry.path);
-    reg.databases.push(entry.clone());
-    save_registry(root, &reg).map_err(|e| format!("saving registry: {e}"))?;
-    Ok(entry)
+pub async fn register_database(
+    workspace_root: String,
+    path: String,
+) -> Result<DatabaseEntry, String> {
+    // Off the UI thread: classification reads the file (first record / shard
+    // resolution), which shouldn't block Tauri's main thread / other IPC.
+    tauri::async_runtime::spawn_blocking(move || {
+        let entry = classify_database(&path)?;
+        let root = Path::new(&workspace_root);
+        let mut reg = load_registry(root);
+        reg.databases.retain(|d| d.path != entry.path);
+        reg.databases.push(entry.clone());
+        save_registry(root, &reg).map_err(|e| format!("saving registry: {e}"))?;
+        Ok(entry)
+    })
+    .await
+    .map_err(|e| format!("registering database failed: {e}"))?
 }
 
 #[tauri::command]

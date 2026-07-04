@@ -1,11 +1,14 @@
 <script lang="ts">
-  import { listTools, runTool, toolSchema } from "./api";
+  import { runTool, toolSchema } from "./api";
   import { ws } from "./state.svelte";
   import type { JsonSchema, JsonSchemaProp, ToolMeta } from "./types";
 
-  let { tool, onclose }: { tool: string; onclose: () => void } = $props();
+  let {
+    tool,
+    meta,
+    onclose,
+  }: { tool: string; meta: ToolMeta | null; onclose: () => void } = $props();
 
-  let meta = $state<ToolMeta | null>(null);
   let schema = $state<JsonSchema | null>(null);
   let values = $state<Record<string, any>>({});
   let error = $state<string | null>(null);
@@ -54,6 +57,44 @@
         return `${stem}.search.gb`;
       case "domainate:output":
         return `${stem}.annotated.gb`;
+      case "select-by-cds:output":
+        return `${stem}.selected_cds.gb`;
+      case "select-by-contig:output":
+        return `${stem}.selected.gb`;
+      case "filter-domains:output":
+        return `${stem}.filtered.gb`;
+      case "hmmer-select:output":
+        return `${stem}.selected.hmm`;
+      case "hmmer-build:output":
+        return `${stem}.hmm`;
+      case "genbank-to-fasta:output":
+        return `${stem}.fasta`;
+      case "clean-sequences:output":
+        return `${stem}.cleaned.gb`;
+      case "sort-contigs:output":
+        return `${stem}.sorted.gb`;
+      case "select-by-coord:output":
+        return `${stem}.bycoord.gb`;
+      case "trim-contigs:output":
+        return `${stem}.trimmed.gb`;
+      case "extract-domains:output":
+        return `${stem}.domains.gb`;
+      case "extract-peptides:output":
+        return `${stem}.peptides.gb`;
+      case "extract-unannotated:output":
+        return `${stem}.unannotated.gb`;
+      case "color-genbank:output":
+        return `${stem}.colored.gb`;
+      case "color-table-to-legend:svg":
+        return `${stem}.legend.svg`;
+      case "deduplicate:output":
+        return `${stem}.dedup.gb`;
+      case "hmmer-compare:output":
+        return `${stem}.compare.tsv`;
+      case "hmmer-search:output":
+        return `${stem}.searched.hmm`;
+      case "hmmer-report:output":
+        return `${stem}.hmm_report.tsv`;
       case "seq-dist:dense":
         return `${stem}.dist.hdf5`;
       case "compare-contigs:dense":
@@ -67,6 +108,27 @@
     }
   }
   const isInputRole = (role: string) => role === "input_file" || role === "input_files";
+
+  // --- hmmer-report column builder (role "hmm_columns") ---
+  // Each column is a tagged object: {type:"source"|"acc"|"desc"|"length"|"consensus"}
+  // or {type:"append", name, value_type, value} for a constant column.
+  type HmmCol = { type: string; name?: string; value_type?: string; value?: string };
+  const HMM_COLUMN_TYPES = ["source", "acc", "desc", "length", "consensus", "append"];
+  const HMM_VALUE_TYPES = ["str", "int", "float"];
+  // Ensure an "append" column has its extra fields (so binds/serialization work).
+  function normalizeCol(col: HmmCol) {
+    if (col.type === "append") {
+      if (col.name === undefined) col.name = "";
+      if (col.value_type === undefined) col.value_type = "str";
+      if (col.value === undefined) col.value = "";
+    }
+  }
+  function addCol(name: string) {
+    (values[name] ??= []).push({ type: "source" });
+  }
+  function removeCol(name: string, i: number) {
+    (values[name] as HmmCol[]).splice(i, 1);
+  }
   function propType(p: JsonSchemaProp | undefined): string {
     if (!p) return "string";
     return Array.isArray(p.type) ? (p.type.find((t) => t !== "null") ?? "string") : (p.type ?? "string");
@@ -77,9 +139,13 @@
     void tool;
     error = null;
     result = null;
-    Promise.all([listTools(), toolSchema(tool)])
-      .then(([tools, schemaText]) => {
-        meta = tools.find((m) => m.id === tool) ?? null;
+    schema = null;
+    if (!meta) {
+      error = `Unknown tool "${tool}".`;
+      return;
+    }
+    toolSchema(tool)
+      .then((schemaText) => {
         schema = JSON.parse(schemaText) as JsonSchema;
         const v: Record<string, any> = {};
         // Seed param defaults from the schema (arrays shown as comma-separated text).
@@ -105,6 +171,13 @@
             v[field.name] = defaultOutput(tool, field.name, primaryInput);
           }
         }
+        // Seed the column builder with a sensible default (overrides the schema's
+        // empty-array default, which the generic seeding turns into "").
+        for (const field of meta?.fields ?? []) {
+          if (field.role === "hmm_columns") {
+            v[field.name] = [{ type: "source" }, { type: "length" }];
+          }
+        }
         values = v;
       })
       .catch((e) => (error = String(e)));
@@ -126,6 +199,14 @@
       } else if (field.role === "output_file") {
         const name = String(val ?? "").trim();
         if (name) out[field.name] = join(folder, name);
+      } else if (field.role === "hmm_columns") {
+        // Only "append" columns carry name/value_type/value; static columns must
+        // send just {type} (the config's deny_unknown_fields rejects extras).
+        out[field.name] = (Array.isArray(val) ? (val as HmmCol[]) : []).map((c) =>
+          c.type === "append"
+            ? { type: "append", name: c.name ?? "", value_type: c.value_type ?? "str", value: c.value ?? "" }
+            : { type: c.type },
+        );
       } else {
         const prop = schemaProp(field.name);
         const t = propType(prop);
@@ -184,11 +265,37 @@
     {#if error}<div class="err">{error}</div>{/if}
     {#if result}<div class="ok">{result}</div>{/if}
 
-    {#if !meta || !schema}
+    {#if error && !schema}
+      <!-- error banner already shown above; nothing else to render -->
+    {:else if !meta || !schema}
       <div class="msg">Loading…</div>
     {:else}
       <div class="fields">
         {#each meta.fields as field (field.name)}
+          {#if field.role === "hmm_columns"}
+            <div class="field builder-field">
+              <span class="flabel">{field.label}</span>
+              <div class="colbuilder">
+                {#each (values[field.name] ?? []) as col, i (i)}
+                  <div class="colrow">
+                    <select bind:value={col.type} onchange={() => normalizeCol(col)}>
+                      {#each HMM_COLUMN_TYPES as t (t)}<option value={t}>{t}</option>{/each}
+                    </select>
+                    {#if col.type === "append"}
+                      <input class="cname" type="text" placeholder="column name" bind:value={col.name} />
+                      <select class="cvt" bind:value={col.value_type}>
+                        {#each HMM_VALUE_TYPES as t (t)}<option value={t}>{t}</option>{/each}
+                      </select>
+                      <input class="cval" type="text" placeholder="value" bind:value={col.value} />
+                    {/if}
+                    <button type="button" class="colx" title="Remove column" onclick={() => removeCol(field.name, i)}>×</button>
+                  </div>
+                {/each}
+                <button type="button" class="addcol" onclick={() => addCol(field.name)}>+ Add column</button>
+                <span class="hint">A leading <code>name</code> column is always included. <code>append</code> adds a constant column.</span>
+              </div>
+            </div>
+          {:else}
           {@const prop = schemaProp(field.name)}
           <label class="field">
             <span class="flabel">{field.label}{#if field.required}<span class="req">*</span>{/if}</span>
@@ -221,6 +328,7 @@
 
             {#if prop?.description}<span class="hint">{prop.description}</span>{/if}
           </label>
+          {/if}
         {/each}
       </div>
 
@@ -352,5 +460,59 @@
   .msg {
     padding: 20px;
     color: var(--text-dim);
+  }
+  .builder-field {
+    align-items: start;
+  }
+  .colbuilder {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .colrow {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .colrow select,
+  .colrow input {
+    padding: 3px 6px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12.5px;
+  }
+  .colrow .cname,
+  .colrow .cval {
+    flex: 1;
+    min-width: 60px;
+  }
+  .colx {
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+  }
+  .colx:hover {
+    color: #e5484d;
+  }
+  .addcol {
+    align-self: start;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 3px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .addcol:hover {
+    border-color: var(--accent);
   }
 </style>
