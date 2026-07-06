@@ -25,7 +25,8 @@ export type FileType =
   | "cm"
   | "ssn_viewer"
   | "table"
-  | "text";
+  | "text"
+  | "svg";
 
 export interface FileEntry {
   path: string;

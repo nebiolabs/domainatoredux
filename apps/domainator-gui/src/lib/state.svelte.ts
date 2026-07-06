@@ -28,6 +28,7 @@ function classifyPath(path: string): FileType | null {
   if (["ssnv", "ssnview"].includes(ext)) return "ssn_viewer";
   if (["tsv", "csv", "tab"].includes(ext)) return "table";
   if (["txt", "text", "list"].includes(ext)) return "text";
+  if (ext === "svg") return "svg";
   return null;
 }
 

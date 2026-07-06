@@ -103,20 +103,106 @@ pub struct HmmSummary {
 
 /// List all profiles in an HMM file as summaries (name/length/alphabet).
 pub fn list_hmms(path: &str) -> Result<Vec<HmmSummary>, String> {
-    let hmms = hmmer_pure_rs::hmmfile::read_hmm_file(std::path::Path::new(path))
-        .map_err(|e| format!("reading HMM: {e:?}"))?;
-    Ok(hmms
+    // Header-only index scan (no emission-matrix parsing) — orders of magnitude
+    // cheaper on large libraries (Pfam ≈ 20k models) than read_hmm_file.
+    Ok(index_hmm_file(path)?
         .iter()
         .enumerate()
-        .map(|(i, h)| HmmSummary {
+        .map(|(i, e)| HmmSummary {
             index: i,
-            name: h.name.clone(),
-            acc: h.acc.clone(),
-            desc: h.desc.clone(),
-            length: h.m,
-            alphabet: alphabet_name(h.abc_type).to_string(),
+            name: e.name.clone(),
+            acc: e.acc.clone(),
+            desc: e.desc.clone(),
+            length: e.length,
+            alphabet: e.alphabet.clone(),
         })
         .collect())
+}
+
+/// One profile's location + header fields within a multi-model HMM file, found by
+/// a single header-only scan — no emission matrices parsed. `byte_start..byte_end`
+/// is the exact byte range of the profile's text (from its `HMMER3/…` line through
+/// the line after `//`), so a profile can be re-parsed or copied out by seeking
+/// instead of re-reading the whole (possibly gigabyte-scale) file.
+#[derive(Debug, Clone)]
+pub struct HmmEntry {
+    pub byte_start: u64,
+    pub byte_end: u64,
+    pub name: String,
+    pub acc: Option<String>,
+    pub desc: Option<String>,
+    pub length: usize,
+    pub alphabet: String,
+}
+
+/// Scan an HMM file once and return each profile's byte range + header fields
+/// WITHOUT parsing emission matrices. This is the fast path behind `list_hmms`,
+/// single-profile logo loading, and profile extraction on large libraries.
+///
+/// Header keys are matched on the first whitespace-delimited token, exactly like
+/// `hmmer_pure_rs`'s reader, so DESC values containing spaces are preserved.
+pub fn index_hmm_file(path: &str) -> Result<Vec<HmmEntry>, String> {
+    use std::io::{BufRead, BufReader};
+    let file = std::fs::File::open(path).map_err(|e| format!("opening {path}: {e}"))?;
+    let mut reader = BufReader::new(file);
+    let mut entries: Vec<HmmEntry> = Vec::new();
+    let mut cur: Option<HmmEntry> = None;
+    let mut offset: u64 = 0;
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        buf.clear();
+        let n = reader
+            .read_until(b'\n', &mut buf)
+            .map_err(|e| format!("reading {path}: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        let line_start = offset;
+        offset += n as u64;
+        let text = String::from_utf8_lossy(&buf);
+        let trimmed = text.trim();
+        if trimmed.starts_with("HMMER3/") || trimmed.starts_with("HMMER2") {
+            // A stray record without a closing `//` is dropped (mirrors an
+            // incomplete profile being unusable); start a fresh one here.
+            cur = Some(HmmEntry {
+                byte_start: line_start,
+                byte_end: line_start,
+                name: String::new(),
+                acc: None,
+                desc: None,
+                length: 0,
+                alphabet: "amino".into(),
+            });
+            continue;
+        }
+        let Some(e) = cur.as_mut() else { continue };
+        if trimmed == "//" {
+            e.byte_end = offset;
+            entries.push(cur.take().unwrap());
+            continue;
+        }
+        let mut it = trimmed.splitn(2, char::is_whitespace);
+        let key = it.next().unwrap_or("");
+        let val = it.next().unwrap_or("").trim();
+        match key {
+            "NAME" => e.name = val.to_string(),
+            "ACC" if !val.is_empty() => e.acc = Some(val.to_string()),
+            "DESC" if !val.is_empty() => e.desc = Some(val.to_string()),
+            "LENG" => e.length = val.parse().unwrap_or(0),
+            "ALPH" => e.alphabet = val.to_ascii_lowercase(),
+            _ => {}
+        }
+    }
+    Ok(entries)
+}
+
+/// Build a logo from the raw bytes of a SINGLE profile (as sliced out of a larger
+/// file via an [`HmmEntry`] byte range). Keeps `hmmer_pure_rs` inside core.
+pub fn logo_from_hmm_bytes(bytes: &[u8]) -> Result<HmmLogo, String> {
+    let reader = std::io::BufReader::new(bytes);
+    let hmms = hmmer_pure_rs::hmmfile::read_hmms(reader).map_err(|e| format!("reading HMM: {e:?}"))?;
+    let hmm = hmms.first().ok_or("no HMM in profile block")?;
+    Ok(build_logo(hmm))
 }
 
 /// Write the profiles at `indices` (0-based, in the given order) from `source` to a

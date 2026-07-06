@@ -145,10 +145,13 @@ export interface ResolvedRecord {
   contig_id: string;
 }
 
-export const resolveRecord = (
+/// Resolve many SSN node labels to their source records in a SINGLE workspace
+/// scan. The result is aligned to `labels` (null for any label not found).
+export const resolveRecords = (
   workspaceRoot: string,
-  label: string,
-): Promise<ResolvedRecord | null> => invoke("resolve_record", { workspaceRoot, label });
+  labels: string[],
+): Promise<(ResolvedRecord | null)[]> =>
+  invoke("resolve_records", { workspaceRoot, labels });
 
 // --- detached sequence windows (SSN node -> new window) ---
 export const openSequenceWindow = (

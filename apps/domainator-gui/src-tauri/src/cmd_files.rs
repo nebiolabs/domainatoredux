@@ -1,7 +1,9 @@
 //! File-inspection / viewer-data commands.
 
 use domainator_core::app_support::contig_view::{build_contig_file_view, ContigFileView};
-use domainator_core::app_support::hmm_logo::{list_hmms, load_logo_from_file, HmmLogo, HmmSummary};
+use domainator_core::app_support::hmm_logo::{
+    index_hmm_file, logo_from_hmm_bytes, HmmEntry, HmmLogo, HmmSummary,
+};
 use domainator_core::app_support::summary_stats::{summarize, SummaryStats};
 use domainator_core::app_support::workspace::{classify_file, ensure_dot_subdir};
 use serde::{Deserialize, Serialize};
@@ -171,10 +173,24 @@ fn run_enum_report_blocking(
 /// Load an HMM file and return skylign-style logo data for one profile
 /// (`index`, default 0 — the first profile in a multi-model file).
 #[tauri::command]
-pub async fn load_hmm_logo(path: String, index: Option<usize>) -> Result<HmmLogo, String> {
-    tauri::async_runtime::spawn_blocking(move || load_logo_from_file(&path, index.unwrap_or(0)))
-        .await
-        .map_err(|e| format!("loading HMM logo failed: {e}"))?
+pub async fn load_hmm_logo(
+    hmm_index: tauri::State<'_, HmmIndexState>,
+    path: String,
+    index: Option<usize>,
+) -> Result<HmmLogo, String> {
+    let state = hmm_index.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let idx = index.unwrap_or(0);
+        let entries = cached_hmm_index(&state, &path)?;
+        let entry = entries
+            .get(idx)
+            .ok_or_else(|| format!("no HMM at index {idx} (file has {})", entries.len()))?;
+        // Parse ONLY this profile's bytes instead of the whole (possibly huge) file.
+        let bytes = read_byte_range(&path, entry.byte_start, entry.byte_end)?;
+        logo_from_hmm_bytes(&bytes)
+    })
+    .await
+    .map_err(|e| format!("loading HMM logo failed: {e}"))?
 }
 
 /// Single-file cache of every contig's uppercased sequence, so the contig viewer
@@ -194,6 +210,54 @@ fn file_mtime_ns(path: &str) -> Result<u128, String> {
     let m = std::fs::metadata(path).map_err(|e| format!("stat {path}: {e}"))?;
     let t = m.modified().map_err(|e| format!("mtime {path}: {e}"))?;
     Ok(t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0))
+}
+
+fn file_size(path: &str) -> Result<u64, String> {
+    Ok(std::fs::metadata(path).map_err(|e| format!("stat {path}: {e}"))?.len())
+}
+
+/// Cached header-only index of the most-recently-touched HMM library, so listing
+/// profiles, loading a single logo, and extracting profiles don't each re-scan (or,
+/// worse, fully re-parse) the whole file. On Pfam-scale libraries (20k+ models,
+/// gigabytes) the first access scans once; every access after that is O(1) seeks.
+/// Holds one file at a time (replaced on path/size/mtime change) to bound memory.
+type HmmIndexCache = std::sync::Arc<std::sync::Mutex<Option<HmmIndexEntry>>>;
+
+#[derive(Default)]
+pub struct HmmIndexState(pub HmmIndexCache);
+
+pub struct HmmIndexEntry {
+    path: String,
+    size: u64,
+    mtime_ns: u128,
+    entries: std::sync::Arc<Vec<HmmEntry>>,
+}
+
+/// Return the (cached) profile index for `path`, rebuilding it if the file is new
+/// or has changed on disk (size or mtime).
+fn cached_hmm_index(cache: &HmmIndexCache, path: &str) -> Result<std::sync::Arc<Vec<HmmEntry>>, String> {
+    let size = file_size(path)?;
+    let mtime_ns = file_mtime_ns(path)?;
+    let mut guard = cache.lock().unwrap();
+    if let Some(e) = guard.as_ref() {
+        if e.path == path && e.size == size && e.mtime_ns == mtime_ns {
+            return Ok(e.entries.clone());
+        }
+    }
+    let entries = std::sync::Arc::new(index_hmm_file(path)?);
+    *guard = Some(HmmIndexEntry { path: path.to_string(), size, mtime_ns, entries: entries.clone() });
+    Ok(entries)
+}
+
+/// Read the exact byte range `[start, end)` of `path` into a buffer.
+fn read_byte_range(path: &str, start: u64, end: u64) -> Result<Vec<u8>, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path).map_err(|e| format!("opening {path}: {e}"))?;
+    f.seek(SeekFrom::Start(start)).map_err(|e| format!("seeking {path}: {e}"))?;
+    let len = end.saturating_sub(start) as usize;
+    let mut buf = vec![0u8; len];
+    f.read_exact(&mut buf).map_err(|e| format!("reading {path}: {e}"))?;
+    Ok(buf)
 }
 
 fn parse_all_seqs(path: &str) -> Result<Vec<String>, String> {
@@ -322,10 +386,28 @@ pub async fn write_text_file(path: String, contents: String) -> Result<(), Strin
 
 /// Summaries of every profile in an HMM file (for the browser list).
 #[tauri::command]
-pub async fn list_hmm_profiles(path: String) -> Result<Vec<HmmSummary>, String> {
-    tauri::async_runtime::spawn_blocking(move || list_hmms(&path))
-        .await
-        .map_err(|e| format!("listing HMMs failed: {e}"))?
+pub async fn list_hmm_profiles(
+    hmm_index: tauri::State<'_, HmmIndexState>,
+    path: String,
+) -> Result<Vec<HmmSummary>, String> {
+    let state = hmm_index.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let entries = cached_hmm_index(&state, &path)?;
+        Ok(entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| HmmSummary {
+                index: i,
+                name: e.name.clone(),
+                acc: e.acc.clone(),
+                desc: e.desc.clone(),
+                length: e.length,
+                alphabet: e.alphabet.clone(),
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("listing HMMs failed: {e}"))?
 }
 
 /// Pop a native "Save As" dialog and write `contents` to the chosen path. Used by
@@ -353,7 +435,7 @@ pub fn save_text_file(
 }
 
 /// A record located in a workspace sequence file (for SSN → sequence navigation).
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct ResolvedRecord {
     pub path: String,
     pub file_type: String,
@@ -361,22 +443,31 @@ pub struct ResolvedRecord {
     pub contig_id: String,
 }
 
-/// Resolve an SSN node label (a sequence id/name, from a matrix row) to the
-/// sequence file + contig index that contains it, by scanning the workspace's
-/// GenBank/FASTA files. Returns the first match (or `None`). This is the
-/// cross-view "open the source sequence" resolver; a `.didx`/provenance-indexed
-/// fast path can replace the scan later for large workspaces.
+/// Resolve a batch of SSN node labels (sequence id/name, from matrix rows) to the
+/// sequence file + contig index that contains each, scanning the workspace's
+/// GenBank/FASTA files **once** for the whole set. Returns a vector aligned to
+/// `labels` (element is `None` for any label not found).
+///
+/// This is the cross-view "open the source sequence(s)" resolver. It is a batch
+/// so that selecting N nodes costs a single workspace scan instead of N — a
+/// per-label scan made "Open sequence(s)" appear to hang on real workspaces. A
+/// `.didx`/provenance-indexed fast path can replace the scan later.
 #[tauri::command]
-pub async fn resolve_record(
+pub async fn resolve_records(
     workspace_root: String,
-    label: String,
-) -> Result<Option<ResolvedRecord>, String> {
+    labels: Vec<String>,
+) -> Result<Vec<Option<ResolvedRecord>>, String> {
     // Off the UI thread: this reads every GenBank/FASTA in the workspace, so on a
     // real workspace it can take seconds — a synchronous command would freeze the
     // whole app (all IPC) while it scans.
     tauri::async_runtime::spawn_blocking(move || {
+        use std::collections::{HashMap, HashSet};
+        let wanted: HashSet<&str> = labels.iter().map(String::as_str).collect();
+        // label -> resolved record (first match in traversal order wins).
+        let mut found: HashMap<String, ResolvedRecord> = HashMap::new();
+
         let mut stack = vec![std::path::PathBuf::from(&workspace_root)];
-        while let Some(dir) = stack.pop() {
+        'scan: while let Some(dir) = stack.pop() {
             let Ok(entries) = std::fs::read_dir(&dir) else { continue };
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -395,22 +486,34 @@ pub async fn resolve_record(
                     FileType::Fasta => read_fasta(&path_str, None).ok(),
                 };
                 let Some(records) = records else { continue };
+                let file_type = classify_file(&path).unwrap_or("genbank").to_string();
                 for (i, rec) in records.iter().enumerate() {
-                    if rec.id == label || rec.name == label {
-                        return Ok(Some(ResolvedRecord {
-                            path: path_str,
-                            file_type: classify_file(&path).unwrap_or("genbank").to_string(),
-                            contig_index: i,
-                            contig_id: rec.id.clone(),
-                        }));
+                    // A record can satisfy a label by either its id or its name.
+                    for key in [rec.id.as_str(), rec.name.as_str()] {
+                        if wanted.contains(key) && !found.contains_key(key) {
+                            found.insert(
+                                key.to_string(),
+                                ResolvedRecord {
+                                    path: path_str.clone(),
+                                    file_type: file_type.clone(),
+                                    contig_index: i,
+                                    contig_id: rec.id.clone(),
+                                },
+                            );
+                        }
                     }
+                }
+                // Every requested label located — no need to keep scanning.
+                if found.len() >= wanted.len() {
+                    break 'scan;
                 }
             }
         }
-        Ok(None)
+
+        Ok(labels.iter().map(|l| found.get(l).cloned()).collect())
     })
     .await
-    .map_err(|e| format!("resolve record failed: {e}"))?
+    .map_err(|e| format!("resolve records failed: {e}"))?
 }
 
 /// Render the self-contained SSN viewer HTML for a `.ssnv` bundle, with the
@@ -577,16 +680,35 @@ pub async fn extract_region(
 #[tauri::command]
 pub async fn extract_hmms(
     app: tauri::AppHandle,
+    hmm_index: tauri::State<'_, HmmIndexState>,
     dir: String,
     name: String,
     source: String,
     indices: Vec<usize>,
 ) -> Result<String, String> {
     let dir_c = dir.clone();
+    let state = hmm_index.0.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
         let target = validated_target(&dir, &name)?;
         let ts = target.to_string_lossy().into_owned();
-        domainator_core::app_support::hmm_logo::extract_hmms_to_file(&source, &indices, &ts)?;
+        // Copy each selected profile's raw bytes (exact original formatting) instead
+        // of re-parsing and re-serializing the whole source — instant on big libraries.
+        let entries = cached_hmm_index(&state, &source)?;
+        let file = std::fs::File::create(&ts).map_err(|e| format!("creating {ts}: {e}"))?;
+        let mut w = std::io::BufWriter::new(file);
+        let mut n = 0usize;
+        for &i in &indices {
+            if let Some(e) = entries.get(i) {
+                let bytes = read_byte_range(&source, e.byte_start, e.byte_end)?;
+                w.write_all(&bytes).map_err(|e| format!("writing {ts}: {e}"))?;
+                n += 1;
+            }
+        }
+        w.flush().map_err(|e| format!("flushing {ts}: {e}"))?;
+        if n == 0 {
+            return Err("no profiles selected".to_string());
+        }
         Ok::<String, String>(ts)
     })
     .await

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { extractRecords, renderSsnHtml, resolveRecord } from "../api";
+  import { extractRecords, renderSsnHtml, resolveRecords } from "../api";
   import { cached } from "../cache";
   import { ws } from "../state.svelte";
 
@@ -43,14 +43,14 @@
     if (!ws.root || selectedLabels.length === 0) return;
     opening = true;
     openNote = null;
-    let missing = 0;
     try {
+      // One workspace scan resolves the whole selection (was N scans → apparent hang).
+      const resolved = await resolveRecords(ws.root, selectedLabels);
       const recs: { path: string; contig_index: number }[] = [];
-      for (const label of selectedLabels) {
-        const rec = await resolveRecord(ws.root, label);
-        if (rec) recs.push({ path: rec.path, contig_index: rec.contig_index });
-        else missing++;
+      for (const r of resolved) {
+        if (r) recs.push({ path: r.path, contig_index: r.contig_index });
       }
+      const missing = resolved.length - recs.length;
       if (recs.length === 0) {
         openNote = "None of the selected nodes were found in the workspace.";
         return;

@@ -6,6 +6,7 @@ import HmmReport from "./HmmReport.svelte";
 import MatrixView from "./MatrixView.svelte";
 import SsnView from "./SsnView.svelte";
 import SummaryView from "./SummaryView.svelte";
+import SvgView from "./SvgView.svelte";
 import TableView from "./TableView.svelte";
 import TextView from "./TextView.svelte";
 
@@ -38,6 +39,8 @@ export function viewsFor(fileType: FileType): ViewDescriptor[] {
       return [{ id: "table", label: "Table", component: TableView }];
     case "text":
       return [{ id: "text", label: "Text", component: TextView }];
+    case "svg":
+      return [{ id: "svg", label: "Image", component: SvgView }];
     default:
       return [];
   }

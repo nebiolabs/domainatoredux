@@ -99,7 +99,7 @@ pub fn count_records(path: &Path) -> Option<u64> {
 /// messages when a user names a new/renamed file with an unrecognized type.
 pub fn accepted_types_hint() -> &'static str {
     "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .hmm, .hdf5/.h5, \
-     .cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .ssnv (optionally with a .gz suffix)."
+     .cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .svg, .ssnv (optionally with a .gz suffix)."
 }
 
 pub fn classify_file(path: &Path) -> Option<&'static str> {
@@ -119,6 +119,7 @@ pub fn classify_file(path: &Path) -> Option<&'static str> {
         "sto" | "stockholm" | "sth" => "stockholm",
         "tsv" | "csv" | "tab" => "table",
         "txt" | "text" | "list" => "text",
+        "svg" => "svg",
         "ssnv" | "ssnview" => "ssn_viewer",
         _ => return None,
     })
@@ -337,7 +338,9 @@ mod tests {
         assert_eq!(classify_file(Path::new("a.hmm")), Some("hmm"));
         assert_eq!(classify_file(Path::new("net.ssnv")), Some("ssn_viewer"));
         assert_eq!(classify_file(Path::new("m.hdf5")), Some("hdf5"));
-        assert_eq!(classify_file(Path::new("readme.txt")), None);
+        assert_eq!(classify_file(Path::new("readme.txt")), Some("text"));
+        assert_eq!(classify_file(Path::new("logo.svg")), Some("svg"));
+        assert_eq!(classify_file(Path::new("notes.md")), None);
         assert_eq!(classify_file(Path::new("a.gb.dom.json")), None);
     }
 

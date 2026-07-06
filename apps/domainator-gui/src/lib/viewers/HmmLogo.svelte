@@ -94,7 +94,12 @@
   // perf/appearance win over per-glyph SVG <text> nodes.
   const GLYPH_PX = 128; // rasterization resolution (backing store)
   const GLYPH_FS = 96; // font size the metrics are measured at
-  const GLYPH_FAMILY = 'Arial, "Helvetica Neue", Helvetica, sans-serif';
+  // Single-quote the multi-word family: this string is dropped verbatim into an
+  // SVG `font-family="…"` attribute on export, so embedded double quotes would
+  // terminate the attribute early and produce malformed XML (which browsers then
+  // refuse to render). Single quotes are valid inside both an XML double-quoted
+  // attribute and a CSS/canvas font shorthand.
+  const GLYPH_FAMILY = "Arial, 'Helvetica Neue', Helvetica, sans-serif";
   const GLYPH_FONT = `bold ${GLYPH_FS}px ${GLYPH_FAMILY}`;
 
   // Ink-box metrics for one character, at GLYPH_FS, measured once and cached.
@@ -365,8 +370,9 @@
     const dimC = "#555";
     const accentC = "#3b82f6";
     const parts: string[] = [];
+    parts.push('<?xml version="1.0" encoding="UTF-8" standalone="no"?>');
     parts.push(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${HEIGHT}" viewBox="0 0 ${W} ${HEIGHT}" font-family='monospace'>`,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${HEIGHT}" viewBox="0 0 ${W} ${HEIGHT}" font-family="monospace">`,
     );
     parts.push(`<rect width="${W}" height="${HEIGHT}" fill="#ffffff"/>`);
 
