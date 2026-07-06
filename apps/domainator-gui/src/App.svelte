@@ -10,15 +10,18 @@
   import ExternalToolsPanel from "./lib/ExternalToolsPanel.svelte";
   import ContigView from "./lib/viewers/ContigView.svelte";
   import HmmLogo from "./lib/viewers/HmmLogo.svelte";
+  import FileWindow from "./lib/FileWindow.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { standaloneParams } from "./lib/api";
   import type { JobInfo, ToolMeta } from "./lib/types";
 
-  // Detached window mode: a window opened with `?view=contig` (a single sequence)
-  // or `?view=hmmlogo` (a single popped-out HMM profile logo) bypasses the shell.
+  // Detached window mode: `?view=contig` (a single sequence), `?view=hmmlogo` (one
+  // popped-out HMM logo), or `?view=file` (a whole file with its viewer sub-tabs)
+  // bypasses the shell.
   const standaloneView = new URLSearchParams(window.location.search).get("view");
-  const isStandalone = standaloneView === "contig" || standaloneView === "hmmlogo";
+  const isStandalone =
+    standaloneView === "contig" || standaloneView === "hmmlogo" || standaloneView === "file";
   let standalonePath = $state<string | null>(null);
   let standaloneIndex = $state(0);
   let standaloneErr = $state<string | null>(null);
@@ -30,6 +33,13 @@
         if (p) {
           standaloneIndex = p[1];
           if (standaloneView === "contig") ws.focusContig[p[0]] = p[1];
+          // Give the detached window a workspace folder (the file's parent) so its
+          // in-viewer Extract / New-file actions have a destination.
+          const dir = p[0].replace(/[\\/][^\\/]*$/, "");
+          if (dir && dir !== p[0]) {
+            ws.root = dir;
+            ws.selectedFolder = dir;
+          }
           standalonePath = p[0];
         } else {
           standaloneErr = "window parameters not found";
@@ -116,6 +126,8 @@
       {#key standalonePath}
         {#if standaloneView === "hmmlogo"}
           <HmmLogo path={standalonePath} index={standaloneIndex} />
+        {:else if standaloneView === "file"}
+          <FileWindow path={standalonePath} />
         {:else}
           <ContigView path={standalonePath} />
         {/if}

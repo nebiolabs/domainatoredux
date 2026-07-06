@@ -59,6 +59,49 @@ pub fn migrate_legacy_layout(root: &Path) {
 
 /// Logical file type shown in the file table / used to pick viewers. Mirrors the
 /// Python `EXTENSION_TO_TYPE` map plus the GUI-only `ssn_viewer` bundle type.
+/// `SystemTime` → epoch milliseconds (None if before the epoch / unavailable).
+fn sys_time_ms(t: Option<std::time::SystemTime>) -> Option<u64> {
+    t?.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis() as u64)
+}
+
+/// Cheap record count for a data file, by streaming lines (no full parse):
+/// GenBank `LOCUS` lines, FASTA `>` headers, HMMER `HMMER3` profile headers.
+/// Returns None for types without a meaningful record count (matrices, tables, …)
+/// or on read error.
+pub fn count_records(path: &Path) -> Option<u64> {
+    use std::io::{BufRead, BufReader};
+    let prefix = match classify_file(path)? {
+        "genbank" => "LOCUS",
+        "fasta" => ">",
+        "hmm" => "HMMER3",
+        _ => return None,
+    };
+    let file = fs::File::open(path).ok()?;
+    let mut reader = BufReader::new(file);
+    let mut n: u64 = 0;
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match reader.read_until(b'\n', &mut line) {
+            Ok(0) => break,
+            Ok(_) => {
+                if line.starts_with(prefix.as_bytes()) {
+                    n += 1;
+                }
+            }
+            Err(_) => return None,
+        }
+    }
+    Some(n)
+}
+
+/// Human-readable list of the extensions [`classify_file`] recognizes, for error
+/// messages when a user names a new/renamed file with an unrecognized type.
+pub fn accepted_types_hint() -> &'static str {
+    "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .hmm, .hdf5/.h5, \
+     .cm, .sto/.stockholm, .tsv/.csv/.tab, .ssnv (optionally with a .gz suffix)."
+}
+
 pub fn classify_file(path: &Path) -> Option<&'static str> {
     let name = path.file_name()?.to_str()?.to_ascii_lowercase();
     // Strip one trailing compression suffix, matching Python get_file_type.
@@ -141,6 +184,9 @@ pub struct FileEntry {
     pub file_type: String,
     pub description: String,
     pub size: u64,
+    /// File creation / last-modified time, epoch millis (None if unavailable).
+    pub created_ms: Option<u64>,
+    pub modified_ms: Option<u64>,
     pub created_by_job: Option<String>,
 }
 
@@ -247,13 +293,18 @@ pub fn list_files(root: &Path, dir: &Path) -> std::io::Result<Vec<FileEntry>> {
         let Some(file_type) = classify_file(&path) else { continue };
         let name = entry.file_name().to_string_lossy().into_owned();
         let meta = FileMeta::load(root, &path);
-        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let md = entry.metadata().ok();
+        let size = md.as_ref().map(|m| m.len()).unwrap_or(0);
+        let created_ms = md.as_ref().and_then(|m| sys_time_ms(m.created().ok()));
+        let modified_ms = md.as_ref().and_then(|m| sys_time_ms(m.modified().ok()));
         out.push(FileEntry {
             path: path.to_string_lossy().into_owned(),
             name,
             file_type: file_type.to_string(),
             description: meta.description,
             size,
+            created_ms,
+            modified_ms,
             created_by_job: meta.created_by_job,
         });
     }

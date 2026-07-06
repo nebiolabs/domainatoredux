@@ -1,6 +1,9 @@
 <script lang="ts">
-  import { listHmmProfiles, openHmmLogoWindow } from "../api";
+  import { extractHmms, listHmmProfiles, openHmmLogoWindow } from "../api";
   import { cached } from "../cache";
+  import { ws } from "../state.svelte";
+  import { validateFilename } from "../filetypes";
+  import NameModal from "../NameModal.svelte";
   import type { HmmSummary } from "../types";
 
   let { path }: { path: string } = $props();
@@ -11,6 +14,42 @@
   let filter = $state("");
   let sortDir = $state<1 | -1>(1);
   let sortCol = $state<"name" | "length">("name");
+
+  // Multi-select (by profile index) for Extract → new .hmm.
+  let selected = $state(new Set<number>());
+  let anchor = -1; // last plainly-clicked profile index (shift-range base)
+  let showExtract = $state(false);
+
+  function rowClick(e: MouseEvent, p: HmmSummary) {
+    if (e.shiftKey && anchor >= 0) {
+      const a = filtered.findIndex((x) => x.index === anchor);
+      const b = filtered.findIndex((x) => x.index === p.index);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        const s = new Set(selected);
+        for (let i = lo; i <= hi; i++) s.add(filtered[i].index);
+        selected = s;
+      }
+    } else if (e.ctrlKey || e.metaKey) {
+      const s = new Set(selected);
+      s.has(p.index) ? s.delete(p.index) : s.add(p.index);
+      selected = s;
+      anchor = p.index;
+    } else {
+      selected = new Set([p.index]);
+      anchor = p.index;
+    }
+  }
+
+  // Throws on failure so the modal shows it inline and stays open; closes on success.
+  async function doExtract(name: string) {
+    const dir = ws.currentDir;
+    if (!dir || selected.size === 0) return;
+    const p = await extractHmms(dir, name, path, [...selected].sort((a, b) => a - b));
+    await ws.refreshAndOpen(p);
+    selected = new Set();
+    showExtract = false;
+  }
 
   // Load the profile summaries (name / length / description) — this is fast: it
   // never computes logos, so opening an HMM file no longer blocks on that.
@@ -100,6 +139,11 @@
       {#if filter.trim()}{total.toLocaleString()} of {profiles.length.toLocaleString()}{:else}{profiles.length.toLocaleString()}{/if}
       profile{total === 1 ? "" : "s"}
     </span>
+    {#if selected.size > 0}
+      <span class="sel-badge">{selected.size} selected</span>
+      <button class="extract" onclick={() => (showExtract = true)}>Extract →</button>
+      <button class="clear" onclick={() => (selected = new Set())}>clear</button>
+    {/if}
   </div>
 
   {#if loading}
@@ -113,6 +157,7 @@
       <table>
         <thead>
           <tr>
+            <th class="c-sel"></th>
             <th class="c-name" onclick={() => toggleSort("name")}>
               name{#if sortCol === "name"}<span class="arrow">{sortDir === 1 ? " ▲" : " ▼"}</span>{/if}
             </th>
@@ -124,24 +169,39 @@
           </tr>
         </thead>
         <tbody>
-          {#if topPad > 0}<tr style="height:{topPad}px"><td colspan="4"></td></tr>{/if}
+          {#if topPad > 0}<tr style="height:{topPad}px"><td colspan="5"></td></tr>{/if}
           {#each visible as p (p.index)}
-            <tr>
+            <tr class:sel={selected.has(p.index)} onclick={(e) => rowClick(e, p)}>
+              <td class="c-sel"><input type="checkbox" checked={selected.has(p.index)} tabindex="-1" /></td>
               <td class="c-name" title={p.name}>{p.name}</td>
               <td class="c-len num">{p.length}</td>
               <td class="c-desc" title={p.desc ?? ""}>{p.desc ?? ""}</td>
               <td class="c-act">
-                <button class="logo" title="Pop out sequence logo" onclick={() => popLogo(p)}>logo ↗</button>
+                <button class="logo" title="Pop out sequence logo" onclick={(e) => { e.stopPropagation(); popLogo(p); }}>logo ↗</button>
               </td>
             </tr>
           {/each}
-          {#if bottomPad > 0}<tr style="height:{bottomPad}px"><td colspan="4"></td></tr>{/if}
+          {#if bottomPad > 0}<tr style="height:{bottomPad}px"><td colspan="5"></td></tr>{/if}
         </tbody>
       </table>
     </div>
-    <p class="legend dim">Click <b>logo ↗</b> to open a profile's sequence logo in a separate window.</p>
+    <p class="legend dim">
+      Click a row to select (Ctrl/Shift for multi-select), then <b>Extract →</b> to save the chosen
+      profiles as a new HMM file. Click <b>logo ↗</b> to open a profile's sequence logo.
+    </p>
   {/if}
 </div>
+
+{#if showExtract}
+  <NameModal
+    title="Extract {selected.size} profile{selected.size === 1 ? '' : 's'} to a new HMM file"
+    defaultName="profiles_subset.hmm"
+    submitLabel="Extract"
+    validate={validateFilename}
+    onsubmit={(name) => doExtract(name)}
+    oncancel={() => (showExtract = false)}
+  />
+{/if}
 
 <style>
   .hr {
@@ -209,8 +269,43 @@
   .c-act {
     text-align: right;
   }
+  tbody tr {
+    cursor: pointer;
+  }
   tbody tr:hover {
     background: var(--row-hover);
+  }
+  tbody tr.sel {
+    background: var(--row-selected);
+  }
+  .c-sel {
+    width: 28px;
+    text-align: center;
+    padding: 0 4px;
+  }
+  .c-sel input {
+    pointer-events: none;
+    margin: 0;
+  }
+  .sel-badge {
+    color: var(--accent);
+    font-size: 12px;
+  }
+  .extract {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+    border-radius: 5px;
+    padding: 2px 10px;
+    font-size: 12px;
+  }
+  .clear {
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 12px;
   }
   .logo {
     border: 1px solid var(--border);

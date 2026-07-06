@@ -2,11 +2,13 @@ import {
   cancelJob as apiCancelJob,
   createFolder,
   deleteFile,
+  importFiles,
   listDatabases,
   listFolder,
   listJobs,
   openWorkspace,
   registerDatabase,
+  renameFile as apiRenameFile,
   rescanTree,
   unregisterDatabase,
 } from "./api";
@@ -22,6 +24,7 @@ function classifyPath(path: string): FileType | null {
   if (["hmm", "hmmer"].includes(ext)) return "hmm";
   if (["hdf5", "hdf", "h5"].includes(ext)) return "hdf5";
   if (["ssnv", "ssnview"].includes(ext)) return "ssn_viewer";
+  if (["tsv", "csv", "tab"].includes(ext)) return "table";
   return null;
 }
 
@@ -84,7 +87,10 @@ class WorkspaceStore {
   openPath(path: string, fileType: FileType, contigIndex?: number): void {
     if (contigIndex !== undefined) this.focusContig[path] = contigIndex;
     const name = path.split(/[\\/]/).pop() ?? path;
-    this.openFile({ path, name, file_type: fileType, description: "", size: 0, created_by_job: null });
+    this.openFile({
+      path, name, file_type: fileType, description: "", size: 0,
+      created_ms: null, modified_ms: null, created_by_job: null,
+    });
   }
 
   /// Open a job output in a viewer if its type is viewable (else no-op).
@@ -160,6 +166,53 @@ class WorkspaceStore {
       if (this.selectedFolder) await this.selectFolder(this.selectedFolder);
     } catch (e) {
       this.error = String(e);
+    }
+  }
+
+  /// The folder new files should be written to (selected folder, else root).
+  get currentDir(): string | null {
+    return this.selectedFolder ?? this.root;
+  }
+
+  /// Reload the currently-selected folder's file list.
+  async refreshFolder(): Promise<void> {
+    if (this.selectedFolder) await this.selectFolder(this.selectedFolder);
+  }
+
+  /// After creating a new file (extract / new-from-paste): refresh the folder and
+  /// open the file in a viewer if its type is recognized.
+  async refreshAndOpen(path: string): Promise<void> {
+    await this.refreshFolder();
+    this.openOutput(path);
+  }
+
+  /// Rename a data file in place; re-point an open tab and refresh the listing.
+  /// Throws on failure so the caller (rename modal) can show it inline.
+  async renameFile(path: string, newName: string): Promise<void> {
+    if (!this.root) return;
+    this.error = null;
+    const np = await apiRenameFile(this.root, path, newName);
+    invalidatePath(path);
+    if (this.tabs.some((t) => t.id === path)) {
+      this.closeTab(path);
+      this.openOutput(np);
+    }
+    await this.refreshFolder();
+  }
+
+  /// Import (copy) files from disk into the currently-selected folder, then
+  /// refresh the file list. Returns the number of files actually imported.
+  async importInto(sources: string[]): Promise<number> {
+    const dir = this.selectedFolder ?? this.root;
+    if (!this.root || !dir || sources.length === 0) return 0;
+    this.error = null;
+    try {
+      const imported = await importFiles(this.root, dir, sources);
+      if (this.selectedFolder) await this.selectFolder(this.selectedFolder);
+      return imported.length;
+    } catch (e) {
+      this.error = String(e);
+      return 0;
     }
   }
 

@@ -9,7 +9,7 @@
 //! — this is the standard, independently-implemented math.
 
 use hmmer_pure_rs::alphabet::AlphabetType;
-use hmmer_pure_rs::hmm::{DM, MD, MI, MM};
+use hmmer_pure_rs::hmm::{DM, II, MD, MI, MM};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -17,6 +17,8 @@ pub struct Letter {
     pub char: String,
     /// Height in bits (`p · IC`).
     pub height: f64,
+    /// Raw match-state emission probability for this residue (`p`).
+    pub prob: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -31,7 +33,11 @@ pub struct LogoPosition {
     pub insert_prob: f64,
     /// P(match→delete) at this node — the delete bar.
     pub delete_prob: f64,
-    /// Letters ascending by height (render bottom→top).
+    /// Expected insert length at this node (`1 / (1 - P(insert→insert))`).
+    pub insert_length: f64,
+    /// Letters ascending by height (render bottom→top). Includes every canonical
+    /// residue (even sub-pixel ones) so the click popup can list full frequencies;
+    /// the renderer skips letters too short to see.
     pub letters: Vec<Letter>,
 }
 
@@ -113,6 +119,28 @@ pub fn list_hmms(path: &str) -> Result<Vec<HmmSummary>, String> {
         .collect())
 }
 
+/// Write the profiles at `indices` (0-based, in the given order) from `source` to a
+/// new `.hmm` file at `out_path`. Keeps the `hmmer_pure_rs` dependency inside core.
+pub fn extract_hmms_to_file(source: &str, indices: &[usize], out_path: &str) -> Result<(), String> {
+    use std::io::{BufWriter, Write};
+    let hmms = hmmer_pure_rs::hmmfile::read_hmm_file(std::path::Path::new(source))
+        .map_err(|e| format!("reading HMM: {e:?}"))?;
+    let file = std::fs::File::create(out_path).map_err(|e| format!("creating {out_path}: {e}"))?;
+    let mut w = BufWriter::new(file);
+    let mut n = 0usize;
+    for &i in indices {
+        if let Some(h) = hmms.get(i) {
+            hmmer_pure_rs::hmmfile::write_hmm(&mut w, h).map_err(|e| format!("writing HMM: {e:?}"))?;
+            n += 1;
+        }
+    }
+    w.flush().map_err(|e| format!("flushing {out_path}: {e}"))?;
+    if n == 0 {
+        return Err("no profiles selected".to_string());
+    }
+    Ok(())
+}
+
 /// Read an `.hmm` file and build the logo for profile `index` (0-based). Keeps the
 /// `hmmer_pure_rs` dependency inside core so callers (the GUI) don't take it on.
 pub fn load_logo_from_file(path: &str, index: usize) -> Result<HmmLogo, String> {
@@ -144,22 +172,26 @@ pub fn build_logo(hmm: &hmmer_pure_rs::Hmm) -> HmmLogo {
         }
         let ic = (max_bits - entropy).max(0.0);
 
+        // Every canonical residue (not just the visible ones) so the click popup
+        // can show full emission frequencies; the renderer skips sub-pixel letters.
         let mut ls: Vec<Letter> = (0..k)
             .map(|i| Letter {
                 char: letters.get(i).copied().unwrap_or('?').to_string(),
                 height: probs[i] as f64 * ic,
+                prob: probs[i] as f64,
             })
-            .filter(|l| l.height > 0.001)
             .collect();
         ls.sort_by(|a, b| a.height.total_cmp(&b.height));
 
         let t = &hmm.t[node];
+        let ii = t[II] as f64;
         positions.push(LogoPosition {
             index: node,
             total_ic: ic,
             occupancy: mocc[node].clamp(0.0, 1.0),
             insert_prob: t[MI] as f64,
             delete_prob: t[MD] as f64,
+            insert_length: if ii < 1.0 { 1.0 / (1.0 - ii) } else { f64::INFINITY },
             letters: ls,
         });
     }

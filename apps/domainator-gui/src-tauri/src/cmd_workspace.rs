@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use domainator_core::app_support::workspace::{
-    dot_dir, is_reserved_name, list_files, open_or_init_manifest, scan_folder_tree, FileEntry,
-    FileMeta, FolderNode, Settings, DOT_DIR,
+    accepted_types_hint, classify_file, dot_dir, is_reserved_name, list_files, open_or_init_manifest,
+    scan_folder_tree, FileEntry, FileMeta, FolderNode, Settings, DOT_DIR,
 };
 use serde::Serialize;
 
@@ -22,6 +22,79 @@ pub fn pick_directory() -> Result<Option<String>, String> {
     Ok(rfd::FileDialog::new()
         .pick_folder()
         .map(|p| p.to_string_lossy().into_owned()))
+}
+
+/// Native multi-file picker for import (returns `None` if the user cancels).
+#[tauri::command]
+pub fn pick_files() -> Result<Option<Vec<String>>, String> {
+    Ok(rfd::FileDialog::new().pick_files().map(|paths| {
+        paths
+            .into_iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect()
+    }))
+}
+
+/// Pick a collision-free destination path for `name` inside `dir`: if it already
+/// exists, insert " (2)", " (3)", … before the final extension.
+fn unique_dest(dir: &Path, name: &std::ffi::OsStr) -> std::path::PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let name = name.to_string_lossy();
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]), // keep the dot in ext
+        _ => (name.as_ref(), ""),
+    };
+    for n in 2..10_000 {
+        let cand = dir.join(format!("{stem} ({n}){ext}"));
+        if !cand.exists() {
+            return cand;
+        }
+    }
+    first // pathological fallback
+}
+
+/// Import (copy) `sources` into workspace folder `dir`, renaming to avoid clobbering
+/// existing files. Skips directories and non-existent paths. Returns the paths
+/// actually written. Refuses the reserved `.domainator/` machinery directory.
+#[tauri::command]
+pub async fn import_files(
+    workspace_root: String,
+    dir: String,
+    sources: Vec<String>,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = Path::new(&workspace_root);
+        let target = Path::new(&dir);
+        if target.starts_with(dot_dir(root)) || target.components().any(|c| c.as_os_str() == DOT_DIR)
+        {
+            return Err("cannot import into the .domainator directory".to_string());
+        }
+        if !target.is_dir() {
+            return Err(format!("not a directory: {dir}"));
+        }
+        let mut imported = Vec::new();
+        for src in &sources {
+            let sp = Path::new(src);
+            // Skip directories and vanished paths rather than erroring the batch.
+            if !sp.is_file() {
+                continue;
+            }
+            let name = match sp.file_name() {
+                Some(n) => n,
+                None => continue,
+            };
+            let dest = unique_dest(target, name);
+            std::fs::copy(sp, &dest)
+                .map_err(|e| format!("copying {}: {e}", sp.display()))?;
+            imported.push(dest.to_string_lossy().into_owned());
+        }
+        Ok(imported)
+    })
+    .await
+    .map_err(|e| format!("import failed: {e}"))?
 }
 
 /// Open a directory as a workspace: load/create its `workspace.json` and scan the
@@ -84,6 +157,56 @@ pub fn create_folder(parent: String, name: String) -> Result<String, String> {
     }
     std::fs::create_dir(&path).map_err(|e| format!("creating folder: {e}"))?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Rename a data file in place (same folder), moving its metadata sidecar too.
+/// Refuses the reserved `.domainator/` dir, invalid/reserved names, and collisions.
+#[tauri::command]
+pub async fn rename_file(
+    workspace_root: String,
+    path: String,
+    new_name: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = Path::new(&workspace_root);
+        let clean = new_name.trim();
+        if clean.is_empty() || clean.contains('/') || clean.contains('\\') || clean == "." || clean == ".." {
+            return Err("invalid file name".into());
+        }
+        if is_reserved_name(clean) {
+            return Err(format!("'{clean}' is reserved"));
+        }
+        let old = Path::new(&path);
+        if old.starts_with(dot_dir(root)) || old.components().any(|c| c.as_os_str() == DOT_DIR) {
+            return Err("refusing to rename inside the .domainator directory".into());
+        }
+        if !old.is_file() {
+            return Err(format!("not a file: {path}"));
+        }
+        let new_path = old.with_file_name(clean);
+        if classify_file(&new_path).is_none() {
+            return Err(format!(
+                "unrecognized file type for '{clean}'. {}",
+                accepted_types_hint()
+            ));
+        }
+        if new_path.exists() {
+            return Err(format!("already exists: {clean}"));
+        }
+        std::fs::rename(old, &new_path).map_err(|e| format!("renaming: {e}"))?;
+        // Move the metadata sidecar if one exists.
+        let old_sc = FileMeta::sidecar_path(root, old);
+        if old_sc.is_file() {
+            let new_sc = FileMeta::sidecar_path(root, &new_path);
+            if let Some(parent) = new_sc.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::rename(&old_sc, &new_sc);
+        }
+        Ok(new_path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("rename failed: {e}"))?
 }
 
 /// Delete a data file and its metadata sidecar. Refuses anything inside the

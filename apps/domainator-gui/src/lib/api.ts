@@ -18,6 +18,16 @@ import type {
 export const pickDirectory = (): Promise<string | null> =>
   invoke("pick_directory");
 
+/// Native multi-file picker for import (null if cancelled).
+export const pickFiles = (): Promise<string[] | null> => invoke("pick_files");
+
+/// Copy `sources` into workspace folder `dir`; returns the imported paths.
+export const importFiles = (
+  workspaceRoot: string,
+  dir: string,
+  sources: string[],
+): Promise<string[]> => invoke("import_files", { workspaceRoot, dir, sources });
+
 export const openWorkspace = (root: string): Promise<WorkspaceInfo> =>
   invoke("open_workspace", { root });
 
@@ -44,6 +54,61 @@ export const loadHmmLogo = (path: string, index?: number): Promise<HmmLogo> =>
 
 export const listHmmProfiles = (path: string): Promise<HmmSummary[]> =>
   invoke("list_hmm_profiles", { path });
+
+/// Uppercased sequences for contigs [start, end) (server-cached; batched by the
+/// viewer's visible window so scrolling doesn't re-parse the file per contig).
+export const getContigSequences = (
+  path: string,
+  start: number,
+  end: number,
+): Promise<string[]> => invoke("get_contig_sequences", { path, start, end });
+
+/// Read a text file (TSV/CSV) as a string; write it back in place (table editor).
+export const readTextFile = (path: string): Promise<string> =>
+  invoke("read_text_file", { path });
+export const writeTextFile = (path: string, contents: string): Promise<void> =>
+  invoke("write_text_file", { path, contents });
+
+/// Extract selected contigs / HMM profiles (0-based indices) into a new file
+/// `dir/name`; returns the new path.
+export const extractContigs = (
+  dir: string,
+  name: string,
+  source: string,
+  indices: number[],
+): Promise<string> => invoke("extract_contigs", { dir, name, source, indices });
+export const extractHmms = (
+  dir: string,
+  name: string,
+  source: string,
+  indices: number[],
+): Promise<string> => invoke("extract_hmms", { dir, name, source, indices });
+
+/// Create a new text file `dir/name` with `contents`; returns the new path.
+export const createTextFile = (dir: string, name: string, contents: string): Promise<string> =>
+  invoke("create_text_file", { dir, name, contents });
+
+/// Record counts for the given files (lazy; cached server-side). null = no
+/// meaningful count for that type (matrix/table) or unreadable.
+export const countRecords = (paths: string[]): Promise<(number | null)[]> =>
+  invoke("count_records", { paths });
+
+/// Rename a data file in place; returns the new path.
+export const renameFile = (
+  workspaceRoot: string,
+  path: string,
+  newName: string,
+): Promise<string> => invoke("rename_file", { workspaceRoot, path, newName });
+
+/// Native "Save As" dialog + write text to disk. Returns the saved path, or null
+/// if the user cancelled.
+export const saveTextFile = (
+  defaultName: string,
+  extension: string,
+  filterName: string,
+  contents: string,
+): Promise<string | null> =>
+  invoke("save_text_file", { defaultName, extension, filterName, contents });
 
 export type EnumRow = Record<string, string | number | null>;
 
@@ -80,6 +145,10 @@ export const openSequenceWindow = (
 
 export const standaloneParams = (label: string): Promise<[string, number] | null> =>
   invoke("standalone_params", { label });
+
+// Pop a whole file (its full viewer + sub-tabs) out into a detached window.
+export const openFileWindow = (path: string, title: string): Promise<void> =>
+  invoke("open_file_window", { path, title });
 
 // Pop out a single HMM profile's logo in a detached window.
 export const openHmmLogoWindow = (

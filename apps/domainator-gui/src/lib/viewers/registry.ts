@@ -6,6 +6,7 @@ import HmmReport from "./HmmReport.svelte";
 import MatrixView from "./MatrixView.svelte";
 import SsnView from "./SsnView.svelte";
 import SummaryView from "./SummaryView.svelte";
+import TableView from "./TableView.svelte";
 
 // One selectable view tab within an opened file. `component` takes a `path` prop.
 export interface ViewDescriptor {
@@ -32,6 +33,8 @@ export function viewsFor(fileType: FileType): ViewDescriptor[] {
     case "hmm":
       // A fast profile table by default; logos pop out on demand (per row).
       return [{ id: "report", label: "Profiles", component: HmmReport }];
+    case "table":
+      return [{ id: "table", label: "Table", component: TableView }];
     default:
       return [];
   }

@@ -23,7 +23,8 @@ export type FileType =
   | "hmm"
   | "hdf5"
   | "cm"
-  | "ssn_viewer";
+  | "ssn_viewer"
+  | "table";
 
 export interface FileEntry {
   path: string;
@@ -31,6 +32,8 @@ export interface FileEntry {
   file_type: FileType;
   description: string;
   size: number;
+  created_ms: number | null;
+  modified_ms: number | null;
   created_by_job: string | null;
 }
 
@@ -89,6 +92,7 @@ export interface OpenTab {
 export interface LogoLetter {
   char: string;
   height: number;
+  prob: number;
 }
 
 export interface LogoPosition {
@@ -97,6 +101,7 @@ export interface LogoPosition {
   occupancy: number;
   insert_prob: number;
   delete_prob: number;
+  insert_length: number;
   letters: LogoLetter[];
 }
 

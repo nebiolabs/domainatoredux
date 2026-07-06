@@ -177,12 +177,179 @@ pub async fn load_hmm_logo(path: String, index: Option<usize>) -> Result<HmmLogo
         .map_err(|e| format!("loading HMM logo failed: {e}"))?
 }
 
+/// Single-file cache of every contig's uppercased sequence, so the contig viewer
+/// can fetch residues while scrolling without re-parsing the whole file per call
+/// (a big multi-contig file made that O(contigs) full parses). Holds one file at a
+/// time (replaced when the path or its mtime changes) to bound memory.
+#[derive(Default)]
+pub struct SeqCacheState(pub std::sync::Arc<std::sync::Mutex<Option<SeqCacheEntry>>>);
+
+pub struct SeqCacheEntry {
+    path: String,
+    mtime_ns: u128,
+    seqs: Vec<String>,
+}
+
+fn file_mtime_ns(path: &str) -> Result<u128, String> {
+    let m = std::fs::metadata(path).map_err(|e| format!("stat {path}: {e}"))?;
+    let t = m.modified().map_err(|e| format!("mtime {path}: {e}"))?;
+    Ok(t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0))
+}
+
+fn parse_all_seqs(path: &str) -> Result<Vec<String>, String> {
+    let kind = detect_filetype(std::path::Path::new(path))
+        .ok_or_else(|| format!("not a sequence file: {path}"))?;
+    let records = match kind {
+        FileType::Genbank => read_genbank(path).map_err(|e| format!("reading GenBank: {e}"))?,
+        FileType::Fasta => read_fasta(path, None).map_err(|e| format!("reading FASTA: {e}"))?,
+    };
+    Ok(records
+        .iter()
+        .map(|r| String::from_utf8_lossy(&r.seq).to_ascii_uppercase())
+        .collect())
+}
+
+/// Uppercased sequences for contigs `[start, end)` (clamped). Parses the file once
+/// and caches all sequences; subsequent calls (e.g. while scrolling) are served
+/// from memory. The viewer batches its visible window into a single call.
+#[tauri::command]
+pub async fn get_contig_sequences(
+    state: tauri::State<'_, SeqCacheState>,
+    path: String,
+    start: usize,
+    end: usize,
+) -> Result<Vec<String>, String> {
+    let cache = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mtime = file_mtime_ns(&path)?;
+        let slice = |seqs: &[String]| -> Vec<String> {
+            let e = end.min(seqs.len());
+            if start >= e { Vec::new() } else { seqs[start..e].to_vec() }
+        };
+        {
+            let guard = cache.lock().unwrap();
+            if let Some(entry) = guard.as_ref() {
+                if entry.path == path && entry.mtime_ns == mtime {
+                    return Ok(slice(&entry.seqs));
+                }
+            }
+        }
+        let seqs = parse_all_seqs(&path)?;
+        let out = slice(&seqs);
+        *cache.lock().unwrap() = Some(SeqCacheEntry { path, mtime_ns: mtime, seqs });
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("reading sequences failed: {e}"))?
+}
+
+/// Per-file record-count cache (path → (size, mtime_ns, count)), so the file
+/// table's "records" column doesn't re-stream files on every folder revisit.
+/// Bounded only by the number of distinct files browsed in a session.
+#[derive(Default)]
+pub struct RecordCountState(pub std::sync::Mutex<std::collections::HashMap<String, (u64, u128, Option<u64>)>>);
+
+/// Record counts for `paths` (streamed once per file, then cached). `null` for
+/// types without a meaningful count (matrices/tables) or unreadable files. Called
+/// lazily by the file table only when the "records" column is shown, so plain
+/// folder listing stays instant.
+#[tauri::command]
+pub async fn count_records(
+    state: tauri::State<'_, RecordCountState>,
+    paths: Vec<String>,
+) -> Result<Vec<Option<u64>>, String> {
+    let map = &state.0;
+    let mut out = Vec::with_capacity(paths.len());
+    for p in &paths {
+        let stamp = std::fs::metadata(p).ok().map(|m| {
+            let mt = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            (m.len(), mt)
+        });
+        let Some((size, mtime)) = stamp else {
+            out.push(None);
+            continue;
+        };
+        if let Some(&(cs, cm, cnt)) = map.lock().unwrap().get(p) {
+            if cs == size && cm == mtime {
+                out.push(cnt);
+                continue;
+            }
+        }
+        let count = domainator_core::app_support::workspace::count_records(std::path::Path::new(p));
+        map.lock().unwrap().insert(p.clone(), (size, mtime, count));
+        out.push(count);
+    }
+    Ok(out)
+}
+
+/// Read a text file (e.g. a TSV/CSV table) as a UTF-8 string. Rejects files over
+/// ~64 MB so the table editor can't accidentally slurp a giant blob into the UI.
+#[tauri::command]
+pub async fn read_text_file(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let meta = std::fs::metadata(&path).map_err(|e| format!("stat {path}: {e}"))?;
+        if meta.len() > 64 * 1024 * 1024 {
+            return Err(format!("file too large to edit ({} MB)", meta.len() / 1024 / 1024));
+        }
+        std::fs::read_to_string(&path).map_err(|e| format!("reading {path}: {e}"))
+    })
+    .await
+    .map_err(|e| format!("read failed: {e}"))?
+}
+
+/// Overwrite a text file in place (used by the table editor's Save). Writes
+/// atomically via a temp file + rename so a crash mid-write can't truncate it.
+#[tauri::command]
+pub async fn write_text_file(path: String, contents: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&path);
+        let tmp = p.with_extension(format!(
+            "{}.tmp",
+            p.extension().and_then(|e| e.to_str()).unwrap_or("txt")
+        ));
+        std::fs::write(&tmp, contents.as_bytes()).map_err(|e| format!("writing {path}: {e}"))?;
+        std::fs::rename(&tmp, p).map_err(|e| format!("finalizing {path}: {e}"))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("write failed: {e}"))?
+}
+
 /// Summaries of every profile in an HMM file (for the browser list).
 #[tauri::command]
 pub async fn list_hmm_profiles(path: String) -> Result<Vec<HmmSummary>, String> {
     tauri::async_runtime::spawn_blocking(move || list_hmms(&path))
         .await
         .map_err(|e| format!("listing HMMs failed: {e}"))?
+}
+
+/// Pop a native "Save As" dialog and write `contents` to the chosen path. Used by
+/// viewers to export generated text (e.g. an SVG logo). Returns the saved path, or
+/// `None` if the user cancelled. `default_name` seeds the dialog's filename;
+/// `extension`/`filter_name` set the type filter (e.g. `"svg"` / `"SVG image"`).
+#[tauri::command]
+pub fn save_text_file(
+    default_name: String,
+    extension: String,
+    filter_name: String,
+    contents: String,
+) -> Result<Option<String>, String> {
+    let picked = rfd::FileDialog::new()
+        .set_file_name(&default_name)
+        .add_filter(&filter_name, &[extension.as_str()])
+        .save_file();
+    match picked {
+        Some(path) => {
+            std::fs::write(&path, contents).map_err(|e| format!("writing file: {e}"))?;
+            Ok(Some(path.to_string_lossy().into_owned()))
+        }
+        None => Ok(None),
+    }
 }
 
 /// A record located in a workspace sequence file (for SSN → sequence navigation).
@@ -271,6 +438,93 @@ static SUBSET_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub struct RecordRef {
     pub path: String,
     pub contig_index: usize,
+}
+
+/// Validate a bare filename and join it to `dir`, refusing path separators, the
+/// reserved `.domainator` name, and pre-existing targets (caller supplies a name).
+fn validated_target(dir: &str, name: &str) -> Result<std::path::PathBuf, String> {
+    use domainator_core::app_support::workspace::{accepted_types_hint, classify_file, is_reserved_name};
+    let clean = name.trim();
+    if clean.is_empty() || clean.contains('/') || clean.contains('\\') || clean == "." || clean == ".." {
+        return Err("invalid file name".into());
+    }
+    if is_reserved_name(clean) {
+        return Err(format!("'{clean}' is reserved"));
+    }
+    let p = std::path::Path::new(dir).join(clean);
+    // Refuse unrecognized extensions — the workspace only lists known data types,
+    // so a mystery extension would create a file the browser can't show.
+    if classify_file(&p).is_none() {
+        return Err(format!("unrecognized file type for '{clean}'. {}", accepted_types_hint()));
+    }
+    if p.exists() {
+        return Err(format!("already exists: {clean}"));
+    }
+    Ok(p)
+}
+
+fn is_fasta_name(name: &str) -> bool {
+    let l = name.to_lowercase();
+    [".fasta", ".fa", ".fna", ".faa", ".fap", ".pep"].iter().any(|e| l.ends_with(e))
+}
+
+/// Write the selected contigs (0-based `indices`, in order) from `source` into a new
+/// file `dir/name`. Output format follows `name`'s extension (FASTA vs GenBank).
+#[tauri::command]
+pub async fn extract_contigs(
+    dir: String,
+    name: String,
+    source: String,
+    indices: Vec<usize>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let recs = load_sequence_any(&source)?;
+        let out: Vec<SeqRecord> = indices.iter().filter_map(|&i| recs.get(i).cloned()).collect();
+        if out.is_empty() {
+            return Err("no contigs selected".into());
+        }
+        let target = validated_target(&dir, &name)?;
+        let ts = target.to_string_lossy().into_owned();
+        if is_fasta_name(&name) {
+            domainator_core::io::fasta::write_fasta(&ts, &out).map_err(|e| format!("writing FASTA: {e}"))?;
+        } else {
+            write_genbank(&ts, &out).map_err(|e| format!("writing GenBank: {e}"))?;
+        }
+        Ok(ts)
+    })
+    .await
+    .map_err(|e| format!("extract failed: {e}"))?
+}
+
+/// Write the selected profiles (0-based `indices`, in order) from an `.hmm` `source`
+/// into a new `.hmm` file `dir/name`.
+#[tauri::command]
+pub async fn extract_hmms(
+    dir: String,
+    name: String,
+    source: String,
+    indices: Vec<usize>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = validated_target(&dir, &name)?;
+        let ts = target.to_string_lossy().into_owned();
+        domainator_core::app_support::hmm_logo::extract_hmms_to_file(&source, &indices, &ts)?;
+        Ok(ts)
+    })
+    .await
+    .map_err(|e| format!("extract failed: {e}"))?
+}
+
+/// Create a new text file `dir/name` with `contents` (New-file-from-pasted-text).
+#[tauri::command]
+pub async fn create_text_file(dir: String, name: String, contents: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = validated_target(&dir, &name)?;
+        std::fs::write(&target, contents.as_bytes()).map_err(|e| format!("writing file: {e}"))?;
+        Ok(target.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("create failed: {e}"))?
 }
 
 fn load_sequence_any(path: &str) -> Result<Vec<SeqRecord>, String> {

@@ -1,6 +1,16 @@
 <script lang="ts">
   import { ws } from "./state.svelte";
+  import { openFileWindow } from "./api";
   import { viewsFor } from "./viewers/registry";
+  import type { OpenTab } from "./types";
+
+  async function popOut(tab: OpenTab) {
+    try {
+      await openFileWindow(tab.file.path, tab.file.name);
+    } catch (e) {
+      ws.error = String(e);
+    }
+  }
 
   const active = $derived(ws.tabs.find((t) => t.id === ws.activeTabId) ?? null);
   const views = $derived(active ? viewsFor(active.file.file_type) : []);
@@ -18,6 +28,7 @@
         <button class="tab-label" onclick={() => ws.setActive(tab.id)} title={tab.file.path}>
           {tab.file.name}
         </button>
+        <button class="tab-pop" onclick={() => popOut(tab)} title="Open in a new window" aria-label="Open in new window">⧉</button>
         <button class="tab-close" onclick={() => ws.closeTab(tab.id)} aria-label="Close">×</button>
       </div>
     {/each}
@@ -93,6 +104,18 @@
   }
   .tab.active .tab-label {
     font-weight: 600;
+  }
+  .tab-pop {
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    padding: 2px 4px;
+    font-size: 12px;
+    line-height: 1;
+  }
+  .tab-pop:hover {
+    background: none;
+    color: var(--accent);
   }
   .tab-close {
     border: none;
