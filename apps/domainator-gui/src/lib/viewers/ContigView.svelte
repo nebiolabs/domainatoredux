@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addFeature, createTextFile, extractContigs, getContigSequences, loadContigView, removeFeature, setFeatureColor } from "../api";
+  import { addFeature, extractContigs, extractRegion, getContigSequences, loadContigView, removeFeature, setFeatureColor } from "../api";
   import { cached, invalidatePath } from "../cache";
   import { ws } from "../state.svelte";
   import { validateFilename } from "../filetypes";
@@ -394,55 +394,27 @@
   let selExtractKind = $state<"nt" | "aa">("nt");
   const selIsNuc = $derived(!!selRange && !!data && !data.contigs[selRange.ci].is_protein);
   const selExtractDefault = $derived.by(() => {
-    if (!selRange || !data) return "selection.fasta";
+    if (!selRange || !data) return "selection.gb";
     const c = data.contigs[selRange.ci];
     const id = (c.id || c.name || "seq").replace(/[^\w.-]+/g, "_");
-    return `${id}_${selRange.lo + 1}_${selRange.hi}${selExtractKind === "aa" ? "_aa" : ""}.fasta`;
+    // Both are GenBank: NT keeps the region's features; peptide runs the region's
+    // CDSs through extract_peptides → protein GenBank.
+    const suffix = selExtractKind === "aa" ? "_peptides" : "";
+    return `${id}_${selRange.lo + 1}_${selRange.hi}${suffix}.gb`;
   });
 
-  function translateFwd(nt: string): string {
-    const s = nt.toUpperCase();
-    let pep = "";
-    for (let i = 0; i + 3 <= s.length; i += 3) pep += CODON_TABLE[s.slice(i, i + 3)] ?? "X";
-    return pep;
-  }
-  function wrapSeq(s: string, n = 60): string {
-    let out = "";
-    for (let i = 0; i < s.length; i += n) out += s.slice(i, i + n) + "\n";
-    return out;
-  }
   function openSelExtract(kind: "nt" | "aa") {
     selExtractKind = kind;
     showSelExtract = true;
   }
-  // Throws on failure so the modal shows it inline; closes on success.
+  // Throws on failure so the modal shows it inline; closes on success. Both the
+  // nucleotide slice and the peptide conversion happen server-side (the peptide
+  // path: extract region → extract_peptides → protein GenBank).
   async function doSelExtract(name: string) {
     const r = selRange;
     const dir = ws.currentDir;
     if (!r || !data || !dir) return;
-    const seq = seqCache[r.ci];
-    if (seq === undefined) {
-      ensureSeq(r.ci);
-      throw new Error("sequence still loading — try again in a moment");
-    }
-    const c = data.contigs[r.ci];
-    const sub = seq.slice(r.lo, r.hi);
-    let body: string;
-    let translated = false;
-    if (selExtractKind === "aa") {
-      translated = true;
-      // A feature-derived selection is exactly the CDS span → use its correct
-      // strand/frame translation; a raw range → forward-frame translate the slice.
-      body =
-        selFeat && selFeat.ci === r.ci && selFeat.feat.kind === "CDS"
-          ? (codingMap(selFeat.ci, selFeat.feat, seq)?.pep ?? translateFwd(sub))
-          : translateFwd(sub);
-    } else {
-      body = sub;
-    }
-    const id = (c.id || c.name || "seq").replace(/\s+/g, "_");
-    const fasta = `>${id}_${r.lo + 1}_${r.hi}${translated ? "_translated" : ""}\n${wrapSeq(body)}`;
-    const p = await createTextFile(dir, name, fasta);
+    const p = await extractRegion(dir, name, path, r.ci, r.lo, r.hi, selExtractKind === "aa");
     await ws.refreshAndOpen(p);
     showSelExtract = false;
   }
@@ -1134,11 +1106,11 @@
               ⧉ Copy {(selRange.hi - selRange.lo).toLocaleString()} {data.contigs[selRange.ci].is_protein ? "aa" : "bp"}
             </button>
           {/if}
-          <button class="extract" onclick={() => openSelExtract("nt")} title="Extract selection to a new FASTA">
+          <button class="extract" onclick={() => openSelExtract("nt")} title="Extract selection to a new GenBank">
             ⤓ {selIsNuc ? "NT" : "File"}
           </button>
           {#if selIsNuc}
-            <button class="extract" onclick={() => openSelExtract("aa")} title="Extract translated selection to a new FASTA">⤓ Protein</button>
+            <button class="extract" onclick={() => openSelExtract("aa")} title="Extract the region's CDS peptides to a protein GenBank">⤓ Protein</button>
           {/if}
         {/if}
         {#if copyMsg}<span class="dim">{copyMsg}</span>{/if}
@@ -1267,7 +1239,7 @@
 
   {#if showSelExtract}
     <NameModal
-      title="Extract selection ({selExtractKind === 'aa' ? 'translated peptide' : 'nucleotides'})"
+      title="Extract selection ({selExtractKind === 'aa' ? 'CDS peptides → protein GenBank' : 'nucleotides → GenBank'})"
       defaultName={selExtractDefault}
       submitLabel="Extract"
       validate={validateFilename}

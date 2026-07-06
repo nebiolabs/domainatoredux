@@ -24,7 +24,8 @@ export type FileType =
   | "hdf5"
   | "cm"
   | "ssn_viewer"
-  | "table";
+  | "table"
+  | "text";
 
 export interface FileEntry {
   path: string;
@@ -211,6 +212,7 @@ export interface JobInfo {
   message: string;
   started_at_ms: string;
   outputs: string[];
+  params: Record<string, unknown>;
 }
 
 // Minimal JSON-Schema shape we render forms from (draft-07 subset).
@@ -226,7 +228,7 @@ export interface JsonSchemaProp {
   type?: string | string[];
   description?: string;
   default?: unknown;
-  enum?: string[];
+  enum?: (string | null)[];
   items?: { type?: string };
 }
 

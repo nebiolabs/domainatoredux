@@ -6,8 +6,18 @@
   let {
     tool,
     meta,
+    initial = null,
     onclose,
-  }: { tool: string; meta: ToolMeta | null; onclose: () => void } = $props();
+  }: {
+    tool: string;
+    meta: ToolMeta | null;
+    // Pre-fill values (from a cloned job's params); overrides the seeded defaults.
+    initial?: Record<string, any> | null;
+    onclose: () => void;
+  } = $props();
+
+  const enumHasNull = (p: JsonSchemaProp | undefined) =>
+    Array.isArray(p?.enum) && p.enum.includes(null);
 
   let schema = $state<JsonSchema | null>(null);
   let values = $state<Record<string, any>>({});
@@ -57,7 +67,7 @@
   function defaultOutput(toolId: string, fieldName: string, inputPath: string): string {
     const stem = inputPath ? stemOf(inputPath) : "output";
     switch (`${toolId}:${fieldName}`) {
-      case "transform-matrix:dense":
+      case "transform-matrix:sparse":
         return `${stem}.transformed.hdf5`;
       case "build-ssn:xgmml":
         return `${stem}.xgmml`;
@@ -107,9 +117,9 @@
         return `${stem}.searched.hmm`;
       case "hmmer-report:output":
         return `${stem}.hmm_report.tsv`;
-      case "seq-dist:dense":
+      case "seq-dist:sparse":
         return `${stem}.dist.hdf5`;
-      case "compare-contigs:dense":
+      case "compare-contigs:sparse":
         return `${stem}.compare.hdf5`;
       case "enum-report:output":
         return `${stem}.enum.tsv`;
@@ -162,6 +172,7 @@
 
   $effect(() => {
     void tool;
+    void initial;
     error = null;
     result = null;
     schema = null;
@@ -177,6 +188,8 @@
         for (const [k, p] of Object.entries(schema.properties ?? {})) {
           if (p.default !== undefined && p.default !== null) {
             v[k] = Array.isArray(p.default) ? p.default.join(",") : p.default;
+          } else if (enumHasNull(p)) {
+            v[k] = ""; // optional enum → blank, matching the CLI's unset default
           }
         }
         // Seed input dropdowns (prefer the active file, else the first match).
@@ -204,6 +217,25 @@
           }
           if (field.role === "enum_columns") {
             v[field.name] = ["domains", "architecture", "length"];
+          }
+        }
+        // Clone: overlay a prior job's params (which are in the *collected* shape —
+        // output_file is a full path, input_files/arrays are arrays) onto the form.
+        if (initial) {
+          for (const field of meta?.fields ?? []) {
+            const raw = initial[field.name];
+            if (raw === undefined || raw === null) continue;
+            if (field.role === "output_file") {
+              v[field.name] = String(raw).split(/[\\/]/).pop() ?? "";
+            } else if (field.role === "input_files") {
+              v[field.name] = Array.isArray(raw) ? (raw[0] ?? "") : raw;
+            } else if (field.role === "hmm_columns" || field.role === "enum_columns") {
+              v[field.name] = raw;
+            } else if (Array.isArray(raw)) {
+              v[field.name] = raw.join(",");
+            } else {
+              v[field.name] = raw;
+            }
           }
         }
         values = v;
@@ -267,12 +299,12 @@
     error = null;
     result = null;
     try {
-      const r = await runTool(tool, collectParams(), ws.root);
-      result = `${r.message} → ${r.outputs.map((o) => o.split(/[\\/]/).pop()).join(", ")}`;
+      await runTool(tool, collectParams(), ws.root);
       if (ws.selectedFolder) await ws.selectFolder(ws.selectedFolder);
+      running = false;
+      onclose(); // success → close the dialog (errors keep it open below)
     } catch (e) {
       error = String(e);
-    } finally {
       running = false;
     }
   }
@@ -360,7 +392,8 @@
               <input type="text" bind:value={values[field.name]} placeholder="filename" />
             {:else if prop?.enum}
               <select bind:value={values[field.name]}>
-                {#each prop.enum as opt (opt)}<option value={opt}>{opt}</option>{/each}
+                {#if enumHasNull(prop) || !field.required}<option value="">(default)</option>{/if}
+                {#each prop.enum.filter((o) => o !== null) as opt (opt)}<option value={opt}>{opt}</option>{/each}
               </select>
             {:else if propType(prop) === "boolean"}
               <input type="checkbox" bind:checked={values[field.name]} />

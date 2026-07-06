@@ -468,16 +468,25 @@ fn is_fasta_name(name: &str) -> bool {
     [".fasta", ".fa", ".fna", ".faa", ".fap", ".pep"].iter().any(|e| l.ends_with(e))
 }
 
+/// Notify every window that files under `dir` changed, so file browsers refresh
+/// (e.g. after an Extract from a popped-out window creates a file elsewhere).
+fn notify_files_changed(app: &tauri::AppHandle, dir: &str) {
+    use tauri::Emitter;
+    let _ = app.emit("files-changed", dir.to_string());
+}
+
 /// Write the selected contigs (0-based `indices`, in order) from `source` into a new
 /// file `dir/name`. Output format follows `name`'s extension (FASTA vs GenBank).
 #[tauri::command]
 pub async fn extract_contigs(
+    app: tauri::AppHandle,
     dir: String,
     name: String,
     source: String,
     indices: Vec<usize>,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let dir_c = dir.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
         let recs = load_sequence_any(&source)?;
         let out: Vec<SeqRecord> = indices.iter().filter_map(|&i| recs.get(i).cloned()).collect();
         if out.is_empty() {
@@ -490,41 +499,120 @@ pub async fn extract_contigs(
         } else {
             write_genbank(&ts, &out).map_err(|e| format!("writing GenBank: {e}"))?;
         }
-        Ok(ts)
+        Ok::<String, String>(ts)
     })
     .await
-    .map_err(|e| format!("extract failed: {e}"))?
+    .map_err(|e| format!("extract failed: {e}"))??;
+    notify_files_changed(&app, &dir_c);
+    Ok(out)
+}
+
+/// Extract a coordinate region [start, end) (0-based half-open) from contig `index`
+/// of `source` into a new GenBank file `dir/name`, preserving the features that fall
+/// in the region (mirrors `select-by-coord`). When `translate` is set, the sliced
+/// region is then run through `extract_peptides` so the output is a protein GenBank
+/// of the CDSs in the region (the peptide equivalent of the nucleotide slice).
+#[tauri::command]
+pub async fn extract_region(
+    app: tauri::AppHandle,
+    dir: String,
+    name: String,
+    source: String,
+    index: usize,
+    start: usize,
+    end: usize,
+    translate: bool,
+) -> Result<String, String> {
+    let dir_c = dir.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        use domainator_core::tools::extract_peptides::{extract_peptides, ExtractPeptidesOptions};
+        use domainator_core::tools::select_by_coord::{extract_coordinate_region, CoordinateSelection};
+        let recs = load_sequence_any(&source)?;
+        let contig = recs.get(index).ok_or_else(|| format!("no contig at index {index}"))?;
+        if end <= start {
+            return Err("empty region".into());
+        }
+        let sel = CoordinateSelection {
+            contig: contig.name.clone(),
+            start: start as i64 + 1, // 1-based inclusive
+            end: end as i64,
+            strand: 1,
+            file: None,
+        };
+        let rec = extract_coordinate_region(contig, &sel)?;
+        let target = validated_target(&dir, &name)?;
+        let ts = target.to_string_lossy().into_owned();
+        if translate {
+            let opts = ExtractPeptidesOptions {
+                evalue: 100_000_000.0,
+                target_domains: None,
+                target_cdss: None,
+                search_hits: false,
+                strand: None,
+                unannotated: false,
+                invert: false,
+                databases: None,
+                keep_name: false,
+                name_field: None,
+                extract_all: true,
+            };
+            let peps = extract_peptides(std::slice::from_ref(&rec), &opts);
+            if peps.is_empty() {
+                return Err("no CDS features in the selected region to translate".into());
+            }
+            write_genbank(&ts, &peps).map_err(|e| format!("writing GenBank: {e}"))?;
+        } else {
+            write_genbank(&ts, std::slice::from_ref(&rec)).map_err(|e| format!("writing GenBank: {e}"))?;
+        }
+        Ok::<String, String>(ts)
+    })
+    .await
+    .map_err(|e| format!("extract failed: {e}"))??;
+    notify_files_changed(&app, &dir_c);
+    Ok(out)
 }
 
 /// Write the selected profiles (0-based `indices`, in order) from an `.hmm` `source`
 /// into a new `.hmm` file `dir/name`.
 #[tauri::command]
 pub async fn extract_hmms(
+    app: tauri::AppHandle,
     dir: String,
     name: String,
     source: String,
     indices: Vec<usize>,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let dir_c = dir.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
         let target = validated_target(&dir, &name)?;
         let ts = target.to_string_lossy().into_owned();
         domainator_core::app_support::hmm_logo::extract_hmms_to_file(&source, &indices, &ts)?;
-        Ok(ts)
+        Ok::<String, String>(ts)
     })
     .await
-    .map_err(|e| format!("extract failed: {e}"))?
+    .map_err(|e| format!("extract failed: {e}"))??;
+    notify_files_changed(&app, &dir_c);
+    Ok(out)
 }
 
 /// Create a new text file `dir/name` with `contents` (New-file-from-pasted-text).
 #[tauri::command]
-pub async fn create_text_file(dir: String, name: String, contents: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn create_text_file(
+    app: tauri::AppHandle,
+    dir: String,
+    name: String,
+    contents: String,
+) -> Result<String, String> {
+    let dir_c = dir.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
         let target = validated_target(&dir, &name)?;
         std::fs::write(&target, contents.as_bytes()).map_err(|e| format!("writing file: {e}"))?;
-        Ok(target.to_string_lossy().into_owned())
+        Ok::<String, String>(target.to_string_lossy().into_owned())
     })
     .await
-    .map_err(|e| format!("create failed: {e}"))?
+    .map_err(|e| format!("create failed: {e}"))??;
+    notify_files_changed(&app, &dir_c);
+    Ok(out)
 }
 
 fn load_sequence_any(path: &str) -> Result<Vec<SeqRecord>, String> {

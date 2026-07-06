@@ -1909,10 +1909,12 @@ fn seq_dist_schema() -> serde_json::Value {
                 "diamond_f","diamond_d","diamond_mids","diamond_s","diamond_mors","diamond_vs",
                 "diamond_us","hmmer","hmmer_compare"
             ], "default": "diamond_us"},
-            "mode": {"type": "string", "default": "score"},
+            "mode": {"enum": [
+                "none","score","bool","norm_score","row_norm_score","score_dist","efi_score","efi_score_dist"
+            ], "default": "score", "description": "Matrix value transform (mst_knn requires score/bool/efi_score)"},
             "lb": {"type": "number", "default": 0.0},
             "k": {"type": ["integer", "null"]},
-            "mst_knn": {"type": ["integer", "null"], "description": "Integer > 1"},
+            "mst_knn": {"type": ["integer", "null"], "description": "Integer >= 1 (1 reduces to MST plus each node's single nearest neighbor)"},
             "cpu": {"type": "integer", "default": 0},
             "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if a projected matrix output exceeds this many GB (0 disables)"}
         }
@@ -1982,7 +1984,7 @@ fn build_ssn_schema() -> serde_json::Value {
             "cluster_tsv": {"type": ["string", "null"]},
             "no_cluster_header": {"type": "boolean", "default": false},
             "mst": {"type": "boolean", "default": false},
-            "mst_knn": {"type": ["integer", "null"], "description": "Integer > 1"},
+            "mst_knn": {"type": ["integer", "null"], "description": "Integer >= 1 (1 reduces to MST plus each node's single nearest neighbor)"},
             "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected XGMML output exceeds this many GB (0 disables)"}
         }
     })
@@ -2005,7 +2007,7 @@ fn transform_matrix_schema() -> serde_json::Value {
             ], "default": "none"},
             "input_type": {"type": ["string", "null"], "description": "Override the input matrix data type"},
             "lb": {"type": ["number", "null"], "description": "Zero out values <= lb after the transform"},
-            "mst_knn": {"type": ["integer", "null"], "description": "Integer > 1"},
+            "mst_knn": {"type": ["integer", "null"], "description": "Integer >= 1 (1 reduces to MST plus each node's single nearest neighbor)"},
             "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if a projected matrix output exceeds this many GB (0 disables)"}
         }
     })
@@ -2028,7 +2030,7 @@ fn compare_contigs_schema() -> serde_json::Value {
             "databases": {"type": "array", "items": {"type": "string"}},
             "k": {"type": ["integer", "null"]},
             "lb": {"type": "number", "default": 0.0},
-            "mst_knn": {"type": ["integer", "null"], "description": "Integer > 1"},
+            "mst_knn": {"type": ["integer", "null"], "description": "Integer >= 1 (1 reduces to MST plus each node's single nearest neighbor)"},
             "cpu": {"type": "integer", "default": 0},
             "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if a projected matrix output exceeds this many GB (0 disables)"}
         }

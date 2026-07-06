@@ -7,6 +7,7 @@ import MatrixView from "./MatrixView.svelte";
 import SsnView from "./SsnView.svelte";
 import SummaryView from "./SummaryView.svelte";
 import TableView from "./TableView.svelte";
+import TextView from "./TextView.svelte";
 
 // One selectable view tab within an opened file. `component` takes a `path` prop.
 export interface ViewDescriptor {
@@ -35,6 +36,8 @@ export function viewsFor(fileType: FileType): ViewDescriptor[] {
       return [{ id: "report", label: "Profiles", component: HmmReport }];
     case "table":
       return [{ id: "table", label: "Table", component: TableView }];
+    case "text":
+      return [{ id: "text", label: "Text", component: TextView }];
     default:
       return [];
   }

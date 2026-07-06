@@ -99,7 +99,7 @@ pub fn count_records(path: &Path) -> Option<u64> {
 /// messages when a user names a new/renamed file with an unrecognized type.
 pub fn accepted_types_hint() -> &'static str {
     "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .hmm, .hdf5/.h5, \
-     .cm, .sto/.stockholm, .tsv/.csv/.tab, .ssnv (optionally with a .gz suffix)."
+     .cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .ssnv (optionally with a .gz suffix)."
 }
 
 pub fn classify_file(path: &Path) -> Option<&'static str> {
@@ -118,6 +118,7 @@ pub fn classify_file(path: &Path) -> Option<&'static str> {
         "cm" => "cm",
         "sto" | "stockholm" | "sth" => "stockholm",
         "tsv" | "csv" | "tab" => "table",
+        "txt" | "text" | "list" => "text",
         "ssnv" | "ssnview" => "ssn_viewer",
         _ => return None,
     })

@@ -84,6 +84,20 @@ export const extractHmms = (
   indices: number[],
 ): Promise<string> => invoke("extract_hmms", { dir, name, source, indices });
 
+/// Extract a coordinate region [start, end) of contig `index` to a new GenBank
+/// file (preserves the features in the region, like select-by-coord). With
+/// `translate`, the region's CDSs are converted to a protein GenBank via
+/// extract_peptides.
+export const extractRegion = (
+  dir: string,
+  name: string,
+  source: string,
+  index: number,
+  start: number,
+  end: number,
+  translate: boolean,
+): Promise<string> => invoke("extract_region", { dir, name, source, index, start, end, translate });
+
 /// Create a new text file `dir/name` with `contents`; returns the new path.
 export const createTextFile = (dir: string, name: string, contents: string): Promise<string> =>
   invoke("create_text_file", { dir, name, contents });
@@ -227,6 +241,11 @@ export const runTool = (
 
 export const listJobs = (): Promise<JobInfo[]> => invoke("list_jobs");
 export const cancelJob = (jobId: string): Promise<void> => invoke("cancel_job", { jobId });
+/// Load persisted job history for a workspace (also sets where new jobs are saved).
+export const loadJobs = (workspaceRoot: string): Promise<JobInfo[]> =>
+  invoke("load_jobs", { workspaceRoot });
+export const deleteJob = (jobId: string): Promise<void> => invoke("delete_job", { jobId });
+export const clearJobs = (): Promise<void> => invoke("clear_jobs");
 
 export const listExternalTools = (): Promise<ExternalToolStatus[]> => invoke("list_external_tools");
 export const downloadExternalTool = (id: string): Promise<string> =>

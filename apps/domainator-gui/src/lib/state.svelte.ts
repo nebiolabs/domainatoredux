@@ -1,11 +1,13 @@
 import {
   cancelJob as apiCancelJob,
+  clearJobs as apiClearJobs,
   createFolder,
   deleteFile,
+  deleteJob as apiDeleteJob,
   importFiles,
   listDatabases,
   listFolder,
-  listJobs,
+  loadJobs as apiLoadJobs,
   openWorkspace,
   registerDatabase,
   renameFile as apiRenameFile,
@@ -25,6 +27,7 @@ function classifyPath(path: string): FileType | null {
   if (["hdf5", "hdf", "h5"].includes(ext)) return "hdf5";
   if (["ssnv", "ssnview"].includes(ext)) return "ssn_viewer";
   if (["tsv", "csv", "tab"].includes(ext)) return "table";
+  if (["txt", "text", "list"].includes(ext)) return "text";
   return null;
 }
 
@@ -45,6 +48,14 @@ class WorkspaceStore {
   databases = $state<DatabaseEntry[]>([]);
   dbError = $state<string | null>(null);
   jobs = $state<JobInfo[]>([]);
+  // A request to open the tool dialog (from the Tools menu or a job "clone"),
+  // consumed by App. `initial` pre-fills the form (clone).
+  requestedTool = $state<{ id: string; initial?: Record<string, unknown> } | null>(null);
+
+  /// Open the tool dialog for `id`, optionally pre-filled with `initial` params.
+  openTool(id: string, initial?: Record<string, unknown>): void {
+    this.requestedTool = { id, initial };
+  }
 
   async open(root: string): Promise<void> {
     this.error = null;
@@ -54,6 +65,7 @@ class WorkspaceStore {
       this.root = info.root;
       this.tree = info.tree;
       await this.loadDatabases();
+      await this.loadJobs(); // restore persisted job history for this workspace
       // Auto-select the root folder so the file table isn't empty on open.
       await this.selectFolder(info.tree.path);
     } catch (e) {
@@ -111,10 +123,15 @@ class WorkspaceStore {
     }
   }
 
+  private sortJobs(list: JobInfo[]): JobInfo[] {
+    return list.sort((a, b) => b.started_at_ms.localeCompare(a.started_at_ms));
+  }
+
+  /// Restore this workspace's persisted job history (no-op until a workspace opens).
   async loadJobs(): Promise<void> {
+    if (!this.root) return;
     try {
-      const list = await listJobs();
-      this.jobs = list.sort((a, b) => b.started_at_ms.localeCompare(a.started_at_ms));
+      this.jobs = this.sortJobs(await apiLoadJobs(this.root));
     } catch {
       /* ignore */
     }
@@ -125,6 +142,26 @@ class WorkspaceStore {
       await apiCancelJob(id);
     } catch {
       /* ignore */
+    }
+  }
+
+  /// Delete one job from history (persisted).
+  async deleteJob(id: string): Promise<void> {
+    try {
+      await apiDeleteJob(id);
+      this.jobs = this.jobs.filter((j) => j.job_id !== id);
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  /// Clear all job history (persisted).
+  async clearJobs(): Promise<void> {
+    try {
+      await apiClearJobs();
+      this.jobs = [];
+    } catch (e) {
+      this.error = String(e);
     }
   }
 

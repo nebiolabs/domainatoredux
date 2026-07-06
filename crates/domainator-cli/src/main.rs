@@ -711,7 +711,7 @@ enum Command {
         /// Keep at most this many non-zero entries per input row.
         #[arg(short = 'k', long)]
         k: Option<usize>,
-        /// Prune to MST + OR-symmetric kNN edges (integer > 1; requires reference
+        /// Prune to MST + OR-symmetric kNN edges (integer >= 1; requires reference
         /// == input and --mode score/bool/efi_score). When set, -k is ignored.
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
@@ -757,7 +757,7 @@ enum Command {
         /// Zero out final scores <= this (default: 0).
         #[arg(long)]
         lb: Option<f64>,
-        /// Prune to MST + OR-symmetric kNN edges (integer > 1). When set, -k is ignored.
+        /// Prune to MST + OR-symmetric kNN edges (integer >= 1). When set, -k is ignored.
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
         /// Worker threads (0 = all cores).
@@ -798,7 +798,7 @@ enum Command {
         /// Zero out all values <= this after the mode transform.
         #[arg(long)]
         lb: Option<f64>,
-        /// Keep only MST + OR-symmetric kNN edges (integer > 1).
+        /// Keep only MST + OR-symmetric kNN edges (integer >= 1).
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
         /// Fail if a projected matrix output exceeds this many GB (default 25; 0 disables).
@@ -852,7 +852,7 @@ enum Command {
         /// Keep only maximum-spanning-tree edges.
         #[arg(long)]
         mst: bool,
-        /// Keep MST + OR-symmetric kNN edges (integer > 1).
+        /// Keep MST + OR-symmetric kNN edges (integer >= 1).
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
         /// Fail if the projected XGMML output exceeds this many GB (default 25; 0 disables).
@@ -1292,12 +1292,12 @@ enum Command {
     },
 }
 
-/// Parse `--mst_knn`: an integer greater than 1 (mirrors
-/// `transform_matrix._mst_knn_arg`).
+/// Parse `--mst_knn`: an integer >= 1 (mirrors `transform_matrix._mst_knn_arg`).
+/// `k == 1` reduces to the MST plus each node's single nearest neighbor.
 fn parse_mst_knn(value: &str) -> std::result::Result<usize, String> {
     let v: i64 = value.parse().map_err(|_| format!("`{value}` is not an integer"))?;
-    if v <= 1 {
-        return Err("--mst_knn must be an integer greater than 1".to_string());
+    if v < 1 {
+        return Err("--mst_knn must be an integer >= 1".to_string());
     }
     Ok(v as usize)
 }

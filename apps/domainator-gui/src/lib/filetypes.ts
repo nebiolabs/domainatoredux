@@ -13,12 +13,13 @@ export const ACCEPTED_EXTS = [
   "cm",
   "sto", "stockholm", "sth",
   "tsv", "csv", "tab",
+  "txt", "text", "list",
   "ssnv", "ssnview",
 ];
 
 export const ACCEPTED_HINT =
   "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .hmm, .hdf5/.h5, " +
-  ".cm, .sto/.stockholm, .tsv/.csv/.tab, .ssnv (optionally with a .gz suffix).";
+  ".cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .ssnv (optionally with a .gz suffix).";
 
 export function isRecognizedFilename(name: string): boolean {
   let n = name.trim().toLowerCase().replace(/\.(gz|bgz|bgzf)$/, "");
@@ -46,5 +47,6 @@ export function fileTypeOf(name: string): FileType | null {
   if (ext === "cm") return "cm";
   if (["ssnv", "ssnview"].includes(ext)) return "ssn_viewer";
   if (["tsv", "csv", "tab"].includes(ext)) return "table";
+  if (["txt", "text", "list"].includes(ext)) return "text";
   return null;
 }

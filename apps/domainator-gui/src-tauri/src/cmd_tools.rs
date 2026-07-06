@@ -54,13 +54,14 @@ use domainator_core::tools::select_common::parse_name_list;
 use domainator_core::tools::seq_dist::{detect_kind, seq_dist, SeqDistOptions};
 use domainator_core::seq::taxonomy::NCBITaxonomy;
 use domainator_core::tools::transform_matrix::transform_matrix;
-use serde::Serialize;
+use domainator_core::app_support::workspace::dot_dir;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 
 /// Live state of a tool run, tracked in the [`JobRegistry`] managed state and
 /// broadcast to the UI via the `job-update` event.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct JobInfo {
     pub job_id: String,
     pub tool: String,
@@ -69,6 +70,9 @@ pub struct JobInfo {
     pub message: String,
     pub started_at_ms: String, // u128 as string (JSON-safe)
     pub outputs: Vec<String>,
+    /// The params the tool was run with — lets the UI "clone" a job into a fresh
+    /// pre-filled dialog.
+    pub params: Value,
 }
 
 /// Managed state: all jobs seen this session + a cancel flag set.
@@ -76,6 +80,9 @@ pub struct JobInfo {
 pub struct JobRegistry {
     jobs: Mutex<HashMap<String, JobInfo>>,
     cancelled: Mutex<std::collections::HashSet<String>>,
+    /// Workspace root for persisting job history to `.domainator/jobs.json`
+    /// (set when a workspace is opened via `load_jobs`).
+    root: Mutex<Option<String>>,
 }
 
 fn ms_str(ms: u128) -> String {
@@ -146,7 +153,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
                 f("translate", "Translate", "param", None, false),
                 // Decoy references + taxonomy filters:
                 f("decoys", "Decoy refs", "param", None, false),
-                f("decoys_file", "Decoys file", "param", None, false),
+                f("decoys_file", "Decoys file (.txt)", "input_file", Some("text"), false),
                 f("include_taxids", "Include taxids", "param", None, false),
                 f("exclude_taxids", "Exclude taxids", "param", None, false),
                 f("taxonomy_expr", "Taxonomy expr", "param", None, false),
@@ -180,7 +187,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             fields: vec![
                 f("input", "Input sequences", "input_file", Some("sequence"), true),
                 f("reference", "Reference (optional)", "input_file", Some("sequence"), false),
-                f("dense", "Output (matrix)", "output_file", None, true),
+                f("sparse", "Output (matrix)", "output_file", None, true),
                 f("algorithm", "Algorithm", "param", None, false),
                 f("mode", "Mode", "param", None, false),
                 f("lb", "Lower bound", "param", None, false),
@@ -193,7 +200,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             description: "Neighborhood-similarity matrix from domain content (step 3 alternative; pure-Rust).".into(),
             fields: vec![
                 f("input", "Input GenBank", "input_files", Some("genbank"), true),
-                f("dense", "Output (matrix)", "output_file", None, true),
+                f("sparse", "Output (matrix)", "output_file", None, true),
                 f("ji", "Jaccard weight", "param", None, false),
                 f("ai", "Adjacency weight", "param", None, false),
                 f("k", "kNN k", "param", None, false),
@@ -210,7 +217,9 @@ pub async fn list_tools() -> Vec<ToolMeta> {
                 f("output", "Output (GenBank)", "output_file", None, true),
                 // Which CDSs to select:
                 f("cds", "CDS names", "param", None, false),
+                f("cds_file", "CDS names file (.txt)", "input_file", Some("text"), false),
                 f("domains", "Domain names", "param", None, false),
+                f("domains_file", "Domain names file (.txt)", "input_file", Some("text"), false),
                 f("domain_expr", "Domain expr", "param", None, false),
                 f("databases", "Databases", "param", None, false),
                 f("search_hits", "Search hits", "param", None, false),
@@ -218,6 +227,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
                 f("invert", "Invert", "param", None, false),
                 f("evalue", "E-value", "param", None, false),
                 f("contigs", "Restrict to contigs", "param", None, false),
+                f("contigs_file", "Contigs file (.txt)", "input_file", Some("text"), false),
                 // Neighborhood extraction around each selected CDS:
                 f("whole_contig", "Whole contig", "param", None, false),
                 f("cds_range", "CDS range (±)", "param", None, false),
@@ -244,11 +254,13 @@ pub async fn list_tools() -> Vec<ToolMeta> {
                 f("fasta_out", "FASTA output", "param", None, false),
                 // Name / regex selection:
                 f("contigs", "Contig names", "param", None, false),
+                f("contigs_file", "Contigs file (.txt)", "input_file", Some("text"), false),
                 f("contigs_regex", "Contigs regex", "param", None, false),
                 f("definition_regex", "Definition regex", "param", None, false),
                 f("sequence_regex", "Sequence regex", "param", None, false),
                 // Domain-content selection:
                 f("domains", "Domain names", "param", None, false),
+                f("domains_file", "Domain names file (.txt)", "input_file", Some("text"), false),
                 f("domain_expr", "Domain expr", "param", None, false),
                 f("domain_type", "Domain type", "param", None, false),
                 f("databases", "Databases", "param", None, false),
@@ -280,10 +292,12 @@ pub async fn list_tools() -> Vec<ToolMeta> {
                 f("evalue", "Max E-value", "param", None, false),
                 f("max_overlap", "Max overlap", "param", None, false),
                 f("domains", "Keep domains", "param", None, false),
+                f("domains_file", "Keep domains file (.txt)", "input_file", Some("text"), false),
                 f("databases_keep", "Keep databases", "param", None, false),
                 f("databases_filter", "Remove databases", "param", None, false),
                 f("annotation_type", "Annotation type", "param", None, false),
                 f("contigs", "Restrict to contigs", "param", None, false),
+                f("contigs_file", "Contigs file (.txt)", "input_file", Some("text"), false),
             ],
         },
         ToolMeta {
@@ -548,7 +562,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             description: "Rescale or prune a similarity matrix (mode, lower bound, MST-kNN).".into(),
             fields: vec![
                 f("input", "Input matrix", "input_file", Some("hdf5"), true),
-                f("dense", "Output (matrix)", "output_file", None, true),
+                f("sparse", "Output (matrix)", "output_file", None, true),
                 f("mode", "Mode", "param", None, false),
                 f("lb", "Lower bound", "param", None, false),
                 f("mst_knn", "MST-kNN k", "param", None, false),
@@ -561,11 +575,15 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             fields: vec![
                 f("input", "Input matrix", "input_file", Some("hdf5"), true),
                 f("xgmml", "Output (XGMML)", "output_file", None, true),
+                f("metadata", "Metadata (TSV)", "input_files", Some("table"), false),
                 f("cluster", "Cluster", "param", None, false),
                 f("cluster_tsv", "Cluster TSV", "output_file", None, false),
                 f("lb", "Lower bound", "param", None, false),
                 f("mst", "MST only", "param", None, false),
                 f("mst_knn", "MST-kNN k", "param", None, false),
+                f("color_by", "Color by", "param", None, false),
+                f("color_table", "Color table (in)", "input_file", Some("table"), false),
+                f("color_table_out", "Color table (out)", "output_file", None, false),
             ],
         },
         ToolMeta {
@@ -575,8 +593,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             fields: vec![
                 f("input", "Input matrix", "input_file", Some("hdf5"), true),
                 f("output", "Output (.ssnv)", "output_file", None, true),
-                f("color_by", "Color by", "param", None, false),
-                f("label_by", "Label by", "param", None, false),
+                f("metadata", "Metadata (TSV)", "input_files", Some("table"), false),
                 f("merge_impact_metric", "Merge metric", "param", None, false),
                 f("max_merge_events", "Max merge events", "param", None, false),
             ],
@@ -623,6 +640,7 @@ pub async fn run_tool(
         message: String::new(),
         started_at_ms: ms_str(started),
         outputs: Vec::new(),
+        params: params.clone(),
     };
     set_job(&registry, &app, running);
 
@@ -647,6 +665,7 @@ pub async fn run_tool(
         message: String::new(),
         started_at_ms: ms_str(started),
         outputs: Vec::new(),
+        params: params.clone(),
     };
     match outcome {
         _ if cancelled => {
@@ -671,10 +690,42 @@ pub async fn run_tool(
     }
 }
 
-/// Record a job's state and broadcast it to the UI.
+/// Persisted job-history cap (newest kept), so `.domainator/jobs.json` can't grow
+/// without bound.
+const MAX_PERSISTED_JOBS: usize = 500;
+
+fn jobs_file(root: &str) -> std::path::PathBuf {
+    dot_dir(Path::new(root)).join("jobs.json")
+}
+
+/// Write the current job history to `.domainator/jobs.json` (newest first, capped).
+/// Best-effort: no-op until a workspace root is known; failures are ignored.
+fn persist_jobs(registry: &JobRegistry) {
+    let Some(root) = registry.root.lock().unwrap().clone() else { return };
+    let mut list: Vec<JobInfo> = registry.jobs.lock().unwrap().values().cloned().collect();
+    list.sort_by(|a, b| job_ms(b).cmp(&job_ms(a)));
+    list.truncate(MAX_PERSISTED_JOBS);
+    let path = jobs_file(&root);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(bytes) = serde_json::to_vec_pretty(&list) {
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, &bytes).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
+}
+
+fn job_ms(j: &JobInfo) -> u128 {
+    j.started_at_ms.parse().unwrap_or(0)
+}
+
+/// Record a job's state, broadcast it to the UI, and persist the history.
 fn set_job(registry: &JobRegistry, app: &AppHandle, info: JobInfo) {
     registry.jobs.lock().unwrap().insert(info.job_id.clone(), info.clone());
     let _ = app.emit("job-update", &info);
+    persist_jobs(registry);
 }
 
 /// Status of one job (for polling).
@@ -687,6 +738,47 @@ pub fn job_status(registry: tauri::State<'_, JobRegistry>, job_id: String) -> Op
 #[tauri::command]
 pub fn list_jobs(registry: tauri::State<'_, JobRegistry>) -> Vec<JobInfo> {
     registry.jobs.lock().unwrap().values().cloned().collect()
+}
+
+/// Load persisted job history for a workspace (called on open). Sets the registry's
+/// root (so future updates persist there), replaces the in-memory jobs with the
+/// file's, and marks any left-over `running` jobs as interrupted (the process that
+/// ran them is gone). Returns the history.
+#[tauri::command]
+pub fn load_jobs(registry: tauri::State<'_, JobRegistry>, workspace_root: String) -> Vec<JobInfo> {
+    *registry.root.lock().unwrap() = Some(workspace_root.clone());
+    let loaded: Vec<JobInfo> = std::fs::read(jobs_file(&workspace_root))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default();
+    let list = {
+        let mut map = registry.jobs.lock().unwrap();
+        map.clear();
+        for mut j in loaded {
+            if j.status == "running" {
+                j.status = "failed".into();
+                j.message = "interrupted (app closed)".into();
+            }
+            map.insert(j.job_id.clone(), j);
+        }
+        map.values().cloned().collect::<Vec<_>>()
+    };
+    persist_jobs(&registry); // save the corrected (no-longer-running) statuses
+    list
+}
+
+/// Delete one job from the history.
+#[tauri::command]
+pub fn delete_job(registry: tauri::State<'_, JobRegistry>, job_id: String) {
+    registry.jobs.lock().unwrap().remove(&job_id);
+    persist_jobs(&registry);
+}
+
+/// Clear the entire job history.
+#[tauri::command]
+pub fn clear_jobs(registry: tauri::State<'_, JobRegistry>) {
+    registry.jobs.lock().unwrap().clear();
+    persist_jobs(&registry);
 }
 
 /// Best-effort cancel: flags the job so its result is discarded on completion.
@@ -909,7 +1001,7 @@ fn run_domainate(params: Value) -> Result<RunOutput, String> {
 fn run_seq_dist(params: Value) -> Result<RunOutput, String> {
     let cfg: SeqDistConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
     let input = cfg.input.clone().ok_or("missing input sequences")?;
-    let output = cfg.dense.clone().ok_or("missing output (matrix .hdf5)")?;
+    let output = cfg.sparse.clone().ok_or("missing output (matrix .hdf5)")?;
     let input_kind = detect_kind(Path::new(&input)).ok_or_else(|| format!("could not detect input kind: {input}"))?;
     let ref_kind = match cfg.reference.as_ref() {
         Some(p) => Some(detect_kind(Path::new(p)).ok_or_else(|| format!("could not detect reference kind: {p}"))?),
@@ -925,7 +1017,7 @@ fn run_seq_dist(params: Value) -> Result<RunOutput, String> {
     };
     let matrix = seq_dist(&input, input_kind, cfg.reference.as_deref(), ref_kind, &opts)
         .map_err(|e| format!("seq_dist: {e}"))?;
-    hdf5_io::write_dense(&output, &matrix).map_err(|e| format!("writing matrix: {e}"))?;
+    hdf5_io::write_sparse(&output, &matrix).map_err(|e| format!("writing matrix: {e}"))?;
     let mut inputs = vec![IoRef { path: input, role: "sequence".into() }];
     if let Some(r) = cfg.reference {
         inputs.push(IoRef { path: r, role: "reference".into() });
@@ -938,7 +1030,7 @@ fn run_compare_contigs(params: Value) -> Result<RunOutput, String> {
     if cfg.input.is_empty() {
         return Err("select at least one GenBank file".into());
     }
-    let output = cfg.dense.clone().ok_or("missing output (matrix .hdf5)")?;
+    let output = cfg.sparse.clone().ok_or("missing output (matrix .hdf5)")?;
     let ji = cfg.ji.unwrap_or(0.5);
     let ai = cfg.ai.unwrap_or(0.5);
     if ji == 0.0 && ai == 0.0 {
@@ -954,7 +1046,7 @@ fn run_compare_contigs(params: Value) -> Result<RunOutput, String> {
         cpu: cfg.cpu.unwrap_or(0),
     };
     let matrix = compare_contigs(&cfg.input, &opts).map_err(|e| format!("compare_contigs: {e}"))?;
-    hdf5_io::write_dense(&output, &matrix).map_err(|e| format!("writing matrix: {e}"))?;
+    hdf5_io::write_sparse(&output, &matrix).map_err(|e| format!("writing matrix: {e}"))?;
     let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "genbank".into() }).collect();
     Ok((inputs, vec![IoRef { path: output, role: "matrix".into() }], format!("wrote {}×{} matrix", matrix.nrows(), matrix.ncols())))
 }
@@ -1719,8 +1811,17 @@ fn run_build_ssn(params: Value) -> Result<RunOutput, String> {
     if cfg.mst && cfg.mst_knn.is_some() {
         return Err("mst and mst_knn are mutually exclusive".into());
     }
-    // GUI form doesn't expose subset/color-table files yet; pass none.
-    let opts = resolve_build_ssn(&cfg, None, None);
+    // Resolve the optional colour table (name→color TSV); subset files aren't
+    // exposed in the GUI form yet, so pass none for those.
+    let color_table = match cfg.color_table.as_deref().filter(|p| !p.trim().is_empty()) {
+        Some(path) => {
+            let text = std::fs::read_to_string(path).map_err(|e| format!("reading color table: {e}"))?;
+            let table = color_genbank::read_color_table(&text).map_err(|e| e.to_string())?;
+            Some(table.into_iter().collect::<std::collections::HashMap<_, _>>())
+        }
+        None => None,
+    };
+    let opts = resolve_build_ssn(&cfg, None, color_table);
     let m = read_matrix(&input).map_err(|e| format!("reading matrix: {e}"))?;
     let result = build_ssn(&m, &opts).map_err(|e| format!("build_ssn: {e}"))?;
 
@@ -1746,6 +1847,21 @@ fn run_build_ssn(params: Value) -> Result<RunOutput, String> {
         }
         std::fs::write(path, out).map_err(|e| format!("writing cluster tsv: {e}"))?;
         outputs.push(IoRef { path: path.clone(), role: "cluster_tsv".into() });
+    }
+
+    if let Some(path) = cfg.color_table_out.as_deref().filter(|p| !p.trim().is_empty()) {
+        let ct = result.resolved_color_table.as_ref().ok_or("no colour table resolved (set color_by)")?;
+        let mut items: Vec<(&String, &String)> = ct.iter().collect();
+        items.sort_by(|a, b| a.0.cmp(b.0));
+        let mut out = String::new();
+        for (k, v) in items {
+            out.push_str(k);
+            out.push('\t');
+            out.push_str(v);
+            out.push('\n');
+        }
+        std::fs::write(path, out).map_err(|e| format!("writing color table: {e}"))?;
+        outputs.push(IoRef { path: path.to_string(), role: "table".into() });
     }
 
     let inputs = vec![IoRef { path: input, role: "matrix".into() }];

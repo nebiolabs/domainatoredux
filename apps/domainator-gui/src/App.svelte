@@ -75,8 +75,29 @@
   let tools = $state<ToolMeta[]>([]);
   let toolsOpen = $state(false);
   let activeTool = $state<string | null>(null);
+  let toolInitial = $state<Record<string, unknown> | null>(null);
   let newFolderOpen = $state(false);
   let newFolderName = $state("");
+
+  // Open the tool dialog on request (Tools menu → no initial; job "clone" → params).
+  $effect(() => {
+    const req = ws.requestedTool;
+    if (!req) return;
+    activeTool = req.id;
+    toolInitial = req.initial ?? null;
+    ws.requestedTool = null;
+  });
+
+  // Cross-window refresh: when any window creates a file (e.g. Extract from a
+  // popped-out window), refresh the browser if the changed dir is the open folder.
+  $effect(() => {
+    if (isStandalone) return;
+    let unlisten: (() => void) | undefined;
+    listen<string>("files-changed", (e) => {
+      if (e.payload === ws.selectedFolder) ws.refreshFolder();
+    }).then((u) => (unlisten = u));
+    return () => unlisten?.();
+  });
 
   async function submitNewFolder() {
     const parent = ws.selectedFolder ?? ws.root;
@@ -153,6 +174,7 @@
               role="menuitem"
               onclick={() => {
                 activeTool = t.id;
+                toolInitial = null;
                 toolsOpen = false;
               }}
               title={t.description}>{t.label}</button
@@ -171,7 +193,11 @@
     <ToolDialog
       tool={activeTool}
       meta={tools.find((m) => m.id === activeTool) ?? null}
-      onclose={() => (activeTool = null)}
+      initial={toolInitial}
+      onclose={() => {
+        activeTool = null;
+        toolInitial = null;
+      }}
     />
   {/if}
 

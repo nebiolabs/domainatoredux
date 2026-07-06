@@ -15,6 +15,19 @@
     failed: "✕",
     cancelled: "∅",
   };
+
+  function clearAll(e: MouseEvent) {
+    e.stopPropagation();
+    if (ws.jobs.length && confirm(`Clear all ${ws.jobs.length} job(s) from history?`)) {
+      ws.clearJobs();
+    }
+  }
+  function removeJob(e: MouseEvent, job: JobInfo) {
+    e.stopPropagation();
+    if (confirm(`Delete this "${job.tool}" job from history?`)) {
+      ws.deleteJob(job.job_id);
+    }
+  }
 </script>
 
 <div class="jobs">
@@ -24,6 +37,9 @@
     </button>
     <span class="title">Jobs</span>
     {#if runningCount > 0}<span class="running-badge">{runningCount} running</span>{:else}<span class="count">{ws.jobs.length}</span>{/if}
+    {#if ws.jobs.length > 0}
+      <button class="clear-all" onclick={clearAll} title="Clear job history">Clear</button>
+    {/if}
   </div>
   {#if expanded}
     {#if ws.jobs.length === 0}
@@ -35,8 +51,11 @@
             <div class="row1">
               <span class="ic">{STATUS_ICON[job.status] ?? "•"}</span>
               <span class="tool">{job.tool}</span>
+              <button class="clone" onclick={() => ws.openTool(job.tool, job.params)} title="Clone into a new tool dialog">⎘</button>
               {#if job.status === "running"}
                 <button class="cancel" onclick={() => ws.cancelJob(job.job_id)} title="Cancel">×</button>
+              {:else}
+                <button class="del" onclick={(e) => removeJob(e, job)} title="Delete from history">×</button>
               {/if}
             </div>
             {#if job.message}<div class="msg" title={job.message}>{job.message}</div>{/if}
@@ -131,15 +150,40 @@
     font-family: var(--mono);
     font-size: 12px;
   }
-  .cancel {
+  .clone {
     margin-left: auto;
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    padding: 0 4px;
+    font-size: 12px;
+  }
+  .clone:hover {
+    background: none;
+    color: var(--accent);
+  }
+  .cancel,
+  .del {
     border: none;
     background: none;
     color: var(--text-dim);
     padding: 0 4px;
     font-size: 14px;
   }
-  .cancel:hover {
+  .cancel:hover,
+  .del:hover {
+    background: none;
+    color: #e5484d;
+  }
+  .clear-all {
+    margin-left: auto;
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    font-size: 11px;
+    padding: 0 4px;
+  }
+  .clear-all:hover {
     background: none;
     color: #e5484d;
   }
