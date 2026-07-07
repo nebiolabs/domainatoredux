@@ -12,6 +12,30 @@ pub fn read_fasta(path: &str, molecule_type: Option<&str>) -> io::Result<Vec<Seq
     read_fasta_partition(path, 0, false, u64::MAX, molecule_type)
 }
 
+/// Fast scan of an uncompressed FASTA file: each record's `(id, name)` in file
+/// order, reading only `>` header lines (sequence bodies are skipped). For FASTA,
+/// `id` and `name` are both the first whitespace token of the title (matching
+/// [`read_fasta`]). Used for cheap cross-file record resolution.
+pub fn scan_fasta_ids(path: &str) -> io::Result<Vec<(String, String)>> {
+    let mut reader = BufReader::new(open_at(path, 0, false)?);
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut raw: Vec<u8> = Vec::new();
+    loop {
+        raw.clear();
+        let n = reader.read_until(b'\n', &mut raw)?;
+        if n == 0 {
+            break;
+        }
+        if raw.first() == Some(&b'>') {
+            let end = raw.iter().rposition(|&b| b != b'\n' && b != b'\r').map_or(0, |i| i + 1);
+            let title = String::from_utf8_lossy(&raw[1..end]);
+            let id = title.split_whitespace().next().unwrap_or("").to_string();
+            out.push((id.clone(), id));
+        }
+    }
+    Ok(out)
+}
+
 /// Read up to `max_recs` records from `path` starting at `offset` (a byte offset,
 /// or a BGZF virtual offset when `compressed`). `molecule_type` is applied to
 /// every record (FASTA carries no molecule type; defaults to "protein").

@@ -47,6 +47,18 @@ export interface PartView {
   after: boolean;
 }
 
+// One sequence source file a network was traced back to (SSN "Extract selected").
+export interface SourceFile {
+  path: string;
+  present: boolean;
+  modified_since: boolean;
+}
+
+export interface SourceTrace {
+  has_provenance: boolean;
+  sources: SourceFile[];
+}
+
 export interface FeatureView {
   feat_index: number;
   kind: string;

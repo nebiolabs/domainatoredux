@@ -10,6 +10,7 @@ import type {
   JobInfo,
   MatrixReport,
   RunResult,
+  SourceTrace,
   SummaryStats,
   ToolMeta,
   WorkspaceInfo,
@@ -145,13 +146,18 @@ export interface ResolvedRecord {
   contig_id: string;
 }
 
-/// Resolve many SSN node labels to their source records in a SINGLE workspace
-/// scan. The result is aligned to `labels` (null for any label not found).
+/// Resolve many SSN node labels to their source records, searching ONLY `files`
+/// (the network's provenance-traced sequence sources). Aligned to `labels` (null
+/// for any not found).
 export const resolveRecords = (
-  workspaceRoot: string,
+  files: string[],
   labels: string[],
-): Promise<(ResolvedRecord | null)[]> =>
-  invoke("resolve_records", { workspaceRoot, labels });
+): Promise<(ResolvedRecord | null)[]> => invoke("resolve_records", { files, labels });
+
+/// Trace a network artifact (.ssnv/matrix) back to the sequence files that
+/// supplied its node labels (provenance DAG walk).
+export const traceNetworkSources = (path: string): Promise<SourceTrace> =>
+  invoke("trace_network_sources", { path });
 
 // --- detached sequence windows (SSN node -> new window) ---
 export const openSequenceWindow = (
@@ -174,11 +180,13 @@ export const openHmmLogoWindow = (
   title: string,
 ): Promise<void> => invoke("open_hmm_logo_window", { path, index, title });
 
-// Build a single GenBank of the selected records (SSN → combined sequence view).
+// Build a single GenBank/FASTA of the selected records as a real workspace file
+// `dir/name` (SSN "Extract selected"). Returns the new path.
 export const extractRecords = (
-  workspaceRoot: string,
+  dir: string,
+  name: string,
   records: { path: string; contig_index: number }[],
-): Promise<string> => invoke("extract_records", { workspaceRoot, records });
+): Promise<string> => invoke("extract_records", { dir, name, records });
 
 // --- databases ---
 export const pickFile = (): Promise<string | null> => invoke("pick_file");

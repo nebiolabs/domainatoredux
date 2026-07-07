@@ -5,12 +5,12 @@ use domainator_core::app_support::hmm_logo::{
     index_hmm_file, logo_from_hmm_bytes, HmmEntry, HmmLogo, HmmSummary,
 };
 use domainator_core::app_support::summary_stats::{summarize, SummaryStats};
-use domainator_core::app_support::workspace::{classify_file, ensure_dot_subdir};
+use domainator_core::app_support::workspace::{classify_file, find_workspace_root};
+use domainator_core::app_support::provenance::{trace_source_sequences, SourceTrace};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
 use domainator_core::io::{detect_filetype, FileType};
-use domainator_core::io::genbank::{read_genbank, write_genbank};
-use domainator_core::io::fasta::read_fasta;
+use domainator_core::io::genbank::{read_genbank, scan_genbank_ids, write_genbank};
+use domainator_core::io::fasta::{read_fasta, scan_fasta_ids};
 use domainator_core::seq::SeqRecord;
 use domainator_core::matrix::read_matrix;
 use domainator_core::tools::build_ssn_viewer::render_html;
@@ -249,6 +249,59 @@ fn cached_hmm_index(cache: &HmmIndexCache, path: &str) -> Result<std::sync::Arc<
     Ok(entries)
 }
 
+/// Per-file cache of `(id, name)` record identities, keyed by path with a
+/// (size, mtime_ns) staleness stamp. Lets label→record resolution skip re-scanning
+/// unchanged files across repeated "Extract selected" clicks. Bounded by the
+/// workspace's sequence-file count (modest), so no eviction is needed.
+#[derive(Default)]
+pub struct RecordIdIndexState(
+    pub std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, RecordIdCacheEntry>>>,
+);
+
+#[derive(Clone)]
+pub struct RecordIdCacheEntry {
+    size: u64,
+    mtime_ns: u128,
+    ids: std::sync::Arc<Vec<(String, String)>>,
+}
+
+/// Return each record's `(id, name)` for `path`, using a fast header-only scan for
+/// uncompressed GenBank/FASTA and falling back to a full parse for compressed files
+/// (the scanners read raw bytes). Results are cached per file (size+mtime stamped).
+fn cached_record_ids(
+    cache: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, RecordIdCacheEntry>>>,
+    path: &str,
+    kind: FileType,
+) -> Option<std::sync::Arc<Vec<(String, String)>>> {
+    let size = file_size(path).ok()?;
+    let mtime_ns = file_mtime_ns(path).ok()?;
+    if let Some(e) = cache.lock().unwrap().get(path) {
+        if e.size == size && e.mtime_ns == mtime_ns {
+            return Some(e.ids.clone());
+        }
+    }
+    let lower = path.to_ascii_lowercase();
+    let compressed =
+        lower.ends_with(".gz") || lower.ends_with(".bgz") || lower.ends_with(".bgzf");
+    let ids: Vec<(String, String)> = match (kind, compressed) {
+        (FileType::Genbank, false) => scan_genbank_ids(path).ok()?,
+        (FileType::Fasta, false) => scan_fasta_ids(path).ok()?,
+        // Compressed: no cheap byte scan — full parse, then keep just id/name.
+        (FileType::Genbank, true) => {
+            read_genbank(path).ok()?.iter().map(|r| (r.id.clone(), r.name.clone())).collect()
+        }
+        (FileType::Fasta, true) => {
+            read_fasta(path, None).ok()?.iter().map(|r| (r.id.clone(), r.name.clone())).collect()
+        }
+    };
+    let ids = std::sync::Arc::new(ids);
+    cache
+        .lock()
+        .unwrap()
+        .insert(path.to_string(), RecordIdCacheEntry { size, mtime_ns, ids: ids.clone() });
+    Some(ids)
+}
+
 /// Read the exact byte range `[start, end)` of `path` into a buffer.
 fn read_byte_range(path: &str, start: u64, end: u64) -> Result<Vec<u8>, String> {
     use std::io::{Read, Seek, SeekFrom};
@@ -448,65 +501,49 @@ pub struct ResolvedRecord {
 /// GenBank/FASTA files **once** for the whole set. Returns a vector aligned to
 /// `labels` (element is `None` for any label not found).
 ///
-/// This is the cross-view "open the source sequence(s)" resolver. It is a batch
-/// so that selecting N nodes costs a single workspace scan instead of N — a
-/// per-label scan made "Open sequence(s)" appear to hang on real workspaces. A
-/// `.didx`/provenance-indexed fast path can replace the scan later.
+/// This is the cross-view resolver behind "Extract selected". It is a batch (one
+/// call for the whole selection) and searches ONLY `files` — the sequence sources
+/// the network was traced back to via provenance (see [`trace_network_sources`]).
+/// Restricting to the true sources both makes it fast (a header-only id scan,
+/// cached per file — no full parse of unrelated genomes) and correct when the same
+/// id/name exists in unrelated workspace files. `files` are searched in order, so
+/// the earliest source wins if a name is duplicated across the sources themselves.
 #[tauri::command]
 pub async fn resolve_records(
-    workspace_root: String,
+    record_ids: tauri::State<'_, RecordIdIndexState>,
+    files: Vec<String>,
     labels: Vec<String>,
 ) -> Result<Vec<Option<ResolvedRecord>>, String> {
-    // Off the UI thread: this reads every GenBank/FASTA in the workspace, so on a
-    // real workspace it can take seconds — a synchronous command would freeze the
-    // whole app (all IPC) while it scans.
+    let cache = record_ids.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         use std::collections::{HashMap, HashSet};
         let wanted: HashSet<&str> = labels.iter().map(String::as_str).collect();
-        // label -> resolved record (first match in traversal order wins).
+        // label -> resolved record (first match in `files` order wins).
         let mut found: HashMap<String, ResolvedRecord> = HashMap::new();
 
-        let mut stack = vec![std::path::PathBuf::from(&workspace_root)];
-        'scan: while let Some(dir) = stack.pop() {
-            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let Ok(ft) = entry.file_type() else { continue };
-                if ft.is_dir() {
-                    let name = entry.file_name().to_string_lossy().into_owned();
-                    if !name.starts_with('.') && name != "jobs" {
-                        stack.push(path);
-                    }
-                    continue;
-                }
-                let Some(kind) = detect_filetype(&path) else { continue };
-                let path_str = path.to_string_lossy().into_owned();
-                let records = match kind {
-                    FileType::Genbank => read_genbank(&path_str).ok(),
-                    FileType::Fasta => read_fasta(&path_str, None).ok(),
-                };
-                let Some(records) = records else { continue };
-                let file_type = classify_file(&path).unwrap_or("genbank").to_string();
-                for (i, rec) in records.iter().enumerate() {
-                    // A record can satisfy a label by either its id or its name.
-                    for key in [rec.id.as_str(), rec.name.as_str()] {
-                        if wanted.contains(key) && !found.contains_key(key) {
-                            found.insert(
-                                key.to_string(),
-                                ResolvedRecord {
-                                    path: path_str.clone(),
-                                    file_type: file_type.clone(),
-                                    contig_index: i,
-                                    contig_id: rec.id.clone(),
-                                },
-                            );
-                        }
+        for path_str in &files {
+            let path = std::path::Path::new(path_str);
+            let Some(kind) = detect_filetype(path) else { continue };
+            let Some(ids) = cached_record_ids(&cache, path_str, kind) else { continue };
+            let file_type = classify_file(path).unwrap_or("genbank").to_string();
+            for (i, (id, name)) in ids.iter().enumerate() {
+                // A record can satisfy a label by either its id or its name.
+                for key in [id.as_str(), name.as_str()] {
+                    if wanted.contains(key) && !found.contains_key(key) {
+                        found.insert(
+                            key.to_string(),
+                            ResolvedRecord {
+                                path: path_str.clone(),
+                                file_type: file_type.clone(),
+                                contig_index: i,
+                                contig_id: id.clone(),
+                            },
+                        );
                     }
                 }
-                // Every requested label located — no need to keep scanning.
-                if found.len() >= wanted.len() {
-                    break 'scan;
-                }
+            }
+            if found.len() >= wanted.len() {
+                break;
             }
         }
 
@@ -514,6 +551,24 @@ pub async fn resolve_records(
     })
     .await
     .map_err(|e| format!("resolve records failed: {e}"))?
+}
+
+/// Trace a network artifact (`.ssnv`/matrix) back to the sequence files that
+/// supplied its node labels, via the provenance job DAG. The workspace root is
+/// discovered by walking up from `path` for a `.domainator/` dir, so this works in
+/// detached windows too. Returns `has_provenance=false` (empty sources) when no
+/// creating-job chain reaches sequence inputs — the UI then disables extraction.
+#[tauri::command]
+pub async fn trace_network_sources(path: String) -> Result<SourceTrace, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&path);
+        match find_workspace_root(p) {
+            Some(root) => trace_source_sequences(&root, p),
+            None => SourceTrace { has_provenance: false, sources: Vec::new() },
+        }
+    })
+    .await
+    .map_err(|e| format!("tracing sources failed: {e}"))
 }
 
 /// Render the self-contained SSN viewer HTML for a `.ssnv` bundle, with the
@@ -533,8 +588,6 @@ pub async fn render_ssn_html(path: String) -> Result<String, String> {
     .await
     .map_err(|e| format!("rendering SSN failed: {e}"))?
 }
-
-static SUBSET_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// One selected record: its source file and 0-based contig index.
 #[derive(Deserialize)]
@@ -746,13 +799,21 @@ fn load_sequence_any(path: &str) -> Result<Vec<SeqRecord>, String> {
 }
 
 /// Build a single GenBank file containing just the selected records (possibly from
-/// several source files), written under `<root>/.domainator/subsets/`. Returns its
-/// path. The SSN viewer opens the result as one combined sequence view (contig /
-/// enum / summary tabs) instead of N whole-file windows.
+/// several source files) as a real, named workspace file at `dir/name`. Returns its
+/// path and notifies windows so browsers refresh. Backs the SSN "Extract selected"
+/// action — the result is a permanent workspace file, not a temporary subset.
 #[tauri::command]
-pub async fn extract_records(workspace_root: String, records: Vec<RecordRef>) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn extract_records(
+    app: tauri::AppHandle,
+    dir: String,
+    name: String,
+    records: Vec<RecordRef>,
+) -> Result<String, String> {
+    let dir_c = dir.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
         use std::collections::HashMap;
+        let target = validated_target(&dir, &name)?;
+        let ts = target.to_string_lossy().into_owned();
         let mut cache: HashMap<String, Vec<SeqRecord>> = HashMap::new();
         let mut out: Vec<SeqRecord> = Vec::new();
         for r in &records {
@@ -766,13 +827,16 @@ pub async fn extract_records(workspace_root: String, records: Vec<RecordRef>) ->
         if out.is_empty() {
             return Err("none of the selected records could be read".into());
         }
-        let dir = ensure_dot_subdir(std::path::Path::new(&workspace_root), "subsets")
-            .map_err(|e| format!("creating subsets dir: {e}"))?;
-        let n = SUBSET_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = dir.join(format!("selection_{n}.gb"));
-        write_genbank(&path.to_string_lossy(), &out).map_err(|e| format!("writing subset: {e}"))?;
-        Ok(path.to_string_lossy().into_owned())
+        if is_fasta_name(&name) {
+            domainator_core::io::fasta::write_fasta(&ts, &out)
+                .map_err(|e| format!("writing FASTA: {e}"))?;
+        } else {
+            write_genbank(&ts, &out).map_err(|e| format!("writing GenBank: {e}"))?;
+        }
+        Ok::<String, String>(ts)
     })
     .await
-    .map_err(|e| format!("extract failed: {e}"))?
+    .map_err(|e| format!("extract failed: {e}"))??;
+    notify_files_changed(&app, &dir_c);
+    Ok(out)
 }

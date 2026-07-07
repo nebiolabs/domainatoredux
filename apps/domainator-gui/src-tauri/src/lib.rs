@@ -19,6 +19,7 @@ pub fn run() {
         .manage(cmd_files::SeqCacheState::default())
         .manage(cmd_files::RecordCountState::default())
         .manage(cmd_files::HmmIndexState::default())
+        .manage(cmd_files::RecordIdIndexState::default())
         .setup(|app| {
             // Wire up any already-downloaded external tools (sets their env vars).
             external_tools::ensure_env(&app.handle());
@@ -50,6 +51,7 @@ pub fn run() {
             cmd_files::run_enum_report,
             cmd_files::run_summary_stats,
             cmd_files::resolve_records,
+            cmd_files::trace_network_sources,
             cmd_files::render_ssn_html,
             cmd_files::extract_records,
             cmd_tools::list_tools,

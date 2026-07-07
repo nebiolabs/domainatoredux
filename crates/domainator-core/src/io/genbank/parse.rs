@@ -100,6 +100,49 @@ fn is_section_start(line: &str) -> bool {
     !line.is_empty() && !line.starts_with(' ')
 }
 
+/// Compute just the `(id, name)` that a full [`parse_record`] would assign, from
+/// the header lines alone — no feature/sequence work. Used by the fast id scanner
+/// (`super::reader::scan_genbank_ids`) so cross-file record resolution (e.g. SSN
+/// node → source record) matches the real parser exactly without paying for a full
+/// parse. Mirrors the id/name derivation at the end of [`parse_record`].
+pub fn record_identity(header_lines: &[String]) -> (String, String) {
+    let mut sections: Vec<Section> = Vec::new();
+    for line in header_lines {
+        if is_section_start(line) {
+            let keyword = line.split_whitespace().next().unwrap_or("").to_string();
+            sections.push(Section { keyword, lines: vec![line.clone()] });
+        } else if let Some(last) = sections.last_mut() {
+            last.lines.push(line.clone());
+        }
+    }
+
+    let mut name = String::new();
+    let mut first_accession: Option<String> = None;
+    let mut version_token: Option<String> = None;
+    for sec in &sections {
+        match sec.keyword.as_str() {
+            "LOCUS" if !sec.lines.is_empty() => name = parse_locus(&sec.lines[0]).name,
+            "ACCESSION" => {
+                let val = join_section_value(sec, "ACCESSION");
+                if first_accession.is_none() {
+                    first_accession = val.split_whitespace().next().map(str::to_string);
+                }
+            }
+            "VERSION" => {
+                let val = join_section_value(sec, "VERSION");
+                for tok in val.split_whitespace() {
+                    if tok.strip_prefix("GI:").is_none() && version_token.is_none() {
+                        version_token = Some(tok.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let id = version_token.or(first_accession).unwrap_or_else(|| name.clone());
+    (id, name)
+}
+
 /// Parse one record from its raw header lines (LOCUS..before ORIGIN) plus the
 /// already-extracted residues. `default_molecule_type` applies when LOCUS lacks one.
 pub fn parse_record(
@@ -448,5 +491,42 @@ fn push_qualifier(quals: &mut Vec<(String, Vec<String>)>, key: &str, value: Stri
         vs.push(value);
     } else {
         quals.push((key.to_string(), vec![value]));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lines(s: &str) -> Vec<String> {
+        s.lines().map(str::to_string).collect()
+    }
+
+    #[test]
+    fn record_identity_matches_parse_record_derivation() {
+        // VERSION wins the id; LOCUS name is the name.
+        let (id, name) = record_identity(&lines(
+            "LOCUS       ABC12345             1000 bp    DNA     linear   BCT 01-JAN-2020\n\
+             ACCESSION   ABC12345\n\
+             VERSION     ABC12345.2  GI:999\n\
+             DEFINITION  Something.",
+        ));
+        assert_eq!(name, "ABC12345");
+        assert_eq!(id, "ABC12345.2"); // GI: token skipped, .version kept
+
+        // No VERSION → first ACCESSION becomes the id.
+        let (id, name) = record_identity(&lines(
+            "LOCUS       myLocus              500 bp    DNA     linear   01-JAN-2020\n\
+             ACCESSION   ACC001 ACC002",
+        ));
+        assert_eq!(name, "myLocus");
+        assert_eq!(id, "ACC001");
+
+        // Neither VERSION nor ACCESSION → id falls back to the LOCUS name.
+        let (id, name) = record_identity(&lines(
+            "LOCUS       onlyName             12 aa    linear",
+        ));
+        assert_eq!(name, "onlyName");
+        assert_eq!(id, "onlyName");
     }
 }

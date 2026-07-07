@@ -35,6 +35,21 @@ pub fn is_reserved_name(name: &str) -> bool {
     name.eq_ignore_ascii_case(DOT_DIR)
 }
 
+/// Find the workspace root containing `data_file` by walking up its ancestors for
+/// the first directory that holds a `.domainator/` machinery dir. Lets provenance
+/// be located from a file path alone (e.g. in a detached window that doesn't know
+/// the workspace root). Returns `None` if the file isn't inside a workspace.
+pub fn find_workspace_root(data_file: &Path) -> Option<PathBuf> {
+    let mut cur = data_file.parent();
+    while let Some(dir) = cur {
+        if dir.join(DOT_DIR).is_dir() {
+            return Some(dir.to_path_buf());
+        }
+        cur = dir.parent();
+    }
+    None
+}
+
 /// Move legacy top-level machinery (`workspace.json`, `databases.json`, `jobs/`)
 /// into `.domainator/` for workspaces created before the restructure. Best-effort:
 /// ignores individual failures so an old workspace still opens.
