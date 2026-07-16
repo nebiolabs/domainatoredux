@@ -52,7 +52,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | ------------- | ------------------- | ------------------- |
 | build_projection.py | deferred | — |
 | build_ssn.py | finished | Tools menu ("Build SSN (XGMML)") |
-| build_ssn_viewer.py | finished | Tools menu ("Build SSN viewer"); output `.ssnv` opens in the **SSN viewer** tab (interactive network, node→sequence cross-nav into a detached window) |
+| build_ssn_viewer.py | finished | Tools menu ("Build SSN viewer"); output `.ssnv` opens in the **SSN viewer** tab (interactive network, node→sequence cross-nav into a detached window). Layout algorithms: force-directed, grid, packed, and **treemap** (fixed-lattice, no edges). Viewer shell is generated from the Python source — see `UPSTREAM.md` |
 | build_tree.py | deferred | — |
 | clean_sequences.py | finished (byte-identical parity) | Tools menu ("Clean sequences") |
 | color_genbank.py | finished (parity incl. auto-color) | Tools menu ("Color GenBank") for batch color-by-name/database, **plus** per-feature editing in the contig viewer |
