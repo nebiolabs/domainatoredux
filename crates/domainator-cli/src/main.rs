@@ -33,6 +33,8 @@ use domainator_core::tools::build_ssn_viewer::{
     build_ssn_viewer_bundle, gzip, render_html, serialize_bundle,
 };
 use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
+use domainator_core::tools::ssn_bundle;
+use domainator_core::tools::ssn_navigator::ssn_navigator;
 use domainator_core::tools::seq_dist::{detect_kind, seq_dist, SeqDistOptions};
 use domainator_core::tools::transform_matrix::transform_matrix;
 use domainator_core::tools::{domain_search, domainate};
@@ -934,6 +936,43 @@ enum Command {
         /// Max strongest merge events to report (0 = all; default 500).
         #[arg(long = "max_merge_events")]
         max_merge_events: Option<usize>,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Navigate a `.dsnv` bundle: clusters, cluster contents, and metadata, as JSON.
+    SsnNavigator {
+        /// Input `.dsnv` bundle (gzip JSON, or plain JSON).
+        #[arg(short, long)]
+        input: Option<PathBuf>,
+        /// Write the JSON here (default: stdout).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Query to answer.
+        #[arg(long, value_parser = ["overview", "thresholds", "clusters", "cluster", "node"])]
+        mode: Option<String>,
+        /// Similarity cut: a number, or `inf`. Omit for the floor (one cluster per
+        /// connected component); higher thresholds give finer clusters.
+        #[arg(long)]
+        threshold: Option<String>,
+        /// Cluster id, for `--mode cluster`.
+        #[arg(long)]
+        id: Option<usize>,
+        /// Node id, for `--mode cluster` or `--mode node`.
+        #[arg(long)]
+        node: Option<String>,
+        /// Ignore clusters smaller than this (`--mode clusters`).
+        #[arg(long = "min_size")]
+        min_size: Option<usize>,
+        /// Bound every list in the output (default 50).
+        #[arg(long = "top_n")]
+        top_n: Option<usize>,
+        /// Include the full member id list in `--mode cluster`.
+        #[arg(long)]
+        members: bool,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -2937,6 +2976,45 @@ fn main() -> Result<()> {
                 std::fs::write(p, serde_json::to_string_pretty(&to_json(&report))?)?;
             }
             println!("matrix report: {} nodes, {} edges", report.n_nodes, report.n_edges);
+        }
+        Command::SsnNavigator {
+            input, output, mode, threshold, id, node, min_size, top_n, members,
+            config: config_path, print_config: do_print,
+        } => {
+            let cli = config::SsnNavigatorConfig {
+                input: opt_path(&input)?,
+                output: opt_path(&output)?,
+                mode,
+                threshold,
+                id,
+                node,
+                min_size,
+                top_n,
+                members,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::SsnNavigatorConfig>(p)?,
+                None => config::SsnNavigatorConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let input = cfg
+                .input
+                .clone()
+                .context("missing required `input` (-i / --input or config)")?;
+            let bundle = ssn_bundle::load_bundle(std::path::Path::new(&input))
+                .with_context(|| format!("reading bundle {input}"))?;
+            let opts = config::resolve::resolve_ssn_navigator(&cfg);
+            let result = ssn_navigator(&bundle, &opts).map_err(anyhow::Error::msg)?;
+            // Compact, single-line JSON on one line, matching Python's separators.
+            let text = format!("{}\n", serde_json::to_string(&result)?);
+            match &cfg.output {
+                Some(p) => std::fs::write(p, text)?,
+                None => print!("{text}"),
+            }
         }
         Command::Schema { tool } => {
             println!("{}", schema(&tool)?);

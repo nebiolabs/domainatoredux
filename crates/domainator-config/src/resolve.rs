@@ -12,9 +12,10 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{bail, Result};
 use domainator_core::tools::build_ssn::BuildSsnOptions;
 use domainator_core::tools::build_ssn_viewer::BuildSsnViewerOptions;
+use domainator_core::tools::ssn_navigator::{NavMode, SsnNavigatorOptions};
 use domainator_core::tools::transform_matrix::{TransformMatrixOptions, MODES};
 
-use crate::{BuildSsnConfig, BuildSsnViewerConfig, TransformMatrixConfig};
+use crate::{BuildSsnConfig, BuildSsnViewerConfig, SsnNavigatorConfig, TransformMatrixConfig};
 
 /// Default lower bound / merge-event / metric constants (shared defaults).
 pub const DEFAULT_MERGE_IMPACT_METRIC: &str = "min_child";
@@ -72,5 +73,26 @@ pub fn resolve_build_ssn_viewer(
         color_by: cfg.color_by.clone(),
         label_by: cfg.label_by.clone(),
         categorical_columns: cfg.categorical.clone(),
+    }
+}
+
+/// Map an `SsnNavigatorConfig` to options. Defaults mirror Python's: mode `overview`,
+/// `min_size` 1, `top_n` 50, and a `threshold` of `None` meaning the floor (one
+/// cluster per connected component), **not** infinity.
+pub fn resolve_ssn_navigator(cfg: &SsnNavigatorConfig) -> SsnNavigatorOptions {
+    SsnNavigatorOptions {
+        mode: cfg
+            .mode
+            .as_deref()
+            .map(NavMode::parse)
+            .transpose()
+            .unwrap_or(None)
+            .unwrap_or(NavMode::Overview),
+        threshold: cfg.threshold.clone(),
+        cluster_id: cfg.id,
+        node: cfg.node.clone(),
+        min_size: cfg.min_size.unwrap_or(1),
+        top_n: cfg.top_n.unwrap_or(50),
+        members: cfg.members,
     }
 }

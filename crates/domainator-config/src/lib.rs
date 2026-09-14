@@ -1034,6 +1034,37 @@ impl MatrixReportConfig {
     }
 }
 
+/// `ssn_navigator` parameters.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct SsnNavigatorConfig {
+    pub input: Option<String>,
+    pub output: Option<String>,
+    pub mode: Option<String>,
+    /// A number or `inf`; kept as a string so `inf` round-trips through JSON/YAML,
+    /// which have no infinity literal.
+    pub threshold: Option<String>,
+    pub id: Option<usize>,
+    pub node: Option<String>,
+    pub min_size: Option<usize>,
+    pub top_n: Option<usize>,
+    pub members: bool,
+}
+
+impl SsnNavigatorConfig {
+    pub fn merge_cli(&mut self, cli: SsnNavigatorConfig) {
+        merge_scalar!(self, cli, input);
+        merge_scalar!(self, cli, output);
+        merge_scalar!(self, cli, mode);
+        merge_scalar!(self, cli, threshold);
+        merge_scalar!(self, cli, id);
+        merge_scalar!(self, cli, node);
+        merge_scalar!(self, cli, min_size);
+        merge_scalar!(self, cli, top_n);
+        self.members |= cli.members;
+    }
+}
+
 /// `build_ssn_viewer` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -1314,13 +1345,14 @@ pub fn schema(tool: &str) -> Result<String> {
         "build-ssn" | "build_ssn" => build_ssn_schema(),
         "build-ssn-viewer" | "build_ssn_viewer" => build_ssn_viewer_schema(),
         "matrix-report" | "matrix_report" => matrix_report_schema(),
+        "ssn-navigator" | "ssn_navigator" => ssn_navigator_schema(),
         "hmmer-report" | "hmmer_report" => hmmer_report_schema(),
         "hmmer-select" | "hmmer_select" => hmmer_select_schema(),
         "hmmer-build" | "hmmer_build" => hmmer_build_schema(),
         "hmmer-search" | "hmmer_search" => hmmer_search_schema(),
         "format-db" | "format_db" | "domainator-format-db" | "domainator_format_db" => format_db_schema(),
         other => anyhow::bail!(
-            "no schema for tool {other:?} (have: domainate, domain-search, seq-dist, compare-contigs, hmmer-compare, hmmer-report, hmmer-select, format-db, transform-matrix, build-ssn, build-ssn-viewer, matrix-report, select-by-contig, select-by-cds, enum-report)"
+            "no schema for tool {other:?} (have: domainate, domain-search, seq-dist, compare-contigs, hmmer-compare, hmmer-report, hmmer-select, format-db, transform-matrix, build-ssn, build-ssn-viewer, matrix-report, ssn-navigator, select-by-contig, select-by-cds, enum-report)"
         ),
     };
     let mut s = s;
@@ -1963,6 +1995,27 @@ fn build_ssn_viewer_schema() -> serde_json::Value {
             "merge_impact_metric": {"enum": ["min_child", "product"], "default": "min_child"},
             "max_merge_events": {"type": ["integer", "null"], "default": 500},
             "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected .dsnv bundle output exceeds this many GB (0 disables)"}
+        }
+    })
+}
+
+fn ssn_navigator_schema() -> serde_json::Value {
+    use serde_json::json;
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "ssn_navigator parameters",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "input": {"type": ["string", "null"], "description": "Input .dsnv bundle (gzip JSON, or plain JSON)"},
+            "output": {"type": ["string", "null"], "description": "Write the JSON here (default: stdout)"},
+            "mode": {"enum": ["overview", "thresholds", "clusters", "cluster", "node"], "default": "overview"},
+            "threshold": {"type": ["string", "null"], "description": "Similarity cut: a number, or 'inf'. Omit for the floor (one cluster per connected component); higher thresholds give finer clusters"},
+            "id": {"type": ["integer", "null"], "description": "Cluster id, for mode 'cluster'"},
+            "node": {"type": ["string", "null"], "description": "Node id, for mode 'cluster' or 'node'"},
+            "min_size": {"type": ["integer", "null"], "default": 1, "description": "Ignore clusters smaller than this (mode 'clusters')"},
+            "top_n": {"type": ["integer", "null"], "default": 50, "description": "Bound every list in the output"},
+            "members": {"type": "boolean", "default": false, "description": "Include the full member id list in mode 'cluster'"}
         }
     })
 }
