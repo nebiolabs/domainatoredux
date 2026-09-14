@@ -25,7 +25,7 @@ function classifyPath(path: string): FileType | null {
   if (["fasta", "fa", "fna", "faa", "pep"].includes(ext)) return "fasta";
   if (["hmm", "hmmer"].includes(ext)) return "hmm";
   if (["hdf5", "hdf", "h5"].includes(ext)) return "hdf5";
-  if (["ssnv", "ssnview"].includes(ext)) return "ssn_viewer";
+  if (["dsnv", "ssnv", "ssnview"].includes(ext)) return "ssn_viewer";
   if (["tsv", "csv", "tab"].includes(ext)) return "table";
   if (["txt", "text", "list"].includes(ext)) return "text";
   if (ext === "svg") return "svg";

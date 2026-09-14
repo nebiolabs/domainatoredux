@@ -1950,7 +1950,7 @@ fn build_ssn_viewer_schema() -> serde_json::Value {
         "additionalProperties": false,
         "properties": {
             "input": {"type": ["string", "null"], "description": "Symmetric matrix (HDF5 or dense TSV)"},
-            "output": {"type": ["string", "null"], "description": "Gzip-JSON .ssnv bundle output"},
+            "output": {"type": ["string", "null"], "description": "Gzip-JSON .dsnv bundle output"},
             "html": {"type": ["string", "null"], "description": "Standalone HTML viewer output"},
             "embed_data": {"type": "boolean", "default": false, "description": "Embed the bundle into the HTML for autoload"},
             "name": {"type": ["string", "null"]},

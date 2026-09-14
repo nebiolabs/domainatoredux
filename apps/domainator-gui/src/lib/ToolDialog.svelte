@@ -74,7 +74,7 @@
       case "build-ssn:cluster_tsv":
         return `${stem}.clusters.tsv`;
       case "build-ssn-viewer:output":
-        return `${stem}.ssnv`;
+        return `${stem}.dsnv`;
       case "domain-search:output":
         return `${stem}.search.gb`;
       case "domainate:output":

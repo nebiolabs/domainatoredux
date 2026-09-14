@@ -589,10 +589,10 @@ pub async fn list_tools() -> Vec<ToolMeta> {
         ToolMeta {
             id: "build-ssn-viewer".into(),
             label: "Build SSN viewer".into(),
-            description: "Build a .ssnv bundle for the interactive network viewer.".into(),
+            description: "Build a .dsnv bundle for the interactive network viewer.".into(),
             fields: vec![
                 f("input", "Input matrix", "input_file", Some("hdf5"), true),
-                f("output", "Output (.ssnv)", "output_file", None, true),
+                f("output", "Output (.dsnv)", "output_file", None, true),
                 f("metadata", "Metadata (TSV)", "input_files", Some("table"), false),
                 f("merge_impact_metric", "Merge metric", "param", None, false),
                 f("max_merge_events", "Max merge events", "param", None, false),
@@ -1872,7 +1872,7 @@ fn run_build_ssn_viewer(params: Value) -> Result<RunOutput, String> {
     let cfg: BuildSsnViewerConfig =
         serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
     let input = cfg.input.clone().ok_or("missing input matrix")?;
-    let output = cfg.output.clone().ok_or("missing output (.ssnv path)")?;
+    let output = cfg.output.clone().ok_or("missing output (.dsnv path)")?;
     let name = Path::new(&output)
         .file_stem()
         .and_then(|s| s.to_str())
@@ -1882,9 +1882,9 @@ fn run_build_ssn_viewer(params: Value) -> Result<RunOutput, String> {
     let m = read_matrix(&input).map_err(|e| format!("reading matrix: {e}"))?;
     let bundle = build_ssn_viewer_bundle(&m, &opts).map_err(|e| format!("building bundle: {e}"))?;
     let compressed = gzip(&serialize_bundle(&bundle));
-    std::fs::write(&output, &compressed).map_err(|e| format!("writing .ssnv: {e}"))?;
+    std::fs::write(&output, &compressed).map_err(|e| format!("writing .dsnv: {e}"))?;
 
     let inputs = vec![IoRef { path: input, role: "matrix".into() }];
-    let outputs = vec![IoRef { path: output, role: "ssnv".into() }];
-    Ok((inputs, outputs, format!("wrote {}-node .ssnv bundle", m.nrows())))
+    let outputs = vec![IoRef { path: output, role: "dsnv".into() }];
+    Ok((inputs, outputs, format!("wrote {}-node .dsnv bundle", m.nrows())))
 }

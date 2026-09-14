@@ -1,4 +1,4 @@
-//! `build-ssn-viewer`: build the compact, MST-based `.ssnv` bundle (and the
+//! `build-ssn-viewer`: build the compact, MST-based `.dsnv` bundle (and the
 //! standalone HTML shell) for the interactive SSN viewer. Mirrors
 //! `domainator.build_ssn_viewer`: the bundle carries only the MST, an
 //! MST-component hierarchy, and threshold merge events (all O(n)); the browser
@@ -395,7 +395,7 @@ fn base64_encode(data: &[u8]) -> String {
 
 /// Render the standalone HTML viewer. When `embedded_bundle_gzip` is provided the
 /// gzip bundle is base64-embedded so the viewer autoloads it; otherwise the shell
-/// opens local `.ssnv` files via its built-in picker.
+/// opens local `.dsnv` files via its built-in picker.
 pub fn render_html(title: &str, embedded_bundle_gzip: Option<&[u8]>) -> String {
     const SHELL: &str = include_str!("../../assets/ssn_viewer_shell.html");
     let mut html = SHELL.replace("@@SSN_VIEWER_TITLE@@", &html_escape(title));

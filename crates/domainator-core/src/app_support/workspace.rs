@@ -114,7 +114,7 @@ pub fn count_records(path: &Path) -> Option<u64> {
 /// messages when a user names a new/renamed file with an unrecognized type.
 pub fn accepted_types_hint() -> &'static str {
     "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .hmm, .hdf5/.h5, \
-     .cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .svg, .ssnv (optionally with a .gz suffix)."
+     .cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .svg, .dsnv (optionally with a .gz suffix)."
 }
 
 pub fn classify_file(path: &Path) -> Option<&'static str> {
@@ -135,7 +135,8 @@ pub fn classify_file(path: &Path) -> Option<&'static str> {
         "tsv" | "csv" | "tab" => "table",
         "txt" | "text" | "list" => "text",
         "svg" => "svg",
-        "ssnv" | "ssnview" => "ssn_viewer",
+        // `.ssnv` is the pre-0.11 spelling; still read, never written.
+        "dsnv" | "ssnv" | "ssnview" => "ssn_viewer",
         _ => return None,
     })
 }
@@ -351,6 +352,8 @@ mod tests {
         assert_eq!(classify_file(Path::new("a.gbff.gz")), Some("genbank"));
         assert_eq!(classify_file(Path::new("a.faa")), Some("fasta"));
         assert_eq!(classify_file(Path::new("a.hmm")), Some("hmm"));
+        assert_eq!(classify_file(Path::new("net.dsnv")), Some("ssn_viewer"));
+        // The pre-0.11 spelling still opens.
         assert_eq!(classify_file(Path::new("net.ssnv")), Some("ssn_viewer"));
         assert_eq!(classify_file(Path::new("m.hdf5")), Some("hdf5"));
         assert_eq!(classify_file(Path::new("readme.txt")), Some("text"));

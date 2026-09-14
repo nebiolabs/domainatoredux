@@ -301,7 +301,7 @@
     title="New file in {folderName}"
     defaultName="pasted.fasta"
     withBody={true}
-    bodyPlaceholder="Paste file contents here. The extension sets the type: .fasta/.gb (sequences), .hmm, .tsv/.csv (table), .ssnv…"
+    bodyPlaceholder="Paste file contents here. The extension sets the type: .fasta/.gb (sequences), .hmm, .tsv/.csv (table), .dsnv…"
     submitLabel="Create"
     validate={validateFilename}
     onsubmit={createNew}

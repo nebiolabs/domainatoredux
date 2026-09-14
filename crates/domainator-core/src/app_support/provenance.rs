@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app_support::workspace::{dot_dir, FileMeta};
 
-/// One input or output file of a job, with its role (e.g. `"matrix"`, `"ssnv"`).
+/// One input or output file of a job, with its role (e.g. `"matrix"`, `"dsnv"`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IoRef {
     pub path: String,
@@ -81,7 +81,7 @@ pub struct SourceFile {
     pub modified_since: bool,
 }
 
-/// Result of tracing a network artifact (`.ssnv`/matrix) back to the sequence files
+/// Result of tracing a network artifact (`.dsnv`/matrix) back to the sequence files
 /// that supplied its node labels, by walking the job DAG.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceTrace {
@@ -107,7 +107,7 @@ fn source_status(path: &str, consumed_at_ms: u128) -> SourceFile {
 /// Trace a network artifact back to the sequence files that supplied its node
 /// labels. Walks the job DAG from `data_file`: sequence/genbank/fasta inputs are
 /// leaf sources (their record ids are what appear as node labels); matrix inputs
-/// are followed one hop further (e.g. `.ssnv` → matrix → sequences). References,
+/// are followed one hop further (e.g. `.dsnv` → matrix → sequences). References,
 /// color tables, etc. are ignored — they don't contribute node sequences.
 ///
 /// Each source's `modified_since` compares its current mtime against the finish

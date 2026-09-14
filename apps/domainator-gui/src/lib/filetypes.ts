@@ -15,12 +15,12 @@ export const ACCEPTED_EXTS = [
   "tsv", "csv", "tab",
   "txt", "text", "list",
   "svg",
-  "ssnv", "ssnview",
+  "dsnv", "ssnv", "ssnview",
 ];
 
 export const ACCEPTED_HINT =
   "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .hmm, .hdf5/.h5, " +
-  ".cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .svg, .ssnv (optionally with a .gz suffix).";
+  ".cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .svg, .dsnv (optionally with a .gz suffix).";
 
 export function isRecognizedFilename(name: string): boolean {
   let n = name.trim().toLowerCase().replace(/\.(gz|bgz|bgzf)$/, "");
@@ -46,7 +46,8 @@ export function fileTypeOf(name: string): FileType | null {
   if (["hmm", "hmmer"].includes(ext)) return "hmm";
   if (["hdf5", "hdf", "h5"].includes(ext)) return "hdf5";
   if (ext === "cm") return "cm";
-  if (["ssnv", "ssnview"].includes(ext)) return "ssn_viewer";
+  // `.ssnv` is the pre-0.11 spelling; still read, never written.
+  if (["dsnv", "ssnv", "ssnview"].includes(ext)) return "ssn_viewer";
   if (["tsv", "csv", "tab"].includes(ext)) return "table";
   if (["txt", "text", "list"].includes(ext)) return "text";
   if (ext === "svg") return "svg";

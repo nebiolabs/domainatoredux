@@ -865,12 +865,12 @@ enum Command {
         #[arg(long = "print_config")]
         print_config: bool,
     },
-    /// Build a compact `.ssnv` bundle (+ standalone HTML) for the interactive SSN viewer.
+    /// Build a compact `.dsnv` bundle (+ standalone HTML) for the interactive SSN viewer.
     BuildSsnViewer {
         /// Symmetric similarity matrix (HDF5 or dense TSV).
         #[arg(short, long)]
         input: Option<PathBuf>,
-        /// Write the gzip-JSON `.ssnv` bundle here.
+        /// Write the gzip-JSON `.dsnv` bundle here.
         #[arg(short, long)]
         output: Option<PathBuf>,
         /// Write a standalone HTML viewer shell here.
@@ -907,7 +907,7 @@ enum Command {
         /// Max strongest merge events to embed (0 = all; default 500).
         #[arg(long = "max_merge_events")]
         max_merge_events: Option<usize>,
-        /// Fail if the projected .ssnv bundle output exceeds this many GB (default 25; 0 disables).
+        /// Fail if the projected .dsnv bundle output exceeds this many GB (default 25; 0 disables).
         #[arg(long = "max_output_gb")]
         max_output_gb: Option<f64>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
@@ -2894,7 +2894,7 @@ fn main() -> Result<()> {
                     "--subset, --subset_file",
                 )?;
                 std::fs::write(out, &compressed)?;
-                println!("wrote {}-node .ssnv bundle to {out}", matrix.nrows());
+                println!("wrote {}-node .dsnv bundle to {out}", matrix.nrows());
             }
             if let Some(html) = &cfg.html {
                 let embed = if cfg.embed_data { Some(compressed.as_slice()) } else { None };

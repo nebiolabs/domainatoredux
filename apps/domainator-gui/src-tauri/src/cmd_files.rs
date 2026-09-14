@@ -553,7 +553,7 @@ pub async fn resolve_records(
     .map_err(|e| format!("resolve records failed: {e}"))?
 }
 
-/// Trace a network artifact (`.ssnv`/matrix) back to the sequence files that
+/// Trace a network artifact (`.dsnv`/matrix) back to the sequence files that
 /// supplied its node labels, via the provenance job DAG. The workspace root is
 /// discovered by walking up from `path` for a `.domainator/` dir, so this works in
 /// detached windows too. Returns `has_provenance=false` (empty sources) when no
@@ -571,11 +571,11 @@ pub async fn trace_network_sources(path: String) -> Result<SourceTrace, String> 
     .map_err(|e| format!("tracing sources failed: {e}"))
 }
 
-/// Render the self-contained SSN viewer HTML for a `.ssnv` bundle, with the
+/// Render the self-contained SSN viewer HTML for a `.dsnv` bundle, with the
 /// bundle embedded so it autoloads. Hosted by the frontend in an `<iframe>`.
 #[tauri::command]
 pub async fn render_ssn_html(path: String) -> Result<String, String> {
-    // Off the UI thread: an .ssnv bundle can be large, and embedding it into the
+    // Off the UI thread: a .dsnv bundle can be large, and embedding it into the
     // HTML shell is a big string build — keep it off Tauri's main thread.
     tauri::async_runtime::spawn_blocking(move || {
         let bytes = std::fs::read(&path).map_err(|e| format!("reading SSN bundle: {e}"))?;

@@ -29,7 +29,7 @@
 
   // Default extract name: "<ssn-stem>_selection.gb".
   const defaultName = $derived.by(() => {
-    const base = (path.split(/[\\/]/).pop() ?? "selection").replace(/\.(ssnv|ssnview)(\.gz)?$/i, "");
+    const base = (path.split(/[\\/]/).pop() ?? "selection").replace(/\.(dsnv|ssnv|ssnview)(\.gz)?$/i, "");
     return `${base}_selection.gb`;
   });
 

@@ -154,7 +154,7 @@ export const resolveRecords = (
   labels: string[],
 ): Promise<(ResolvedRecord | null)[]> => invoke("resolve_records", { files, labels });
 
-/// Trace a network artifact (.ssnv/matrix) back to the sequence files that
+/// Trace a network artifact (.dsnv/matrix) back to the sequence files that
 /// supplied its node labels (provenance DAG walk).
 export const traceNetworkSources = (path: string): Promise<SourceTrace> =>
   invoke("trace_network_sources", { path });
