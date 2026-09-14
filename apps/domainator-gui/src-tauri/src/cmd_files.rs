@@ -16,7 +16,7 @@ use domainator_core::matrix::read_matrix;
 use domainator_core::tools::build_ssn_viewer::render_html;
 use domainator_core::tools::enum_report::{enum_report, static_analysis, By, OutputFormat};
 use domainator_core::tools::matrix_report::{
-    matrix_report, to_json, DEFAULT_MAX_MERGE, DEFAULT_MERGE_IMPACT_METRIC,
+    matrix_report, to_viewer_json, DEFAULT_MAX_MERGE, DEFAULT_MERGE_IMPACT_METRIC,
 };
 use serde_json::{json, Value};
 
@@ -51,7 +51,9 @@ pub async fn load_matrix_report(path: String) -> Result<Value, String> {
         let matrix = read_matrix(&path).map_err(|e| format!("reading matrix: {e}"))?;
         let report = matrix_report(&matrix, DEFAULT_MERGE_IMPACT_METRIC, DEFAULT_MAX_MERGE);
         let histogram = histogram(&report.scores_desc, 40);
-        let mut payload = to_json(&report);
+        // The viewer payload, not the agent-facing --json contract: this tab draws
+        // the per-threshold curves that upstream's --json does not carry.
+        let mut payload = to_viewer_json(&report);
         if let Value::Object(map) = &mut payload {
             map.insert("histogram".into(), histogram);
             map.insert("n_rows".into(), json!(matrix.nrows()));
