@@ -1,8 +1,9 @@
 name: Check
 
 # The packaging workflow (build-gui-apps.yml) only runs on `gui-*` tags, so nothing
-# was verifying the library on an ordinary push. This job is the fast gate: it builds
-# and tests the pure-Rust crates and enforces the zero-warning rule.
+# was verifying the library on an ordinary push. This job is the fast gate: it builds,
+# lints and tests the pure-Rust crates and enforces the zero-warning rule for both
+# rustc and clippy.
 on:
   push:
     branches: [main]
@@ -21,13 +22,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
 
       # The Tauri app crates need webkit2gtk and friends, which cost more to install
-      # than this gate is worth. domainator-core is where the logic and all 155 tests
+      # than this gate is worth. domainator-core is where the logic and all 172 tests
       # live, and it plus the CLI and config crates are pure Rust.
       - name: Build (warnings are errors)
         env:
@@ -37,11 +40,11 @@ jobs:
       - name: Test
         run: cargo test -p domainator-core -p domainator-config -p domainator-cli
 
-      # No clippy step on purpose. The project's standard is zero *build* warnings
-      # (CLAUDE.md); the tree currently carries ~33 pre-existing clippy
-      # lints, so gating on `clippy -D warnings` would mean a permanently red job or
-      # a large refactor unrelated to keeping up with upstream. Worth doing as its
-      # own piece of work, not as a side effect of a sync.
+      # `--all-targets` so tests and examples are linted too -- `cargo build` does not
+      # compile `#[cfg(test)]` code, which is exactly how a broken test initializer
+      # slipped through once before.
+      - name: Clippy (warnings are errors)
+        run: cargo clippy -p domainator-core -p domainator-config -p domainator-cli --all-targets -- -D warnings
 
   upstream-drift:
     name: upstream drift guards

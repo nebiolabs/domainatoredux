@@ -78,6 +78,14 @@ echo "== guard: cargo test =="
 ( cd "$REPO_ROOT" && cargo test --workspace --quiet ) \
   || { echo "  -> cargo test failed"; FAILED=1; }
 
+# Both zero-warning gates. `--all-targets` matters: `cargo build` does not compile
+# `#[cfg(test)]` code, so a test-only break is invisible to the build alone.
+echo "== guard: cargo build + clippy (zero warnings) =="
+( cd "$REPO_ROOT" && RUSTFLAGS="-D warnings" cargo build --workspace --quiet ) \
+  || { echo "  -> cargo build produced warnings or errors"; FAILED=1; }
+( cd "$REPO_ROOT" && cargo clippy --workspace --all-targets --quiet -- -D warnings ) \
+  || { echo "  -> cargo clippy produced warnings or errors"; FAILED=1; }
+
 # The SSN core is compared against Python field for field: both probes print the same
 # JSON document, and json_parity.py diffs the parsed form (serde_json is built with
 # preserve_order while Python writes sort_keys=True, so bytes never match and are not

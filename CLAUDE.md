@@ -14,8 +14,16 @@ A from-scratch **pure-Rust** rewrite of `domainator`, a Python bioinformatics su
 cargo build                      # debug build of the workspace
 cargo build --release            # optimized (lto); use for any timing/benchmarks
 cargo build --workspace 2>&1 | grep -c warning:   # keep this at 0
+cargo clippy --workspace --all-targets -- -D warnings   # also keep this clean
 ./target/debug/domainator <tool> [opts]           # run a tool
 ```
+
+**Zero warnings means both**: `rustc` *and* `cargo clippy --all-targets -- -D warnings`.
+Use `--all-targets` — `cargo build` does not compile `#[cfg(test)]` code, so a broken
+test-only initializer is invisible to the build alone. Where a lint is wrong for this
+codebase, silence it with a narrow `#[allow(...)]` **plus a one-line reason** (the
+existing ones cover Tauri IPC signatures, parity-mirroring parameter lists, and HMMER's
+1-based node indices); never add a crate-wide allow.
 
 **34 tools** (`domainator <tool>`), grouped: I/O and dev (`inspect`, `convert`,
 `genbank-to-fasta`, `format-db`, `schema <tool>`); annotation and search (`domainate`,
@@ -64,7 +72,7 @@ End-to-end correctness is checked by **parity against the original Python tool**
 - `scripts/json_parity.py EXPECTED ACTUAL [--rtol] [--ignore PATH]` — recursive JSON compare that reports the first differing path. Ignores key *order* (required: `preserve_order` vs `sort_keys`) but not key *spelling*, so `{"1": n}` vs `{"1.0": n}` still fails. Accepts a `.dsnv` directly (gunzips it).
 - `scripts/ssn_probe.py MATRIX` — the Python twin of `cargo run -p domainator-core --example ssn_probe -- MATRIX`. Both print the **same** JSON document; keep them in lockstep or the gate silently stops covering a field.
 - `scripts/sync_upstream.sh` runs the viewer-shell drift check, `cargo test`, and the probe comparison at two `--max_merge_events` caps, and **exits non-zero** if any guard trips.
-- CI (`.github/workflows/check.yml`) runs build (`-D warnings`) + tests, and a second job clones upstream at the pin to run both drift guards.
+- CI (`.github/workflows/check.yml`) runs build (`-D warnings`) + clippy (`-D warnings`) + tests, and a second job clones upstream at the pin to run both drift guards.
 
 Typical gate: run the Rust tool and the Python tool on the same fixture, then compare in the conda env:
 - **GenBank**: `helpers.compare_seqfiles` / `compare_seqrecords`. These compare `{seq, id, description, name}`, annotations (iterating the **first** record's keys, skipping `date`), feature **count**, and per-feature **qualifiers** — *not* feature coordinates/types. Pass `skip_qualifiers={'evalue','score','identity'}` for search output (see numeric tolerance below).
