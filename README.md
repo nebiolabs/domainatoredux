@@ -52,7 +52,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | ------------- | ------------------- | ------------------- |
 | build_projection.py | deferred | — |
 | build_ssn.py | finished | Tools menu ("Build SSN (XGMML)") |
-| build_ssn_viewer.py | finished | Tools menu ("Build SSN viewer"); output `.ssnv` opens in the **SSN viewer** tab (interactive network, node→sequence cross-nav into a detached window). Layout algorithms: force-directed, grid, packed, and **treemap** (fixed-lattice, no edges). Viewer shell is generated from the Python source — see `UPSTREAM.md` |
+| build_ssn_viewer.py | finished (`.dsnv` bundle v5; `--categorical`) | Tools menu ("Build SSN viewer"); output `.dsnv` opens in the **SSN viewer** tab (interactive network, node→sequence cross-nav into a detached window). Layout algorithms: force-directed, grid, packed, and **treemap** (fixed-lattice, no edges). The shell also carries upstream's saved sessions, extractions, metadata editing, per-column charts and gradient colours. Viewer shell is generated from the Python source — see `UPSTREAM.md` |
 | build_tree.py | deferred | — |
 | clean_sequences.py | finished (byte-identical parity) | Tools menu ("Clean sequences") |
 | color_genbank.py | finished (parity incl. auto-color) | Tools menu ("Color GenBank") for batch color-by-name/database, **plus** per-feature editing in the contig viewer |
@@ -63,7 +63,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | domainate.py | protein (hmmsearch) + protein-FASTA (phmmer) + nucleotide-FASTA/HMM (nhmmer, whole-contig both-strand + circular origin-wrap) references supported; nucleotide-HMM & circular nhmmer are exact parity, phmmer is exact structural parity (evalue/score within HMMER-impl tolerance), nucleotide-FASTA nhmmer diverges on weak near-threshold hits (single-seq DNA profile construction/calibration differs from pyhmmer). **REVISIT nucleotide FASTA queries** once hmmer-pure-rs adds a nucleotide single-sequence profile builder — tracked upstream at https://github.com/henriksson-lab/hmmer-pure-rs/issues/1 (nucleotide **HMM** references already work exactly; pre-build with `hmmer-build`/`hmmbuild` as a workaround). Still deferred: CM/foldseek references, --gene_call (prodigal, GPL-deferred), --batch_size/--offset/--recs_to_read | Tools menu ("Domainate") — incl. taxonomy filters |
 | domainator_db_download.py | deferred (network fetch + prodigal --gene_call, which is GPL-deferred) | — |
 | domainator_format_db.py | finished (shard/BGZF-compress/.didx-index; .didx byte-identical to Python; domain_search round-trip verified both ways. Supports plain + BGZF inputs; plain non-BGZF gzip rejected, matching the rest of the seekable-I/O layer) | not runnable as a tool; the **Databases panel** registers/classifies already-formatted DBs for use as references |
-| enum_report.py | finished (html output deferred, need to figure out best way to integrate with tauri) | **Enum Report viewer** tab (row-virtualized sortable grid, per-column filters, column picker) + Tools menu export ("Enum report (export)", TSV) |
+| enum_report.py | finished (`--json` is streaming NDJSON to its own path; html output deferred) | **Enum Report viewer** tab (row-virtualized sortable grid, per-column filters, column picker) + Tools menu export ("Enum report (export)", TSV) |
 | extract_domains.py | finished (separate tool; parity-verified) | Tools menu ("Extract domains") |
 | extract_peptides.py | finished (separate tool; parity-verified) | Tools menu ("Extract peptides") |
 | extract_unannotated.py | finished (protein-only, matches Python) | Tools menu ("Extract unannotated") |
@@ -74,17 +74,18 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | infernal_build.py | deferred (avoiding infernal dependency for now) | — |
 | kmer_dist.py | deferred (heavy; low priority per plan) | — |
 | hmmer_compare.py | finished | Tools menu ("HMM compare") — writes a scores/alignments table |
-| hmmer_report.py | finished (TSV byte-identical parity; column order = flag order like enum_report; HTML deferred, `--json` offered instead) | Tools menu ("HMM report (export)") — a **column builder** (ordered list of source/acc/desc/length/consensus + `append` constant columns) writes TSV or JSON |
+| hmmer_report.py | finished (TSV byte-identical parity; column order = flag order like enum_report; `--json` is streaming NDJSON; `--alphabet` column; HTML deferred) | Tools menu ("HMM report (export)") — a **column builder** (ordered list of source/acc/desc/length/consensus + `append` constant columns) writes TSV or JSON |
 | hmmer_search.py | finished (filter query HMMs by best reference score; count+order parity verified across --score_cutoff/--max_hits; reuses the hmm_compare Viterbi engine + write_hmm) | Tools menu ("HMM search") — keeps query profiles scoring against a reference HMM set; output `.hmm` |
 | hmmer_select.py | finished (retained-profile set verified identical to Python across all test-file combos incl. case-sensitivity; output HMM re-readable by pyhmmer. Uses hmmer-pure-rs's writer, which emits a HMMER3/e header — semantically re-readable, not byte-identical) | Tools menu ("HMM select") — pairs with the HMM Logo viewer to curate a reference `.hmm` subset (regex/exact/substring on name/desc/acc) |
-| matrix_report.py | finished | **Matrix Report viewer** tab (histogram + suggested cutoffs) + Tools menu export ("Matrix report (export)", text) |
+| matrix_report.py | finished (`--json` matches upstream's agent contract; a separate GUI payload feeds the viewer tab) | **Matrix Report viewer** tab (histogram + suggested cutoffs) + Tools menu export ("Matrix report (export)", text) |
+| ssn_navigator.py | finished (all five `--mode`s verified against Python on both implementations' bundles) | — (the SSN viewer tab covers interactive exploration; the navigator writes stdout JSON with no workspace artifact) |
 | partition_seqfile.py | deferred | — |
 | select_by_cds.py | finished | Tools menu ("Select by CDS") — name/domain/`domain_expr`/`search_hits`/`unannotated` + neighborhood extraction + pad/dedup/strand/invert |
 | select_by_coord.py | finished (parity-verified) | Tools menu ("Select by coordinate") — coordinate table is a `table` file (`.tsv`/`.csv`) |
 | select_by_contig.py | finished | Tools menu ("Select by contig") — name/regex, domain content, taxonomy, length/CDS-count filters; `fasta_out` toggles FASTA vs GenBank |
 | seq_dist.py | finished | Tools menu ("Sequence distance") — `diamond_*` algorithms need the `diamond` binary, **auto-downloadable** from the External tools panel |
 | sort_contigs.py | finished (parity; ties may reorder) | Tools menu ("Sort contigs") |
-| summary_report.py | deferred (matplotlib/seaborn plots; no clean pure-Rust path yet) | **Summary dashboard** tab (pure-data stats + length histogram + taxonomy icicle) — GUI-only, sidesteps the matplotlib CLI tool |
+| summary_report.py | finished: `--json` (upstream's agent contract) + text; HTML deferred (matplotlib/seaborn), as is the ASCII length histogram | **Summary dashboard** tab (pure-data stats + length histogram + taxonomy icicle) — GUI-only, sidesteps the matplotlib CLI tool |
 | split_by_cluster.py | deferred (optional; skipped for now) | — |
 | transform_matrix.py | finished | Tools menu ("Transform matrix") |
 | plot_contigs.py | planned (high priority, but need to make a much nicer implementation than the python one) | **Contig viewer** — the GUI centerpiece (SVG, viewport virtualization + LOD, db/e-value filters, tooltips, editing); already supersedes the Python plotter for on-screen use (static image export still TODO) |
