@@ -16,7 +16,7 @@ use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
 use domainator_core::io::{detect_filetype, fasta, FileType};
 use domainator_core::matrix::{hdf5_io, read_matrix, text};
-use domainator_core::seq::taxonomy::NCBITaxonomy;
+use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools::enum_report::{self, needs_taxonomy, Analysis, OutputFormat};
 use domainator_core::tools::select_by_cds::{pad_records, select_by_cds, SelectByCdsOptions};
@@ -114,7 +114,7 @@ enum Command {
         /// Boolean taxid expression (& | ~), e.g. "2 & ~1224".
         #[arg(long = "taxonomy_expr")]
         taxonomy_expr: Option<String>,
-        /// Path to the NCBI taxonomy directory (default: /tmp/ncbi_taxonomy).
+        /// Path to the NCBI taxonomy directory (default: /tmp/ncbi_taxonomy_$USER).
         #[arg(long = "ncbi_taxonomy_path")]
         ncbi_taxonomy_path: Option<String>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
@@ -183,7 +183,7 @@ enum Command {
         /// Boolean taxid expression (& | ~), e.g. "2 & ~1224".
         #[arg(long = "taxonomy_expr")]
         taxonomy_expr: Option<String>,
-        /// Path to the NCBI taxonomy directory (default: /tmp/ncbi_taxonomy).
+        /// Path to the NCBI taxonomy directory (default: /tmp/ncbi_taxonomy_$USER).
         #[arg(long = "ncbi_taxonomy_path")]
         ncbi_taxonomy_path: Option<String>,
         /// Fail if projected uncompressed GenBank output exceeds this many GB (0 disables; default 25).
@@ -1157,7 +1157,7 @@ enum Command {
         /// Boolean taxonomy expression over taxids.
         #[arg(long = "taxonomy_expr")]
         taxonomy_expr: Option<String>,
-        /// Path to the NCBI taxonomy database directory (default: /tmp/ncbi_taxonomy).
+        /// Path to the NCBI taxonomy database directory (default: /tmp/ncbi_taxonomy_$USER).
         #[arg(long = "ncbi_taxonomy_path")]
         ncbi_taxonomy_path: Option<String>,
         /// Stop after returning this many contigs.
@@ -1639,7 +1639,7 @@ fn compile_allowed_taxids(
     if has_expr && (!include.is_empty() || !exclude.is_empty()) {
         anyhow::bail!("--taxonomy_expr is mutually exclusive with --include_taxids/--exclude_taxids.");
     }
-    let tax = load_taxonomy(path.unwrap_or("/tmp/ncbi_taxonomy"))?;
+    let tax = load_taxonomy(&path.map(str::to_string).unwrap_or_else(default_ncbi_taxonomy_path))?;
     let allowed = if has_expr {
         tax.compile_taxonomy_expression(expr.unwrap())
     } else {
@@ -3072,7 +3072,7 @@ fn main() -> Result<()> {
             let by = cfg.by_enum()?;
             let analyses: Vec<Analysis> =
                 cfg.columns.iter().map(|c| c.to_analysis()).collect::<Result<_>>()?;
-            let ncbi_path = cfg.ncbi_taxonomy_path.clone().unwrap_or_else(|| "/tmp/ncbi_taxonomy".into());
+            let ncbi_path = cfg.ncbi_taxonomy_path.clone().unwrap_or_else(default_ncbi_taxonomy_path);
 
             let target_contigs = parse_name_list(&cfg.contigs, cfg.contigs_file.as_deref())?;
             let mut records: Vec<(SeqRecord, String)> = Vec::new();
@@ -3266,7 +3266,7 @@ fn main() -> Result<()> {
                 || !cfg.exclude_taxids.is_empty()
                 || cfg.taxonomy_expr.as_deref().is_some_and(|e| !e.trim().is_empty());
             let tax = if needs_tax {
-                Some(load_taxonomy(cfg.ncbi_taxonomy_path.as_deref().unwrap_or("/tmp/ncbi_taxonomy"))?)
+                Some(load_taxonomy(&cfg.ncbi_taxonomy_path.clone().unwrap_or_else(default_ncbi_taxonomy_path))?)
             } else {
                 None
             };

@@ -437,6 +437,25 @@ mod tests {
     }
 }
 
+/// Default location for the cached NCBI taxonomy database.
+///
+/// Namespaced by user so separate users on a shared machine do not collide on the same
+/// directory and lockfile — one user writing a lockfile owned by another fails with a
+/// permission error. Concurrent runs by the *same* user share it safely.
+///
+/// Mirrors `domainator.Taxonomy.default_ncbi_taxonomy_path`, whose name comes from
+/// `getpass.getuser()`: the environment first, then the password database. We read the
+/// same environment variables and fall back to a fixed name rather than pulling in a
+/// libc dependency for the last resort — the directory only has to be stable and
+/// per-user, not match Python's byte for byte.
+pub fn default_ncbi_taxonomy_path() -> String {
+    let user = ["LOGNAME", "USER", "LNAME", "USERNAME"]
+        .iter()
+        .find_map(|key| std::env::var(key).ok().filter(|v| !v.is_empty()))
+        .unwrap_or_else(|| "default".to_string());
+    format!("/tmp/ncbi_taxonomy_{user}")
+}
+
 /// Decompress a gzip member fully via libdeflater (ISIZE from the trailer).
 fn gunzip(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
     if bytes.len() < 18 {

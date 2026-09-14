@@ -95,14 +95,38 @@ pub fn read(path: &str) -> io::Result<DataMatrix> {
         }
         SPARSE_CSR => {
             let values = reader.dataset(SPARSE_VALUES).map_err(read_err)?.read_f64().map_err(read_err)?;
-            let indices = reader.dataset(SPARSE_CSR_INDICES).map_err(read_err)?.read_i32().map_err(read_err)?;
-            let indptr = reader.dataset(SPARSE_CSR_INDPTR).map_err(read_err)?.read_i32().map_err(read_err)?;
+            // Index width is not fixed by the format: upstream narrows to int32 on write
+            // when the matrix can be addressed by it, but a file derived from a large
+            // int64-indexed matrix keeps int64. Readers must accept either
+            // (docs/file_formats.md), so read both as i64 and narrow here.
+            let indices = read_index_array(&reader, SPARSE_CSR_INDICES)?;
+            let indptr = read_index_array(&reader, SPARSE_CSR_INDPTR)?;
             Storage::Sparse { values, indices, indptr }
         }
         other => return Err(read_err(format!("unknown ARRAY_TYPE '{other}'"))),
     };
 
     Ok(DataMatrix { rows, cols, row_lengths, col_lengths, data_type, storage })
+}
+
+/// Read a CSR index dataset written at either int32 or int64 width.
+///
+/// `read_i64` widens an int32 dataset for free, so one call covers both. The values are
+/// then narrowed to the `i32` this port's `Storage::Sparse` uses — a matrix whose
+/// indices genuinely exceed i32 is larger than anything this representation can hold,
+/// so that is reported rather than silently truncated.
+fn read_index_array(reader: &File, name: &str) -> io::Result<Vec<i32>> {
+    let wide = reader.dataset(name).map_err(read_err)?.read_i64().map_err(read_err)?;
+    wide.into_iter()
+        .map(|v| {
+            i32::try_from(v).map_err(|_| {
+                read_err(format!(
+                    "{name} contains index {v}, which exceeds this build's 32-bit \
+                     sparse index limit"
+                ))
+            })
+        })
+        .collect()
 }
 
 fn add_labels_and_lengths(builder: &mut FileBuilder, m: &DataMatrix, symmetric: bool) {
