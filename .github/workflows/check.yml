@@ -1,0 +1,90 @@
+name: Check
+
+# The packaging workflow (build-gui-apps.yml) only runs on `gui-*` tags, so nothing
+# was verifying the library on an ordinary push. This job is the fast gate: it builds
+# and tests the pure-Rust crates and enforces the zero-warning rule.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      # The Tauri app crates need webkit2gtk and friends, which cost more to install
+      # than this gate is worth. domainator-core is where the logic and all 155 tests
+      # live, and it plus the CLI and config crates are pure Rust.
+      - name: Build (warnings are errors)
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo build -p domainator-core -p domainator-config -p domainator-cli --examples
+
+      - name: Test
+        run: cargo test -p domainator-core -p domainator-config -p domainator-cli
+
+      # No clippy step on purpose. The project's standard is zero *build* warnings
+      # (CLAUDE.md); the tree currently carries ~33 pre-existing clippy
+      # lints, so gating on `clippy -D warnings` would mean a permanently red job or
+      # a large refactor unrelated to keeping up with upstream. Worth doing as its
+      # own piece of work, not as a side effect of a sync.
+
+  upstream-drift:
+    name: upstream drift guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # external/domainator is gitignored, so CI clones it at the pin UPSTREAM.md
+      # records. If the pin and the vendored copy ever disagree about what the port is
+      # caught up to, this job is where that shows up.
+      - name: Clone vendored upstream at the recorded pin
+        run: |
+          PIN=$(grep -oP '\*\*Caught up to:\*\* `\K[0-9a-f]+' UPSTREAM.md)
+          echo "pin: $PIN"
+          git clone --filter=blob:none https://github.com/nebiolabs/domainator.git external/domainator
+          git -C external/domainator checkout "$PIN"
+
+      - name: Install the Python deps the probes need
+        run: pip install numpy scipy h5py pandas
+
+      # The viewer shell is a generated artifact; --check fails if it drifted from the
+      # Python source it is rendered from.
+      - name: Viewer shell drift
+        run: python scripts/regen_ssn_viewer_shell.py --check
+
+      # Compares the Rust SSN core against domainator.ssn_edges/ssn_hierarchy field for
+      # field. Run at two caps so the merge-event density back-fill is exercised, not
+      # just the uncapped path.
+      - name: SSN core parity vs Python
+        run: |
+          M=external/domainator/test/data/FeSOD_dist.dense.hdf5
+          for CAP in 500 5; do
+            cargo run -q -p domainator-core --example ssn_probe -- "$M" "$CAP" > /tmp/rust.json
+            python scripts/ssn_probe.py "$M" --max_merge_events "$CAP" > /tmp/py.json
+            python scripts/json_parity.py /tmp/py.json /tmp/rust.json
+          done

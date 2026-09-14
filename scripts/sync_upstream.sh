@@ -62,19 +62,53 @@ else
   echo "======================================================================"
 fi
 
-# 3. Automated guards.
+# 3. Automated guards. Each sets FAILED rather than exiting, so one failure does not
+#    hide the others; the script exits non-zero at the end if any tripped.
+FAILED=0
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
 echo
 echo "== guard: regen_ssn_viewer_shell.py --check =="
 "$PY" "$REPO_ROOT/scripts/regen_ssn_viewer_shell.py" --check \
-  || { echo "  -> viewer shell is STALE; run scripts/regen_ssn_viewer_shell.py"; }
+  || { echo "  -> viewer shell is STALE; run scripts/regen_ssn_viewer_shell.py"; FAILED=1; }
 
 echo
-echo "== guard: ssn_probe (MST/hierarchy/merge-event core) =="
-( cd "$REPO_ROOT" && cargo run -q -p domainator-core --example ssn_probe ) \
-  || echo "  -> ssn_probe failed; investigate matrix/ssn.rs"
+echo "== guard: cargo test =="
+( cd "$REPO_ROOT" && cargo test --workspace --quiet ) \
+  || { echo "  -> cargo test failed"; FAILED=1; }
+
+# The SSN core is compared against Python field for field: both probes print the same
+# JSON document, and json_parity.py diffs the parsed form (serde_json is built with
+# preserve_order while Python writes sort_keys=True, so bytes never match and are not
+# part of the contract).
+echo
+echo "== guard: ssn_probe vs domainator.ssn_edges/ssn_hierarchy =="
+MATRIX="${SSN_PROBE_MATRIX:-$VENDOR/test/data/FeSOD_dist.dense.hdf5}"
+if [[ ! -f "$MATRIX" ]]; then
+  echo "  -> SKIPPED: no fixture at $MATRIX (set SSN_PROBE_MATRIX to override)"
+else
+  for CAP in 500 5; do
+    if ( cd "$REPO_ROOT" && cargo run -q -p domainator-core --example ssn_probe -- \
+           "$MATRIX" "$CAP" ) > "$TMP/rust.json" \
+       && "$PY" "$REPO_ROOT/scripts/ssn_probe.py" "$MATRIX" --max_merge_events "$CAP" \
+           > "$TMP/py.json"; then
+      "$PY" "$REPO_ROOT/scripts/json_parity.py" "$TMP/py.json" "$TMP/rust.json" \
+        || { echo "  -> ssn_probe DIVERGED at --max_merge_events=$CAP; investigate matrix/ssn.rs"; FAILED=1; }
+    else
+      echo "  -> ssn_probe could not run at --max_merge_events=$CAP"; FAILED=1
+    fi
+  done
+fi
 
 echo
 echo "== reminders =="
 echo "  * Triage the changelog against UPSTREAM.md's file->owner map; port surfaces #2-#4."
 echo "  * Run the per-tool parity gates for any tool whose Python file changed."
 echo "  * Advance the pin in UPSTREAM.md to ${TARGET:0:12} and note anything deferred."
+
+if [[ "$FAILED" -ne 0 ]]; then
+  echo
+  echo "One or more guards FAILED (see above)."
+  exit 1
+fi
