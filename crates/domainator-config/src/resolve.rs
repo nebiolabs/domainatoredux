@@ -50,6 +50,7 @@ pub fn resolve_build_ssn(
         subset_labels,
         color_by: cfg.color_by.clone(),
         color_table,
+        max_color_groups: cfg.max_color_groups,
     }
 }
 

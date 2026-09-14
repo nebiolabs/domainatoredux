@@ -842,6 +842,10 @@ enum Command {
         /// Write the resolved colour table here.
         #[arg(long = "color_table_out")]
         color_table_out: Option<String>,
+        /// Give distinct colours only to this many of the largest --color_by groups;
+        /// every remaining group shares a neutral grey.
+        #[arg(long = "max_color_groups")]
+        max_color_groups: Option<usize>,
         /// Add an SSN_cluster column of connected-component ids.
         #[arg(long)]
         cluster: bool,
@@ -2726,8 +2730,8 @@ fn main() -> Result<()> {
         }
         Command::BuildSsn {
             input, xgmml, lb, metadata, subset, subset_file, color_by, color_table,
-            color_table_out, cluster, cluster_tsv, no_cluster_header, mst, mst_knn,
-            max_output_gb, config: config_path, print_config: do_print,
+            color_table_out, max_color_groups, cluster, cluster_tsv, no_cluster_header,
+            mst, mst_knn, max_output_gb, config: config_path, print_config: do_print,
         } => {
             let cli = config::BuildSsnConfig {
                 input: opt_path(&input)?,
@@ -2739,6 +2743,7 @@ fn main() -> Result<()> {
                 color_by,
                 color_table,
                 color_table_out,
+                max_color_groups,
                 cluster,
                 cluster_tsv,
                 no_cluster_header,

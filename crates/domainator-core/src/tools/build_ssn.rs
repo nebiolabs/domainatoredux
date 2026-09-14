@@ -32,6 +32,9 @@ pub struct BuildSsnOptions {
     pub color_by: Option<String>,
     /// Explicit value → hex colour map (`--color_table`).
     pub color_table: Option<HashMap<String, String>>,
+    /// Give distinct colours only to this many of the largest `--color_by` groups;
+    /// the rest share the neutral grey. `None` colours every group.
+    pub max_color_groups: Option<usize>,
 }
 
 /// The assembled network, ready for the CLI to write (XGMML / cluster TSV /
@@ -45,12 +48,9 @@ pub struct BuildSsnResult {
     pub cluster_labels: Option<Vec<i64>>,
 }
 
-/// Deterministic fallback palette (colour parity with seaborn is not required).
-const PALETTE: [&str; 12] = [
-    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f",
-    "#bcbd22", "#17becf", "#aec7e8", "#ffbb78",
-];
-const DEFAULT_COLOR: &str = "#cccccc";
+/// Colour for a node whose `--color_by` value is missing, or whose group fell outside
+/// `--max_color_groups`. Same neutral grey Python uses.
+use crate::palette::OTHER_COLOR as DEFAULT_COLOR;
 
 pub(crate) fn subset_matrix(m: &DataMatrix, subset: &Option<HashSet<String>>) -> DataMatrix {
     let subset = match subset {
@@ -376,20 +376,17 @@ fn resolve_colors(
     // Resolve/extend the colour table.
     let mut table_map = opts.color_table.clone().unwrap_or_default();
     if opts.color_table.is_none() {
-        // Generate a palette over sorted unique present values.
-        let mut uniq: Vec<String> = {
-            let mut s: HashSet<String> = HashSet::new();
-            for i in 0..table.names.len() {
-                if let Some(v) = value_of(i) {
-                    s.insert(v);
-                }
+        // Per-node values, kept with duplicates so `--max_color_groups` can rank
+        // groups by frequency the way Python's pandas Series path does.
+        let mut present: Vec<String> = Vec::new();
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for i in 0..table.names.len() {
+            if let Some(v) = value_of(i) {
+                *counts.entry(v.clone()).or_insert(0) += 1;
+                present.push(v);
             }
-            s.into_iter().collect()
-        };
-        uniq.sort();
-        for (i, v) in uniq.into_iter().enumerate() {
-            table_map.insert(v, PALETTE[i % PALETTE.len()].to_string());
         }
+        table_map = crate::palette::get_palette(&present, opts.max_color_groups, Some(&counts));
     }
 
     let fills: Vec<Option<String>> = (0..table.names.len())

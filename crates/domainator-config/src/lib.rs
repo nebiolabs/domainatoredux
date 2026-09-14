@@ -983,6 +983,7 @@ pub struct BuildSsnConfig {
     pub subset: Vec<String>,
     pub subset_file: Option<String>,
     pub color_by: Option<String>,
+    pub max_color_groups: Option<usize>,
     pub color_table: Option<String>,
     pub color_table_out: Option<String>,
     pub cluster: bool,
@@ -1002,6 +1003,7 @@ impl BuildSsnConfig {
         merge_vec!(self, cli, subset);
         merge_scalar!(self, cli, subset_file);
         merge_scalar!(self, cli, color_by);
+        merge_scalar!(self, cli, max_color_groups);
         merge_scalar!(self, cli, color_table);
         merge_scalar!(self, cli, color_table_out);
         self.cluster |= cli.cluster;
@@ -1412,6 +1414,7 @@ fn common_help(name: &str) -> Option<&'static str> {
         "cluster_tsv" => "Also write a TSV mapping each node to its cluster.",
         "no_cluster_header" => "Omit the header row from the cluster TSV.",
         "color_by" => "Node attribute to color by.",
+        "max_color_groups" => "Give distinct colors only to this many of the largest color_by groups; the rest share a neutral gray.",
         "label_by" => "Node attribute to label by.",
         "categorical" => "Numeric metadata columns to color as discrete categories rather than with a gradient.",
         "color_table" => "TSV of name→color to apply.",
@@ -2037,6 +2040,7 @@ fn build_ssn_schema() -> serde_json::Value {
             "color_by": {"type": ["string", "null"]},
             "color_table": {"type": ["string", "null"]},
             "color_table_out": {"type": ["string", "null"]},
+            "max_color_groups": {"type": ["integer", "null"], "description": "Give distinct colors only to this many of the largest color_by groups; the rest share a neutral gray"},
             "cluster": {"type": "boolean", "default": false},
             "cluster_tsv": {"type": ["string", "null"]},
             "no_cluster_header": {"type": "boolean", "default": false},
