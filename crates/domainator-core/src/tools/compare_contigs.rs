@@ -39,13 +39,15 @@ pub struct CompareContigsOptions {
     /// `k` is ignored (the pruning sees the full candidate set). Mirrors
     /// `compare_contigs --mst_knn`.
     pub mst_knn: Option<usize>,
+    /// Pure OR-symmetric kNN (`--knn`), without the spanning tree.
+    pub knn: Option<usize>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
 }
 
 impl Default for CompareContigsOptions {
     fn default() -> Self {
-        CompareContigsOptions { ji_weight: 0.5, ai_weight: 0.5, databases: None, k: None, lb: 0.0, mst_knn: None, cpu: 0 }
+        CompareContigsOptions { ji_weight: 0.5, ai_weight: 0.5, databases: None, k: None, lb: 0.0, mst_knn: None, knn: None, cpu: 0 }
     }
 }
 
@@ -245,7 +247,7 @@ pub fn compare_contigs(
 
     // k == 0 -> empty matrix (no self either, matching the Python early return).
     // `--mst_knn` ignores `k`, so this guard does not apply when it is set.
-    if opts.mst_knn.is_none() && opts.k == Some(0) {
+    if opts.mst_knn.is_none() && opts.knn.is_none() && opts.k == Some(0) {
         let names: Vec<String> = recs.iter().map(|r| r.id.clone()).collect();
         return Ok(DataMatrix {
             rows: names.clone(),
@@ -257,12 +259,18 @@ pub fn compare_contigs(
         });
     }
 
-    // `--mst_knn` bypasses per-row top-k so the pruning sees the full candidate set.
-    let k = if opts.mst_knn.is_some() { None } else { opts.k };
+    if opts.mst_knn.is_some() && opts.knn.is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--mst_knn and --knn are mutually exclusive (--mst_knn k == --mst --knn k).",
+        ));
+    }
+    // Either sparsifier bypasses per-row top-k so the pruning sees the full candidate set.
+    let k = if opts.mst_knn.is_some() || opts.knn.is_some() { None } else { opts.k };
     let matrix = combined_matrix(&recs, opts, k);
 
-    match opts.mst_knn {
-        Some(mst_knn) => Ok(apply_mst_knn(&matrix, mst_knn, opts.lb)),
+    match opts.mst_knn.map(|k| (k, true)).or_else(|| opts.knn.map(|k| (k, false))) {
+        Some((k, include_mst)) => Ok(apply_mst_knn(&matrix, k, opts.lb, include_mst)),
         None => Ok(matrix),
     }
 }

@@ -1013,6 +1013,7 @@ fn run_seq_dist(params: Value) -> Result<RunOutput, String> {
         lb: cfg.lb.unwrap_or(0.0),
         k: cfg.k,
         mst_knn: cfg.mst_knn,
+        knn: cfg.knn,
         cpu: cfg.cpu.unwrap_or(0),
     };
     let matrix = seq_dist(&input, input_kind, cfg.reference.as_deref(), ref_kind, &opts)
@@ -1043,6 +1044,7 @@ fn run_compare_contigs(params: Value) -> Result<RunOutput, String> {
         k: cfg.k,
         lb: cfg.lb.unwrap_or(0.0),
         mst_knn: cfg.mst_knn,
+        knn: cfg.knn,
         cpu: cfg.cpu.unwrap_or(0),
     };
     let matrix = compare_contigs(&cfg.input, &opts).map_err(|e| format!("compare_contigs: {e}"))?;

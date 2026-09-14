@@ -31,6 +31,7 @@ pub fn resolve_transform_matrix(cfg: &TransformMatrixConfig) -> Result<Transform
         input_type: cfg.input_type.clone(),
         lb: cfg.lb,
         mst_knn: cfg.mst_knn,
+        knn: cfg.knn,
     })
 }
 
@@ -46,6 +47,7 @@ pub fn resolve_build_ssn(
         cluster: cfg.cluster || cfg.cluster_tsv.is_some(),
         mst: cfg.mst,
         mst_knn: cfg.mst_knn,
+        knn: cfg.knn,
         metadata_files: cfg.metadata.clone(),
         subset_labels,
         color_by: cfg.color_by.clone(),

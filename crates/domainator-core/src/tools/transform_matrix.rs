@@ -35,6 +35,9 @@ pub struct TransformMatrixOptions {
     pub lb: Option<f64>,
     /// Keep only MST + OR-symmetric kNN edges (post-transform values).
     pub mst_knn: Option<usize>,
+    /// Pure OR-symmetric kNN (`--knn`), without the spanning tree. Mutually exclusive
+    /// with `mst_knn`; unlike it, this does not preserve connected components.
+    pub knn: Option<usize>,
 }
 
 /// Transform `m` per `opts` and return the result. Errors mirror the Python
@@ -70,11 +73,23 @@ pub fn transform_matrix(mut m: DataMatrix, opts: &TransformMatrixOptions) -> io:
         m.data_type = mode.to_string();
     }
 
-    if let Some(k) = opts.mst_knn {
+    if opts.mst_knn.is_some() && opts.knn.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--mst_knn and --knn are mutually exclusive (--mst_knn k == --mst --knn k).",
+        ));
+    }
+    if let Some((k, include_mst)) =
+        opts.mst_knn.map(|k| (k, true)).or_else(|| opts.knn.map(|k| (k, false)))
+    {
+        let option = if include_mst { "--mst_knn" } else { "--knn" };
         if m.nrows() != m.ncols() {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "--mst_knn requires a square matrix."));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{option} requires a square matrix."),
+            ));
         }
-        m = apply_mst_knn(&m, k, opts.lb.unwrap_or(0.0));
+        m = apply_mst_knn(&m, k, opts.lb.unwrap_or(0.0), include_mst);
     }
 
     if let Some(lb) = opts.lb {

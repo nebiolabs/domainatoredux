@@ -170,6 +170,9 @@ pub struct SeqDistOptions {
     /// square symmetric comparison (reference == input) and a streamable `--mode`.
     /// When set, `k` is ignored. Mirrors `seq_dist --mst_knn`.
     pub mst_knn: Option<usize>,
+    /// Pure OR-symmetric kNN (`--knn`), without the spanning tree. Mutually exclusive
+    /// with `mst_knn`.
+    pub knn: Option<usize>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
 }
@@ -182,6 +185,7 @@ impl Default for SeqDistOptions {
             lb: 0.0,
             k: None,
             mst_knn: None,
+            knn: None,
             cpu: 0,
         }
     }
@@ -200,13 +204,20 @@ pub fn seq_dist(
     let ref_kind = reference_kind.unwrap_or(input_kind);
     let same = ref_path == input;
 
-    if opts.mst_knn.is_some() {
+    if opts.mst_knn.is_some() && opts.knn.is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "--mst_knn and --knn are mutually exclusive (--mst_knn k == --mst --knn k).",
+        ));
+    }
+    if opts.mst_knn.is_some() || opts.knn.is_some() {
         if !MST_KNN_STREAMABLE_MODES.contains(&opts.mode.as_str()) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 format!(
-                    "--mst_knn is only supported with --mode {:?} (modes that normalize \
+                    "{} is only supported with --mode {:?} (modes that normalize \
                      against global matrix maxima cannot be pruned per edge); got '{}'",
+                    if opts.knn.is_some() { "--knn" } else { "--mst_knn" },
                     MST_KNN_STREAMABLE_MODES, opts.mode
                 ),
             ));
@@ -214,7 +225,11 @@ pub fn seq_dist(
         if !same {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "--mst_knn requires a square, symmetric comparison (reference must be the same file as input)",
+                format!(
+                    "{} requires a square, symmetric comparison (reference must be the \
+                     same file as input)",
+                    if opts.knn.is_some() { "--knn" } else { "--mst_knn" }
+                ),
             ));
         }
     }
@@ -334,7 +349,7 @@ pub fn seq_dist(
     // `--mst_knn` bypasses per-row top-k so the pruning sees the full candidate
     // set (matching the Python streaming path's `k=None`). The diamond path
     // already capped targets per query via `--max-target-seqs`.
-    let k = if opts.mst_knn.is_some() || matches!(algorithm, Algorithm::Diamond(_)) {
+    let k = if opts.mst_knn.is_some() || opts.knn.is_some() || matches!(algorithm, Algorithm::Diamond(_)) {
         None
     } else {
         opts.k
@@ -379,8 +394,10 @@ pub fn seq_dist(
     // Prune to MST ∪ OR-symmetric kNN. The raw-score lower bound was already
     // applied during scoring (`opts.lb`), so the pruning runs at lower_bound=0
     // on the post-mode values (matching the Python streaming path).
-    if let Some(mst_knn) = opts.mst_knn {
-        matrix = apply_mst_knn(&matrix, mst_knn, 0.0);
+    if let Some((k, include_mst)) =
+        opts.mst_knn.map(|k| (k, true)).or_else(|| opts.knn.map(|k| (k, false)))
+    {
+        matrix = apply_mst_knn(&matrix, k, 0.0, include_mst);
     }
     Ok(matrix)
 }

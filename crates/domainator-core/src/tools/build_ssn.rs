@@ -22,8 +22,13 @@ pub struct BuildSsnOptions {
     pub cluster: bool,
     /// Keep only maximum-spanning-tree edges.
     pub mst: bool,
-    /// Keep MST + OR-symmetric kNN edges (`k > 1`).
+    /// Keep MST + OR-symmetric kNN edges. `--mst_knn k` is exact shorthand for
+    /// `--mst --knn k`, and `k == 0` reduces to `--mst`.
     pub mst_knn: Option<usize>,
+    /// Keep OR-symmetric kNN edges (`k >= 1`). Combinable with `mst`, mutually
+    /// exclusive with `mst_knn`. On its own it may split a cluster the full graph
+    /// held together, since it does not preserve connected components.
+    pub knn: Option<usize>,
     /// TSV metadata files keyed by node id (first column).
     pub metadata_files: Vec<String>,
     /// Keep only these labels (rows/cols) if set.
@@ -167,6 +172,18 @@ fn cluster_from_graph(m: &DataMatrix, lb: f64) -> Vec<i64> {
     size_ranked_labels(n, &roots)
 }
 
+/// Connected components of an explicit edge list, size-ranked like the other two
+/// clustering paths. Used for `--knn` without `--mst`, where the selected edges are
+/// the only evidence of what is connected.
+fn cluster_from_edges(n: usize, edges: &[(usize, usize, f64)]) -> Vec<i64> {
+    let mut uf = Uf::new(n);
+    for &(a, b, _) in edges {
+        uf.union(a, b);
+    }
+    let roots: Vec<usize> = (0..n).map(|i| uf.find(i)).collect();
+    size_ranked_labels(n, &roots)
+}
+
 /// Default-path edges: every off-diagonal pair with `max(M[i,j],M[j,i]) > lb`,
 /// oriented so the source has the lexicographically smaller name.
 fn default_edges(m: &DataMatrix, lb: f64) -> Vec<(usize, usize, f64)> {
@@ -255,24 +272,23 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
     let n = matrix.nrows();
     let names = matrix.rows.clone();
 
-    let tree = if opts.mst || opts.mst_knn.is_some() {
-        Some(MaxTree::from_matrix(&matrix))
-    } else {
-        None
+    // `--mst_knn k` is exact shorthand for `--mst --knn k`; normalize to (mst, knn)
+    // so the three flags collapse to one pair and the modes below stay readable.
+    if opts.mst_knn.is_some() && (opts.mst || opts.knn.is_some()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--mst_knn is shorthand for --mst --knn; pass one spelling or the other.",
+        ));
+    }
+    let (use_mst, knn_k) = match opts.mst_knn {
+        Some(k) => (true, (k > 0).then_some(k)),
+        None => (opts.mst, opts.knn),
     };
 
-    // Cluster labels (SSN_cluster column).
-    let cluster_labels: Option<Vec<i64>> = if opts.cluster {
-        Some(match &tree {
-            Some(t) => cluster_from_tree(t, opts.lb),
-            None => cluster_from_graph(&matrix, opts.lb),
-        })
-    } else {
-        None
-    };
+    let tree = if use_mst { Some(MaxTree::from_matrix(&matrix)) } else { None };
 
     // Edges per mode.
-    let edges: Vec<(usize, usize, f64)> = if opts.mst {
+    let edges: Vec<(usize, usize, f64)> = if use_mst && knn_k.is_none() {
         let t = tree.as_ref().unwrap();
         let mut out = Vec::new();
         for e in &t.edges {
@@ -283,8 +299,8 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
             out.push((s, tt, e.weight));
         }
         out
-    } else if let Some(k) = opts.mst_knn {
-        mst_knn_edge_list(&matrix, k, opts.lb)
+    } else if let Some(k) = knn_k {
+        mst_knn_edge_list(&matrix, k, opts.lb, use_mst)
             .into_iter()
             .map(|(a, b, s)| {
                 let (x, y) = orient_by_name(&matrix, a, b);
@@ -293,6 +309,22 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
             .collect()
     } else {
         default_edges(&matrix, opts.lb)
+    };
+
+    // Cluster labels (SSN_cluster column). A pure `--knn` graph drops edges the MST
+    // would have kept, so its components have to be read off the edges actually
+    // selected rather than off the input graph or the spanning tree.
+    let cluster_labels: Option<Vec<i64>> = if opts.cluster {
+        Some(if !use_mst && knn_k.is_some() {
+            cluster_from_edges(n, &edges)
+        } else {
+            match &tree {
+                Some(t) => cluster_from_tree(t, opts.lb),
+                None => cluster_from_graph(&matrix, opts.lb),
+            }
+        })
+    } else {
+        None
     };
 
     // Node table: SSN_cluster first (if any), then metadata columns.

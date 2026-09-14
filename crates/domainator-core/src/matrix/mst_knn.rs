@@ -91,6 +91,7 @@ pub(crate) fn mst_knn_kept(
     m: &DataMatrix,
     k: usize,
     lower_bound: f64,
+    include_mst: bool,
 ) -> (HashSet<(usize, usize)>, HashMap<(usize, usize), f64>) {
     let n = m.nrows();
 
@@ -110,6 +111,9 @@ pub(crate) fn mst_knn_kept(
     let mut kept: HashSet<(usize, usize)> = HashSet::new();
 
     // --- MST (Kruskal over the maximum spanning forest) ---
+    // Skipped entirely for a pure `--knn` graph, which therefore does NOT preserve
+    // the connected components of the input.
+    if include_mst {
     // Sort descending by score, ties broken by (larger index, smaller index)
     // ascending — replicating `sorted_undirected_edges` (a stable `-score` sort
     // over lower-triangular, row-major edges).
@@ -126,8 +130,11 @@ pub(crate) fn mst_knn_kept(
             kept.insert((smaller, larger));
         }
     }
+    }
 
     // --- OR-symmetric kNN ---
+    // `k == 0` selects no neighbours at all, which with include_mst is how
+    // `--mst_knn 0` spells "MST only".
     // Each node's neighbors ranked by descending symmetric score, ties by
     // neighbor index ascending; keep the top-k that pass the lower bound.
     let mut adj: Vec<Vec<(f64, usize)>> = vec![Vec::new(); n];
@@ -135,7 +142,7 @@ pub(crate) fn mst_knn_kept(
         adj[a].push((s, b));
         adj[b].push((s, a));
     }
-    for (node, neighbors) in adj.iter_mut().enumerate() {
+    for (node, neighbors) in adj.iter_mut().enumerate().filter(|_| k > 0) {
         neighbors.sort_by(|x, y| y.0.total_cmp(&x.0).then(x.1.cmp(&y.1)));
         let mut selected = 0;
         for &(score, neighbor) in neighbors.iter() {
@@ -154,7 +161,21 @@ pub(crate) fn mst_knn_kept(
     (kept, sym)
 }
 
-pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64) -> DataMatrix {
+/// Prune to the OR-symmetric kNN edges, plus the maximum spanning tree when asked.
+///
+/// `include_mst = true` is `--mst_knn k`; `false` is a pure `--knn k` graph, which does
+/// **not** preserve the connected components of the input.
+///
+/// Kept edges are written as a strict max over the diagonal: both cells of a pair get
+/// `max(M[i,j], M[j,i])`, the same score the kNN ranking and the spanning tree select
+/// on. The output is therefore symmetric, and the batch and streaming paths now agree
+/// on values, not just on which edges are kept.
+pub fn apply_mst_knn(
+    m: &DataMatrix,
+    k: usize,
+    lower_bound: f64,
+    include_mst: bool,
+) -> DataMatrix {
     let n = m.nrows();
 
     // Directional off-diagonal values and the diagonal (random-access lookups).
@@ -171,7 +192,7 @@ pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64) -> DataMatrix {
         }
     });
 
-    let (kept, _sym) = mst_knn_kept(m, k, lower_bound);
+    let (kept, sym) = mst_knn_kept(m, k, lower_bound, include_mst);
 
     // --- Assemble the pruned matrix ---
     let mut rows_v: Vec<i64> = Vec::new();
@@ -184,20 +205,17 @@ pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64) -> DataMatrix {
             vals_v.push(v);
         }
     }
+    // Both cells get the symmetric max, not their own directional value.
+    let _ = &cell;
     for &(a, b) in &kept {
-        if let Some(&fwd) = cell.get(&(a, b)) {
-            if fwd != 0.0 {
-                rows_v.push(a as i64);
-                cols_v.push(b as i64);
-                vals_v.push(fwd);
-            }
-        }
-        if let Some(&rev) = cell.get(&(b, a)) {
-            if rev != 0.0 {
-                rows_v.push(b as i64);
-                cols_v.push(a as i64);
-                vals_v.push(rev);
-            }
+        let value = sym.get(&(a, b)).copied().unwrap_or(0.0);
+        if value != 0.0 {
+            rows_v.push(a as i64);
+            cols_v.push(b as i64);
+            vals_v.push(value);
+            rows_v.push(b as i64);
+            cols_v.push(a as i64);
+            vals_v.push(value);
         }
     }
 

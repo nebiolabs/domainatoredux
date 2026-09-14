@@ -331,8 +331,13 @@ pub fn edge_scores_desc(m: &DataMatrix) -> Vec<f64> {
 /// MST ∪ OR-symmetric kNN edges as canonical `(a, b, symmetric_score)` with
 /// `a < b`. Mirrors `ssn_edges.mst_knn_edge_index_dict` — the same selection the
 /// `--mst_knn` matrix pruner uses.
-pub fn mst_knn_edge_list(m: &DataMatrix, k: usize, lower_bound: f64) -> Vec<(usize, usize, f64)> {
-    let (kept, sym) = super::mst_knn::mst_knn_kept(m, k, lower_bound);
+pub fn mst_knn_edge_list(
+    m: &DataMatrix,
+    k: usize,
+    lower_bound: f64,
+    include_mst: bool,
+) -> Vec<(usize, usize, f64)> {
+    let (kept, sym) = super::mst_knn::mst_knn_kept(m, k, lower_bound, include_mst);
     kept.into_iter().map(|(a, b)| (a, b, sym[&(a, b)])).collect()
 }
 

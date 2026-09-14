@@ -717,6 +717,10 @@ enum Command {
         /// == input and --mode score/bool/efi_score). When set, -k is ignored.
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
+        /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
+        /// does not preserve connected components.
+        #[arg(long = "knn", value_parser = parse_knn)]
+        knn: Option<usize>,
         /// Worker threads (0 = all cores).
         #[arg(long)]
         cpu: Option<usize>,
@@ -762,6 +766,10 @@ enum Command {
         /// Prune to MST + OR-symmetric kNN edges (integer >= 1). When set, -k is ignored.
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
+        /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
+        /// does not preserve connected components.
+        #[arg(long = "knn", value_parser = parse_knn)]
+        knn: Option<usize>,
         /// Worker threads (0 = all cores).
         #[arg(long)]
         cpu: Option<usize>,
@@ -803,6 +811,10 @@ enum Command {
         /// Keep only MST + OR-symmetric kNN edges (integer >= 1).
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
+        /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
+        /// does not preserve connected components.
+        #[arg(long = "knn", value_parser = parse_knn)]
+        knn: Option<usize>,
         /// Fail if a projected matrix output exceeds this many GB (default 25; 0 disables).
         #[arg(long = "max_output_gb")]
         max_output_gb: Option<f64>,
@@ -861,6 +873,10 @@ enum Command {
         /// Keep MST + OR-symmetric kNN edges (integer >= 1).
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
+        /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
+        /// does not preserve connected components.
+        #[arg(long = "knn", value_parser = parse_knn)]
+        knn: Option<usize>,
         /// Fail if the projected XGMML output exceeds this many GB (default 25; 0 disables).
         #[arg(long = "max_output_gb")]
         max_output_gb: Option<f64>,
@@ -1341,10 +1357,21 @@ enum Command {
 
 /// Parse `--mst_knn`: an integer >= 1 (mirrors `transform_matrix._mst_knn_arg`).
 /// `k == 1` reduces to the MST plus each node's single nearest neighbor.
+/// `--mst_knn k` is exact shorthand for `--mst --knn k`, so `0` is legal and means
+/// the spanning tree alone.
 fn parse_mst_knn(value: &str) -> std::result::Result<usize, String> {
     let v: i64 = value.parse().map_err(|_| format!("`{value}` is not an integer"))?;
+    if v < 0 {
+        return Err("--mst_knn must be an integer >= 0 (0 reduces to --mst)".to_string());
+    }
+    Ok(v as usize)
+}
+
+/// A pure kNN graph with `k = 0` would have no edges at all, so `--knn` starts at 1.
+fn parse_knn(value: &str) -> std::result::Result<usize, String> {
+    let v: i64 = value.parse().map_err(|_| format!("`{value}` is not an integer"))?;
     if v < 1 {
-        return Err("--mst_knn must be an integer >= 1".to_string());
+        return Err("--knn must be an integer >= 1".to_string());
     }
     Ok(v as usize)
 }
@@ -2539,7 +2566,7 @@ fn main() -> Result<()> {
                 write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
             }
         }
-        Command::SeqDist { input, reference, dense, dense_text, sparse, algorithm, mode, lb, k, mst_knn, cpu, max_output_gb, config: config_path, print_config: do_print } => {
+        Command::SeqDist { input, reference, dense, dense_text, sparse, algorithm, mode, lb, k, mst_knn, knn, cpu, max_output_gb, config: config_path, print_config: do_print } => {
             let cli = config::SeqDistConfig {
                 input: opt_path(&input)?,
                 reference: opt_path(&reference)?,
@@ -2551,6 +2578,7 @@ fn main() -> Result<()> {
                 lb,
                 k,
                 mst_knn,
+                knn,
                 cpu,
                 max_output_gb,
             };
@@ -2583,6 +2611,7 @@ fn main() -> Result<()> {
                 lb: cfg.lb.unwrap_or(0.0),
                 k: cfg.k,
                 mst_knn: cfg.mst_knn,
+                knn: cfg.knn,
                 cpu: cfg.cpu.unwrap_or(0),
             };
             let matrix = seq_dist(&input, input_kind, cfg.reference.as_deref(), ref_kind, &opts)
@@ -2609,7 +2638,7 @@ fn main() -> Result<()> {
             }
             println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
         }
-        Command::CompareContigs { input, dense, dense_text, sparse, ji, ai, databases, k, lb, mst_knn, cpu, max_output_gb, config: config_path, print_config: do_print } => {
+        Command::CompareContigs { input, dense, dense_text, sparse, ji, ai, databases, k, lb, mst_knn, knn, cpu, max_output_gb, config: config_path, print_config: do_print } => {
             let cli = config::CompareContigsConfig {
                 input: paths_to_strings(&input)?,
                 dense: opt_path(&dense)?,
@@ -2621,6 +2650,7 @@ fn main() -> Result<()> {
                 k,
                 lb,
                 mst_knn,
+                knn,
                 cpu,
                 max_output_gb,
             };
@@ -2648,6 +2678,7 @@ fn main() -> Result<()> {
                 k: cfg.k,
                 lb: cfg.lb.unwrap_or(0.0),
                 mst_knn: cfg.mst_knn,
+                knn: cfg.knn,
                 cpu: cfg.cpu.unwrap_or(0),
             };
             let matrix = compare_contigs(&cfg.input, &opts).context("running compare_contigs")?;
@@ -2673,7 +2704,7 @@ fn main() -> Result<()> {
             }
             println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
         }
-        Command::TransformMatrix { input, dense, dense_text, sparse, mode, input_type, lb, mst_knn, max_output_gb, config: config_path, print_config: do_print } => {
+        Command::TransformMatrix { input, dense, dense_text, sparse, mode, input_type, lb, mst_knn, knn, max_output_gb, config: config_path, print_config: do_print } => {
             let cli = config::TransformMatrixConfig {
                 input: opt_path(&input)?,
                 dense: opt_path(&dense)?,
@@ -2683,6 +2714,7 @@ fn main() -> Result<()> {
                 input_type,
                 lb,
                 mst_knn,
+                knn,
                 max_output_gb,
             };
             let mut cfg = match &config_path {
@@ -2731,7 +2763,7 @@ fn main() -> Result<()> {
         Command::BuildSsn {
             input, xgmml, lb, metadata, subset, subset_file, color_by, color_table,
             color_table_out, max_color_groups, cluster, cluster_tsv, no_cluster_header,
-            mst, mst_knn, max_output_gb, config: config_path, print_config: do_print,
+            mst, mst_knn, knn, max_output_gb, config: config_path, print_config: do_print,
         } => {
             let cli = config::BuildSsnConfig {
                 input: opt_path(&input)?,
@@ -2749,6 +2781,7 @@ fn main() -> Result<()> {
                 no_cluster_header,
                 mst,
                 mst_knn,
+                knn,
                 max_output_gb,
             };
             let mut cfg = match &config_path {
