@@ -1298,7 +1298,8 @@ enum Command {
         /// Output `.hmm` file (stdout if omitted).
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// Keep queries whose best reference score is >= this (default 10.0).
+        /// Keep queries whose best reference score is >= this. The default is 10.0
+        /// for amino acid profiles, scaled to the reference alphabet for nucleotides.
         #[arg(long = "score_cutoff")]
         score_cutoff: Option<f64>,
         /// Keep at most this many queries, ranked by best score.
@@ -3511,8 +3512,24 @@ fn main() -> Result<()> {
             if cfg.input.is_empty() {
                 anyhow::bail!("hmmer_search requires at least one -i/--input .hmm file");
             }
+            // The default --score_cutoff is scaled to the REFERENCE alphabet: profile
+            // scores are log-odds sums whose per-column ceiling is log(K), so a
+            // protein-tuned threshold is about twice as strict on nucleotides and
+            // silently returns nothing. An explicit value is always taken literally.
+            let score_cutoff = match cfg.score_cutoff {
+                Some(v) => v,
+                None => {
+                    let (resolved, abc) = hsr::default_score_cutoff_for(&cfg.reference)
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                    eprintln!(
+                        "Using --score_cutoff {} (the default for {abc} profiles).",
+                        hsr::py_g(resolved)
+                    );
+                    resolved
+                }
+            };
             let opts = hsr::HmmerSearchOptions {
-                score_cutoff: cfg.score_cutoff.unwrap_or(10.0),
+                score_cutoff,
                 max_hits: cfg.max_hits,
                 cpu: cfg.cpu.unwrap_or(0),
                 max_output_gb: cfg.max_output_gb,

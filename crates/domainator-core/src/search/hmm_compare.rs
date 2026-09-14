@@ -338,3 +338,106 @@ pub fn hmm_compare_scores(query: &[Hmm], reference: &[Hmm], lb: f64) -> Vec<CmpR
         })
         .collect()
 }
+
+// --- Alphabet helpers (mirroring domainator.utils) ---------------------------
+
+/// The profile's alphabet as pyhmmer spells it: `amino`, `DNA` or `RNA`.
+///
+/// Note the inconsistent casing — it is pyhmmer's `Alphabet.type`, and
+/// `hmmer_report --alphabet` prints it verbatim.
+pub fn alphabet_name(abc: hmmer_pure_rs::alphabet::AlphabetType) -> &'static str {
+    use hmmer_pure_rs::alphabet::AlphabetType;
+    match abc {
+        AlphabetType::Amino => "amino",
+        AlphabetType::Dna => "DNA",
+        AlphabetType::Rna => "RNA",
+        AlphabetType::Unknown => "",
+    }
+}
+
+/// Whether an alphabet is nucleic acid (DNA or RNA).
+pub fn is_nucleic_acid_alphabet(abc: hmmer_pure_rs::alphabet::AlphabetType) -> bool {
+    use hmmer_pure_rs::alphabet::AlphabetType;
+    matches!(abc, AlphabetType::Dna | AlphabetType::Rna)
+}
+
+/// How this alphabet's score scale compares to the amino acid one: `log(K)/log(20)`.
+///
+/// Profile-profile scores are sums of natural-log-odds column scores, and the per-column
+/// ceiling depends on the alphabet — about log(4)=1.39 for DNA/RNA against log(20)=3.0
+/// for amino acids. A threshold tuned on proteins is therefore roughly twice as strict
+/// on nucleotides, where it silently returns an empty result that looks exactly like
+/// "no homologs found".
+///
+/// Exactly `1.0` for amino, so protein behaviour is bit-identical.
+pub fn alphabet_score_scale(abc: hmmer_pure_rs::alphabet::AlphabetType) -> f64 {
+    use hmmer_pure_rs::alphabet::AlphabetType;
+    let k = match abc {
+        AlphabetType::Amino | AlphabetType::Unknown => return 1.0,
+        AlphabetType::Dna | AlphabetType::Rna => 4.0_f64,
+    };
+    k.ln() / 20.0_f64.ln()
+}
+
+/// Default `--score_cutoff` for amino acid profiles.
+pub const DEFAULT_SCORE_CUTOFF_AMINO: f64 = 10.0;
+
+/// Alphabet-appropriate default for `--score_cutoff`.
+///
+/// Only the *default* is scaled: a value the user supplied explicitly is always taken
+/// literally.
+pub fn default_score_cutoff(abc: hmmer_pure_rs::alphabet::AlphabetType) -> f64 {
+    DEFAULT_SCORE_CUTOFF_AMINO * alphabet_score_scale(abc)
+}
+
+/// Error text for a profile-profile comparison whose two sides disagree on alphabet.
+///
+/// Produced in the parent before any worker pool starts, so a mismatch reads as one
+/// clear line rather than a panic from inside a rayon worker.
+pub fn alphabet_mismatch_message(
+    input: hmmer_pure_rs::alphabet::AlphabetType,
+    reference: hmmer_pure_rs::alphabet::AlphabetType,
+    input_name: &str,
+    tool_name: &str,
+) -> String {
+    format!(
+        "Input (-i) profiles in '{input_name}' are {}, but the reference (-r) profiles are \
+         {}. {tool_name} aligns profiles column by column, so both sides must use the same \
+         alphabet. Rebuild one side with hmmer-build --alphabet, or use domainate / \
+         domain-search to search nucleotide profiles against sequences.",
+        alphabet_name(input),
+        alphabet_name(reference)
+    )
+}
+
+#[cfg(test)]
+mod alphabet_tests {
+    use super::*;
+    use hmmer_pure_rs::alphabet::AlphabetType;
+
+    #[test]
+    fn amino_scale_is_exactly_one() {
+        // Load-bearing: any drift here would change every protein default silently.
+        assert_eq!(alphabet_score_scale(AlphabetType::Amino), 1.0);
+        assert_eq!(default_score_cutoff(AlphabetType::Amino), 10.0);
+    }
+
+    #[test]
+    fn nucleotide_scale_halves_the_default() {
+        let scale = alphabet_score_scale(AlphabetType::Dna);
+        assert!((scale - (4.0_f64.ln() / 20.0_f64.ln())).abs() < 1e-12);
+        assert!((scale - 0.46276).abs() < 1e-4, "got {scale}");
+        // DNA and RNA share a scale: same alphabet size.
+        assert_eq!(scale, alphabet_score_scale(AlphabetType::Rna));
+        assert!((default_score_cutoff(AlphabetType::Dna) - 4.6276).abs() < 1e-3);
+    }
+
+    #[test]
+    fn alphabet_names_match_pyhmmer_casing() {
+        assert_eq!(alphabet_name(AlphabetType::Amino), "amino");
+        assert_eq!(alphabet_name(AlphabetType::Dna), "DNA");
+        assert_eq!(alphabet_name(AlphabetType::Rna), "RNA");
+        assert!(is_nucleic_acid_alphabet(AlphabetType::Dna));
+        assert!(!is_nucleic_acid_alphabet(AlphabetType::Amino));
+    }
+}

@@ -109,3 +109,69 @@ pub fn hmmer_search<W: Write>(
     }
     Ok(kept.len())
 }
+
+/// Resolve the default `--score_cutoff` from the reference profiles' alphabet.
+///
+/// Returns `(cutoff, alphabet_name)`. Profile scores are log-odds sums whose per-column
+/// ceiling is `log(K)`, so a protein-tuned threshold is roughly twice as strict on
+/// nucleotides — where it silently returns an empty result indistinguishable from "no
+/// homologs found". HMMER locks an `.hmm` file to the alphabet of its first profile, so
+/// one peek is enough.
+///
+/// Only the default is scaled; an explicitly supplied `--score_cutoff` is taken literally.
+pub fn default_score_cutoff_for(reference_files: &[String]) -> Result<(f64, &'static str), String> {
+    use crate::search::hmm_compare::{alphabet_name, default_score_cutoff};
+    use hmmer_pure_rs::alphabet::AlphabetType;
+
+    let records = crate::tools::hmmer_report::read_hmms_to_iterators(reference_files)?;
+    let abc = records
+        .iter()
+        .flat_map(|(_, hmms)| hmms.iter())
+        .next()
+        .map(|h| h.abc_type)
+        .unwrap_or(AlphabetType::Amino);
+    Ok((default_score_cutoff(abc), alphabet_name(abc)))
+}
+
+/// Python's `f"{x:g}"`: 6 significant digits, trailing zeros and a bare `.0` stripped,
+/// switching to exponent form outside `[1e-4, 1e6)`.
+///
+/// Used only for the `--score_cutoff` notice, so it stays beside it rather than joining
+/// the matrix number formatters.
+pub fn py_g(x: f64) -> String {
+    if x == 0.0 {
+        return "0".to_string();
+    }
+    let exp = x.abs().log10().floor() as i32;
+    if !(-5..6).contains(&exp) {
+        let mantissa = format!("{:.5e}", x);
+        // Rust writes `4.62756e0`; Python writes `4.62756e+00`.
+        let (m, e) = mantissa.split_once('e').unwrap();
+        let m = m.trim_end_matches('0').trim_end_matches('.');
+        let e: i32 = e.parse().unwrap_or(0);
+        return format!("{m}e{}{:02}", if e < 0 { '-' } else { '+' }, e.abs());
+    }
+    let decimals = (5 - exp).max(0) as usize;
+    let text = format!("{x:.decimals$}");
+    if text.contains('.') {
+        text.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        text
+    }
+}
+
+#[cfg(test)]
+mod score_cutoff_tests {
+    use super::py_g;
+
+    #[test]
+    fn py_g_matches_pythons_g_format() {
+        // Values checked against Python's f"{x:g}".
+        assert_eq!(py_g(10.0), "10");
+        assert_eq!(py_g(4.627564518750634), "4.62756");
+        assert_eq!(py_g(0.5), "0.5");
+        assert_eq!(py_g(0.0), "0");
+        assert_eq!(py_g(123456.0), "123456");
+        assert_eq!(py_g(1234567.0), "1.23457e+06");
+    }
+}
