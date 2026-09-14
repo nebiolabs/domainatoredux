@@ -38,6 +38,7 @@ enum Kind {
     Desc,
     Length,
     Consensus,
+    Alphabet,
     /// A literal value appended to every row (`--append name type value`).
     Append(Value),
 }
@@ -52,6 +53,9 @@ pub fn static_analysis(name: &str) -> Option<Analysis> {
         "length" => Analysis { column: "length".into(), col_type: ColType::Int, kind: Kind::Length },
         "consensus" => {
             Analysis { column: "consensus".into(), col_type: ColType::Str, kind: Kind::Consensus }
+        }
+        "alphabet" => {
+            Analysis { column: "alphabet".into(), col_type: ColType::Str, kind: Kind::Alphabet }
         }
         _ => return None,
     })
@@ -79,6 +83,18 @@ fn profile_name(hmm: &Hmm) -> String {
     hmm.name.clone()
 }
 
+/// The profile's alphabet, spelled as pyhmmer's `Alphabet.type` does: `amino`,
+/// `DNA` or `RNA` (note the case difference between the three).
+fn alphabet_name(hmm: &Hmm) -> &'static str {
+    use hmmer_pure_rs::alphabet::AlphabetType;
+    match hmm.abc_type {
+        AlphabetType::Amino => "amino",
+        AlphabetType::Dna => "DNA",
+        AlphabetType::Rna => "RNA",
+        AlphabetType::Unknown => "",
+    }
+}
+
 /// The consensus residue line (nodes 1..=M), matching pyhmmer's `rec.consensus`.
 fn consensus_str(hmm: &Hmm) -> String {
     match &hmm.consensus {
@@ -97,6 +113,7 @@ impl Analysis {
             Kind::Desc => Value::Str(hmm.desc.clone().unwrap_or_default()),
             Kind::Length => Value::Int(hmm.m as i64),
             Kind::Consensus => Value::Str(consensus_str(hmm)),
+            Kind::Alphabet => Value::Str(alphabet_name(hmm).to_string()),
             Kind::Append(v) => match v {
                 Value::Int(i) => Value::Int(*i),
                 Value::Float(f) => Value::Float(*f),
@@ -203,19 +220,17 @@ pub fn hmmer_report<W: Write>(
             }
         }
         OutputFormat::Json => {
-            let arr: Vec<serde_json::Value> = rows
-                .iter()
-                .map(|row| {
-                    let mut obj = serde_json::Map::new();
-                    for (i, v) in row.iter().enumerate() {
-                        obj.insert(headers[i].clone(), json_value(v));
-                    }
-                    serde_json::Value::Object(obj)
-                })
-                .collect();
-            let text = serde_json::to_string_pretty(&serde_json::Value::Array(arr))
-                .map_err(|e| e.to_string())?;
-            writeln!(out, "{text}").map_err(|e| e.to_string())?;
+            // Streaming NDJSON, one compact object per profile -- upstream's agent
+            // contract, not a JSON array.
+            for row in rows.iter() {
+                let mut obj = serde_json::Map::new();
+                for (i, v) in row.iter().enumerate() {
+                    obj.insert(headers[i].clone(), json_value(v));
+                }
+                let line = serde_json::to_string(&serde_json::Value::Object(obj))
+                    .map_err(|e| e.to_string())?;
+                writeln!(out, "{line}").map_err(|e| e.to_string())?;
+            }
         }
     }
     Ok(())

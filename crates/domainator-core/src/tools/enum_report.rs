@@ -745,21 +745,20 @@ pub fn enum_report<W: Write>(
             }
         }
         OutputFormat::Json => {
-            // A JSON array of {column: value} objects (column order preserved via
-            // serde_json's preserve_order feature).
-            let arr: Vec<serde_json::Value> = rows
-                .iter()
-                .map(|row| {
-                    let mut obj = serde_json::Map::new();
-                    for (i, v) in row.iter().enumerate() {
-                        obj.insert(headers[i].clone(), json_value(v, types[i]));
-                    }
-                    serde_json::Value::Object(obj)
-                })
-                .collect();
-            let text = serde_json::to_string_pretty(&serde_json::Value::Array(arr))
-                .map_err(|e| e.to_string())?;
-            writeln!(out, "{text}").map_err(|e| e.to_string())?;
+            // Streaming NDJSON: one compact object per record, keyed by column name
+            // (column order preserved via serde_json's preserve_order feature). Not a
+            // JSON array -- NDJSON keeps the writer streaming and is what upstream's
+            // agent contract specifies. Missing values are null, so the key set is
+            // stable across rows.
+            for row in &rows {
+                let mut obj = serde_json::Map::new();
+                for (i, v) in row.iter().enumerate() {
+                    obj.insert(headers[i].clone(), json_value(v, types[i]));
+                }
+                let line = serde_json::to_string(&serde_json::Value::Object(obj))
+                    .map_err(|e| e.to_string())?;
+                writeln!(out, "{line}").map_err(|e| e.to_string())?;
+            }
         }
     }
     Ok(())

@@ -1696,7 +1696,7 @@ fn parse_enum_args(args: &[String]) -> Result<EnumCli> {
             "--contigs_file" => cfg.contigs_file = Some(next(&mut i, "--contigs_file")?),
             "--column_names" => cfg.column_names = Some(consume_multi(&mut i)),
             "--ncbi_taxonomy_path" => cfg.ncbi_taxonomy_path = Some(next(&mut i, "--ncbi_taxonomy_path")?),
-            "--json" => cfg.json = true,
+            "--json" => cfg.json = Some(next(&mut i, "--json")?),
             "--config" => config_path = Some(next(&mut i, "--config")?),
             "--print_config" => print_config = true,
             "--taxonomy_update" => {}
@@ -1785,7 +1785,7 @@ fn parse_hmmer_report_args(args: &[String]) -> Result<HmmerReportCli> {
             "-i" | "--input" => cfg.input.extend(consume_multi(&mut i)),
             "-o" | "--output" => cfg.output = Some(next(&mut i, "--output")?),
             "--column_names" => cfg.column_names = Some(consume_multi(&mut i)),
-            "--json" => cfg.json = true,
+            "--json" => cfg.json = Some(next(&mut i, "--json")?),
             "--config" => config_path = Some(next(&mut i, "--config")?),
             "--print_config" => print_config = true,
             "--html" | "--html_max_height" => {
@@ -3072,7 +3072,6 @@ fn main() -> Result<()> {
             let by = cfg.by_enum()?;
             let analyses: Vec<Analysis> =
                 cfg.columns.iter().map(|c| c.to_analysis()).collect::<Result<_>>()?;
-            let format = if cfg.json { OutputFormat::Json } else { OutputFormat::Tsv };
             let ncbi_path = cfg.ncbi_taxonomy_path.clone().unwrap_or_else(|| "/tmp/ncbi_taxonomy".into());
 
             let target_contigs = parse_name_list(&cfg.contigs, cfg.contigs_file.as_deref())?;
@@ -3095,24 +3094,36 @@ fn main() -> Result<()> {
             let databases: Option<std::collections::HashSet<String>> =
                 if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) };
             let col_names = cfg.column_names.as_deref();
-            let result = match &cfg.output {
-                Some(p) => {
-                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
-                    let r = enum_report::enum_report(
-                        records, by, &analyses, col_names, tax.as_ref(), databases.as_ref(), format, &mut f,
-                    );
-                    f.flush()?;
-                    r
-                }
-                None => {
-                    let stdout = std::io::stdout();
-                    let mut h = stdout.lock();
-                    enum_report::enum_report(
-                        records, by, &analyses, col_names, tax.as_ref(), databases.as_ref(), format, &mut h,
-                    )
-                }
-            };
-            result.map_err(|e| anyhow::anyhow!(e))?;
+            // `-o` is TSV and `--json` is NDJSON; they are independent outputs, so a
+            // run can produce both. `--json -` writes to stdout, like Python.
+            // `-o` defaults to stdout only when no output at all was requested.
+            let want_tsv = cfg.output.is_some() || cfg.json.is_none();
+            for (target, format) in [
+                (want_tsv.then(|| cfg.output.clone()), OutputFormat::Tsv),
+                (cfg.json.clone().map(Some), OutputFormat::Json),
+            ] {
+                let Some(target) = target else { continue };
+                let result = match target.as_deref() {
+                    Some(p) if p != "-" => {
+                        let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
+                        let r = enum_report::enum_report(
+                            records.clone(), by, &analyses, col_names, tax.as_ref(),
+                            databases.as_ref(), format, &mut f,
+                        );
+                        f.flush()?;
+                        r
+                    }
+                    _ => {
+                        let stdout = std::io::stdout();
+                        let mut h = stdout.lock();
+                        enum_report::enum_report(
+                            records.clone(), by, &analyses, col_names, tax.as_ref(),
+                            databases.as_ref(), format, &mut h,
+                        )
+                    }
+                };
+                result.map_err(|e| anyhow::anyhow!(e))?;
+            }
         }
         Command::SelectByCds {
             input, output, kb_range, kb_up, kb_down, cds_range, cds_up, cds_down, whole_contig,
@@ -3347,24 +3358,32 @@ fn main() -> Result<()> {
             }
             let analyses: Vec<hr::Analysis> =
                 cfg.columns.iter().map(|c| c.to_analysis()).collect::<Result<_>>()?;
-            let format = if cfg.json { hr::OutputFormat::Json } else { hr::OutputFormat::Tsv };
             if cfg.input.is_empty() {
                 anyhow::bail!("hmmer_report requires at least one -i/--input .hmm file");
             }
             let records = hr::read_hmms_to_iterators(&cfg.input).map_err(|e| anyhow::anyhow!(e))?;
             let col_names = cfg.column_names.as_deref();
-            match &cfg.output {
-                Some(p) => {
-                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
-                    hr::hmmer_report(&records, &analyses, col_names, format, &mut f)
-                        .map_err(|e| anyhow::anyhow!(e))?;
-                    f.flush()?;
-                }
-                None => {
-                    let stdout = std::io::stdout();
-                    let mut h = stdout.lock();
-                    hr::hmmer_report(&records, &analyses, col_names, format, &mut h)
-                        .map_err(|e| anyhow::anyhow!(e))?;
+            // `-o` is TSV and `--json` is NDJSON; independent outputs, so one run can
+            // produce both. `--json -` writes to stdout, like Python.
+            let want_tsv = cfg.output.is_some() || cfg.json.is_none();
+            for (target, format) in [
+                (want_tsv.then(|| cfg.output.clone()), hr::OutputFormat::Tsv),
+                (cfg.json.clone().map(Some), hr::OutputFormat::Json),
+            ] {
+                let Some(target) = target else { continue };
+                match target.as_deref() {
+                    Some(p) if p != "-" => {
+                        let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
+                        hr::hmmer_report(&records, &analyses, col_names, format, &mut f)
+                            .map_err(|e| anyhow::anyhow!(e))?;
+                        f.flush()?;
+                    }
+                    _ => {
+                        let stdout = std::io::stdout();
+                        let mut h = stdout.lock();
+                        hr::hmmer_report(&records, &analyses, col_names, format, &mut h)
+                            .map_err(|e| anyhow::anyhow!(e))?;
+                    }
                 }
             }
         }

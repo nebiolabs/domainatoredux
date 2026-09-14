@@ -1703,7 +1703,7 @@ fn run_hmmer_report(params: Value) -> Result<RunOutput, String> {
     for c in &cfg.columns {
         analyses.push(c.to_analysis().map_err(|e| e.to_string())?);
     }
-    let format = if cfg.json { hmmer_report_m::OutputFormat::Json } else { hmmer_report_m::OutputFormat::Tsv };
+    let format = if cfg.json.is_some() { hmmer_report_m::OutputFormat::Json } else { hmmer_report_m::OutputFormat::Tsv };
     let records = hmmer_report_m::read_hmms_to_iterators(&cfg.input).map_err(|e| e.to_string())?;
     let col_names = cfg.column_names.as_deref();
     let mut f = std::io::BufWriter::new(

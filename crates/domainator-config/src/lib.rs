@@ -178,8 +178,9 @@ pub struct EnumConfig {
     pub ncbi_taxonomy_path: Option<String>,
     /// Ordered output columns.
     pub columns: Vec<ColumnSpec>,
-    /// Emit a JSON array of row objects instead of TSV.
-    pub json: bool,
+    /// Write streaming NDJSON here (`-` = stdout). Sits alongside `output`, which
+    /// stays TSV, so both can be produced in one run.
+    pub json: Option<String>,
 }
 
 impl EnumConfig {
@@ -221,7 +222,9 @@ impl EnumConfig {
             self.ncbi_taxonomy_path = cli.ncbi_taxonomy_path;
         }
         self.columns.extend(cli.columns);
-        self.json = self.json || cli.json;
+        if cli.json.is_some() {
+            self.json = cli.json;
+        }
     }
 }
 
@@ -1158,6 +1161,7 @@ pub enum HmmerReportColumn {
     Desc,
     Length,
     Consensus,
+    Alphabet,
     Append { name: String, value_type: String, value: String },
 }
 
@@ -1170,6 +1174,7 @@ impl HmmerReportColumn {
             Desc => "desc",
             Length => "length",
             Consensus => "consensus",
+            Alphabet => "alphabet",
             Append { .. } => return None,
         })
     }
@@ -1183,6 +1188,7 @@ impl HmmerReportColumn {
             "desc" => Desc,
             "length" => Length,
             "consensus" => Consensus,
+            "alphabet" => Alphabet,
             _ => return None,
         })
     }
@@ -1210,8 +1216,9 @@ pub struct HmmerReportConfig {
     pub column_names: Option<Vec<String>>,
     /// Ordered output columns.
     pub columns: Vec<HmmerReportColumn>,
-    /// Emit a JSON array of row objects instead of TSV.
-    pub json: bool,
+    /// Write streaming NDJSON here (`-` = stdout). Sits alongside `output`, which
+    /// stays TSV, so both can be produced in one run.
+    pub json: Option<String>,
 }
 
 impl HmmerReportConfig {
@@ -1222,7 +1229,7 @@ impl HmmerReportConfig {
             self.column_names = cli.column_names;
         }
         self.columns.extend(cli.columns);
-        self.json = self.json || cli.json;
+        merge_scalar!(self, cli, json);
     }
 }
 
@@ -1529,7 +1536,7 @@ fn enum_schema() -> serde_json::Value {
             "contigs_file": {"type": ["string", "null"]},
             "column_names": {"type": ["array", "null"], "items": {"type": "string"}, "description": "Override output column names"},
             "ncbi_taxonomy_path": {"type": ["string", "null"]},
-            "json": {"type": "boolean", "default": false, "description": "Emit a JSON array of row objects instead of TSV"},
+            "json": {"type": ["string", "null"], "description": "Write streaming NDJSON (one compact object per row) here; '-' for stdout. Independent of `output`, which stays TSV"},
             "columns": {
                 "type": "array",
                 "description": "Ordered output columns; each has a `type` tag",
@@ -2141,7 +2148,7 @@ fn hmmer_report_schema() -> serde_json::Value {
             "input": {"type": "array", "items": {"type": "string"}, "description": "Input .hmm files"},
             "output": {"type": ["string", "null"], "description": "TSV output (stdout if omitted)"},
             "column_names": {"type": ["array", "null"], "items": {"type": "string"}, "description": "Override output column names"},
-            "json": {"type": "boolean", "default": false, "description": "Emit a JSON array of row objects instead of TSV"},
+            "json": {"type": ["string", "null"], "description": "Write streaming NDJSON (one compact object per row) here; '-' for stdout. Independent of `output`, which stays TSV"},
             "columns": {
                 "type": "array",
                 "description": "Ordered output columns (after the leading `name`); each has a `type` tag",
@@ -2149,7 +2156,7 @@ fn hmmer_report_schema() -> serde_json::Value {
                     "type": "object",
                     "required": ["type"],
                     "properties": {
-                        "type": {"enum": ["source", "acc", "desc", "length", "consensus", "append"]},
+                        "type": {"enum": ["source", "acc", "desc", "length", "consensus", "alphabet", "append"]},
                         "name": {"type": "string", "description": "for append"},
                         "value_type": {"enum": ["int", "float", "str"], "description": "for append"},
                         "value": {"type": "string", "description": "for append"}
