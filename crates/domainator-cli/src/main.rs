@@ -963,6 +963,36 @@ enum Command {
         #[arg(long = "print_config")]
         print_config: bool,
     },
+    /// Dataset-level statistics: contig/CDS counts, domain frequency, taxonomy.
+    SummaryReport {
+        /// Input GenBank file(s).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Write the human-readable text report here (stdout if no output is given).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Write the full summary as one compact JSON object here (`-` = stdout).
+        #[arg(long)]
+        json: Option<String>,
+        /// Report co-occurrence for these domains.
+        #[arg(long, num_args = 1..)]
+        domains: Vec<String>,
+        /// Only count domains from these databases.
+        #[arg(long, num_args = 1..)]
+        databases: Vec<String>,
+        /// Summarize the taxonomic origins of the contigs.
+        #[arg(long)]
+        taxonomy: bool,
+        /// Path to the NCBI taxonomy database directory (default: /tmp/ncbi_taxonomy_$USER).
+        #[arg(long = "ncbi_taxonomy_path")]
+        ncbi_taxonomy_path: Option<String>,
+        /// Read parameters from a JSON/YAML config file (CLI flags override it).
+        #[arg(long)]
+        config: Option<String>,
+        /// Print the resolved parameters as YAML and exit.
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
     /// Navigate a `.dsnv` bundle: clusters, cluster contents, and metadata, as JSON.
     SsnNavigator {
         /// Input `.dsnv` bundle (gzip JSON, or plain JSON).
@@ -3023,6 +3053,68 @@ fn main() -> Result<()> {
                 std::fs::write(p, serde_json::to_string_pretty(&to_json(&report))?)?;
             }
             println!("matrix report: {} nodes, {} edges", report.n_nodes, report.n_edges);
+        }
+        Command::SummaryReport {
+            input, output, json, domains, databases, taxonomy, ncbi_taxonomy_path,
+            config: config_path, print_config: do_print,
+        } => {
+            use domainator_core::tools::summary_report as sr;
+            let cli = config::SummaryReportConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                json,
+                domains,
+                databases,
+                taxonomy,
+                ncbi_taxonomy_path,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::SummaryReportConfig>(p)?,
+                None => config::SummaryReportConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let mut records: Vec<SeqRecord> = Vec::new();
+            if cfg.input.is_empty() {
+                records.extend(load_inputs(&[])?);
+            } else {
+                for path in &cfg.input {
+                    records.extend(load(&PathBuf::from(path))?);
+                }
+            }
+            let tax = if cfg.taxonomy {
+                let p = cfg.ncbi_taxonomy_path.clone().unwrap_or_else(default_ncbi_taxonomy_path);
+                Some(load_taxonomy(&p)?)
+            } else {
+                None
+            };
+            let opts = sr::SummaryReportOptions {
+                focus_domains: cfg.domains.clone(),
+                databases: cfg.databases.clone(),
+                report_taxonomy: cfg.taxonomy,
+            };
+            let report = sr::summary_report(&records, &opts, tax.as_ref());
+
+            if let Some(p) = &cfg.json {
+                let text = format!("{}\n", serde_json::to_string(&sr::to_json(&report))?);
+                if p == "-" {
+                    print!("{text}");
+                } else {
+                    std::fs::write(p, text)?;
+                }
+            }
+            // Text goes to -o, or to stdout when nothing else was asked for.
+            let want_text = cfg.output.is_some() || cfg.json.is_none();
+            if want_text {
+                let text = sr::render_text(&report);
+                match &cfg.output {
+                    Some(p) => std::fs::write(p, text)?,
+                    None => print!("{text}"),
+                }
+            }
         }
         Command::SsnNavigator {
             input, output, mode, threshold, id, node, min_size, top_n, members,

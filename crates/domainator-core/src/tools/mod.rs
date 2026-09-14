@@ -30,6 +30,7 @@ pub mod select_by_coord;
 pub mod select_common;
 pub mod seq_dist;
 pub mod sort_contigs;
+pub mod summary_report;
 pub mod ssn_bundle;
 pub mod ssn_navigator;
 pub mod transform_matrix;
