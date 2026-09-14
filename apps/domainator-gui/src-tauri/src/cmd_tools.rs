@@ -1271,6 +1271,8 @@ fn run_hmmer_build(params: Value) -> Result<RunOutput, String> {
         acc: cfg.acc.clone().filter(|s| !s.trim().is_empty()),
         desc: cfg.desc.clone().filter(|s| !s.trim().is_empty()),
         alphabet: cfg.alphabet.clone().filter(|s| !s.trim().is_empty()),
+        window_length: cfg.window_length,
+        window_beta: cfg.window_beta,
     };
     let hmm = hmmer_build(Path::new(&input), &opts).map_err(|e| e.to_string())?;
     let mut f = std::io::BufWriter::new(

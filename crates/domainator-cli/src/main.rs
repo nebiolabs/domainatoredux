@@ -1280,6 +1280,14 @@ enum Command {
         /// Alphabet: amino | dna | rna (inferred if omitted).
         #[arg(long)]
         alphabet: Option<String>,
+        /// Max expected hit length (the profile's MAXL field), used by nhmmer for
+        /// windowed E-values. Nucleotide alphabets only.
+        #[arg(long = "window_length")]
+        window_length: Option<i32>,
+        /// Tail mass from which to derive the window length. Nucleotide alphabets only;
+        /// only one of --window_length and --window_beta may be given.
+        #[arg(long = "window_beta")]
+        window_beta: Option<f64>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -3439,7 +3447,8 @@ fn main() -> Result<()> {
             eprintln!("Found {found} matching profiles.");
         }
         Command::HmmerBuild {
-            input, output, name, acc, desc, alphabet, config: config_path, print_config: do_print,
+            input, output, name, acc, desc, alphabet, window_length, window_beta,
+            config: config_path, print_config: do_print,
         } => {
             use domainator_core::tools::hmmer_build as hb;
             let cli = config::HmmerBuildConfig {
@@ -3449,6 +3458,8 @@ fn main() -> Result<()> {
                 acc,
                 desc,
                 alphabet,
+                window_length,
+                window_beta,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::HmmerBuildConfig>(p)?,
@@ -3468,6 +3479,8 @@ fn main() -> Result<()> {
                 acc: cfg.acc.clone(),
                 desc: cfg.desc.clone(),
                 alphabet: cfg.alphabet.clone(),
+                window_length: cfg.window_length,
+                window_beta: cfg.window_beta,
             };
             let hmm = hb::hmmer_build(&PathBuf::from(&input), &opts).map_err(|e| anyhow::anyhow!(e))?;
             match &cfg.output {

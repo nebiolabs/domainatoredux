@@ -24,6 +24,12 @@ pub struct HmmerBuildOptions {
     pub desc: Option<String>,
     /// Force the alphabet (`amino` | `dna` | `rna`); inferred when `None`.
     pub alphabet: Option<String>,
+    /// Max expected hit length — the profile's `MAXL` field, which nhmmer uses for
+    /// windowed E-values. Nucleotide alphabets only.
+    pub window_length: Option<i32>,
+    /// Tail mass to derive the window length from. Nucleotide alphabets only, and
+    /// mutually exclusive with `window_length`.
+    pub window_beta: Option<f64>,
 }
 
 /// Replace characters outside `[\w\d_\-.;: ]` with `_` (mirrors `sanitize_string`).
@@ -102,6 +108,43 @@ pub fn hmmer_build(path: &std::path::Path, opts: &HmmerBuildOptions) -> Result<H
     // Fast model construction (symfrac 0.5), no hand architecture — pyhmmer's
     // Builder defaults.
     let mut hmm = build_from(&msa, &abc, &bg);
+
+    // MAXL / nhmmer search window. Both options are nucleotide-only and mutually
+    // exclusive, matching Python.
+    if opts.window_length.is_some() && opts.window_beta.is_some() {
+        return Err(
+            "only one of --window_length and --window_beta may be given (--window_length \
+             takes precedence in HMMER)"
+                .into(),
+        );
+    }
+    if (opts.window_length.is_some() || opts.window_beta.is_some())
+        && !crate::search::hmm_compare::is_nucleic_acid_alphabet(hmm.abc_type)
+    {
+        return Err(format!(
+            "--window_length/--window_beta set the nhmmer search window and apply to \
+             nucleotide profiles only; this alignment is {}",
+            crate::search::hmm_compare::alphabet_name(hmm.abc_type)
+        ));
+    }
+    if let Some(window_length) = opts.window_length {
+        if window_length < 1 {
+            return Err("--window_length must be >= 1".into());
+        }
+        hmm.max_length = window_length;
+    }
+    if opts.window_beta.is_some() {
+        // Deriving MAXL from a tail mass needs the builder's length-model calibration,
+        // which hmmer-pure-rs does not expose. Refusing is better than silently
+        // ignoring it and writing a profile whose window is not what was asked for.
+        return Err(
+            "--window_beta is not supported by this port (deriving MAXL from a tail mass \
+             needs calibration hmmer-pure-rs does not expose); pass --window_length \
+             instead, or build the profile with hmmbuild"
+                .into(),
+        );
+    }
+
     hmm.name = sanitize(&opts.name);
     hmm.acc = opts.acc.as_deref().map(sanitize);
     hmm.desc = opts.desc.as_deref().map(sanitize);

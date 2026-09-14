@@ -1268,6 +1268,8 @@ pub struct HmmerBuildConfig {
     pub acc: Option<String>,
     pub desc: Option<String>,
     pub alphabet: Option<String>,
+    pub window_length: Option<i32>,
+    pub window_beta: Option<f64>,
 }
 
 impl HmmerBuildConfig {
@@ -1278,6 +1280,8 @@ impl HmmerBuildConfig {
         merge_scalar!(self, cli, acc);
         merge_scalar!(self, cli, desc);
         merge_scalar!(self, cli, alphabet);
+        merge_scalar!(self, cli, window_length);
+        merge_scalar!(self, cli, window_beta);
     }
 }
 
