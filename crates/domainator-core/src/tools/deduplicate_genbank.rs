@@ -217,29 +217,21 @@ fn run_diamond(
         .map_err(|e| spawn_error(e, &bin, "Install diamond or set $DOMAINATOR_DIAMOND.").to_string())?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        // diamond's writer crashes when the whole input collapses into one cluster;
-        // treat that as a single cluster represented by the longest input sequence.
+        // Before diamond 2.2.5 the cluster writer crashed when the whole input collapsed
+        // into a single cluster, reporting "max_oid not set" even though the clustering
+        // itself had succeeded. Upstream dropped its longest-sequence fallback when it
+        // raised the prereq to >= 2.2.5; name the version here so a user on an older
+        // diamond gets an actionable error rather than a bare crash message.
         if ["max_oid not set", "Record count not set"].iter().any(|e| stderr.contains(e)) {
-            return Ok(single_cluster_fallback(input_fasta)?);
+            return Err(format!(
+                "diamond cluster failed on an input that collapses into a single cluster. \
+                 This is a bug in diamond before 2.2.5; upgrade diamond (or set \
+                 $DOMAINATOR_DIAMOND to a newer binary).\n{stderr}"
+            ));
         }
         return Err(format!("diamond cluster failed:\n{stderr}"));
     }
     parse_diamond_tsv(&out_tsv)
-}
-
-/// Longest-sequence-as-representative fallback for diamond's single-cluster crash.
-fn single_cluster_fallback(input_fasta: &Path) -> Result<Vec<(String, Vec<String>)>, String> {
-    let mut members = Vec::new();
-    let (mut rep, mut rep_len) = (None::<String>, -1i64);
-    for (id, seq) in read_fasta_ids(input_fasta)? {
-        if seq.len() as i64 > rep_len {
-            rep_len = seq.len() as i64;
-            rep = Some(id.clone());
-        }
-        members.push(id);
-    }
-    let rep = rep.ok_or("diamond fallback requires at least one sequence")?;
-    Ok(vec![(rep, members)])
 }
 
 fn parse_diamond_tsv(path: &Path) -> Result<Vec<(String, Vec<String>)>, String> {
@@ -361,19 +353,6 @@ fn append_params(cmd: &mut Command, params: &[(String, Option<String>)]) {
     }
 }
 
-fn read_fasta_ids(path: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
-    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut out: Vec<(String, Vec<u8>)> = Vec::new();
-    for line in std::io::BufReader::new(file).lines() {
-        let line = line.map_err(|e| e.to_string())?;
-        if let Some(h) = line.strip_prefix('>') {
-            out.push((h.split_whitespace().next().unwrap_or("").to_string(), Vec::new()));
-        } else if let Some(last) = out.last_mut() {
-            last.1.extend(line.trim().bytes());
-        }
-    }
-    Ok(out)
-}
 
 fn num_cpus() -> usize {
     std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)

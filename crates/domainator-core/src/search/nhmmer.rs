@@ -219,6 +219,8 @@ pub fn nhmmer_db(
                         rlen,
                         program: "nhmmer".to_string(),
                         strand,
+                        // Structural metrics are absent for sequence backends.
+                        ..SearchResult::default()
                     },
                 });
             }

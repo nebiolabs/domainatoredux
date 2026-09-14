@@ -195,6 +195,8 @@ pub fn hmmsearch_db(
                         rlen,
                         program: db.program.clone(),
                         strand: 1,
+                        // Structural metrics are absent for sequence backends.
+                        ..SearchResult::default()
                     },
                 });
             }

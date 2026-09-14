@@ -6,7 +6,7 @@ use crate::seq::{Location, SeqFeature};
 /// A single domain hit (matches `domainate.SearchResult`). Coordinates: `start`
 /// is 0-based (env_from-1), `end` is env_to (half-open); `rstart`/`rend` are the
 /// 1-based HMM coords; `rlen` is the HMM length.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SearchResult {
     pub name: String,
     pub desc: String,
@@ -22,6 +22,16 @@ pub struct SearchResult {
     pub rlen: i64,
     pub program: String,
     pub strand: i32,
+    /// Optional whole-alignment metrics a structural aligner may report
+    /// (`structure_domainate`/`structure_search --metrics`). Each is written only when
+    /// present, so GenBank from the sequence-based tools is byte-identical to before.
+    ///
+    /// They are on their own scales rather than the `score` bitscore scale, so they
+    /// should not be compared against `score` or against each other.
+    pub tmscore: Option<f64>,
+    pub lddt: Option<f64>,
+    pub rmsd: Option<f64>,
+    pub prob: Option<f64>,
 }
 
 /// Format a float like Python's `%.1e`: one-decimal mantissa, signed exponent
@@ -59,6 +69,15 @@ impl SearchResult {
         f.push("rstart", self.rstart.to_string());
         f.push("rend", self.rend.to_string());
         f.push("rlen", self.rlen.to_string());
+        // Structural metrics, when the aligner computed them. Absent for every
+        // sequence-based backend, which is what keeps their output unchanged.
+        for (key, value) in
+            [("tmscore", self.tmscore), ("lddt", self.lddt), ("rmsd", self.rmsd), ("prob", self.prob)]
+        {
+            if let Some(v) = value {
+                f.push(key, format!("{v:.3}"));
+            }
+        }
         f
     }
 }
