@@ -1048,6 +1048,7 @@ pub struct BuildSsnViewerConfig {
     pub subset_file: Option<String>,
     pub color_by: Option<String>,
     pub label_by: Option<String>,
+    pub categorical: Vec<String>,
     pub merge_impact_metric: Option<String>,
     pub max_merge_events: Option<usize>,
     pub max_output_gb: Option<f64>,
@@ -1065,6 +1066,7 @@ impl BuildSsnViewerConfig {
         merge_scalar!(self, cli, subset_file);
         merge_scalar!(self, cli, color_by);
         merge_scalar!(self, cli, label_by);
+        merge_vec!(self, cli, categorical);
         merge_scalar!(self, cli, merge_impact_metric);
         merge_scalar!(self, cli, max_merge_events);
         merge_scalar!(self, cli, max_output_gb);
@@ -1379,6 +1381,7 @@ fn common_help(name: &str) -> Option<&'static str> {
         "no_cluster_header" => "Omit the header row from the cluster TSV.",
         "color_by" => "Node attribute to color by.",
         "label_by" => "Node attribute to label by.",
+        "categorical" => "Numeric metadata columns to color as discrete categories rather than with a gradient.",
         "color_table" => "TSV of name→color to apply.",
         "color_table_out" => "Write the resolved color table (name→color TSV) to this path.",
         "search_hit_color" => "Color to use for Domain_Search best-hit features.",
@@ -1956,9 +1959,10 @@ fn build_ssn_viewer_schema() -> serde_json::Value {
             "subset_file": {"type": ["string", "null"]},
             "color_by": {"type": ["string", "null"]},
             "label_by": {"type": ["string", "null"]},
+            "categorical": {"type": "array", "items": {"type": "string"}, "description": "Numeric metadata columns to color as discrete categories instead of a gradient"},
             "merge_impact_metric": {"enum": ["min_child", "product"], "default": "min_child"},
             "max_merge_events": {"type": ["integer", "null"], "default": 500},
-            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected .ssnv bundle output exceeds this many GB (0 disables)"}
+            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected .dsnv bundle output exceeds this many GB (0 disables)"}
         }
     })
 }

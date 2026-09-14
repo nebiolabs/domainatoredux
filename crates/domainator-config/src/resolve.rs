@@ -71,5 +71,6 @@ pub fn resolve_build_ssn_viewer(
         max_merge_events: cfg.max_merge_events.unwrap_or(DEFAULT_MAX_MERGE_EVENTS),
         color_by: cfg.color_by.clone(),
         label_by: cfg.label_by.clone(),
+        categorical_columns: cfg.categorical.clone(),
     }
 }

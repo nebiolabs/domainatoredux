@@ -7,8 +7,10 @@
 use serde_json::{json, Value};
 
 use crate::matrix::ssn::{
-    build_mst_component_hierarchy, component_size_summary_by_threshold, edge_scores_desc,
-    filter_merge_event_rows, format_threshold_value, threshold_merge_event_rows, MaxTree,
+    component_size_summary_by_threshold, edge_scores_desc, filter_merge_event_rows,
+    format_threshold_value, merge_event_moving_sum, threshold_merge_event_rows,
+    threshold_slider_stops, MaxTree, MovingSum, SliderStop, MOVING_SUM_GRID_POINTS,
+    MOVING_SUM_WINDOW_FRACTION,
     MergeEvent, DEFAULT_MAX_MERGE_EVENTS, MERGE_IMPACT_MIN_CHILD,
 };
 use crate::matrix::DataMatrix;
@@ -26,8 +28,22 @@ pub struct MatrixReport {
     pub cluster_count_by_edge_count: Vec<(f64, f64)>,
     pub edges_by_threshold: Vec<(f64, f64)>,
     pub merge_impact_metric: String,
+    /// The capped selection of split events (see `merge_event_total`).
     pub merge_events: Vec<MergeEvent>,
+    /// How many split events the network actually has, before `max_merge_events`
+    /// capped `merge_events`. Without it, a stretch of axis with nothing plotted on
+    /// it is indistinguishable from a stretch where nothing happens.
+    pub merge_event_total: usize,
+    /// The cap that was applied; `0` means none.
+    pub max_merge_events: usize,
+    /// Centred moving sum of `merge_impact`, derived from the **uncapped** rows.
+    pub merge_moving_sum: MovingSum,
+    /// Threshold cuts the report's slider offers, ending at a reachable floor.
+    pub slider_stops: Vec<SliderStop>,
     pub mst_edges: Vec<(usize, usize, f64)>,
+    /// Distinct thresholds, descending — lets a consumer map a threshold back to its
+    /// row in the tables above without holding the whole `MaxTree`.
+    pub thresholds: Vec<f64>,
 }
 
 /// Build the report. `merge_impact_metric` is `min_child`/`product`;
@@ -52,10 +68,19 @@ pub fn matrix_report(
 
     let tree = MaxTree::from_matrix(matrix);
     let summary = component_size_summary_by_threshold(&tree, merge_impact_metric);
-    let merge_events =
-        filter_merge_event_rows(&threshold_merge_event_rows(&summary), max_merge_events);
-    // (hierarchy is not needed for the report but validates the tree is consistent)
-    let _ = build_mst_component_hierarchy(&tree);
+    // The uncapped rows are kept: `merge_event_total` reports them, and the moving sum
+    // MUST be computed from them. Filtering first keeps the top rows by `merge_impact`,
+    // so a moving sum taken afterwards undercounts precisely the small events the
+    // series exists to reveal.
+    let all_merge_events = threshold_merge_event_rows(&summary);
+    let merge_moving_sum = merge_event_moving_sum(
+        &all_merge_events,
+        MOVING_SUM_WINDOW_FRACTION,
+        MOVING_SUM_GRID_POINTS,
+    );
+    let merge_event_total = all_merge_events.len();
+    let merge_events = filter_merge_event_rows(&all_merge_events, max_merge_events);
+    let slider_stops = threshold_slider_stops(&merge_events, Some(&tree));
 
     MatrixReport {
         n_nodes: tree.n_nodes,
@@ -70,7 +95,12 @@ pub fn matrix_report(
         edges_by_threshold: tree.edges_by_threshold(),
         merge_impact_metric: merge_impact_metric.to_string(),
         merge_events,
+        merge_event_total,
+        max_merge_events,
+        merge_moving_sum,
+        slider_stops,
         mst_edges: tree.export_mst_edges(),
+        thresholds: tree.thresholds().to_vec(),
     }
 }
 

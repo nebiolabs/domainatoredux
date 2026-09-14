@@ -897,6 +897,10 @@ enum Command {
         /// Default metadata field for node labels in the viewer.
         #[arg(long = "label_by")]
         label_by: Option<String>,
+        /// Numeric metadata columns to colour as discrete categories rather than with
+        /// a gradient (e.g. integer cluster numbers). Sets the viewer's initial state.
+        #[arg(long = "categorical", num_args = 1..)]
+        categorical: Vec<String>,
         /// Merge-impact metric for split events (min_child or product).
         #[arg(long = "merge_impact_metric", value_parser = ["min_child", "product"])]
         merge_impact_metric: Option<String>,
@@ -2798,7 +2802,7 @@ fn main() -> Result<()> {
         }
         Command::BuildSsnViewer {
             input, output, html, embed_data, name, metadata, subset, subset_file, color_by,
-            label_by, merge_impact_metric, max_merge_events, max_output_gb,
+            label_by, categorical, merge_impact_metric, max_merge_events, max_output_gb,
             config: config_path, print_config: do_print,
         } => {
             let cli = config::BuildSsnViewerConfig {
@@ -2812,6 +2816,7 @@ fn main() -> Result<()> {
                 subset_file,
                 color_by,
                 label_by,
+                categorical,
                 merge_impact_metric,
                 max_merge_events,
                 max_output_gb,
