@@ -173,13 +173,18 @@ fn build_slice_from_window(w_lo: i64, w_hi: i64, l: i64, strand: i32) -> SliceLo
     if rem > 0 {
         parts.push(Env { start: 0, end: rem, strand });
     }
-    // A full-circle **forward** window is rotated to start at `lo0` (Python emits
-    // the whole contig rotated to the split point, e.g. `contig_2796:2795`), so the
-    // parts must stay in rotation order `[lo0, l) + [0, lo0)`. Every other case
-    // (partial windows, and the reverse full-circle window whose reverse-complement
-    // reads correctly from ascending parts) keeps the ascending order.
-    let full_circle_forward = len >= l && strand != -1 && parts.len() > 1;
-    if !full_circle_forward {
+    // Any **forward** window that wraps the origin -- not just the full circle --
+    // stays in rotation order `[lo0, l) + [0, rem)`: that is the order the bases are
+    // read in, and Python concatenates `location.parts` as listed. Sorting ascending
+    // instead yields the same arc rotated to a different origin, and collapses
+    // `stranded_start`/`stranded_end` to `0`/`l` so the coordinate suffix that marks
+    // the new origin is dropped as well.
+    //
+    // A **reverse** wrapped window is the mirror image: each part is
+    // reverse-complemented before concatenation, so reading the arc backwards needs
+    // `[0, rem) + [lo0, l)` -- exactly the ascending order.
+    let wrapped_forward = strand != -1 && parts.len() > 1;
+    if !wrapped_forward {
         parts.sort_by_key(|p| p.start);
     }
     let first = parts[0];
@@ -1052,6 +1057,44 @@ mod tests {
             between: false,
             parts: parts.iter().map(|&(s, e, st)| (s, e, st, false, false)).collect(),
         }
+    }
+
+    #[test]
+    fn wrapped_window_part_order_and_name_coords() {
+        // A window that wraps the origin of a length-20 circle: [14, 24) -> [14,20)+[0,4).
+        // Forward, the parts must stay in *rotation* order, because that is the order
+        // the bases are read in and the order Python concatenates `location.parts`.
+        let f = build_slice_from_window(14, 24, 20, 1);
+        assert_eq!(
+            f.parts.iter().map(|p| (p.start, p.end)).collect::<Vec<_>>(),
+            vec![(14, 20), (0, 4)]
+        );
+        // `stranded_start`/`stranded_end` come off the first and last listed part, so
+        // they name the new origin. Sorting the parts ascending would give (0, 20),
+        // which reads as "the whole contig" and suppresses the coordinate suffix.
+        assert_eq!((f.name_start, f.name_end), (14, 4));
+
+        // Reverse is the mirror image: each part is reverse-complemented before being
+        // concatenated, so reading the arc backwards needs ascending order.
+        let r = build_slice_from_window(14, 24, 20, -1);
+        assert_eq!(
+            r.parts.iter().map(|p| (p.start, p.end)).collect::<Vec<_>>(),
+            vec![(0, 4), (14, 20)]
+        );
+        assert_eq!((r.name_start, r.name_end), (4, 14));
+
+        // A window that does not wrap is a single part either way.
+        let n = build_slice_from_window(4, 10, 20, 1);
+        assert_eq!(n.parts.iter().map(|p| (p.start, p.end)).collect::<Vec<_>>(), vec![(4, 10)]);
+        assert_eq!((n.name_start, n.name_end), (4, 10));
+
+        // A full circle stays rotated to its split point (Python names it `15:14`).
+        let w = build_slice_from_window(14, 34, 20, 1);
+        assert_eq!(
+            w.parts.iter().map(|p| (p.start, p.end)).collect::<Vec<_>>(),
+            vec![(14, 20), (0, 14)]
+        );
+        assert_eq!((w.name_start, w.name_end), (14, 14));
     }
 
     #[test]

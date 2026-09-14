@@ -43,13 +43,18 @@ impl Loc {
             self.parts[0].0 + 1
         }
     }
-    /// `stranded_end_human_readable`: parts[0].start+1 if reverse, else parts[-1].end.
-    /// (Python uses parts[0] for the reverse end HR — a quirk of its implementation.)
+    /// `stranded_end_human_readable`: parts[0].start+1 if reverse, else parts[0].end.
+    ///
+    /// Note **parts[0]** on both branches, not the last part: upstream's
+    /// `CompoundLocation.stranded_end_human_readable` reads `self.parts[0]` even though
+    /// its docstring says "last segment". The two agree for a single-part location, so
+    /// this only shows up on an origin-crossing one, where taking the last part names
+    /// the region `2438:707` instead of `2438:2552`.
     pub fn stranded_end_hr(&self) -> i64 {
         if self.strand == -1 {
             self.parts[0].0 + 1
         } else {
-            self.parts.last().unwrap().1
+            self.parts[0].1
         }
     }
 }
@@ -484,6 +489,27 @@ mod tests {
         assert_eq!(out.seq, b"TTACGTAAAA");
         assert_eq!(out.features[0].location.parts, vec![(0, 10, 1, false, false)]);
         assert!(out.features[0].location.operator.is_none(), "must not stay a join");
+    }
+
+    /// Upstream's `CompoundLocation.stranded_{start,end}_human_readable` both read
+    /// `self.parts[0]` — the end property does so despite a docstring that says "last
+    /// segment". Single-part locations cannot tell the difference; an origin-crossing
+    /// one can, and naming it off the last part produced `2438:707` for a region
+    /// Python calls `2438:2552`.
+    #[test]
+    fn stranded_human_readable_reads_the_first_part() {
+        // The origin-crossing Domainator feature join(2438..2552, 1..707).
+        let fwd = Loc { parts: vec![(2437, 2552), (0, 707)], strand: 1 };
+        assert_eq!(fwd.stranded_start_hr(), 2438);
+        assert_eq!(fwd.stranded_end_hr(), 2552);
+
+        let rev = Loc { parts: vec![(2437, 2552), (0, 707)], strand: -1 };
+        assert_eq!(rev.stranded_start_hr(), 2552);
+        assert_eq!(rev.stranded_end_hr(), 2438);
+
+        // A single part is unaffected either way.
+        let one = Loc { parts: vec![(99, 200)], strand: 1 };
+        assert_eq!((one.stranded_start_hr(), one.stranded_end_hr()), (100, 200));
     }
 
     #[test]
