@@ -48,6 +48,14 @@ pub fn hmmer_search<W: Write>(
     if references.is_empty() {
         return Err("no reference profiles found".into());
     }
+    // Both sides must share an alphabet: hmmer_search aligns profiles column by column.
+    // Checked here, before the worker pool, so a mismatch is one clear line.
+    {
+        use crate::search::hmm_compare::{check_alphabets_match, common_hmm_alphabet};
+        let q = common_hmm_alphabet(&queries, "input")?;
+        let r = common_hmm_alphabet(&references, "reference")?;
+        check_alphabets_match(q, r, &input_files.join(", "), "hmmer_search")?;
+    }
     if queries.is_empty() {
         return Ok(0);
     }

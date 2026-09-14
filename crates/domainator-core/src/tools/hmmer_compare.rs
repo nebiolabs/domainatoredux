@@ -65,6 +65,16 @@ pub fn hmmer_compare<W: Write>(
     let queries = load_all_hmms(query_files)?;
     let references = load_all_hmms(reference_files)?;
 
+    // Both sides must share an alphabet: hmmer_compare aligns profiles column by column,
+    // and nucleotide scores run at roughly half the amino acid scale.
+    {
+        use crate::search::hmm_compare::{check_alphabets_match, common_hmm_alphabet};
+        let to_err = |m: String| io::Error::new(io::ErrorKind::InvalidInput, m);
+        let q = common_hmm_alphabet(&queries, "input").map_err(to_err)?;
+        let r = common_hmm_alphabet(&references, "reference").map_err(to_err)?;
+        check_alphabets_match(q, r, &query_files.join(", "), "hmmer_compare").map_err(to_err)?;
+    }
+
     // Output-size guardrail (uncompressed TSV bytes; default via caller, 0/None disables).
     let max_bytes: Option<u64> = match opts.max_output_gb {
         Some(gb) if gb < 0.0 => {

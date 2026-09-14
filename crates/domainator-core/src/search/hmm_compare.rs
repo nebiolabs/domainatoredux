@@ -120,14 +120,20 @@ pub struct Alignment {
 }
 
 /// HH-suite midline symbol for a per-column match log-odds score.
-fn midline_symbol(score: f32) -> char {
-    if score < -1.5 {
+///
+/// `scale` rescales the published amino acid cutoffs onto the profile's own alphabet.
+/// Column scores are natural-log odds against the alphabet background, and a nucleotide
+/// column tops out near log(4) = 1.39 — so without this, `|` would be unreachable on
+/// DNA and RNA and the whole midline would collapse into `.` and `+`. The scale is
+/// exactly 1.0 for amino acids, so protein output is unchanged.
+fn midline_symbol(score: f32, scale: f32) -> char {
+    if score < -1.5 * scale {
         '='
-    } else if score < -0.5 {
+    } else if score < -0.5 * scale {
         '-'
-    } else if score < 0.5 {
+    } else if score < 0.5 * scale {
         '.'
-    } else if score < 1.5 {
+    } else if score < 1.5 * scale {
         '+'
     } else {
         '|'
@@ -243,6 +249,9 @@ fn render_traceback(
     let mut ptr = start;
     let mut prev = bt[ptr.0][ptr.1][ptr.2 as usize];
 
+    // compare_hmmer has already checked that q and r share an alphabet.
+    let midline_scale = alphabet_score_scale(q.abc_type) as f32;
+
     let mut qline: Vec<char> = Vec::new();
     let mut midline: Vec<char> = Vec::new();
     let mut rline: Vec<char> = Vec::new();
@@ -255,7 +264,7 @@ fn render_traceback(
                 rline.push(rc(ri));
                 qstart = qi;
                 rstart = ri;
-                midline.push(midline_symbol(msc[qi][ri]));
+                midline.push(midline_symbol(msc[qi][ri], midline_scale));
                 (qi - 1, ri - 1, prev)
             }
             SMI => {
@@ -439,5 +448,52 @@ mod alphabet_tests {
         assert_eq!(alphabet_name(AlphabetType::Rna), "RNA");
         assert!(is_nucleic_acid_alphabet(AlphabetType::Dna));
         assert!(!is_nucleic_acid_alphabet(AlphabetType::Amino));
+    }
+}
+
+/// The single alphabet shared by every profile in `hmms`, or an error naming the two
+/// that disagree.
+///
+/// HMMER locks an `.hmm` file to the alphabet of its first profile, so a file mixing
+/// alphabets cannot be read past the first one — and concatenating files of different
+/// alphabets produces exactly such a file. The `hmmer_*` tools therefore reject a mixed
+/// set rather than writing one. Returns `None` when there are no profiles at all.
+pub fn common_hmm_alphabet(
+    hmms: &[hmmer_pure_rs::hmm::Hmm],
+    role: &str,
+) -> Result<Option<hmmer_pure_rs::alphabet::AlphabetType>, String> {
+    let mut found: Option<(hmmer_pure_rs::alphabet::AlphabetType, &str)> = None;
+    for hmm in hmms {
+        match found {
+            None => found = Some((hmm.abc_type, hmm.name.as_str())),
+            Some((abc, first_name)) if abc != hmm.abc_type => {
+                return Err(format!(
+                    "The {role} profiles mix alphabets: '{first_name}' is {}, but '{}' is \
+                     {}. An .hmm file is locked to the alphabet of its first profile, so a \
+                     mixed set cannot be read back. Split them by alphabet, or rebuild one \
+                     side with hmmer-build --alphabet.",
+                    alphabet_name(abc),
+                    hmm.name,
+                    alphabet_name(hmm.abc_type)
+                ))
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(found.map(|(abc, _)| abc))
+}
+
+/// Error when the `-i` and `-r` sides of a profile-profile comparison disagree.
+pub fn check_alphabets_match(
+    input: Option<hmmer_pure_rs::alphabet::AlphabetType>,
+    reference: Option<hmmer_pure_rs::alphabet::AlphabetType>,
+    input_name: &str,
+    tool_name: &str,
+) -> Result<(), String> {
+    match (input, reference) {
+        (Some(i), Some(r)) if i != r => {
+            Err(alphabet_mismatch_message(i, r, input_name, tool_name))
+        }
+        _ => Ok(()),
     }
 }
