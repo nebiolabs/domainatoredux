@@ -471,6 +471,35 @@ pub(crate) fn cds_neighborhood(
     build_slice_from_window(w_lo, w_hi, l, strand)
 }
 
+/// Coalesce touching or overlapping same-strand parts in place, mirroring
+/// `CompoundLocation.merge_parts`.
+///
+/// "Touching" is inclusive at the endpoints, so the abutting halves `[0,130)` and
+/// `[130,840)` that an origin-crossing slice produces merge back into `[0,840)`.
+/// Only consecutive parts are considered, as in Python — the caller has already put
+/// them in start order.
+///
+/// Fuzzy end markers are dropped on a merged part: Python builds a plain
+/// `SimpleLocation` here, so a merged part is never `<`/`>` qualified. Parts that do
+/// not merge keep their markers untouched.
+pub(crate) fn merge_touching_parts(parts: &mut Vec<(i64, i64, i32, bool, bool)>) {
+    if parts.len() < 2 {
+        return;
+    }
+    let mut merged: Vec<(i64, i64, i32, bool, bool)> = Vec::with_capacity(parts.len());
+    for &(s, e, st, before, after) in parts.iter() {
+        match merged.last_mut() {
+            // `l.0 <= e && s <= l.1` is Python's `touches`: inclusive at both ends, so
+            // adjacency (not just overlap) merges.
+            Some(l) if l.2 == st && l.0 <= e && s <= l.1 => {
+                *l = (l.0.min(s), l.1.max(e), st, false, false);
+            }
+            _ => merged.push((s, e, st, before, after)),
+        }
+    }
+    *parts = merged;
+}
+
 /// Slice `rec` to `slice`, keeping `keep_features` that are fully contained
 /// (source features are truncated to the overlap), remapping coordinates. Port of
 /// `slice_record_from_location`.
@@ -513,7 +542,11 @@ pub(crate) fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
                     b += shifts[li];
                     remapped_parts.push((a, b, st, before, after));
                     found = true;
-                    break;
+                    // Deliberately no `break`: when the window crosses the origin of a
+                    // circular contig the slice has several parts, and one feature part
+                    // can reach into more than one of them. Python collects every match
+                    // (`overlap[i]` is a set) and emits a piece per match; stopping at the
+                    // first one silently truncated the feature to that fragment.
                 }
             }
             if !found {
@@ -528,6 +561,14 @@ pub(crate) fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
         }
         // Sort parts by start to keep them ordered after a reverse-strand flip.
         remapped_parts.sort_by_key(|p| p.0);
+        // Then coalesce the pieces that slicing split apart, mirroring
+        // `CompoundLocation.merge_parts`. An origin-crossing window cuts a feature at
+        // the junction, and the two halves come back abutting (`[0:130]` + `[130:840]`);
+        // without this they stay a spurious `join`. Python gates the merge on the
+        // original operator, so `order` locations keep their parts distinct.
+        if matches!(f.location.operator, None | Some(CompoundOp::Join)) {
+            merge_touching_parts(&mut remapped_parts);
+        }
         let operator = if remapped_parts.len() > 1 { Some(CompoundOp::Join) } else { None };
         let location = Location { operator, between: false, parts: remapped_parts };
         new_features.push(SeqFeature {
@@ -990,6 +1031,96 @@ mod tests {
             dist_to_start: 0,
             dist_to_end: 0,
         }
+    }
+
+    /// A two-part slice, as produced by a window that crosses the origin of a
+    /// circular contig: `[14,20)` then `[0,4)`, concatenated into a 10-long record.
+    fn slice_origin_crossing() -> SliceLoc {
+        SliceLoc {
+            parts: vec![Env { start: 14, end: 20, strand: 1 }, Env { start: 0, end: 4, strand: 1 }],
+            name_start: 14,
+            name_end: 4,
+            overall_strand: 1,
+            dist_to_start: 0,
+            dist_to_end: 0,
+        }
+    }
+
+    fn joined(parts: &[(i64, i64, i32)]) -> Location {
+        Location {
+            operator: Some(CompoundOp::Join),
+            between: false,
+            parts: parts.iter().map(|&(s, e, st)| (s, e, st, false, false)).collect(),
+        }
+    }
+
+    #[test]
+    fn merge_touching_parts_cases() {
+        let m = |v: &[(i64, i64, i32, bool, bool)]| {
+            let mut v = v.to_vec();
+            merge_touching_parts(&mut v);
+            v
+        };
+        // Abutting parts coalesce -- the origin-crossing case.
+        assert_eq!(m(&[(0, 5, 1, false, false), (5, 10, 1, false, false)]), vec![(0, 10, 1, false, false)]);
+        // So do overlapping ones.
+        assert_eq!(m(&[(0, 5, 1, false, false), (3, 10, 1, false, false)]), vec![(0, 10, 1, false, false)]);
+        // A real gap is preserved: merging here would invent sequence.
+        let gap = [(0, 5, 1, false, false), (7, 10, 1, false, false)];
+        assert_eq!(m(&gap), gap.to_vec());
+        // Opposite strands never merge -- the result would have no defined strand.
+        let strands = [(0, 5, 1, false, false), (5, 10, -1, false, false)];
+        assert_eq!(m(&strands), strands.to_vec());
+        // Python builds a plain SimpleLocation for a merged part, so `<`/`>` markers go.
+        assert_eq!(m(&[(0, 5, 1, true, false), (5, 10, 1, false, true)]), vec![(0, 10, 1, false, false)]);
+        // Untouched parts keep theirs.
+        let fuzzy = [(0, 5, 1, true, false), (7, 10, 1, false, true)];
+        assert_eq!(m(&fuzzy), fuzzy.to_vec());
+    }
+
+    #[test]
+    fn slice_record_source_spans_every_slice_part() {
+        // A source feature covering the whole circle overlaps both slice parts. Taking
+        // only the first match truncated it to that fragment (`[0,6)` here) instead of
+        // the whole sliced record.
+        let rec = test_rec(
+            b"AAAACCCCGGGGTTTTACGT",
+            vec![SeqFeature::new("source", Location::range(0, 20, 1))],
+        );
+        let out = slice_record(&rec, &slice_origin_crossing(), &rec.features);
+        assert_eq!(out.seq, b"TTACGTAAAA");
+        assert_eq!(out.features.len(), 1);
+        assert_eq!(out.features[0].location.parts, vec![(0, 10, 1, false, false)]);
+    }
+
+    #[test]
+    fn slice_record_coalesces_parts_split_at_the_origin() {
+        // A gene stored as two parts either side of the origin lands in two different
+        // slice parts, which come back abutting at the junction (6). They describe one
+        // contiguous run, so they must merge rather than stay a `join`.
+        let rec = test_rec(
+            b"AAAACCCCGGGGTTTTACGT",
+            vec![SeqFeature::new("gene", joined(&[(16, 20, 1), (0, 2, 1)]))],
+        );
+        let out = slice_record(&rec, &slice_origin_crossing(), &rec.features);
+        assert_eq!(out.features[0].location.parts, vec![(2, 8, 1, false, false)]);
+        assert!(out.features[0].location.operator.is_none(), "one part must not stay a join");
+    }
+
+    #[test]
+    fn slice_record_keeps_a_genuine_gap_split() {
+        // Same two-part slice, but the pieces do not meet at the junction: merging them
+        // would claim the feature covers sequence it does not.
+        let rec = test_rec(
+            b"AAAACCCCGGGGTTTTACGT",
+            vec![SeqFeature::new("gene", joined(&[(14, 16, 1), (1, 3, 1)]))],
+        );
+        let out = slice_record(&rec, &slice_origin_crossing(), &rec.features);
+        assert_eq!(
+            out.features[0].location.parts,
+            vec![(0, 2, 1, false, false), (7, 9, 1, false, false)]
+        );
+        assert_eq!(out.features[0].location.operator, Some(CompoundOp::Join));
     }
 
     #[test]

@@ -385,6 +385,13 @@ fn slice_record_truncating(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
             continue;
         }
         remapped.sort_by_key(|p| p.0);
+        // Same coalescing as `slice_record`: an origin-crossing slice cuts a feature at
+        // the junction and the halves come back abutting. `extract_peptides` divides
+        // these by 3 afterwards, so an unmerged pair survives into peptide coordinates
+        // as a spurious `join`.
+        if matches!(f.location.operator, None | Some(CompoundOp::Join)) {
+            super::neighborhood::merge_touching_parts(&mut remapped);
+        }
         let operator = if remapped.len() > 1 { Some(CompoundOp::Join) } else { None };
         new_features.push(SeqFeature {
             kind: f.kind.clone(),
@@ -422,7 +429,7 @@ pub fn revcomp_record(rec: &SeqRecord) -> SeqRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::circular_envelope;
+    use super::{circular_envelope, slice_from_location, Loc};
 
     /// `(description, input parts, overall strand, expected envelope)`.
     type Case = (&'static str, &'static [(i64, i64, i32)], i32, &'static [(i64, i64)]);
@@ -450,6 +457,33 @@ mod tests {
         for (name, parts, strand, expected) in cases {
             assert_eq!(circular_envelope(parts, REC, *strand), *expected, "case: {name}");
         }
+    }
+
+    /// `extract_peptides` slices with `truncate_features = true`, which goes through
+    /// the second remapping implementation (`slice_record_truncating`). It carried the
+    /// same missing merge: an origin-crossing CDS left the source feature as a `join`,
+    /// which then survived the divide-by-3 into peptide coordinates.
+    #[test]
+    fn truncating_slice_coalesces_parts_split_at_the_origin() {
+        use crate::seq::location::Location;
+        use crate::seq::{Annotations, SeqFeature, SeqRecord, Topology};
+
+        let rec = SeqRecord {
+            id: "c".into(),
+            name: "c".into(),
+            description: String::new(),
+            seq: b"AAAACCCCGGGGTTTTACGT".to_vec(),
+            molecule_type: Some("DNA".into()),
+            topology: Topology::Circular,
+            annotations: Annotations::default(),
+            features: vec![SeqFeature::new("source", Location::range(0, 20, 1))],
+        };
+        // The origin-crossing window [14,20) + [0,4), as a CDS location would give it.
+        let loc = Loc { parts: vec![(14, 20), (0, 4)], strand: 1 };
+        let out = slice_from_location(&rec, &loc, &rec.features, true);
+        assert_eq!(out.seq, b"TTACGTAAAA");
+        assert_eq!(out.features[0].location.parts, vec![(0, 10, 1, false, false)]);
+        assert!(out.features[0].location.operator.is_none(), "must not stay a join");
     }
 
     #[test]
