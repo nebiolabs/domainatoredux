@@ -368,6 +368,28 @@ pub(crate) struct SliceLoc {
     pub(crate) dist_to_end: i64,
 }
 
+impl SliceLoc {
+    /// The 1-based `(start, end)` for the `_start:end` coordinate suffix —
+    /// `stranded_start_human_readable` / `stranded_end_human_readable` of the slice.
+    ///
+    /// Forward that is `(name_start + 1, name_end)`. On a **reverse** slice the roles
+    /// invert: `name_start` is already an exclusive end so it takes no `+1`, and
+    /// `name_end` is a 0-based start so it does. Applying the forward rule to both
+    /// (as upstream's `get_cds_neighborhood` did until `f0741bc`) leaves a reverse
+    /// label off by one in each direction — a 306 bp region named `1265:958`, which
+    /// spans 308.
+    ///
+    /// The whole-contig no-rename checks use the raw 0-based `name_start`/`name_end`,
+    /// not this.
+    pub(crate) fn name_label(&self) -> (i64, i64) {
+        if self.overall_strand == -1 {
+            (self.name_start, self.name_end + 1)
+        } else {
+            (self.name_start + 1, self.name_end)
+        }
+    }
+}
+
 /// Compute the slice location for the focus CDS at `focus_idx` in the
 /// stranded-start-sorted `cds_list`. Mirrors `get_cds_neighborhood`.
 pub(crate) fn cds_neighborhood(
@@ -787,7 +809,8 @@ pub fn select_by_cds_hits(
         let whole_fwd = start == 0 && end == rec_len && strand != -1;
         let whole_rev = end == 0 && start == rec_len && strand == -1;
         if !whole_fwd && !whole_rev {
-            region.name = format!("{}_{}:{}", region.name, start + 1, end);
+            let (ls, le) = slice.name_label();
+            region.name = format!("{}_{}:{}", region.name, ls, le);
         }
         if !normalize_direction && strand == -1 {
             // Flip back to the original orientation.
@@ -1057,6 +1080,25 @@ mod tests {
             between: false,
             parts: parts.iter().map(|&(s, e, st)| (s, e, st, false, false)).collect(),
         }
+    }
+
+    #[test]
+    fn name_label_inverts_on_the_reverse_strand() {
+        // Forward: the plain 1-based conversion.
+        let f = build_slice_from_window(4, 10, 20, 1);
+        assert_eq!((f.name_start, f.name_end), (4, 10));
+        assert_eq!(f.name_label(), (5, 10));
+
+        // Reverse: `name_start` is already an exclusive end and `name_end` a 0-based
+        // start, so the `+1` moves to the other coordinate. Applying the forward rule
+        // here (upstream did until f0741bc) gives a label spanning two more bases than
+        // the region: upstream's own fixture named a 306 bp slice `1265:958`.
+        let r = build_slice_from_window(4, 10, 20, -1);
+        assert_eq!((r.name_start, r.name_end), (10, 4));
+        assert_eq!(r.name_label(), (10, 5));
+        // 10 down to 5 inclusive is 6 bases -- the length of the slice.
+        let (ls, le) = r.name_label();
+        assert_eq!(ls - le + 1, r.parts.iter().map(|p| p.end - p.start).sum::<i64>());
     }
 
     #[test]

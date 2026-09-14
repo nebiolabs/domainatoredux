@@ -162,7 +162,8 @@ fn select_one(rec: &SeqRecord, opts: &SelectByCdsOptions, expr: Option<&BooleanE
         let whole_fwd = start == 0 && end == rec_len && strand != -1;
         let whole_rev = end == 0 && start == rec_len && strand == -1;
         if !whole_fwd && !whole_rev {
-            region.name = format!("{}_{}:{}", region.name, start + 1, end);
+            let (ls, le) = slice.name_label();
+            region.name = format!("{}_{}:{}", region.name, ls, le);
         }
         let mut dist_to_start = slice.dist_to_start;
         if !opts.normalize_direction && strand == -1 {

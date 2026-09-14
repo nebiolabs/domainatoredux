@@ -43,18 +43,22 @@ impl Loc {
             self.parts[0].0 + 1
         }
     }
-    /// `stranded_end_human_readable`: parts[0].start+1 if reverse, else parts[0].end.
+    /// `stranded_end_human_readable`: parts[-1].start+1 if reverse, else parts[-1].end.
     ///
-    /// Note **parts[0]** on both branches, not the last part: upstream's
-    /// `CompoundLocation.stranded_end_human_readable` reads `self.parts[0]` even though
-    /// its docstring says "last segment". The two agree for a single-part location, so
-    /// this only shows up on an origin-crossing one, where taking the last part names
-    /// the region `2438:707` instead of `2438:2552`.
+    /// The **last** part, matching `stranded_end`. Upstream read `parts[0]` here until
+    /// `2de50d8`, which named an origin-crossing region `2438:2552` -- the end of the
+    /// pre-origin segment -- where it continues to 707.
+    ///
+    /// Upstream also branches per part (`parts[-1].strand`) rather than on the
+    /// location's overall strand, which is `None` for a mixed-strand join and silently
+    /// took the forward branch. `Loc` carries one strand for all its parts, so it
+    /// cannot represent that case and the two are equivalent here.
     pub fn stranded_end_hr(&self) -> i64 {
+        let last = *self.parts.last().unwrap();
         if self.strand == -1 {
-            self.parts[0].0 + 1
+            last.0 + 1
         } else {
-            self.parts[0].1
+            last.1
         }
     }
 }
@@ -491,25 +495,25 @@ mod tests {
         assert!(out.features[0].location.operator.is_none(), "must not stay a join");
     }
 
-    /// Upstream's `CompoundLocation.stranded_{start,end}_human_readable` both read
-    /// `self.parts[0]` — the end property does so despite a docstring that says "last
-    /// segment". Single-part locations cannot tell the difference; an origin-crossing
-    /// one can, and naming it off the last part produced `2438:707` for a region
-    /// Python calls `2438:2552`.
+    /// `stranded_{start,end}_human_readable`: the start reads `parts[0]`, the end
+    /// reads `parts[-1]`, matching `stranded_start`/`stranded_end`. Expected values are
+    /// the patched upstream's (`2de50d8`), which previously read `parts[0]` for the end
+    /// and so named an origin-crossing region `2438:2552` rather than `2438:707`.
+    /// Single-part locations cannot tell the two apart.
     #[test]
-    fn stranded_human_readable_reads_the_first_part() {
+    fn stranded_human_readable_start_is_first_part_end_is_last() {
         // The origin-crossing Domainator feature join(2438..2552, 1..707).
         let fwd = Loc { parts: vec![(2437, 2552), (0, 707)], strand: 1 };
-        assert_eq!(fwd.stranded_start_hr(), 2438);
-        assert_eq!(fwd.stranded_end_hr(), 2552);
+        assert_eq!((fwd.stranded_start_hr(), fwd.stranded_end_hr()), (2438, 707));
 
         let rev = Loc { parts: vec![(2437, 2552), (0, 707)], strand: -1 };
-        assert_eq!(rev.stranded_start_hr(), 2552);
-        assert_eq!(rev.stranded_end_hr(), 2438);
+        assert_eq!((rev.stranded_start_hr(), rev.stranded_end_hr()), (2552, 1));
 
         // A single part is unaffected either way.
         let one = Loc { parts: vec![(99, 200)], strand: 1 };
         assert_eq!((one.stranded_start_hr(), one.stranded_end_hr()), (100, 200));
+        let one_rev = Loc { parts: vec![(99, 200)], strand: -1 };
+        assert_eq!((one_rev.stranded_start_hr(), one_rev.stranded_end_hr()), (200, 100));
     }
 
     #[test]

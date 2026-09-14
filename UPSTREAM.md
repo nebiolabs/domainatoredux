@@ -7,7 +7,10 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `896a0c8` — *DSNV slider fix* (2026-09-14)
+- **Caught up to:** `72ba167` — *Fix the race that made the spindle collapse tests flaky* (2026-09-14).
+  That commit is test-only (`test/test_ssn_viewer_browser.py`); the two before it are the
+  ported ones: `2de50d8` (`stranded_end_human_readable` reading `parts[0]`) and `f0741bc`
+  (`select_by_cds` naming via the human-readable properties).
 - **Vendored copy:** `external/domainator/` (gitignored; a git clone of upstream, kept at
   the pin above). It is the deterministic, repo-local source for regeneration and drift
   checks. Refresh it with `scripts/sync_upstream.sh` (fast-forwards to a target ref).
