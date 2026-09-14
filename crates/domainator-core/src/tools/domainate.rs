@@ -578,6 +578,7 @@ mod tests {
             name: name.into(), desc: String::new(), acc: String::new(), evalue: 1e-10,
             score: 50.0, start, end, database: "db".into(), identity: 100.0,
             rstart: 1, rend: 10, rlen: 10, program: "nhmmer".into(), strand,
+            ..SearchResult::default()
         }
     }
 
