@@ -715,6 +715,10 @@ enum Command {
         k: Option<usize>,
         /// Prune to MST + OR-symmetric kNN edges (integer >= 1; requires reference
         /// == input and --mode score/bool/efi_score). When set, -k is ignored.
+        /// Extra options forwarded to `diamond blastp`, as a JSON dict body without the
+        /// outer braces, e.g. --params '"-c":4, "-b":0.4'. A null value is a bare flag.
+        #[arg(long)]
+        params: Option<String>,
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
         /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
@@ -2605,7 +2609,7 @@ fn main() -> Result<()> {
                 write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
             }
         }
-        Command::SeqDist { input, reference, dense, dense_text, sparse, algorithm, mode, lb, k, mst_knn, knn, cpu, max_output_gb, config: config_path, print_config: do_print } => {
+        Command::SeqDist { input, reference, dense, dense_text, sparse, algorithm, mode, lb, k, params, mst_knn, knn, cpu, max_output_gb, config: config_path, print_config: do_print } => {
             let cli = config::SeqDistConfig {
                 input: opt_path(&input)?,
                 reference: opt_path(&reference)?,
@@ -2616,6 +2620,7 @@ fn main() -> Result<()> {
                 mode,
                 lb,
                 k,
+                params,
                 mst_knn,
                 knn,
                 cpu,
@@ -2651,6 +2656,8 @@ fn main() -> Result<()> {
                 k: cfg.k,
                 mst_knn: cfg.mst_knn,
                 knn: cfg.knn,
+                params: domainator_core::tools::seq_dist::parse_diamond_params(cfg.params.as_deref().unwrap_or(""))
+                    .map_err(|e| anyhow::anyhow!(e))?,
                 cpu: cfg.cpu.unwrap_or(0),
             };
             let matrix = seq_dist(&input, input_kind, cfg.reference.as_deref(), ref_kind, &opts)

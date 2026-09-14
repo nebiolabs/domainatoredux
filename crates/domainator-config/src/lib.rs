@@ -891,6 +891,7 @@ pub struct SeqDistConfig {
     pub k: Option<usize>,
     pub mst_knn: Option<usize>,
     pub knn: Option<usize>,
+    pub params: Option<String>,
     pub cpu: Option<usize>,
     pub max_output_gb: Option<f64>,
 }
@@ -908,6 +909,7 @@ impl SeqDistConfig {
         merge_scalar!(self, cli, k);
         merge_scalar!(self, cli, mst_knn);
         merge_scalar!(self, cli, knn);
+        merge_scalar!(self, cli, params);
         merge_scalar!(self, cli, cpu);
         merge_scalar!(self, cli, max_output_gb);
     }
@@ -1998,6 +2000,7 @@ fn seq_dist_schema() -> serde_json::Value {
             "lb": {"type": "number", "default": 0.0},
             "k": {"type": ["integer", "null"]},
             "mst_knn": {"type": ["integer", "null"], "description": "MST + OR-symmetric kNN; integer >= 0 (0 reduces to the MST alone). Mutually exclusive with knn"},
+            "params": {"type": ["string", "null"], "description": "Extra diamond blastp options as a json dict body without the outer braces, e.g. '\"-c\":4'"},
             "knn": {"type": ["integer", "null"], "description": "OR-symmetric kNN without the spanning tree; integer >= 1. Unlike mst_knn this does not preserve connected components"},
             "cpu": {"type": "integer", "default": 0},
             "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if a projected matrix output exceeds this many GB (0 disables)"}

@@ -173,6 +173,9 @@ pub struct SeqDistOptions {
     /// Pure OR-symmetric kNN (`--knn`), without the spanning tree. Mutually exclusive
     /// with `mst_knn`.
     pub knn: Option<usize>,
+    /// Extra `(flag, value)` options forwarded verbatim to `diamond blastp`
+    /// (`--params`). A `None` value means a bare flag. See [`RESERVED_DIAMOND_PARAMS`].
+    pub params: Vec<(String, Option<String>)>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
 }
@@ -186,6 +189,7 @@ impl Default for SeqDistOptions {
             k: None,
             mst_knn: None,
             knn: None,
+            params: Vec::new(),
             cpu: 0,
         }
     }
@@ -402,6 +406,78 @@ pub fn seq_dist(
     Ok(matrix)
 }
 
+/// diamond options `seq_dist` sets itself. Overriding one through `--params` would
+/// either break parsing of the result stream or silently contradict a `seq_dist` option,
+/// so each is rejected with a pointer to the option that does control it.
+pub const RESERVED_DIAMOND_PARAMS: [(&str, &str); 21] = [
+    ("-q", "-i/--input"),
+    ("--query", "-i/--input"),
+    ("-d", "-r/--reference"),
+    ("--db", "-r/--reference"),
+    ("-f", "the fixed tabular output format required to parse the result stream"),
+    ("--outfmt", "the fixed tabular output format required to parse the result stream"),
+    ("-p", "--cpu"),
+    ("--threads", "--cpu"),
+    ("-k", "-k"),
+    ("--max-target-seqs", "-k"),
+    ("--max-hsps", "seq_dist (fixed at 1)"),
+    ("--min-score", "--lb"),
+    ("--verbose", "seq_dist (required for progress reporting)"),
+    ("--fast", "--algorithm"),
+    ("--mid-sensitive", "--algorithm"),
+    ("--sensitive", "--algorithm"),
+    ("--more-sensitive", "--algorithm"),
+    ("--very-sensitive", "--algorithm"),
+    ("--ultra-sensitive", "--algorithm"),
+    ("--algo", "seq_dist (overridable: pass it in --params to replace the default)"),
+    ("--tmpdir", "seq_dist (overridable: pass it in --params to replace the default)"),
+];
+
+/// Parse a `--params` string into ordered `(flag, value)` pairs.
+///
+/// The string is a JSON dict body *without* the enclosing braces, matching
+/// `deduplicate_genbank --params`: `'"-c":4, "-b":0.4'`. A `null` value means the flag
+/// takes no argument: `'"--target-indexed":null'`.
+pub fn parse_diamond_params(params_str: &str) -> Result<Vec<(String, Option<String>)>, String> {
+    if params_str.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let wrapped = format!("{{{params_str}}}");
+    let parsed: serde_json::Value = serde_json::from_str(&wrapped).map_err(|e| {
+        format!(
+            "Could not parse --params as a json dict: {e}\nExpected a json dict body \
+             without the outer braces, such as: --params '\"-c\":4, \"-b\":0.4'"
+        )
+    })?;
+    let serde_json::Value::Object(map) = parsed else {
+        return Err(
+            "--params must be a json dict of diamond options, such as: --params '\"-c\":4'"
+                .to_string(),
+        );
+    };
+
+    let mut out = Vec::with_capacity(map.len());
+    for (flag, value) in map {
+        // Only the two overridable defaults may be named; everything else in the
+        // reserved table is something seq_dist must control.
+        if let Some((_, owner)) = RESERVED_DIAMOND_PARAMS
+            .iter()
+            .find(|(f, _)| *f == flag && !matches!(flag.as_str(), "--algo" | "--tmpdir"))
+        {
+            return Err(format!(
+                "--params may not set '{flag}': seq_dist controls it via {owner}."
+            ));
+        }
+        let rendered = match value {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(s) => Some(s),
+            other => Some(other.to_string()),
+        };
+        out.push((flag, rendered));
+    }
+    Ok(out)
+}
+
 /// Run DIAMOND `blastp` for the diamond algorithms and reduce the streamed hit
 /// table into one max score per (row, col) cell. Mirrors `seq_dist.diamond`:
 /// build a DIAMOND db from the reference, then `blastp` the input against it with
@@ -480,8 +556,6 @@ fn run_diamond(
         .arg("qseqid")
         .arg("sseqid")
         .arg("bitscore")
-        .arg("--algo")
-        .arg("0")
         .arg("--max-hsps")
         .arg("1")
         .arg("--max-target-seqs")
@@ -492,6 +566,28 @@ fn run_diamond(
     for a in sensitivity_args(sensitivity) {
         cmd.arg(a);
     }
+    // Defaults --params may replace. --tmpdir defaults into the managed temp dir so
+    // diamond's unlinked scratch lands beside the db rather than in the cwd.
+    let tmpdir = dbpath.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    for (flag, default) in
+        [("--algo", "0".to_string()), ("--tmpdir", tmpdir.to_string_lossy().into_owned())]
+    {
+        if !opts.params.iter().any(|(f, _)| f == flag) {
+            cmd.arg(flag).arg(default);
+        }
+    }
+    for (flag, value) in &opts.params {
+        cmd.arg(flag);
+        if let Some(v) = value {
+            cmd.arg(v);
+        }
+    }
+    // Echo the command, as Python does, so a failing run can be reproduced by hand.
+    eprintln!(
+        "diamond command: {} {}",
+        diamond_bin.display(),
+        cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>().join(" ")
+    );
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| diamond_spawn_error(e, &diamond_bin))?;

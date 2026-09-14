@@ -1014,6 +1014,9 @@ fn run_seq_dist(params: Value) -> Result<RunOutput, String> {
         k: cfg.k,
         mst_knn: cfg.mst_knn,
         knn: cfg.knn,
+        params: domainator_core::tools::seq_dist::parse_diamond_params(
+            cfg.params.as_deref().unwrap_or(""),
+        )?,
         cpu: cfg.cpu.unwrap_or(0),
     };
     let matrix = seq_dist(&input, input_kind, cfg.reference.as_deref(), ref_kind, &opts)
