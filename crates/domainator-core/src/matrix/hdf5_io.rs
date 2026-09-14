@@ -33,11 +33,11 @@ const SPARSE_CSR_INDICES: &str = "SPARSE_CSR_INDICES";
 const SPARSE_CSR_INDPTR: &str = "SPARSE_CSR_INDPTR";
 
 fn write_err(e: hdf5_pure::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, format!("hdf5 write: {e:?}"))
+    io::Error::other(format!("hdf5 write: {e:?}"))
 }
 
 fn read_err<E: std::fmt::Debug>(e: E) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, format!("hdf5 read: {e:?}"))
+    io::Error::other(format!("hdf5 read: {e:?}"))
 }
 
 fn attr_string(attrs: &std::collections::HashMap<String, AttrValue>, key: &str) -> Option<String> {

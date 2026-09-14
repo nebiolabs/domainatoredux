@@ -121,7 +121,7 @@ pub fn pad_location(rec: &SeqRecord, loc: &Loc, pad_up: i64, pad_down: i64) -> L
         }
     }
     max_coord = max_shifted + min_coord;
-    min_coord = min_shifted + min_coord;
+    min_coord += min_shifted;
 
     // Build the (possibly wrapping) parts, following Python's construction.
     let mut parts: Vec<(i64, i64)> = Vec::new();
@@ -162,9 +162,8 @@ fn circular_envelope(parts: &[(i64, i64, i32)], rec_len: i64, strand: i32) -> Ve
     // Extend each accumulated part to the next, crossing the origin as needed.
     let touches = |a: (i64, i64), b: (i64, i64)| a.0 <= b.1 && b.0 <= a.1;
     let mut loc_parts: Vec<(i64, i64, i32)> = vec![parts[0]];
-    for i in 1..parts.len() {
+    for &(next_start, next_end, next_strand) in &parts[1..] {
         let (this_start, this_end, this_strand) = *loc_parts.last().unwrap();
-        let (next_start, next_end, next_strand) = parts[i];
         if touches((this_start, this_end), (next_start, next_end)) {
             *loc_parts.last_mut().unwrap() =
                 (this_start.min(next_start), this_end.max(next_end), next_strand);
@@ -297,7 +296,7 @@ fn single_pad_extensions(_rec: &SeqRecord, l_start: i64, l_end: i64, strand: i32
         }
     }
     max_coord = max_s + min_coord;
-    min_coord = min_s + min_coord;
+    min_coord += min_s;
     if strand == -1 {
         (max_coord - l_end, l_start - min_coord)
     } else {
@@ -419,4 +418,43 @@ fn slice_record_truncating(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
 /// nucleotide hits, which need flipping back).
 pub fn revcomp_record(rec: &SeqRecord) -> SeqRecord {
     reverse_complement_record(rec)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::circular_envelope;
+
+    /// `(description, input parts, overall strand, expected envelope)`.
+    type Case = (&'static str, &'static [(i64, i64, i32)], i32, &'static [(i64, i64)]);
+
+    /// `circular_envelope`'s multi-part branch: the smallest gapless arc containing
+    /// every part and the junctions between them, on a circular record.
+    ///
+    /// Expected values are the output of Python's
+    /// `CompoundLocation.circular_envelope(100, strand)` for the same inputs, so this
+    /// is a parity test rather than a lock on current behaviour. It covers the four
+    /// branches the accumulator can take: touching parts, disjoint-but-not-crossing
+    /// on each strand, and the two origin-crossing pushes.
+    #[test]
+    fn circular_envelope_matches_python() {
+        const REC: i64 = 100;
+        let cases: &[Case] = &[
+            ("touching parts merge", &[(10, 30, 1), (25, 50, 1)], 1, &[(10, 50)]),
+            ("disjoint, no origin cross", &[(10, 30, 1), (40, 60, 1)], 1, &[(10, 60)]),
+            ("forward crosses the origin", &[(80, 100, 1), (0, 20, 1)], 1, &[(80, 100), (0, 20)]),
+            ("reverse crosses the origin", &[(0, 20, -1), (80, 100, -1)], -1, &[(0, 20), (80, 100)]),
+            ("reverse, no origin cross", &[(60, 80, -1), (10, 30, -1)], -1, &[(10, 80)]),
+            ("three parts, no wrap", &[(10, 20, 1), (30, 40, 1), (50, 60, 1)], 1, &[(10, 60)]),
+            ("three parts, wrapping", &[(70, 90, 1), (95, 100, 1), (0, 10, 1)], 1, &[(70, 100), (0, 10)]),
+        ];
+        for (name, parts, strand, expected) in cases {
+            assert_eq!(circular_envelope(parts, REC, *strand), *expected, "case: {name}");
+        }
+    }
+
+    #[test]
+    fn circular_envelope_short_circuits() {
+        assert_eq!(circular_envelope(&[], 100, 1), Vec::<(i64, i64)>::new());
+        assert_eq!(circular_envelope(&[(10, 30, 1)], 100, 1), vec![(10, 30)]);
+    }
 }

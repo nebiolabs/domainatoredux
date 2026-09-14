@@ -672,7 +672,7 @@ pub async fn run_tool(
             info.status = "cancelled".into();
             info.message = "cancelled".into();
             set_job(&registry, &app, info.clone());
-            return Err("job cancelled".into());
+            Err("job cancelled".into())
         }
         Ok(r) => {
             info.status = "completed".into();
@@ -703,7 +703,7 @@ fn jobs_file(root: &str) -> std::path::PathBuf {
 fn persist_jobs(registry: &JobRegistry) {
     let Some(root) = registry.root.lock().unwrap().clone() else { return };
     let mut list: Vec<JobInfo> = registry.jobs.lock().unwrap().values().cloned().collect();
-    list.sort_by(|a, b| job_ms(b).cmp(&job_ms(a)));
+    list.sort_by_key(|b| std::cmp::Reverse(job_ms(b)));
     list.truncate(MAX_PERSISTED_JOBS);
     let path = jobs_file(&root);
     if let Some(parent) = path.parent() {
@@ -943,7 +943,7 @@ fn run_domain_search(params: Value) -> Result<RunOutput, String> {
         allowed_taxids,
         decoys,
     };
-    let hits = domain_search(&[input.clone()], &dbs, &opts).map_err(|e| format!("domain_search: {e}"))?;
+    let hits = domain_search(std::slice::from_ref(&input), &dbs, &opts).map_err(|e| format!("domain_search: {e}"))?;
     write_genbank(&output, &hits).map_err(|e| format!("writing GenBank: {e}"))?;
     Ok((
         ref_inputs(&input, &cfg.references),

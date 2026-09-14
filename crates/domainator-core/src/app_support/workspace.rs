@@ -217,16 +217,11 @@ pub struct FolderNode {
 }
 
 /// Workspace-wide settings persisted in `workspace.json`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Settings {
+    /// Worker threads for jobs launched from the GUI; `0` (the default) = all cores.
     #[serde(default)]
     pub default_cpu: usize,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Settings { default_cpu: 0 }
-    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

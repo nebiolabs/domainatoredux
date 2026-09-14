@@ -689,6 +689,9 @@ fn json_value(v: &Value, ctype: ColType) -> serde_json::Value {
 }
 
 /// Run the report, writing to `out` in `format`.
+// Mirrors the Python entry point's parameter list one-for-one; bundling these into
+// an options struct would put the port a rename away from its parity reference.
+#[allow(clippy::too_many_arguments)]
 pub fn enum_report<W: Write>(
     mut records: Vec<(SeqRecord, String)>,
     by: By,

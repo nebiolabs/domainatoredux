@@ -12,6 +12,11 @@ use std::collections::{HashMap, HashSet};
 
 use super::{build_sparse_max, DataMatrix, Storage};
 
+/// A canonical undirected pair, always `(min_index, max_index)`.
+type Pair = (usize, usize);
+/// The pairs an MST/kNN pass keeps, plus the symmetric score chosen for each.
+type KeptEdges = (HashSet<Pair>, HashMap<Pair, f64>);
+
 /// `score > lower_bound` (the `include_equal=False` gate used everywhere here).
 #[inline]
 fn passes_lb(score: f64, lower_bound: f64) -> bool {
@@ -92,7 +97,7 @@ pub(crate) fn mst_knn_kept(
     k: usize,
     lower_bound: f64,
     include_mst: bool,
-) -> (HashSet<(usize, usize)>, HashMap<(usize, usize), f64>) {
+) -> KeptEdges {
     let n = m.nrows();
 
     // Symmetric (undirected) candidate score per canonical pair (min, max).

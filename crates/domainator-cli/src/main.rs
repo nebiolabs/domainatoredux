@@ -4,7 +4,7 @@
 //! subcommands (domainate, domain_search, seq_dist, compare_contigs) land in M1+.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -1419,7 +1419,7 @@ fn parse_knn(value: &str) -> std::result::Result<usize, String> {
     Ok(v as usize)
 }
 
-fn load(input: &PathBuf) -> Result<Vec<SeqRecord>> {
+fn load(input: &Path) -> Result<Vec<SeqRecord>> {
     let path = input.to_str().context("non-UTF8 path")?;
     match detect_filetype(input) {
         Some(FileType::Genbank) => read_genbank(path).context("reading GenBank"),
@@ -2254,7 +2254,7 @@ fn main() -> Result<()> {
             for p in &cfg.input {
                 let path = PathBuf::from(p);
                 let base = path.file_name().and_then(|s| s.to_str()).unwrap_or(p).to_string();
-                for rec in load_inputs(&[path.clone()])? {
+                for rec in load_inputs(std::slice::from_ref(&path))? {
                     records.push((base.clone(), rec));
                 }
             }

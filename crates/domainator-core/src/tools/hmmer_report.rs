@@ -98,7 +98,7 @@ fn alphabet_name(hmm: &Hmm) -> &'static str {
 /// The consensus residue line (nodes 1..=M), matching pyhmmer's `rec.consensus`.
 fn consensus_str(hmm: &Hmm) -> String {
     match &hmm.consensus {
-        Some(c) if c.len() >= hmm.m + 1 => {
+        Some(c) if c.len() > hmm.m => {
             String::from_utf8_lossy(&c[1..=hmm.m]).into_owned()
         }
         _ => String::new(),

@@ -8,6 +8,10 @@ use crate::seq::location::{CompoundOp, Location};
 use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::tools::select_common::{BooleanEvaluator, DomainatorCds};
 
+/// A validated trim window: `(kb (left, right), cds (left, right))`, each
+/// `None` when that unit was not requested.
+type TrimRanges = (Option<(f64, f64)>, Option<(i64, i64)>);
+
 /// Resolved trim options.
 pub struct TrimContigsOptions {
     /// `(left_kb, right_kb)` if kb trimming requested.
@@ -31,7 +35,7 @@ pub fn validate_range(
     cds_both: Option<i64>,
     cds_left: Option<i64>,
     cds_right: Option<i64>,
-) -> Result<(Option<(f64, f64)>, Option<(i64, i64)>), String> {
+) -> Result<TrimRanges, String> {
     // (Python names these kb_range/kb_up/kb_down internally but the flags are
     // kb_both/kb_left/kb_right. There is no non-negativity check in the trim
     // validate_range.)
@@ -148,7 +152,7 @@ fn trim_contig(
     // Python guard: `len(cdss) > 0 and strip_domains is not None or domain_expr is
     // not None or cds_truncation is not None or no_domain`. Operator precedence:
     // (len>0 and strip) or expr or cds or no_domain.
-    let empty_strip = opts.strip_domains.as_ref().map(|s| s.clone());
+    let empty_strip = opts.strip_domains.clone();
     let do_cds_block = (!cdss.is_empty() && opts.strip_domains.is_some())
         || opts.domain_expr.is_some()
         || opts.cds_truncation.is_some()

@@ -57,6 +57,13 @@ pub struct BuildSsnResult {
 /// `--max_color_groups`. Same neutral grey Python uses.
 use crate::palette::OTHER_COLOR as DEFAULT_COLOR;
 
+/// A parsed metadata TSV: the value column names, and per-index-string values
+/// positionally aligned to those columns (`None` = the row omitted that column).
+type MetadataTable = (Vec<String>, HashMap<String, Vec<Option<String>>>);
+/// `(per-node fill colour, the resolved value -> colour table)`; both `None`
+/// when `--color_by` was not given.
+type ResolvedColors = (Option<Vec<Option<String>>>, Option<HashMap<String, String>>);
+
 pub(crate) fn subset_matrix(m: &DataMatrix, subset: &Option<HashSet<String>>) -> DataMatrix {
     let subset = match subset {
         Some(s) => s,
@@ -218,7 +225,7 @@ fn orient_by_name(m: &DataMatrix, a: usize, b: usize) -> (usize, usize) {
 /// column is the index; remaining columns are values keyed by the index string.
 pub(crate) fn read_metadata(
     path: &str,
-) -> io::Result<(Vec<String>, HashMap<String, Vec<Option<String>>>)> {
+) -> io::Result<MetadataTable> {
     let text = std::fs::read_to_string(path)?;
     let mut lines = text.lines();
     let header = lines.next().unwrap_or_default();
@@ -385,7 +392,7 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
 fn resolve_colors(
     table: &NodeTable,
     opts: &BuildSsnOptions,
-) -> (Option<Vec<Option<String>>>, Option<HashMap<String, String>>) {
+) -> ResolvedColors {
     let color_by = match &opts.color_by {
         Some(c) => c,
         None => return (None, None),

@@ -173,15 +173,17 @@ pub fn select_by_contig(
             at_least_one_test = true;
             let mut domains: HashSet<String> = HashSet::new();
             let mut search_feature: Option<&crate::seq::SeqFeature> = None;
+            // Loop-invariant: which feature kinds `--domain_type` draws names from.
+            let want_domain = domain_type == "domain" || domain_type == "both";
+            let want_search = domain_type == "search" || domain_type == "both";
             for f in &contig.features {
                 if f.kind == DOMAIN_FEATURE_NAME
                     && feat_evalue(f) < opts.domain_evalue
                     && db_ok(opts.databases.as_ref(), f)
+                    && want_domain
                 {
-                    if domain_type == "domain" || domain_type == "both" {
-                        if let Some(n) = f.get_first("name") {
-                            domains.insert(n.to_string());
-                        }
+                    if let Some(n) = f.get_first("name") {
+                        domains.insert(n.to_string());
                     }
                 }
                 if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME
@@ -189,7 +191,7 @@ pub fn select_by_contig(
                     && db_ok(opts.databases.as_ref(), f)
                 {
                     search_feature = Some(f);
-                    if domain_type == "search" || domain_type == "both" {
+                    if want_search {
                         if let Some(n) = f.get_first("name") {
                             domains.insert(n.to_string());
                         }

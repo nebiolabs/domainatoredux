@@ -326,6 +326,10 @@ fn contig_hit_feature(topology: Topology, contig_length: i64, hit: &SearchResult
 /// (port of `add_contig_nucleic_acid_annotations`). Hits are deduplicated for
 /// origin-wrap on circular contigs, then sorted by score desc; features carry
 /// `cds_id="."`.
+// One argument over clippy's threshold, and deliberately the same shape as its
+// sibling `add_nucleic_acid_annotations` (which has seven); taking `&DomainateOptions`
+// in one but not the other would hide that they are the same operation.
+#[allow(clippy::too_many_arguments)]
 fn add_contig_nucleic_acid_annotations(
     contig: &mut SeqRecord,
     hits_list: Vec<SearchResult>,

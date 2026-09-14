@@ -22,7 +22,7 @@ pub fn run() {
         .manage(cmd_files::RecordIdIndexState::default())
         .setup(|app| {
             // Wire up any already-downloaded external tools (sets their env vars).
-            external_tools::ensure_env(&app.handle());
+            external_tools::ensure_env(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

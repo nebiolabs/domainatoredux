@@ -419,38 +419,6 @@ pub fn alphabet_mismatch_message(
     )
 }
 
-#[cfg(test)]
-mod alphabet_tests {
-    use super::*;
-    use hmmer_pure_rs::alphabet::AlphabetType;
-
-    #[test]
-    fn amino_scale_is_exactly_one() {
-        // Load-bearing: any drift here would change every protein default silently.
-        assert_eq!(alphabet_score_scale(AlphabetType::Amino), 1.0);
-        assert_eq!(default_score_cutoff(AlphabetType::Amino), 10.0);
-    }
-
-    #[test]
-    fn nucleotide_scale_halves_the_default() {
-        let scale = alphabet_score_scale(AlphabetType::Dna);
-        assert!((scale - (4.0_f64.ln() / 20.0_f64.ln())).abs() < 1e-12);
-        assert!((scale - 0.46276).abs() < 1e-4, "got {scale}");
-        // DNA and RNA share a scale: same alphabet size.
-        assert_eq!(scale, alphabet_score_scale(AlphabetType::Rna));
-        assert!((default_score_cutoff(AlphabetType::Dna) - 4.6276).abs() < 1e-3);
-    }
-
-    #[test]
-    fn alphabet_names_match_pyhmmer_casing() {
-        assert_eq!(alphabet_name(AlphabetType::Amino), "amino");
-        assert_eq!(alphabet_name(AlphabetType::Dna), "DNA");
-        assert_eq!(alphabet_name(AlphabetType::Rna), "RNA");
-        assert!(is_nucleic_acid_alphabet(AlphabetType::Dna));
-        assert!(!is_nucleic_acid_alphabet(AlphabetType::Amino));
-    }
-}
-
 /// The single alphabet shared by every profile in `hmms`, or an error naming the two
 /// that disagree.
 ///
@@ -495,5 +463,37 @@ pub fn check_alphabets_match(
             Err(alphabet_mismatch_message(i, r, input_name, tool_name))
         }
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod alphabet_tests {
+    use super::*;
+    use hmmer_pure_rs::alphabet::AlphabetType;
+
+    #[test]
+    fn amino_scale_is_exactly_one() {
+        // Load-bearing: any drift here would change every protein default silently.
+        assert_eq!(alphabet_score_scale(AlphabetType::Amino), 1.0);
+        assert_eq!(default_score_cutoff(AlphabetType::Amino), 10.0);
+    }
+
+    #[test]
+    fn nucleotide_scale_halves_the_default() {
+        let scale = alphabet_score_scale(AlphabetType::Dna);
+        assert!((scale - (4.0_f64.ln() / 20.0_f64.ln())).abs() < 1e-12);
+        assert!((scale - 0.46276).abs() < 1e-4, "got {scale}");
+        // DNA and RNA share a scale: same alphabet size.
+        assert_eq!(scale, alphabet_score_scale(AlphabetType::Rna));
+        assert!((default_score_cutoff(AlphabetType::Dna) - 4.6276).abs() < 1e-3);
+    }
+
+    #[test]
+    fn alphabet_names_match_pyhmmer_casing() {
+        assert_eq!(alphabet_name(AlphabetType::Amino), "amino");
+        assert_eq!(alphabet_name(AlphabetType::Dna), "DNA");
+        assert_eq!(alphabet_name(AlphabetType::Rna), "RNA");
+        assert!(is_nucleic_acid_alphabet(AlphabetType::Dna));
+        assert!(!is_nucleic_acid_alphabet(AlphabetType::Amino));
     }
 }

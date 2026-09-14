@@ -58,25 +58,25 @@ fn ref_file_type(file: &str) -> Result<RefFileType, String> {
 /// A/C/G/T/U/N.
 fn fasta_is_nucleic_acid(file: &str) -> std::io::Result<bool> {
     let recs = crate::io::fasta::read_fasta(file, Some("protein"))?;
-    for rec in &recs {
-        let mut nuc = 0usize;
-        let mut total = 0usize;
-        for &b in &rec.seq {
-            if !b.is_ascii_alphabetic() {
-                continue;
-            }
-            total += 1;
-            if matches!(b.to_ascii_uppercase(), b'A' | b'C' | b'G' | b'T' | b'U' | b'N') {
-                nuc += 1;
-            }
+    let Some(rec) = recs.first() else {
+        return Ok(false);
+    };
+    let mut nuc = 0usize;
+    let mut total = 0usize;
+    for &b in &rec.seq {
+        if !b.is_ascii_alphabetic() {
+            continue;
         }
-        if total == 0 {
-            return Ok(false);
+        total += 1;
+        if matches!(b.to_ascii_uppercase(), b'A' | b'C' | b'G' | b'T' | b'U' | b'N') {
+            nuc += 1;
         }
-        // Easel guesses nucleic acid when the canonical DNA/RNA symbols dominate.
-        return Ok(nuc as f64 / total as f64 >= 0.9);
     }
-    Ok(false)
+    if total == 0 {
+        return Ok(false);
+    }
+    // Easel guesses nucleic acid when the canonical DNA/RNA symbols dominate.
+    Ok(nuc as f64 / total as f64 >= 0.9)
 }
 
 /// Whether an `.hmm` file's first profile is a DNA/RNA model.

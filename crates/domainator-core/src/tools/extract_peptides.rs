@@ -78,9 +78,8 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
 
             let strand = cds.feature.location.parts.first().map(|p| p.2).unwrap_or(1);
             if let Some(sf) = &opts.strand {
-                if sf == "f" && strand == -1 {
-                    keep = false;
-                } else if sf == "r" && strand != -1 {
+                // Reject anything the strand filter does not name.
+                if (sf == "f" && strand == -1) || (sf == "r" && strand != -1) {
                     keep = false;
                 }
             }

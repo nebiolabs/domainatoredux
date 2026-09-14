@@ -350,6 +350,91 @@ impl TaxonomyData {
     }
 }
 
+/// Default location for the cached NCBI taxonomy database.
+///
+/// Namespaced by user so separate users on a shared machine do not collide on the same
+/// directory and lockfile — one user writing a lockfile owned by another fails with a
+/// permission error. Concurrent runs by the *same* user share it safely.
+///
+/// Mirrors `domainator.Taxonomy.default_ncbi_taxonomy_path`, whose name comes from
+/// `getpass.getuser()`: the environment first, then the password database. We read the
+/// same environment variables and fall back to a fixed name rather than pulling in a
+/// libc dependency for the last resort — the directory only has to be stable and
+/// per-user, not match Python's byte for byte.
+pub fn default_ncbi_taxonomy_path() -> String {
+    let user = ["LOGNAME", "USER", "LNAME", "USERNAME"]
+        .iter()
+        .find_map(|key| std::env::var(key).ok().filter(|v| !v.is_empty()))
+        .unwrap_or_else(|| "default".to_string());
+    format!("/tmp/ncbi_taxonomy_{user}")
+}
+
+/// Decompress a gzip member fully via libdeflater (ISIZE from the trailer).
+fn gunzip(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
+    if bytes.len() < 18 {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "truncated gzip"));
+    }
+    let isize = u32::from_le_bytes(bytes[bytes.len() - 4..].try_into().unwrap()) as usize;
+    let mut dec = libdeflater::Decompressor::new();
+    // ISIZE is mod 2^32; for the small taxdump this is exact. Grow if needed.
+    let mut cap = isize.max(1 << 20);
+    loop {
+        let mut out = vec![0u8; cap];
+        match dec.gzip_decompress(bytes, &mut out) {
+            Ok(n) => {
+                out.truncate(n);
+                return Ok(out);
+            }
+            Err(libdeflater::DecompressionError::InsufficientSpace) => {
+                cap *= 2;
+                if cap > (1 << 30) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "taxdump.tar.gz too large to decompress",
+                    ));
+                }
+            }
+            Err(e) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("gzip decompress failed: {e:?}"),
+                ))
+            }
+        }
+    }
+}
+
+/// Read the members of a gzipped tar into `{basename: bytes}` (ustar format,
+/// enough for the flat taxdump archive).
+fn read_targz_members(path: &Path) -> std::io::Result<HashMap<String, Vec<u8>>> {
+    let raw = std::fs::read(path)?;
+    let data = gunzip(&raw)?;
+    let mut out = HashMap::new();
+    let mut pos = 0usize;
+    while pos + 512 <= data.len() {
+        let header = &data[pos..pos + 512];
+        // Two consecutive zero blocks mark the end of the archive.
+        if header.iter().all(|&b| b == 0) {
+            break;
+        }
+        let name_end = header[..100].iter().position(|&b| b == 0).unwrap_or(100);
+        let name = String::from_utf8_lossy(&header[..name_end]).into_owned();
+        let size_str = String::from_utf8_lossy(&header[124..136]);
+        let size = usize::from_str_radix(size_str.trim_matches(['\0', ' ']), 8).unwrap_or(0);
+        pos += 512;
+        if pos + size > data.len() {
+            break;
+        }
+        let basename = name.rsplit('/').next().unwrap_or(&name).to_string();
+        if !basename.is_empty() {
+            out.insert(basename, data[pos..pos + size].to_vec());
+        }
+        // Advance past the file data, rounded up to the next 512-byte boundary.
+        pos += size.div_ceil(512) * 512;
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,89 +520,4 @@ mod tests {
         assert_eq!(td.lineage, vec![1, 131567, 2, 1224, 561, 562]);
         assert_eq!(td.taxid_at("order"), None);
     }
-}
-
-/// Default location for the cached NCBI taxonomy database.
-///
-/// Namespaced by user so separate users on a shared machine do not collide on the same
-/// directory and lockfile — one user writing a lockfile owned by another fails with a
-/// permission error. Concurrent runs by the *same* user share it safely.
-///
-/// Mirrors `domainator.Taxonomy.default_ncbi_taxonomy_path`, whose name comes from
-/// `getpass.getuser()`: the environment first, then the password database. We read the
-/// same environment variables and fall back to a fixed name rather than pulling in a
-/// libc dependency for the last resort — the directory only has to be stable and
-/// per-user, not match Python's byte for byte.
-pub fn default_ncbi_taxonomy_path() -> String {
-    let user = ["LOGNAME", "USER", "LNAME", "USERNAME"]
-        .iter()
-        .find_map(|key| std::env::var(key).ok().filter(|v| !v.is_empty()))
-        .unwrap_or_else(|| "default".to_string());
-    format!("/tmp/ncbi_taxonomy_{user}")
-}
-
-/// Decompress a gzip member fully via libdeflater (ISIZE from the trailer).
-fn gunzip(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
-    if bytes.len() < 18 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "truncated gzip"));
-    }
-    let isize = u32::from_le_bytes(bytes[bytes.len() - 4..].try_into().unwrap()) as usize;
-    let mut dec = libdeflater::Decompressor::new();
-    // ISIZE is mod 2^32; for the small taxdump this is exact. Grow if needed.
-    let mut cap = isize.max(1 << 20);
-    loop {
-        let mut out = vec![0u8; cap];
-        match dec.gzip_decompress(bytes, &mut out) {
-            Ok(n) => {
-                out.truncate(n);
-                return Ok(out);
-            }
-            Err(libdeflater::DecompressionError::InsufficientSpace) => {
-                cap *= 2;
-                if cap > (1 << 30) {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "taxdump.tar.gz too large to decompress",
-                    ));
-                }
-            }
-            Err(e) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("gzip decompress failed: {e:?}"),
-                ))
-            }
-        }
-    }
-}
-
-/// Read the members of a gzipped tar into `{basename: bytes}` (ustar format,
-/// enough for the flat taxdump archive).
-fn read_targz_members(path: &Path) -> std::io::Result<HashMap<String, Vec<u8>>> {
-    let raw = std::fs::read(path)?;
-    let data = gunzip(&raw)?;
-    let mut out = HashMap::new();
-    let mut pos = 0usize;
-    while pos + 512 <= data.len() {
-        let header = &data[pos..pos + 512];
-        // Two consecutive zero blocks mark the end of the archive.
-        if header.iter().all(|&b| b == 0) {
-            break;
-        }
-        let name_end = header[..100].iter().position(|&b| b == 0).unwrap_or(100);
-        let name = String::from_utf8_lossy(&header[..name_end]).into_owned();
-        let size_str = String::from_utf8_lossy(&header[124..136]);
-        let size = usize::from_str_radix(size_str.trim_matches(['\0', ' ']), 8).unwrap_or(0);
-        pos += 512;
-        if pos + size > data.len() {
-            break;
-        }
-        let basename = name.rsplit('/').next().unwrap_or(&name).to_string();
-        if !basename.is_empty() {
-            out.insert(basename, data[pos..pos + size].to_vec());
-        }
-        // Advance past the file data, rounded up to the next 512-byte boundary.
-        pos += size.div_ceil(512) * 512;
-    }
-    Ok(out)
 }

@@ -75,7 +75,7 @@ pub fn molecular_weight(seq: &[u8], seq_type: SeqType) -> Option<f64> {
         SeqType::Protein => protein_weight,
     };
     if seq.is_empty() {
-        return Some(0.0 - (-1.0) * WATER); // matches Python: 0 - (0-1)*water = water
+        return Some(WATER); // matches Python: 0 - (0-1)*water = water
     }
     let mut sum = 0.0;
     for &b in seq {

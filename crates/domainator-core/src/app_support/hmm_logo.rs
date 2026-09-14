@@ -246,6 +246,9 @@ pub fn build_logo(hmm: &hmmer_pure_rs::Hmm) -> HmmLogo {
     let mocc = occupancy(&hmm.t, hmm.m);
 
     let mut positions = Vec::with_capacity(hmm.m);
+    // `node` is HMMER's 1-based node index into both `hmm.mat` and `mocc`, so
+    // iterating either one would lose the correspondence the loop is built on.
+    #[allow(clippy::needless_range_loop)]
     for node in 1..=hmm.m {
         let probs = &hmm.mat[node];
         // Shannon entropy over the K canonical residues.

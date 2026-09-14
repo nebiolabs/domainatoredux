@@ -31,11 +31,6 @@ pub struct SelectByCdsOptions {
     pub include_nucleic_acids: bool,
 }
 
-impl Default for Range {
-    fn default() -> Self {
-        Range::None
-    }
-}
 
 /// An extracted region plus the distance from the region start to the focus
 /// CDS (for `--pad` alignment).
@@ -132,9 +127,8 @@ fn select_one(rec: &SeqRecord, opts: &SelectByCdsOptions, expr: Option<&BooleanE
         };
 
         if let Some(sf) = opts.strand {
-            if sf == 1 && strand == -1 {
-                keep = false;
-            } else if sf == -1 && strand != -1 {
+            // Reject anything the strand filter does not name.
+            if (sf == 1 && strand == -1) || (sf == -1 && strand != -1) {
                 keep = false;
             }
         }
@@ -228,7 +222,7 @@ pub fn pad_records(regions: &mut [Region]) {
             }
         }
         if right[i] > 0 {
-            region.record.seq.extend(std::iter::repeat(b'N').take(right[i] as usize));
+            region.record.seq.extend(std::iter::repeat_n(b'N', right[i] as usize));
         }
     }
 }

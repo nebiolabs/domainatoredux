@@ -1009,11 +1009,13 @@ mod tests {
         // One direction 0, the other negative: Python takes max(0, -3) = 0 and then
         // drops it. Skipping the zero slot first would keep -3, which would also
         // drag `min_score` below zero and delete the synthetic `threshold = 0` row.
-        let mut d = vec![0.0; 9];
-        d[0 * 3 + 1] = 0.0;
-        d[1 * 3 + 0] = -3.0;
-        d[1 * 3 + 2] = 4.0;
-        d[2 * 3 + 1] = 4.0;
+        // Row-major 3x3 over (n0, n1, n2); the diagonal and unset pairs stay 0.
+        #[rustfmt::skip]
+        let d = vec![
+            0.0,  0.0, 0.0,  // n0: (0,1) = 0
+            -3.0, 0.0, 4.0,  // n1: (1,0) = -3, (1,2) = 4
+            0.0,  4.0, 0.0,  // n2: (2,1) = 4
+        ];
         let labels: Vec<String> = (0..3).map(|i| format!("n{i}")).collect();
         let m = DataMatrix {
             rows: labels.clone(),

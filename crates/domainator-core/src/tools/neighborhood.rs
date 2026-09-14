@@ -14,7 +14,7 @@ use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
 /// Which neighborhood window to extract.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub enum Range {
     /// `(upstream, downstream)` count of CDSs.
     Cds(i64, i64),
@@ -23,6 +23,7 @@ pub enum Range {
     /// The whole contig.
     Whole,
     /// Just the hit CDS.
+    #[default]
     None,
 }
 
@@ -274,7 +275,7 @@ fn pad_circular_cds(center: i64, size: i64, left_pad: i64, right_pad: i64) -> (i
         }
     }
     max_coord = max_shifted + min_coord;
-    min_coord = min_shifted + min_coord;
+    min_coord += min_shifted;
     if min_coord < 0 {
         min_coord += size;
     }
@@ -550,7 +551,10 @@ pub(crate) fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
         ..Default::default()
     };
 
-    let out = SeqRecord {
+    // Do NOT sort the features here: `slice_record_from_location` preserves the
+    // input order so the GenBank writer can rebuild the `domainator_<db>` rollup
+    // from that order before it sorts features by start for output.
+    SeqRecord {
         id: rec.id.clone(),
         name: rec.name.clone(),
         description: rec.description.clone(),
@@ -559,11 +563,7 @@ pub(crate) fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
         topology: Topology::Linear,
         annotations,
         features: new_features,
-    };
-    // Do NOT sort here: `slice_record_from_location` preserves the input feature
-    // order so the GenBank writer can rebuild the `domainator_<db>` rollup from
-    // that order before it sorts features by start for output.
-    out
+    }
 }
 
 /// Extract neighborhoods around every hit CDS in `rec` (a nucleotide contig that
@@ -1036,7 +1036,7 @@ mod tests {
         // per focus CDS. max_hits_per_contig = 1 keeps only the first.
         let mut feats = hit_cds(0, 9, "1_1_9", "A");
         feats.extend(hit_cds(30, 39, "31_1_39", "B"));
-        let rec = test_rec(&vec![b'A'; 60], feats);
+        let rec = test_rec(&[b'A'; 60], feats);
         let all = select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, None, None).unwrap();
         assert_eq!(all.len(), 2);
         let capped = select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, None, Some(1)).unwrap();
@@ -1048,7 +1048,7 @@ mod tests {
         // Focus hit "A" is a decoy -> only the "B" hit region is emitted.
         let mut feats = hit_cds(0, 9, "1_1_9", "A");
         feats.extend(hit_cds(30, 39, "31_1_39", "B"));
-        let rec = test_rec(&vec![b'A'; 60], feats);
+        let rec = test_rec(&[b'A'; 60], feats);
         let decoys: std::collections::HashSet<String> = ["A".to_string()].into_iter().collect();
         let out = select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, Some(&decoys), None).unwrap();
         assert_eq!(out.len(), 1);

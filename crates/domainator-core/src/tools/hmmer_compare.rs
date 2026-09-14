@@ -84,9 +84,7 @@ pub fn hmmer_compare<W: Write>(
         _ => None,
     };
     let over_limit = |projected: u64, max: u64| -> io::Error {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!(
+        io::Error::other(format!(
                 "Projected hmmer_compare TSV output size is {:.2} GB, which exceeds the configured \
                  limit of {:.2} GB. Reduce the projected output size or raise the limit with \
                  --max_output_gb. Relevant options: -k, --score_cutoff, --alignments.",

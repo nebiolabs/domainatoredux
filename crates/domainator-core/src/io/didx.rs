@@ -50,7 +50,7 @@ pub fn source_fingerprint(source: &Path) -> io::Result<(u64, u64)> {
     let mtime_ns = md
         .modified()?
         .duration_since(UNIX_EPOCH)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
+        .map_err(|e| io::Error::other(e.to_string()))?
         .as_nanos() as u64;
     Ok((md.len(), mtime_ns))
 }

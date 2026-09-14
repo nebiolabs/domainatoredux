@@ -365,8 +365,12 @@ pub async fn get_contig_sequences(
 /// Per-file record-count cache (path → (size, mtime_ns, count)), so the file
 /// table's "records" column doesn't re-stream files on every folder revisit.
 /// Bounded only by the number of distinct files browsed in a session.
+/// `(size, mtime_ns, record count)` — the count is `None` for file types without
+/// a meaningful one. Size and mtime are the staleness check.
+type RecordCountEntry = (u64, u128, Option<u64>);
+
 #[derive(Default)]
-pub struct RecordCountState(pub std::sync::Mutex<std::collections::HashMap<String, (u64, u128, Option<u64>)>>);
+pub struct RecordCountState(pub std::sync::Mutex<std::collections::HashMap<String, RecordCountEntry>>);
 
 /// Record counts for `paths` (streamed once per file, then cached). `null` for
 /// types without a meaningful count (matrices/tables) or unreadable files. Called
@@ -670,6 +674,9 @@ pub async fn extract_contigs(
 /// in the region (mirrors `select-by-coord`). When `translate` is set, the sliced
 /// region is then run through `extract_peptides` so the output is a protein GenBank
 /// of the CDSs in the region (the peptide equivalent of the nucleotide slice).
+// A Tauri command's parameter list is its IPC signature: the frontend calls these
+// by name, so grouping them into a struct would change the wire contract.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn extract_region(
     app: tauri::AppHandle,

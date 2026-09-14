@@ -493,7 +493,7 @@ fn run_diamond(
     sensitivity: Sensitivity,
     opts: &SeqDistOptions,
     bool_mode: bool,
-) -> std::io::Result<(HashMap<(i64, i64), f64>, NameIndex, NameIndex)> {
+) -> std::io::Result<DiamondCells> {
     let diamond_bin = find_diamond();
     let tmp = TempDir::new("domainator_diamond")?;
 
@@ -526,9 +526,7 @@ fn run_diamond(
         .output()
         .map_err(|e| diamond_spawn_error(e, &diamond_bin))?;
     if !makedb.status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("diamond makedb failed:\n{}", String::from_utf8_lossy(&makedb.stderr)),
+        return Err(std::io::Error::other(format!("diamond makedb failed:\n{}", String::from_utf8_lossy(&makedb.stderr)),
         ));
     }
 
@@ -631,9 +629,7 @@ fn run_diamond(
     let status = child.wait()?;
     let stderr_text = stderr_handle.join().unwrap_or_default();
     if !status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("diamond blastp failed:\n{stderr_text}"),
+        return Err(std::io::Error::other(format!("diamond blastp failed:\n{stderr_text}"),
         ));
     }
 
@@ -664,3 +660,7 @@ fn diamond_spawn_error(e: std::io::Error, bin: &Path) -> std::io::Error {
 }
 
 use super::external::TempDir;
+
+/// A DIAMOND pass result: `(row, col) -> best score` keyed by matrix index,
+/// plus the query and reference name indexes those coordinates refer to.
+type DiamondCells = (HashMap<(i64, i64), f64>, NameIndex, NameIndex);

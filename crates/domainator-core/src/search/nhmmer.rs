@@ -464,7 +464,7 @@ fn search_longtarget(
             if win_idx + 1 < windows.len() {
                 let next = &windows[win_idx + 1];
                 let this_end = win.n + win.length;
-                fwd_overlap = if next.n < this_end { this_end - next.n } else { 0 };
+                fwd_overlap = this_end.saturating_sub(next.n);
             } else {
                 fwd_overlap = 0;
             }

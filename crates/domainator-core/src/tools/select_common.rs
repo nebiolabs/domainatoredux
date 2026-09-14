@@ -114,8 +114,7 @@ impl BooleanEvaluator {
     /// True if the expression holds when `domains` is the present set.
     pub fn check_expression(&self, domains: &HashSet<String>) -> bool {
         let mut pos = 0usize;
-        let v = self.parse_or(&mut pos, domains);
-        v
+        self.parse_or(&mut pos, domains)
     }
 
     fn operand_value(&self, key: &str, domains: &HashSet<String>) -> bool {
@@ -359,6 +358,19 @@ impl DomainatorCds {
     }
 }
 
+/// `filter_domains(rec, evalue=inf, max_overlap=1, databases_keep=databases)`
+/// as used by `enum_report --databases`: drop Domainator / Domain_Search
+/// features whose `database` qualifier is not in `databases`; keep all else.
+pub fn filter_domains_databases(rec: &mut SeqRecord, databases: &HashSet<String>) {
+    rec.features.retain(|f| {
+        if f.kind == DOMAIN_FEATURE_NAME || f.kind == DOMAIN_SEARCH_BEST_HIT_NAME {
+            f.get_first("database").map(|d| databases.contains(d)).unwrap_or(false)
+        } else {
+            true
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,17 +477,4 @@ mod tests {
         assert_eq!(full[0].get_domain_names(Some(&set(&["DB"])), None), set(&["D1", "D2"]));
         assert!(full[0].get_domain_names(Some(&set(&["OTHER"])), None).is_empty());
     }
-}
-
-/// `filter_domains(rec, evalue=inf, max_overlap=1, databases_keep=databases)`
-/// as used by `enum_report --databases`: drop Domainator / Domain_Search
-/// features whose `database` qualifier is not in `databases`; keep all else.
-pub fn filter_domains_databases(rec: &mut SeqRecord, databases: &HashSet<String>) {
-    rec.features.retain(|f| {
-        if f.kind == DOMAIN_FEATURE_NAME || f.kind == DOMAIN_SEARCH_BEST_HIT_NAME {
-            f.get_first("database").map(|d| databases.contains(d)).unwrap_or(false)
-        } else {
-            true
-        }
-    });
 }
