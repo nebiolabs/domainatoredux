@@ -209,6 +209,19 @@ pub fn domain_search(
                         )?);
                     }
                 }
+                // Bound each worker's result by --max_hits before it reaches the
+                // parent: a single partition can contribute at most `max_hits` to a
+                // global top-N, so this is lossless, and it turns the parent's peak
+                // memory from every hit in the database into
+                // O(partitions * max_hits). The sort is stable and the partitions are
+                // merged in order below, so the surviving set is identical to sorting
+                // everything at the end.
+                if let Some(max_hits) = opts.max_hits {
+                    if emitted.len() > max_hits {
+                        emitted.sort_by(|a, b| best_score(b).total_cmp(&best_score(a)));
+                        emitted.truncate(max_hits);
+                    }
+                }
                 Ok(emitted)
             })
             .collect()
