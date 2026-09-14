@@ -7,12 +7,13 @@ by hand. It is the rendered output of the Python viewer,
 interpolation points frozen into string tokens that the Rust ``render_html`` substitutes
 at runtime (see ``crates/domainator-core/src/tools/build_ssn_viewer.rs``):
 
-  * ``@@SSN_VIEWER_TITLE@@``            -> the HTML-escaped title (appears twice)
+  * ``@@SSN_VIEWER_TITLE@@``            -> the HTML-escaped title (the <title> tag)
+  * ``@@SSN_VIEWER_HEADING@@``          -> the HTML-escaped <h1> heading
   * ``const EMBEDDED_BUNDLE_BASE64 = null;``  -> swapped for the base64 bundle on embed
 
-On top of that render, the Rust asset carries ONE local-only patch that does not exist
-in the Python source (the "local patch inventory" below). This script reproduces the
-asset exactly: render from Python with the frozen tokens, then re-apply the local patch.
+On top of that render, the Rust asset carries local-only patches that do not exist in
+the Python source (the "local patch inventory" below). This script reproduces the
+asset exactly: render from Python with the frozen tokens, then re-apply the patches.
 
 Because the asset is generated, it must NEVER be hand-edited. Change the Python viewer
 (or the local patch here), then re-run this script.
@@ -39,6 +40,7 @@ from pathlib import Path
 
 # --- frozen token contract (must match build_ssn_viewer.rs) ---
 TITLE_TOKEN = "@@SSN_VIEWER_TITLE@@"
+HEADING_TOKEN = "@@SSN_VIEWER_HEADING@@"
 EMBED_NULL_LINE = "const EMBEDDED_BUNDLE_BASE64 = null;"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -76,6 +78,23 @@ LOCAL_PATCHES = [
     ("gui-host-hook", GUI_HOST_HOOK_ANCHOR, GUI_HOST_HOOK_BLOCK, GUI_HOST_HOOK_SENTINEL),
 ]
 
+# 2. "heading-token": upstream's `viewer_heading()` decides at RENDER time whether the
+#    <h1> is the bare app name or "<app name>: <network>", collapsing titles that name
+#    no particular network. Rendering with a frozen token bakes the "<app>: " prefix in,
+#    so that choice could never fire in the Rust asset -- the default CLI name is one of
+#    upstream's generic titles, which would render "...Viewer: Domainator SSN Viewer".
+#    Swap the whole heading for its own token and let `render_html` apply the rule.
+HEADING_PREFIX = "Domainator Similarity Network Viewer: "
+
+
+def _apply_heading_token(html: str) -> str:
+    baked = f">{HEADING_PREFIX}{TITLE_TOKEN}</h1>"
+    n = html.count(baked)
+    if n != 1:
+        _fail(f"patch 'heading-token': expected the baked <h1> heading exactly once, "
+              f"found {n} (viewer_heading() changed upstream; update HEADING_PREFIX)")
+    return html.replace(baked, f">{HEADING_TOKEN}</h1>", 1)
+
 
 def _fail(msg: str) -> "NoReturn":  # type: ignore[name-defined]
     sys.exit(f"regen_ssn_viewer_shell: {msg}")
@@ -105,6 +124,10 @@ def render_shell(src_dir: Path) -> str:
     if n_embed != 1:
         _fail(f"expected '{EMBED_NULL_LINE}' exactly once, found {n_embed} "
               "(embedded-bundle wiring changed upstream)")
+
+    html = _apply_heading_token(html)
+    if html.count(TITLE_TOKEN) != 1 or html.count(HEADING_TOKEN) != 1:
+        _fail("heading-token patch did not leave exactly one of each title token")
 
     for name, anchor, block, sentinel in LOCAL_PATCHES:
         if sentinel in html:

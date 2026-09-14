@@ -372,6 +372,26 @@ pub fn gzip(data: &[u8]) -> Vec<u8> {
     out
 }
 
+/// The viewer app's own name, as upstream spells it.
+pub const VIEWER_APP_NAME: &str = "Domainator Similarity Network Viewer";
+
+/// The page's `<h1>`: the app name, plus the network name when there is one.
+///
+/// Mirrors `ssn_viewer_html.viewer_heading`. Titles that name no particular network
+/// collapse to the bare app name rather than rendering "<app name>: <app name>"; the
+/// pre-0.11 app name is included so bundles written before the rename behave the same.
+/// Upstream applies this at render time, which a frozen template token cannot do — hence
+/// the `heading-token` local patch in `scripts/regen_ssn_viewer_shell.py`.
+pub fn viewer_heading(network_name: &str) -> String {
+    let name = network_name.trim();
+    const GENERIC: [&str; 3] = ["", VIEWER_APP_NAME, "Domainator SSN Viewer"];
+    if GENERIC.contains(&name) {
+        VIEWER_APP_NAME.to_string()
+    } else {
+        format!("{VIEWER_APP_NAME}: {name}")
+    }
+}
+
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
@@ -398,7 +418,9 @@ fn base64_encode(data: &[u8]) -> String {
 /// opens local `.dsnv` files via its built-in picker.
 pub fn render_html(title: &str, embedded_bundle_gzip: Option<&[u8]>) -> String {
     const SHELL: &str = include_str!("../../assets/ssn_viewer_shell.html");
-    let mut html = SHELL.replace("@@SSN_VIEWER_TITLE@@", &html_escape(title));
+    let mut html = SHELL
+        .replace("@@SSN_VIEWER_TITLE@@", &html_escape(title))
+        .replace("@@SSN_VIEWER_HEADING@@", &html_escape(&viewer_heading(title)));
     if let Some(gz) = embedded_bundle_gzip {
         let b64 = base64_encode(gz);
         html = html.replace(
@@ -429,7 +451,18 @@ mod tests {
         let html = render_html("My <SSN>", None);
         assert!(html.contains("My &lt;SSN&gt;"));
         assert!(!html.contains("@@SSN_VIEWER_TITLE@@"));
+        assert!(!html.contains("@@SSN_VIEWER_HEADING@@"));
+        // A named network gets "<app>: <name>"; the escaping applies to the heading too.
+        assert!(html.contains("Domainator Similarity Network Viewer: My &lt;SSN&gt;"));
         assert!(html.contains("const EMBEDDED_BUNDLE_BASE64 = null;"));
+        // A title naming no particular network collapses to the bare app name rather
+        // than "...Viewer: Domainator SSN Viewer" -- which the CLI's default name,
+        // one of upstream's generic titles, would otherwise produce.
+        for generic in ["", "  ", "Domainator SSN Viewer", VIEWER_APP_NAME] {
+            assert_eq!(viewer_heading(generic), VIEWER_APP_NAME);
+        }
+        assert_eq!(viewer_heading("FeSOD"), "Domainator Similarity Network Viewer: FeSOD");
+
         let html2 = render_html("x", Some(b"gzipbytes"));
         assert!(html2.contains("const EMBEDDED_BUNDLE_BASE64 = \""));
         assert!(!html2.contains("const EMBEDDED_BUNDLE_BASE64 = null;"));
