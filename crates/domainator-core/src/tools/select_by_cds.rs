@@ -32,12 +32,7 @@ pub struct SelectByCdsOptions {
 }
 
 
-/// An extracted region plus the distance from the region start to the focus
-/// CDS (for `--pad` alignment).
-pub struct Region {
-    pub record: SeqRecord,
-    pub dist_to_start: i64,
-}
+pub use crate::tools::neighborhood::Region;
 
 /// Extract regions around selected CDSs across all `records`. Regions are
 /// yielded in contig/CDS order; id-deduplication and `--pad` are applied by the

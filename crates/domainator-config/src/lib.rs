@@ -457,6 +457,7 @@ pub struct DomainSearchConfig {
     pub strand: Option<String>,
     pub keep_direction: bool,
     pub translate: bool,
+    pub pad: bool,
     pub max_region_overlap: Option<f64>,
     pub decoys: Vec<String>,
     pub decoys_file: Option<String>,
@@ -493,6 +494,7 @@ impl DomainSearchConfig {
         merge_scalar!(self, cli, strand);
         self.keep_direction |= cli.keep_direction;
         self.translate |= cli.translate;
+        self.pad |= cli.pad;
         merge_scalar!(self, cli, max_region_overlap);
         merge_vec!(self, cli, decoys);
         merge_scalar!(self, cli, decoys_file);
@@ -1701,6 +1703,7 @@ fn domain_search_schema() -> serde_json::Value {
             "strand": {"enum": ["f", "r", null]},
             "keep_direction": {"type": "boolean", "default": false},
             "translate": {"type": "boolean", "default": false},
+            "pad": {"type": "boolean", "default": false},
             "max_region_overlap": {"type": "number", "default": 1.0},
             "decoys": {"type": "array", "items": {"type": "string"}},
             "decoys_file": {"type": ["string", "null"]},

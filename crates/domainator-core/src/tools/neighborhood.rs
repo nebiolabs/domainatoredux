@@ -368,6 +368,14 @@ pub(crate) struct SliceLoc {
     pub(crate) dist_to_end: i64,
 }
 
+/// An extracted region plus the distance from the region start to the focus CDS
+/// (what `pad_records` aligns on). Both `select_by_cds` and `domain_search`'s
+/// neighborhood path produce these.
+pub struct Region {
+    pub record: SeqRecord,
+    pub dist_to_start: i64,
+}
+
 impl SliceLoc {
     /// The 1-based `(start, end)` for the `_start:end` coordinate suffix —
     /// `stranded_start_human_readable` / `stranded_end_human_readable` of the slice.
@@ -645,7 +653,7 @@ pub fn select_by_cds_hits(
     max_region_overlap: f64,
     decoys: Option<&std::collections::HashSet<String>>,
     max_hits_per_contig: Option<usize>,
-) -> std::io::Result<Vec<SeqRecord>> {
+) -> std::io::Result<Vec<Region>> {
     let rec_len = rec.seq.len() as i64;
     let circular = rec.topology == Topology::Circular;
 
@@ -731,7 +739,7 @@ pub fn select_by_cds_hits(
         .filter_map(|f| f.get_first("cds_id").map(|c| (f, c.to_string())))
         .collect();
 
-    let mut out: Vec<SeqRecord> = Vec::new();
+    let mut out: Vec<Region> = Vec::new();
     let mut selected: Vec<SliceLoc> = Vec::new();
 
     for focus_idx in 0..cds_list.len() {
@@ -819,6 +827,13 @@ pub fn select_by_cds_hits(
             region.name.push_str("rc");
         }
 
+        // `dist_to_start` travels with the region so `--pad` can align the focus CDSs
+        // after the whole search completes; it is 0 for circular contigs, where padding
+        // is unsupported. Read before `slice` can be moved into `selected` below, and
+        // swapped with `dist_to_end` on an un-normalized reverse region, which was
+        // flipped back to the original orientation above.
+        let dist_to_start =
+            if !normalize_direction && strand == -1 { slice.dist_to_end } else { slice.dist_to_start };
         if max_region_overlap < 1.0 {
             let loc_len: i64 = slice.parts.iter().map(|p| p.end - p.start).sum();
             let mut drop = false;
@@ -833,7 +848,7 @@ pub fn select_by_cds_hits(
             }
             selected.push(slice);
         }
-        out.push(region);
+        out.push(Region { record: region, dist_to_start });
         if max_hits_per_contig.is_some_and(|m| out.len() >= m) {
             break;
         }
@@ -1244,6 +1259,45 @@ mod tests {
         ds.set("cds_id", cds_id.to_string());
         ds.set("name", hit_name.to_string());
         vec![cds, ds]
+    }
+
+    /// `--pad` needs each region's offset from its start to the focus CDS, so
+    /// `select_by_cds_hits` has to carry `dist_to_start` out rather than drop it (it
+    /// did until `domain_search` grew `--pad`). Padding then left-pads every region to
+    /// the largest offset and right-pads to a common length, which lines the focus
+    /// CDSs up in a column.
+    #[test]
+    fn hit_regions_carry_dist_to_start_so_padding_aligns_the_focus() {
+        let mut feats = hit_cds(0, 9, "1_1_9", "A");
+        feats.extend(hit_cds(20, 29, "21_1_29", "B"));
+        feats.extend(hit_cds(40, 49, "41_1_49", "C"));
+        let rec = test_rec(&[b'A'; 60], feats);
+        let mut out = select_by_cds_hits(&rec, Range::Cds(1, 1), true, None, 1.0, None, None).unwrap();
+
+        // The first hit has no upstream neighbour, so its region starts at the focus.
+        assert_eq!(
+            out.iter().map(|r| (r.record.seq.len(), r.dist_to_start)).collect::<Vec<_>>(),
+            vec![(29, 0), (49, 20), (29, 20)]
+        );
+
+        crate::tools::select_by_cds::pad_records(&mut out);
+
+        // Every region is now the same length, and every focus CDS starts at the same
+        // offset -- the largest original distance.
+        assert!(out.iter().all(|r| r.record.seq.len() == 49), "regions must share a length");
+        let focus_starts: Vec<i64> = out
+            .iter()
+            .map(|r| {
+                r.record
+                    .features
+                    .iter()
+                    .find(|f| f.kind == DOMAIN_SEARCH_BEST_HIT_NAME)
+                    .expect("each region keeps its focus hit feature")
+                    .location
+                    .start()
+            })
+            .collect();
+        assert_eq!(focus_starts, vec![20, 20, 20]);
     }
 
     #[test]

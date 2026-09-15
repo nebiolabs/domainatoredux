@@ -14,7 +14,7 @@ use crate::io::{detect_compression, detect_filetype, fasta, genbank::GenbankRead
 use crate::search::references::References;
 use crate::seq::SeqRecord;
 use crate::tools::domainate::{domainate, DomainateOptions};
-use crate::tools::neighborhood::{select_by_cds_hits, Range};
+use crate::tools::neighborhood::{select_by_cds_hits, Range, Region};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
 /// Options for [`domain_search`].
@@ -52,6 +52,9 @@ pub struct DomainSearchOptions {
     pub decoys: Option<std::collections::HashSet<String>>,
     /// Cap on independent hits emitted per contig (`None` = all).
     pub max_hits_per_contig: Option<usize>,
+    /// `--pad`: left-pad each region so the focus CDSs align, then right-pad to a
+    /// common length. Buffers the whole result and emits it in score order.
+    pub pad: bool,
 }
 
 impl Default for DomainSearchOptions {
@@ -75,6 +78,7 @@ impl Default for DomainSearchOptions {
             allowed_taxids: None,
             decoys: None,
             max_hits_per_contig: None,
+            pad: false,
         }
     }
 }
@@ -96,12 +100,24 @@ fn best_hit_name(rec: &SeqRecord) -> Option<String> {
         .and_then(|f| f.get_first("name").map(str::to_string))
 }
 
-/// A record's best domain bit-score (over its `Domainator`/`Domain_Search`
-/// features); `-inf` if it has none. Used for `--max_hits` ranking.
+/// The **focus CDS's** hit score — Python's `hit_best_score`, which is what
+/// `--max_hits` ranks by. `-inf` if the record carries no hit feature.
+///
+/// Only the `Domain_Search` best-hit feature counts, never the `Domainator`
+/// annotations. An extracted region spans the focus CDS *and its neighbours*, so with
+/// `--cds_range`/`--kb_range` and `--add_annotations` it carries the neighbours' domain
+/// annotations too; taking the maximum over those ranks a weak hit by whatever strong
+/// gene happens to sit next to it. On `pDONR201_multi_genemark.gb` that made all 16
+/// regions tie at the strongest neighbour's 329.9, so `--max_hits 5` returned five
+/// arbitrary regions instead of the five best.
+///
+/// `select_by_cds_hits` attaches exactly one `Domain_Search` feature per emitted
+/// region — the focus CDS's own (`if *cid == focus_cid`), or the single contig hit on
+/// the nucleic-acid path — so this reads the focus score by construction.
 fn best_score(rec: &SeqRecord) -> f64 {
     rec.features
         .iter()
-        .filter(|f| f.kind == DOMAIN_FEATURE_NAME || f.kind == DOMAIN_SEARCH_BEST_HIT_NAME)
+        .filter(|f| f.kind == DOMAIN_SEARCH_BEST_HIT_NAME)
         .filter_map(|f| f.get_first("score").and_then(|s| s.parse::<f64>().ok()))
         .fold(f64::NEG_INFINITY, f64::max)
 }
@@ -175,7 +191,7 @@ pub fn domain_search(
     };
 
     // Parallel map preserves partition order; results are concatenated in order.
-    let per_part: Vec<std::io::Result<Vec<SeqRecord>>> = crate::parallel::with_threads(opts.cpu, || {
+    let per_part: Vec<std::io::Result<Vec<Region>>> = crate::parallel::with_threads(opts.cpu, || {
         use rayon::prelude::*;
         parts
             .par_iter()
@@ -194,9 +210,16 @@ pub fn domain_search(
                                 continue;
                             }
                         }
-                        emitted.push(rec);
+                        // A whole-protein hit is not a neighborhood, so there is
+                        // nothing to align: `--pad` only right-pads these to a common
+                        // length, and the CLI refuses the combination anyway.
+                        emitted.push(Region { record: rec, dist_to_start: 0 });
                     } else if opts.translate {
-                        emitted.extend(crate::tools::neighborhood::translate_peptides(&rec, opts.strand));
+                        emitted.extend(
+                            crate::tools::neighborhood::translate_peptides(&rec, opts.strand)
+                                .into_iter()
+                                .map(|record| Region { record, dist_to_start: 0 }),
+                        );
                     } else {
                         emitted.extend(select_by_cds_hits(
                             &rec,
@@ -218,7 +241,7 @@ pub fn domain_search(
                 // everything at the end.
                 if let Some(max_hits) = opts.max_hits {
                     if emitted.len() > max_hits {
-                        emitted.sort_by(|a, b| best_score(b).total_cmp(&best_score(a)));
+                        emitted.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
                         emitted.truncate(max_hits);
                     }
                 }
@@ -227,14 +250,78 @@ pub fn domain_search(
             .collect()
     });
 
-    let mut out: Vec<SeqRecord> = Vec::new();
+    let mut out: Vec<Region> = Vec::new();
     for part_result in per_part {
         out.extend(part_result?);
     }
 
     if let Some(max_hits) = opts.max_hits {
-        out.sort_by(|a, b| best_score(b).total_cmp(&best_score(a)));
+        out.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
         out.truncate(max_hits);
     }
-    Ok(out)
+
+    // `--pad` aligns the focus CDSs across every region, so it can only run once the
+    // whole search is in. Python sorts by score descending first whether or not
+    // `--max_hits` is set, so padded output is always in score order.
+    if opts.pad {
+        if opts.max_hits.is_none() {
+            out.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
+        }
+        crate::tools::select_by_cds::pad_records(&mut out);
+    }
+    Ok(out.into_iter().map(|r| r.record).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::best_score;
+    use crate::seq::location::Location;
+    use crate::seq::{Annotations, SeqFeature, SeqRecord, Topology};
+    use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
+
+    fn scored(kind: &str, score: &str) -> SeqFeature {
+        let mut f = SeqFeature::new(kind, Location::range(0, 30, 1));
+        f.set("score", score.to_string());
+        f
+    }
+
+    fn region(features: Vec<SeqFeature>) -> SeqRecord {
+        SeqRecord {
+            id: "r".into(),
+            name: "r".into(),
+            description: String::new(),
+            seq: b"ACGT".to_vec(),
+            molecule_type: Some("DNA".into()),
+            topology: Topology::Linear,
+            annotations: Annotations::default(),
+            features,
+        }
+    }
+
+    /// `--max_hits` ranks by the focus CDS's hit score (Python's `hit_best_score`),
+    /// never by a neighbour's annotation. An extracted region spans the focus CDS and
+    /// its neighbours, so a weak hit next to a strong gene must still rank weak —
+    /// ranking by the maximum over all features made every region on
+    /// `pDONR201_multi_genemark.gb` tie at the strongest neighbour's score.
+    #[test]
+    fn max_hits_ranks_by_the_focus_hit_not_a_neighbours_annotation() {
+        let weak_focus_strong_neighbour = region(vec![
+            scored(DOMAIN_SEARCH_BEST_HIT_NAME, "50.2"),
+            scored(DOMAIN_FEATURE_NAME, "329.9"),
+        ]);
+        let strong_focus = region(vec![scored(DOMAIN_SEARCH_BEST_HIT_NAME, "103.8")]);
+
+        assert_eq!(best_score(&weak_focus_strong_neighbour), 50.2);
+        assert_eq!(best_score(&strong_focus), 103.8);
+        assert!(
+            best_score(&strong_focus) > best_score(&weak_focus_strong_neighbour),
+            "the region with the stronger focus hit must rank higher"
+        );
+    }
+
+    #[test]
+    fn best_score_of_a_region_with_no_hit_feature_is_negative_infinity() {
+        assert_eq!(best_score(&region(vec![scored(DOMAIN_FEATURE_NAME, "99.0")])), f64::NEG_INFINITY);
+        assert_eq!(best_score(&region(vec![])), f64::NEG_INFINITY);
+    }
 }

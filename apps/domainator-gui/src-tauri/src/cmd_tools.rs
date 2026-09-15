@@ -931,6 +931,7 @@ fn run_domain_search(params: Value) -> Result<RunOutput, String> {
         add_annotations: cfg.add_annotations,
         max_hits: cfg.max_hits,
         max_hits_per_contig: cfg.max_hits_per_contig,
+        pad: cfg.pad,
         batch_size: cfg.batch_size.unwrap_or(10000),
         fasta_type: cfg.fasta_type.clone().unwrap_or_else(|| "protein".into()),
         cpu: cfg.cpu.unwrap_or(0),

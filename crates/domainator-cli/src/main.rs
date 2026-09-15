@@ -219,6 +219,9 @@ enum Command {
         /// Translate nucleotide CDS hits to peptides (no neighborhood extraction).
         #[arg(long)]
         translate: bool,
+        /// Pad the ends of extracted regions so the hit CDSs line up.
+        #[arg(long)]
+        pad: bool,
         /// Max fractional overlap between output regions (>=1 disables; default 1.0).
         #[arg(long = "max_region_overlap")]
         max_region_overlap: Option<f64>,
@@ -1950,7 +1953,7 @@ fn main() -> Result<()> {
             input, references, output, evalue, min_evalue, z, add_annotations, max_hits,
             max_hits_per_contig, max_overlap, max_mode, batch_size, cpu, fasta_type, decoys,
             decoys_file, whole_contig, cds_range, cds_up, cds_down, kb_range, kb_up, kb_down,
-            strand, keep_direction, max_region_overlap, translate, include_taxids, exclude_taxids,
+            strand, keep_direction, max_region_overlap, translate, pad, include_taxids, exclude_taxids,
             taxonomy_expr, ncbi_taxonomy_path, max_output_gb, config: config_path, print_config: do_print,
         } => {
             let cli = config::DomainSearchConfig {
@@ -1960,7 +1963,7 @@ fn main() -> Result<()> {
                 evalue, min_evalue, z, add_annotations, max_hits, max_hits_per_contig, max_overlap,
                 max_mode, batch_size, cpu, fasta_type,
                 whole_contig, cds_range, cds_up, cds_down, kb_range, kb_up, kb_down,
-                strand, keep_direction, translate, max_region_overlap,
+                strand, keep_direction, translate, pad, max_region_overlap,
                 decoys, decoys_file, include_taxids, exclude_taxids, taxonomy_expr, ncbi_taxonomy_path,
                 max_output_gb,
             };
@@ -1983,6 +1986,12 @@ fn main() -> Result<()> {
             if cfg.translate && !matches!(range, domainator_core::tools::neighborhood::Range::None) {
                 anyhow::bail!("--translate is incompatible with neighborhood extraction (--cds_range/--kb_range/--whole_contig)");
             }
+            // Mirrors Python's "Protein sequence output is not compatible with
+            // neighborhood extraction or padding." A peptide has no neighborhood to
+            // align, so padding it would only right-pad to a common length.
+            if cfg.pad && cfg.translate {
+                anyhow::bail!("--pad is incompatible with --translate (protein output has no neighborhood to align)");
+            }
             let strand = match cfg.strand.as_deref() {
                 Some("f") => Some(1),
                 Some("r") => Some(-1),
@@ -2002,6 +2011,7 @@ fn main() -> Result<()> {
                 add_annotations: cfg.add_annotations,
                 max_hits: cfg.max_hits,
                 max_hits_per_contig: cfg.max_hits_per_contig,
+                pad: cfg.pad,
                 batch_size: cfg.batch_size.unwrap_or(10000),
                 fasta_type: cfg.fasta_type.clone().unwrap_or_else(|| "protein".into()),
                 cpu: cfg.cpu.unwrap_or(0),
