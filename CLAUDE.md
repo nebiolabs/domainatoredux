@@ -88,9 +88,9 @@ conda + the clone, so it is a `sync_upstream.sh` guard, not a CI job; a full swe
 ~6 minutes.
 
 A `tolerated` row means the semantic comparator passed while the **bytes differ** —
-worth reading, not just counting. That is how the GenBank qualifier-wrapping
-divergence surfaced (upstream wraps only `/translation`; every other qualifier goes
-on one unwrapped line), invisible to every gate because both files read back equal.
+worth reading, not just counting. Five writer divergences surfaced exactly that way,
+each invisible to every other gate because both files read back equal; fixing them
+took byte-identical invocations from 51 to 89. See the writer invariants below.
 
 **Committed parity harness** (use it before writing an ad-hoc comparison):
 - `scripts/json_parity.py EXPECTED ACTUAL [--rtol] [--ignore PATH]` — recursive JSON compare that reports the first differing path. Ignores key *order* (required: `preserve_order` vs `sort_keys`) but not key *spelling*, so `{"1": n}` vs `{"1.0": n}` still fails. Accepts a `.dsnv` directly (gunzips it).
@@ -131,7 +131,8 @@ Core module map:
 Key cross-cutting invariants (these gate parity — grep the modules for details before changing):
 - **No Biopython id/name swap in memory:** `name` = LOCUS name, `id` = accession.version. BUT the original Python GenBank *parser* swaps them, so when a gate re-reads output with `parse_seqfiles`, LOCUS→`id` and VERSION→`name`. Consequence: a coordinate suffix or marker that the Python tool appends to `record.id` must be written to our **`name`** (LOCUS line); likewise per-record qualifier values like `source_contig` use the LOCUS name (our `name`).
 - **Ordered qualifiers** (`Vec<(String, Vec<String>)>`) — insertion order is load-bearing for the writer and for `cds_id` / `domainator_<db>` rollups.
-- **GenBank writer** wraps qualifier lines at word boundaries only (`break_long_words=False`) — breaking a long no-space token makes the reader rejoin with a spurious space.
+- **GenBank writer: `/translation` is the only qualifier that wraps.** Upstream patched its vendored Biopython so `/translation` wraps at 80 columns (the 21-space indent included, so a wrapped line is exactly 80) and every other qualifier gets `MAX_WIDTH = 10000000000000` — one line however long (`Bio/SeqIO/InsdcIO.py::_write_feature_qualifier`). Wrapping the rest still *reads back* equal, which is why parity gates never saw it, and it is what made breaking a long no-space token hazardous (the reader rejoins the halves with a spurious space). Three sibling rules in the same function: a qualifier is written **unquoted only if its key is in upstream's `FTQUAL_NO_QUOTE`** list (values are always strings here, so "looks like a number" is not the rule — that strips the quotes off `/gc="49"`); the LOCUS topology column is `annotations["topology"]` and stays **blank when the record never declared one**, not `linear`; and the SOURCE consumer drops one trailing `.` that the writer does not put back, so the ubiquitous `SOURCE      .` round-trips to a bare `SOURCE` line.
+- **HMM writer** (`search/hmm_write.rs`, not the `hmmer-pure-rs` one): `HMMER3/f`, a nine-column model-matrix grid, and the `GA`/`TC`/`NC` Pfam cutoffs — the crate's writer drops those, which breaks `hmmsearch --cut_ga` downstream. Its reader also mis-parses them (Pfam's trailing `;`), so read profiles through `search/hmm_read.rs`. `hmmer-select` reproducing its input byte for byte is the gate.
 - **Number formatting** (`%.1e` via a custom `py_sci`, `%.1f`, NumPy `str(float64)` for TSV) is replicated to match Python output exactly.
 - **`.didx` / shard resolution / BGZF offsets** are hard on-disk contracts (`io/didx.rs`, `io/shards.rs`, `io/bgzf.rs`): `.didx` is byte-compatible; staleness is rejected via size+mtime_ns; both unsharded + shards present is an error (refuse to guess).
 - **Parser must never reject a record** (handles odd LOCUS layouts, missing molecule unit, `*` stop codons).

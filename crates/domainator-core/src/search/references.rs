@@ -82,7 +82,7 @@ fn fasta_is_nucleic_acid(file: &str) -> std::io::Result<bool> {
 /// Whether an `.hmm` file's first profile is a DNA/RNA model.
 fn hmm_is_nucleic_acid(file: &str) -> std::io::Result<bool> {
     use hmmer_pure_rs::alphabet::AlphabetType;
-    let hmms = hmmer_pure_rs::hmmfile::read_hmm_file(Path::new(file))
+    let hmms = crate::search::hmm_read::read_hmm_file(Path::new(file))
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
     Ok(hmms
         .first()
@@ -92,7 +92,7 @@ fn hmm_is_nucleic_acid(file: &str) -> std::io::Result<bool> {
 
 /// Load a nucleotide `.hmm` file as an nhmmer db (file stem = db name).
 fn load_nucl_hmm(file: &str) -> std::io::Result<NuclDb> {
-    let hmms = hmmer_pure_rs::hmmfile::read_hmm_file(Path::new(file))
+    let hmms = crate::search::hmm_read::read_hmm_file(Path::new(file))
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
     Ok(NuclDb { name: file_stem(file), hmms })
 }

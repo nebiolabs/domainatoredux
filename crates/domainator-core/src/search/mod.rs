@@ -2,6 +2,8 @@
 //! domainate/domain_search turn into `Domainator` GenBank features.
 
 pub mod hmm_compare;
+pub mod hmm_read;
+pub mod hmm_write;
 pub mod hmmer;
 pub mod nhmmer;
 pub mod references;

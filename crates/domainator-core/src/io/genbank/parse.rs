@@ -183,6 +183,7 @@ pub fn parse_record(
                     .molecule_type
                     .or_else(|| default_molecule_type.map(str::to_string))
                     .or_else(|| if locus.is_aa { Some("protein".into()) } else { Some("DNA".into()) });
+                rec.annotations.topology = locus.topology;
                 if let Some(t) = locus.topology {
                     rec.topology = t;
                 }
@@ -296,8 +297,13 @@ fn parse_source(sec: &Section, ann: &mut Annotations) {
             source_parts.push(line.trim().to_string());
         }
     }
+    // Biopython's SOURCE consumer strips one trailing `.` (`Bio/GenBank/utils.py`,
+    // `GenBankConsumer.source`), so the near-universal placeholder `SOURCE      .`
+    // reads back as the empty string. Unlike DEFINITION, the writer does *not*
+    // re-append it -- SOURCE is deliberately lossy there -- so a round trip through
+    // the Python tool turns `.` into a bare `SOURCE` line, and ours must too.
     let src = source_parts.join(" ").trim().to_string();
-    ann.source = Some(src);
+    ann.source = Some(src.strip_suffix('.').unwrap_or(&src).to_string());
     if let Some(org) = organism {
         ann.organism = Some(org);
         ann.taxonomy = split_taxonomy(&taxonomy_lines.join(" "));
@@ -500,6 +506,27 @@ mod tests {
 
     fn lines(s: &str) -> Vec<String> {
         s.lines().map(str::to_string).collect()
+    }
+
+    fn source_of(section: &str) -> Option<String> {
+        let mut ann = Annotations::default();
+        parse_source(&Section { keyword: "SOURCE".into(), lines: lines(section) }, &mut ann);
+        ann.source
+    }
+
+    /// Biopython's SOURCE consumer drops one trailing `.`, and unlike DEFINITION
+    /// the writer never puts it back -- so `SOURCE      .`, which is what almost
+    /// every tool-written record carries, round-trips to a bare `SOURCE` line.
+    #[test]
+    fn source_loses_one_trailing_period() {
+        assert_eq!(source_of("SOURCE      .").as_deref(), Some(""));
+        assert_eq!(
+            source_of("SOURCE      Escherichia coli.").as_deref(),
+            Some("Escherichia coli")
+        );
+        // Only one, and only at the end.
+        assert_eq!(source_of("SOURCE      E. coli..").as_deref(), Some("E. coli."));
+        assert_eq!(source_of("SOURCE      E. coli").as_deref(), Some("E. coli"));
     }
 
     #[test]

@@ -8,7 +8,8 @@
 use std::io::Write;
 use std::path::Path;
 
-use hmmer_pure_rs::hmmfile::{read_hmm_file, write_hmm};
+use crate::search::hmm_write::write_hmm;
+use crate::search::hmm_read::read_hmm_file;
 use hmmer_pure_rs::{Alphabet, Bg, Hmm};
 use rayon::prelude::*;
 

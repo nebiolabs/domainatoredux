@@ -41,22 +41,9 @@ enum_report	test_enum_report_html_max_height_1#0	rust-failed	deferred:html	Error
 enum_report	test_enum_report_html_quote_escape_1#0	rust-failed	deferred:html	Error: enum_report HTML output is not supported in this port; use TSV or --json
 extract_peptides	test_extract_peptides_end_of_contig#0	differs	gap:fuzzy-markers	peptides.gb: 3 feature location/type, 0 LOCUS name
 extract_peptides	test_extract_peptides_keep_name_1#0	differs	gap:fuzzy-markers	peptides.gb: 3 feature location/type, 0 LOCUS name
-hmmer_search	test_hmmer_search_1#0	differs	gap:hmm-writer	out_scores.hmm: 2106 vs 2097 lines
-hmmer_search	test_hmmer_search_2#0	differs	gap:hmm-writer	out_scores.hmm: 1363 vs 1357 lines
-hmmer_search	test_hmmer_search_default_score_cutoff_is_alphabet_aware#0	differs	gap:hmm-writer	dna.hmm: line 1: 'HMMER3/f [3.4 | Aug 2023]' != 'HMMER3/e [3.0 | March 2010]'
-hmmer_search	test_hmmer_search_default_score_cutoff_is_alphabet_aware#1	differs	gap:hmm-writer	aa.hmm: 326 vs 323 lines
-hmmer_search	test_hmmer_search_dna#0	differs	gap:hmm-writer	out.hmm: line 1: 'HMMER3/f [3.4 | Aug 2023]' != 'HMMER3/e [3.0 | March 2010]'
-hmmer_search	test_hmmer_search_explicit_score_cutoff_is_not_rescaled#0	differs	gap:hmm-writer	loose.hmm: line 1: 'HMMER3/f [3.4 | Aug 2023]' != 'HMMER3/e [3.0 | March 2010]'
-hmmer_search	test_hmmer_search_explicit_score_cutoff_is_not_rescaled#1	differs	gap:hmm-writer	strict.hmm: line 1: 'HMMER3/f [3.4 | Aug 2023]' != 'HMMER3/e [3.0 | March 2010]'
-hmmer_search	test_hmmer_search_rna#0	differs	gap:hmm-writer	out.hmm: line 1: 'HMMER3/f [3.4 | Aug 2023]' != 'HMMER3/e [3.0 | March 2010]'
-hmmer_select	test_hmmer_select_1#0	differs	gap:hmm-writer	out.hmm: 725 vs 722 lines
-hmmer_select	test_hmmer_select_2#0	differs	gap:hmm-writer	out.hmm: 1337 vs 1334 lines
-hmmer_select	test_hmmer_select_4#0	differs	gap:hmm-writer	out.hmm: 1337 vs 1334 lines
 hmmer_select	test_hmmer_select_alphabet_narrows_text_criteria#0	rust-failed	gap:hmmer-select-alphabet	error: unexpected argument '--alphabet' found
 hmmer_select	test_hmmer_select_alphabet_rna#0	rust-failed	gap:hmmer-select-alphabet	error: unexpected argument '--alphabet' found
 hmmer_select	test_hmmer_select_alphabet_splits_mixed_file_set#0	rust-failed	gap:hmmer-select-alphabet	error: unexpected argument '--alphabet' found
-hmmer_select	test_hmmer_select_case_sensitivity_1#0	differs	gap:hmm-writer	out.hmm: 1337 vs 1334 lines
-hmmer_select	test_hmmer_select_case_sensitivity_2#0	differs	gap:hmm-writer	out.hmm: 1337 vs 1334 lines
 matrix_report	test_matrix_report_default_excludes_mst_knn#0	rust-failed	deferred:html	error: unexpected argument '--html' found
 matrix_report	test_matrix_report_text_includes_mst_knn_projection#0	rust-failed	deferred:html	error: unexpected argument '--html' found
 seq_dist	test_hmm_compare_1#0	differs	gap:tsv-float-format	out.tsv: line 2: '2-oxoacid_dh\t146.39999389648438\t5.050000' != '2-oxoacid_dh\t146.4\t5.05\t12.46\t6.41\t5.82\t'

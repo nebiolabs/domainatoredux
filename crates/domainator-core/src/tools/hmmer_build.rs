@@ -157,7 +157,7 @@ fn build_from(msa: &Msa, abc: &Alphabet, bg: &Bg) -> Hmm {
 
 /// Write `hmm` as an HMMER3 profile to `out`.
 pub fn write_hmm_out<W: Write>(hmm: &Hmm, out: &mut W) -> Result<(), String> {
-    hmmer_pure_rs::hmmfile::write_hmm(out, hmm).map_err(|e| format!("{e:?}"))
+    crate::search::hmm_write::write_hmm(out, hmm).map_err(|e| format!("{e}"))
 }
 
 #[cfg(test)]

@@ -39,7 +39,7 @@ fn round2(x: f64) -> f64 {
 fn load_all_hmms(files: &[String]) -> io::Result<Vec<Hmm>> {
     let mut out = Vec::new();
     for f in files {
-        let hmms = hmmer_pure_rs::hmmfile::read_hmm_file(Path::new(f))
+        let hmms = crate::search::hmm_read::read_hmm_file(Path::new(f))
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{e:?}")))?;
         out.extend(hmms);
     }

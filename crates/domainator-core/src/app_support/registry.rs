@@ -71,7 +71,7 @@ fn looks_nucleic(seq: &[u8]) -> bool {
 /// First HMM's alphabet: `protein` (amino) or `nucleic` (dna/rna).
 fn hmm_molecule(path: &str) -> String {
     use hmmer_pure_rs::alphabet::AlphabetType;
-    match hmmer_pure_rs::hmmfile::read_hmm_file(Path::new(path)).ok().and_then(|h| h.into_iter().next()) {
+    match crate::search::hmm_read::read_hmm_file(Path::new(path)).ok().and_then(|h| h.into_iter().next()) {
         Some(h) => match h.abc_type {
             AlphabetType::Dna | AlphabetType::Rna => "nucleic".into(),
             AlphabetType::Amino => "protein".into(),

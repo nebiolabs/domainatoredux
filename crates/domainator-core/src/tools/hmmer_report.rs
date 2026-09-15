@@ -168,7 +168,7 @@ pub fn read_hmms_to_iterators(hmm_files: &[String]) -> Result<Vec<(String, Vec<H
             .and_then(|s| s.to_str())
             .unwrap_or("references")
             .to_string();
-        let hmms = hmmer_pure_rs::hmmfile::read_hmm_file(Path::new(f))
+        let hmms = crate::search::hmm_read::read_hmm_file(Path::new(f))
             .map_err(|e| format!("reading {f}: {e:?}"))?;
         out.push((name, hmms));
     }

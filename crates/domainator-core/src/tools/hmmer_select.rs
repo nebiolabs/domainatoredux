@@ -3,10 +3,11 @@
 //!
 //! Matching modes (`--regex`, `--exact`, `--contains`) are combined with OR: a
 //! profile is kept if it matches ANY specification on ANY searched field. Output
-//! is an HMM file (written via `hmmer_pure_rs::hmmfile::write_hmm`). This is a
-//! different HMMER3 writer than pyhmmer, so output is semantically re-readable but
-//! not byte-identical (it emits a `HMMER3/e` header); the retained profile SET is
-//! the parity contract.
+//! is an HMM file written via `search::hmm_write`, which reproduces
+//! `p7_hmmfile_WriteASCII` — so selecting profiles out of a file and writing them
+//! back is **byte-identical** to what upstream produces, cutoff lines included.
+//! (The `hmmer-pure-rs` writer is not: it stamps a `HMMER3/e` header and silently
+//! drops `GA`/`TC`/`NC`.) Read through `search::hmm_read` for the same reason.
 
 use std::io::Write;
 use std::path::Path;
@@ -116,11 +117,11 @@ pub fn hmmer_select<W: Write>(
     let regexes = compile_regexes(opts)?;
     let mut found = 0usize;
     for input_file in input_files {
-        let hmms = hmmer_pure_rs::hmmfile::read_hmm_file(Path::new(input_file))
+        let hmms = crate::search::hmm_read::read_hmm_file(Path::new(input_file))
             .map_err(|e| format!("reading {input_file}: {e:?}"))?;
         for hmm in &hmms {
             if profile_matches(hmm, opts, &regexes) {
-                hmmer_pure_rs::hmmfile::write_hmm(out, hmm)
+                crate::search::hmm_write::write_hmm(out, hmm)
                     .map_err(|e| format!("writing profile: {e:?}"))?;
                 found += 1;
             }

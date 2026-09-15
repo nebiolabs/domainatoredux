@@ -82,6 +82,12 @@ pub struct Annotations {
     pub comment: Option<String>,
     /// Structured comments: ordered `(block_name, ordered (key, value))`.
     pub structured_comment: Vec<(String, Vec<(String, String)>)>,
+    /// The topology the LOCUS line actually *declared* (`annotations["topology"]`),
+    /// as opposed to [`SeqRecord::topology`], which is what the geometry code acts
+    /// on and defaults to linear. Many records leave the column blank, and
+    /// Biopython's writer leaves it blank right back; writing `linear` there is a
+    /// gratuitous difference from the reference file.
+    pub topology: Option<Topology>,
 }
 
 /// One GenBank feature. Qualifiers are an ordered multimap (insertion order is

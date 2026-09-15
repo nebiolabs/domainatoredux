@@ -123,7 +123,6 @@ sweep, so none of them can be quietly forgotten. Grouped by root cause:
 
 | class | rows | what is wrong |
 |---|---|---|
-| `gap:hmm-writer` | 13 | Our `.hmm` writer announces `HMMER3/e [3.0 \| March 2010]` where upstream writes `HMMER3/f [3.4 \| Aug 2023]`, **drops the `GA`/`TC`/`NC` cutoff lines entirely** (so `hmmsearch --cut_ga` against our output cannot work), and pads `STATS` columns differently. Affects `hmmer-select`, which ought to round-trip its input verbatim, and `hmmer-search`. |
 | `gap:hmmer-select-alphabet` | 3 | `hmmer-select --alphabet` is not implemented. |
 | `gap:color-domains` | 3 | `color-genbank --color_domains` / `--color_both` are not implemented. |
 | `gap:progress-flag` | 3 | `seq-dist` / `compare-contigs` do not accept `--progress`. |
@@ -132,19 +131,12 @@ sweep, so none of them can be quietly forgotten. Grouped by root cause:
 | `gap:clean-sequences-log` | 1 | `clean-sequences --log` writes 4 lines where Python writes 6. |
 | `gap:dedup-representative` | 1 | `deduplicate --usearch` picks a different cluster representative. |
 
-Two GenBank-writer divergences cannot appear in that table at all, because the sweep
-classes them `tolerated`: both files read back equal, so the gap list structurally cannot
-hold them. They are real on-disk differences nonetheless, found by diffing a `tolerated`
-row's bytes:
-
-- **Qualifier line wrapping.** Upstream patched its vendored Biopython so only
-  `/translation` wraps (at 80); every other qualifier is written on one unwrapped line
-  (`Bio/SeqIO/InsdcIO.py`, `MAX_WIDTH = 10000000000000`). Our writer wraps them all, which
-  is also what makes the `break_long_words=False` hazard in `CLAUDE.md` load-bearing.
-  Matching upstream would remove that hazard and turn a large number of `tolerated` rows
-  into `identical` ones, sharpening the whole gate.
-- **Empty `SOURCE`.** We write `SOURCE      .`; upstream writes `SOURCE` with trailing
-  whitespace.
+A `tolerated` row is one where the semantic comparator passed but the **bytes differ**, so
+the gap list structurally cannot hold it. Diffing those bytes is worthwhile: it is how four
+GenBank-writer and one `.hmm`-writer divergence were found, all now fixed —
+qualifier wrapping, qualifier quoting, the LOCUS topology column, the `SOURCE` trailing
+period, and the Pfam `GA`/`TC`/`NC` cutoffs. Byte-identical invocations went from 51 to 89
+as a result, which is what makes the remaining `tolerated` rows worth reading in turn.
 
 `upstream:hmmer-pure-rs#1` (8 rows) is not ours to fix: `hmmer-pure-rs` cannot build a
 calibrated nucleotide profile from a single sequence, so in-memory profiles built from a

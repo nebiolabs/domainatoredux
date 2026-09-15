@@ -148,35 +148,71 @@ fn write_comment<W: Write>(w: &mut W, ann: &crate::seq::Annotations) -> io::Resu
     Ok(())
 }
 
-/// Wrap a feature qualifier across 79-column lines under the 21-space indent.
+/// Write one feature qualifier, wrapping only `/translation`.
+///
+/// This is upstream's patched Biopython writer (`Bio/SeqIO/InsdcIO.py`,
+/// `_write_feature_qualifier`): it wraps `/translation` at 80 columns and gives
+/// every other qualifier a width of `10000000000000`, i.e. one unwrapped line no
+/// matter how long. Wrapping the rest as stock Biopython does produces files that
+/// still *read back* equal — which is why every parity gate was blind to it — but
+/// differ byte for byte from the reference, and it is what makes breaking a long
+/// spaceless token hazardous, since the reader rejoins the halves with a space.
+///
+/// The width counts the 21-space indent, so a wrapped translation line is exactly
+/// 80 characters and the last one is shorter.
 fn write_qualifier<W: Write>(w: &mut W, key: &str, value: &str, has_value: bool) -> io::Result<()> {
     const INDENT: &str = "                     "; // 21 spaces
+    // Upstream leaves a qualifier unquoted only for this fixed list (its
+    // `FTQUAL_NO_QUOTE`) or for a value that is a Python `int`. Our qualifier
+    // values are always strings, so the list is the whole rule -- guessing from
+    // the value instead strips the quotes off `/gc="49"`, `/length="105"` and
+    // every other numeric-looking annotation these tools write.
+    const FTQUAL_NO_QUOTE: [&str; 13] = [
+        "anticodon",
+        "citation",
+        "codon_start",
+        "compare",
+        "direction",
+        "estimated_length",
+        "mod_base",
+        "number",
+        "rpt_type",
+        "rpt_unit_range",
+        "tag_peptide",
+        "transl_except",
+        "transl_table",
+    ];
     let line = if !has_value {
-        format!("/{key}")
-    } else if value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty() {
-        format!("/{key}={value}")
+        format!("{INDENT}/{key}")
+    } else if FTQUAL_NO_QUOTE.contains(&key) {
+        format!("{INDENT}/{key}={value}")
     } else {
         // GenBank escapes a literal `"` by doubling it.
-        format!("/{key}=\"{}\"", value.replace('"', "\"\""))
+        format!("{INDENT}/{key}=\"{}\"", value.replace('"', "\"\""))
     };
-    // Wrap at word (space) boundaries only — never split a long token, matching
-    // Biopython's `break_long_words=False`. Breaking mid-token would make the reader
-    // rejoin the pieces with a spurious space.
-    let width = 79 - INDENT.len();
-    let mut cur = String::new();
-    for word in line.split(' ') {
-        if cur.is_empty() {
-            cur.push_str(word);
-        } else if cur.len() + 1 + word.len() <= width {
-            cur.push(' ');
-            cur.push_str(word);
-        } else {
-            writeln!(w, "{INDENT}{cur}")?;
-            cur.clear();
-            cur.push_str(word);
-        }
+    if key != "translation" {
+        return writeln!(w, "{line}");
     }
-    writeln!(w, "{INDENT}{cur}")
+
+    const MAX_WIDTH: usize = 80;
+    let mut line = line;
+    while !line.trim_start().is_empty() {
+        if line.len() <= MAX_WIDTH {
+            return writeln!(w, "{line}");
+        }
+        // Scan back for a space to break on, never past the indent. A protein
+        // translation has none, so this normally falls through to a hard cut at
+        // exactly MAX_WIDTH.
+        let bytes = line.as_bytes();
+        let cut = (INDENT.len() + 2..=MAX_WIDTH.min(line.len() - 1))
+            .rev()
+            .find(|&i| bytes[i] == b' ')
+            .filter(|&i| line.is_char_boundary(i))
+            .unwrap_or(MAX_WIDTH);
+        writeln!(w, "{}", &line[..cut])?;
+        line = format!("{INDENT}{}", line[cut..].trim_start());
+    }
+    Ok(())
 }
 
 fn write_feature<W: Write>(w: &mut W, feature: &SeqFeature) -> io::Result<()> {
@@ -291,12 +327,21 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
     };
     // Protein (genpept) LOCUS lines carry no topology field; emitting one breaks
     // Biopython's column parser so it never sets molecule_type='protein'.
+    // Biopython writes `annotations["topology"]` and leaves the column blank when
+    // there is none, so a record whose LOCUS line never declared one round-trips
+    // blank. A tool that *made* the record circular still says so, even though it
+    // set no annotation.
+    let declared = rec.annotations.topology.or(match rec.topology {
+        Topology::Circular => Some(Topology::Circular),
+        Topology::Linear => None,
+    });
     let topology = if mol_type.is_empty() {
         "        " // 8 blanks
     } else {
-        match rec.topology {
-            Topology::Circular => "circular",
-            Topology::Linear => "linear  ",
+        match declared {
+            Some(Topology::Circular) => "circular",
+            Some(Topology::Linear) => "linear  ",
+            None => "        ",
         }
     };
     let division = rec.annotations.division.as_deref().unwrap_or("UNK");
@@ -390,6 +435,89 @@ pub fn write_genbank(path: &str, records: &[SeqRecord]) -> io::Result<()> {
 mod tests {
     use super::*;
     use crate::seq::Annotations;
+
+    fn qualifier(key: &str, value: &str) -> String {
+        let mut out = Vec::new();
+        write_qualifier(&mut out, key, value, true).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn only_translation_wraps() {
+        // Upstream gives every non-translation qualifier a width of 1e13, i.e. one
+        // line however long. Values taken from test/data/simple_genpept.gb, whose
+        // description is 74 characters -- comfortably past the 79-column rule stock
+        // Biopython would apply, and the case that exposed this.
+        let long = "2-oxoacid dehydrogenases acyltransferase (catalytic domain)";
+        let out = qualifier("description", long);
+        assert_eq!(out.lines().count(), 1);
+        assert!(out.len() > 80, "the line is {} chars, so it really is past the old cut", out.len());
+        assert!(out.ends_with(&format!("{long}\"\n")));
+    }
+
+    #[test]
+    fn translation_wraps_at_eighty_columns_including_the_indent() {
+        let peptide = "M".repeat(200);
+        let out = qualifier("translation", &peptide);
+        let lines: Vec<&str> = out.lines().collect();
+        // A protein has no spaces, so every line but the last is a hard cut at 80.
+        for line in &lines[..lines.len() - 1] {
+            assert_eq!(line.len(), 80, "wrapped line: {line:?}");
+        }
+        assert!(lines.last().unwrap().len() <= 80);
+        for line in &lines[1..] {
+            assert!(line.starts_with("                     "), "continuation indent");
+        }
+        // Nothing is lost or duplicated on the way through.
+        let rejoined: String = lines.iter().map(|l| l.trim_start()).collect::<Vec<_>>().join("");
+        assert_eq!(rejoined, format!("/translation=\"{peptide}\""));
+    }
+
+    fn locus_line(rec: &SeqRecord) -> String {
+        let mut out = Vec::new();
+        write_record(&mut out, rec).unwrap();
+        String::from_utf8(out).unwrap().lines().next().unwrap().to_string()
+    }
+
+    /// Biopython writes `annotations["topology"]` and leaves the column blank when
+    /// the LOCUS line never declared one -- which is most tool-written records.
+    #[test]
+    fn locus_topology_is_blank_unless_it_was_declared() {
+        let mut r = rec(vec![], "d");
+        assert!(locus_line(&r).contains("DNA              "), "{}", locus_line(&r));
+
+        r.annotations.topology = Some(Topology::Linear);
+        assert!(locus_line(&r).contains("DNA     linear   "), "{}", locus_line(&r));
+
+        // A tool that made the record circular still says so, annotation or not.
+        let mut r = rec(vec![], "d");
+        r.topology = Topology::Circular;
+        assert!(locus_line(&r).contains("DNA     circular "), "{}", locus_line(&r));
+    }
+
+    #[test]
+    fn numeric_looking_values_keep_their_quotes() {
+        // These are all strings in the model, so only the FTQUAL_NO_QUOTE list
+        // goes unquoted. Guessing from the value drops the quotes off every
+        // numeric annotation these tools write.
+        assert_eq!(qualifier("gc", "49"), "                     /gc=\"49\"\n");
+        assert_eq!(qualifier("length", "105"), "                     /length=\"105\"\n");
+        assert_eq!(qualifier("phase", "0"), "                     /phase=\"0\"\n");
+        assert_eq!(
+            qualifier("codon_start", "1"),
+            "                     /codon_start=1\n"
+        );
+        assert_eq!(
+            qualifier("transl_table", "11"),
+            "                     /transl_table=11\n"
+        );
+    }
+
+    #[test]
+    fn a_short_translation_stays_on_one_line() {
+        let out = qualifier("translation", "MKV");
+        assert_eq!(out, "                     /translation=\"MKV\"\n");
+    }
 
     fn dom(name: &str, start: i64, end: i64, db: &str) -> SeqFeature {
         let mut f = SeqFeature::new(crate::DOMAIN_FEATURE_NAME, Location::range(start, end, 1));

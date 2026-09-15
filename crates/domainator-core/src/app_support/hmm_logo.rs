@@ -209,14 +209,14 @@ pub fn logo_from_hmm_bytes(bytes: &[u8]) -> Result<HmmLogo, String> {
 /// new `.hmm` file at `out_path`. Keeps the `hmmer_pure_rs` dependency inside core.
 pub fn extract_hmms_to_file(source: &str, indices: &[usize], out_path: &str) -> Result<(), String> {
     use std::io::{BufWriter, Write};
-    let hmms = hmmer_pure_rs::hmmfile::read_hmm_file(std::path::Path::new(source))
+    let hmms = crate::search::hmm_read::read_hmm_file(std::path::Path::new(source))
         .map_err(|e| format!("reading HMM: {e:?}"))?;
     let file = std::fs::File::create(out_path).map_err(|e| format!("creating {out_path}: {e}"))?;
     let mut w = BufWriter::new(file);
     let mut n = 0usize;
     for &i in indices {
         if let Some(h) = hmms.get(i) {
-            hmmer_pure_rs::hmmfile::write_hmm(&mut w, h).map_err(|e| format!("writing HMM: {e:?}"))?;
+            crate::search::hmm_write::write_hmm(&mut w, h).map_err(|e| format!("writing HMM: {e:?}"))?;
             n += 1;
         }
     }
@@ -230,7 +230,7 @@ pub fn extract_hmms_to_file(source: &str, indices: &[usize], out_path: &str) -> 
 /// Read an `.hmm` file and build the logo for profile `index` (0-based). Keeps the
 /// `hmmer_pure_rs` dependency inside core so callers (the GUI) don't take it on.
 pub fn load_logo_from_file(path: &str, index: usize) -> Result<HmmLogo, String> {
-    let hmms = hmmer_pure_rs::hmmfile::read_hmm_file(std::path::Path::new(path))
+    let hmms = crate::search::hmm_read::read_hmm_file(std::path::Path::new(path))
         .map_err(|e| format!("reading HMM: {e:?}"))?;
     let hmm = hmms
         .get(index)
