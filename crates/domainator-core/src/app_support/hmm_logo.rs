@@ -294,3 +294,106 @@ pub fn build_logo(hmm: &hmmer_pure_rs::Hmm) -> HmmLogo {
         positions,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hmmer_pure_rs::Hmm;
+
+    /// A DNA profile of `m` match states whose emissions are given per node.
+    fn dna(emissions: &[[f32; 4]]) -> Hmm {
+        let m = emissions.len();
+        let mut hmm = Hmm::new(m, AlphabetType::Dna, 4);
+        hmm.name = "logo".into();
+        for (i, probs) in emissions.iter().enumerate() {
+            hmm.mat[i + 1] = probs.to_vec();
+        }
+        // Always continue match->match, so occupancy stays 1 and does not muddy
+        // the information-content assertions.
+        for t in hmm.t.iter_mut() {
+            *t = [1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0];
+        }
+        hmm
+    }
+
+    /// Information content is `log2(K) - H`, so a uniform column carries none and
+    /// a fully conserved one carries the full height of the axis. Getting this
+    /// backwards, or normalizing against the wrong K, silently rescales every logo.
+    #[test]
+    fn information_content_spans_zero_to_log2_k() {
+        let logo = build_logo(&dna(&[[0.25, 0.25, 0.25, 0.25], [1.0, 0.0, 0.0, 0.0]]));
+        assert_eq!(logo.alphabet, "dna");
+        assert_eq!(logo.length, 2);
+        assert_eq!(logo.max_height_bits, 2.0);
+        assert!(logo.positions[0].total_ic.abs() < 1e-9, "{}", logo.positions[0].total_ic);
+        assert!((logo.positions[1].total_ic - 2.0).abs() < 1e-9);
+    }
+
+    /// Letter heights are `probability * information content`, so a column's
+    /// letters sum to its IC -- that is what makes the stack the right height.
+    #[test]
+    fn letter_heights_sum_to_the_columns_information_content() {
+        let logo = build_logo(&dna(&[[0.5, 0.25, 0.15, 0.10]]));
+        let pos = &logo.positions[0];
+        // f32 emissions widened to f64, so they sum to 1 only to f32 precision.
+        let stack: f64 = pos.letters.iter().map(|l| l.height).sum();
+        assert!((stack - pos.total_ic).abs() < 1e-6, "{stack} vs {}", pos.total_ic);
+        assert!(pos.total_ic > 0.0 && pos.total_ic < 2.0);
+    }
+
+    /// Every canonical residue is emitted (the popup shows full frequencies) and
+    /// they are ordered shortest-first, which is the order the renderer stacks them.
+    #[test]
+    fn letters_are_complete_and_sorted_by_height() {
+        let logo = build_logo(&dna(&[[0.1, 0.4, 0.2, 0.3]]));
+        let pos = &logo.positions[0];
+        assert_eq!(pos.letters.len(), 4);
+        let chars: Vec<&str> = pos.letters.iter().map(|l| l.char.as_str()).collect();
+        assert_eq!(chars, vec!["A", "G", "T", "C"], "ascending height");
+        assert!(pos.letters.windows(2).all(|w| w[0].height <= w[1].height));
+        // The probabilities are the raw emissions, unscaled by IC.
+        let mut probs: Vec<f64> = pos.letters.iter().map(|l| l.prob).collect();
+        probs.sort_by(f64::total_cmp);
+        assert!((probs.iter().sum::<f64>() - 1.0).abs() < 1e-6);
+    }
+
+    /// `index` is HMMER's 1-based node number, which the viewer labels columns
+    /// with; an off-by-one here mislabels every position in the logo.
+    #[test]
+    fn positions_carry_one_based_node_numbers() {
+        let logo = build_logo(&dna(&[[1.0, 0.0, 0.0, 0.0]; 3]));
+        let indices: Vec<usize> = logo.positions.iter().map(|p| p.index).collect();
+        assert_eq!(indices, vec![1, 2, 3]);
+    }
+
+    /// Expected insert length is the mean of a geometric distribution on the
+    /// insert self-loop, so a certainty of staying is infinite rather than a
+    /// division by zero.
+    #[test]
+    fn insert_length_comes_from_the_insert_self_loop() {
+        let mut hmm = dna(&[[0.25; 4]; 2]);
+        hmm.t[1] = [0.5, 0.25, 0.25, 1.0, 0.5, 1.0, 0.0];
+        hmm.t[2] = [1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0];
+        let logo = build_logo(&hmm);
+        assert_eq!(logo.positions[0].insert_prob, 0.25);
+        assert_eq!(logo.positions[0].delete_prob, 0.25);
+        assert_eq!(logo.positions[0].insert_length, 2.0); // 1 / (1 - 0.5)
+        assert_eq!(logo.positions[1].insert_length, f64::INFINITY);
+    }
+
+    #[test]
+    fn a_protein_logo_uses_the_taller_axis() {
+        let mut hmm = Hmm::new(1, AlphabetType::Amino, 20);
+        hmm.name = "p".into();
+        hmm.mat[1] = vec![0.05; 20];
+        for t in hmm.t.iter_mut() {
+            *t = [1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0];
+        }
+        let logo = build_logo(&hmm);
+        assert_eq!(logo.alphabet, "amino");
+        assert!((logo.max_height_bits - 20f64.log2()).abs() < 1e-12);
+        assert_eq!(logo.positions[0].letters.len(), 20);
+        // Uniform over 20 residues is still zero information.
+        assert!(logo.positions[0].total_ic.abs() < 1e-9);
+    }
+}

@@ -2237,7 +2237,9 @@ fn hmmer_build_schema() -> serde_json::Value {
             "name": {"type": ["string", "null"], "description": "Profile NAME (required)"},
             "acc": {"type": ["string", "null"]},
             "desc": {"type": ["string", "null"]},
-            "alphabet": {"enum": ["amino", "dna", "rna", null], "description": "Inferred when omitted"}
+            "alphabet": {"enum": ["amino", "dna", "rna", null], "description": "Inferred when omitted"},
+            "window_length": {"type": ["integer", "null"], "description": "Max expected hit length (the profile's MAXL field), used by nhmmer for windowed E-values. Nucleotide alphabets only"},
+            "window_beta": {"type": ["number", "null"], "description": "Tail mass from which to derive the window length. Nucleotide alphabets only; only one of window_length and window_beta may be given (deriving MAXL from a tail mass is not yet supported, so this is refused rather than silently ignored)"}
         }
     })
 }
@@ -2296,7 +2298,8 @@ fn format_db_schema() -> serde_json::Value {
             "output_dir": {"type": ["string", "null"]},
             "name": {"type": ["string", "null"], "description": "Base name for the output database (single input only)"},
             "level": {"type": "integer", "default": 6, "description": "BGZF compression level (1-12)"},
-            "force": {"type": "boolean", "default": false}
+            "force": {"type": "boolean", "default": false},
+            "log": {"type": ["string", "null"], "description": "Write the run log here instead of stderr"}
         }
     })
 }
@@ -2338,4 +2341,131 @@ fn select_by_cds_schema() -> serde_json::Value {
             "include_nucleic_acids": {"type": "boolean", "default": false}
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every tool, paired with the config struct `resolve.rs` deserializes into.
+    ///
+    /// Adding a tool here is the point: a new tool with no entry is a tool whose
+    /// schema nothing checks.
+    macro_rules! tools {
+        ($($tool:literal => $ty:ty),* $(,)?) => {
+            vec![$(($tool, serde_json::to_value(<$ty>::default()).unwrap())),*]
+        };
+    }
+
+    fn every_tool() -> Vec<(&'static str, serde_json::Value)> {
+        tools![
+            "enum-report" => EnumConfig,
+            "select-by-contig" => SelectByContigConfig,
+            "select-by-cds" => SelectByCdsConfig,
+            "domainate" => DomainateConfig,
+            "domain-search" => DomainSearchConfig,
+            "deduplicate" => DeduplicateConfig,
+            "genbank-to-fasta" => GenbankToFastaConfig,
+            "clean-sequences" => CleanSequencesConfig,
+            "sort-contigs" => SortContigsConfig,
+            "select-by-coord" => SelectByCoordConfig,
+            "filter-domains" => FilterDomainsConfig,
+            "color-genbank" => ColorGenbankConfig,
+            "color-table-to-legend" => ColorTableToLegendConfig,
+            "trim-contigs" => TrimContigsConfig,
+            "extract-domains" => ExtractDomainsConfig,
+            "extract-peptides" => ExtractPeptidesConfig,
+            "extract-unannotated" => ExtractUnannotatedConfig,
+            "seq-dist" => SeqDistConfig,
+            "compare-contigs" => CompareContigsConfig,
+            "transform-matrix" => TransformMatrixConfig,
+            "build-ssn" => BuildSsnConfig,
+            "build-ssn-viewer" => BuildSsnViewerConfig,
+            "matrix-report" => MatrixReportConfig,
+            "ssn-navigator" => SsnNavigatorConfig,
+            "summary-report" => SummaryReportConfig,
+            "hmmer-compare" => HmmerCompareConfig,
+            "hmmer-report" => HmmerReportConfig,
+            "hmmer-select" => HmmerSelectConfig,
+            "hmmer-build" => HmmerBuildConfig,
+            "hmmer-search" => HmmerSearchConfig,
+            "format-db" => FormatDbConfig,
+        ]
+    }
+
+    fn schema_properties(tool: &str) -> Vec<String> {
+        let text = schema(tool).unwrap_or_else(|e| panic!("no schema for {tool}: {e}"));
+        let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+        parsed["properties"]
+            .as_object()
+            .unwrap_or_else(|| panic!("{tool} schema has no properties object"))
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    fn config_fields(default: &serde_json::Value) -> Vec<String> {
+        default.as_object().unwrap().keys().cloned().collect()
+    }
+
+    /// `domainator schema <tool>` is the documented agent interface *and* what the
+    /// GUI renders its tool dialogs from (`cmd_tools::tool_schema`), while the
+    /// config struct is what actually gets deserialized. The two are written by
+    /// hand in different places, so they drift silently and in both directions:
+    ///
+    /// * a field missing from the schema is a flag no agent and no GUI dialog can
+    ///   discover -- which is how `hmmer-build --window_length` and
+    ///   `format-db --log` went missing;
+    /// * a property the struct does not have is worse, because every config struct
+    ///   is `deny_unknown_fields`, so a config written to match the schema is
+    ///   *rejected*.
+    #[test]
+    fn every_schema_matches_its_config_struct() {
+        let mut problems = Vec::new();
+        for (tool, default) in every_tool() {
+            let in_schema = schema_properties(tool);
+            let in_struct = config_fields(&default);
+            let missing: Vec<_> =
+                in_struct.iter().filter(|f| !in_schema.contains(f)).cloned().collect();
+            let extra: Vec<_> =
+                in_schema.iter().filter(|p| !in_struct.contains(p)).cloned().collect();
+            if !missing.is_empty() {
+                problems.push(format!("{tool}: in the struct but not the schema: {missing:?}"));
+            }
+            if !extra.is_empty() {
+                problems.push(format!(
+                    "{tool}: in the schema but not the struct (a schema-conforming \
+                     config would be REJECTED): {extra:?}"
+                ));
+            }
+        }
+        assert!(problems.is_empty(), "schema/config drift:\n  {}", problems.join("\n  "));
+    }
+
+    /// A tool the CLI accepts but `every_tool()` forgets is a tool this file stops
+    /// guarding, so cross-check against the dispatcher's own list of names.
+    #[test]
+    fn the_tool_list_covers_every_schema() {
+        let listed: Vec<&str> = every_tool().iter().map(|(t, _)| *t).collect();
+        // The dispatcher accepts both spellings of each name; the canonical
+        // (kebab) one is what `every_tool` uses.
+        for tool in &listed {
+            assert!(schema(tool).is_ok(), "{tool} is listed but has no schema");
+        }
+        assert!(schema("not-a-tool").is_err(), "unknown tools must be rejected");
+        assert_eq!(listed.len(), 31, "a tool was added or removed without updating this list");
+    }
+
+    /// Underscore and kebab spellings must resolve to the same schema: config files
+    /// and `--print_config` use the struct's underscore field names, while the CLI
+    /// subcommand is kebab.
+    #[test]
+    fn both_tool_name_spellings_agree() {
+        for (tool, _) in every_tool() {
+            let under = tool.replace('-', "_");
+            if let Ok(alt) = schema(&under) {
+                assert_eq!(schema(tool).unwrap(), alt, "{tool} vs {under}");
+            }
+        }
+    }
 }

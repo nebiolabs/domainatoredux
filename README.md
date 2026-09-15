@@ -46,8 +46,10 @@ There are some dependencies that are not easily portable to Rust, such as anythi
 
 Correctness is defined by parity with the Python tool, not by byte-identity. Two gates:
 
-- **`cargo test`** — fixture-free unit tests for the pure, deterministic logic. No conda
-  needed, so CI runs it.
+- **`cargo test`** — unit tests in the owning module. No conda needed, so CI runs it. For
+  the code this port *adds* rather than ports — the config/schema layer, the GUI seam in
+  `app_support/` — this is the only gate that can exist, because parity has nothing to
+  compare against.
 - **The differential parity sweep** — every `main([...])` invocation in upstream's pytest
   suite, replayed through both implementations and diffed.
   `scripts/parity/known_gaps.tsv` is the enforced list of what does not yet reproduce; the

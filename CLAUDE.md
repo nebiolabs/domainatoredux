@@ -62,9 +62,37 @@ is **independent of `-o`**, so a run can produce TSV/text and JSON together.
 
 Dev/diagnostic examples live in `crates/domainator-core/examples/` (`offsets`, `didx_tool`, `shards_tool`, `matrix_probe`, ...): `cargo run -p domainator-core --example matrix_probe`.
 
-## Verification model (parity-first; a small native test suite exists)
+## Verification model (two gates, and they cover different code)
 
-End-to-end correctness is checked by **parity against the original Python tool** — that is the primary gate. There is also a small committed `cargo test` suite (`#[cfg(test)] mod tests` in the relevant modules) covering the **pure, deterministic, fixture-free** logic: `BooleanEvaluator`, `protein_analysis` (MW / pI / charge / PROSITE) against BioPython's documented values, `NCBITaxonomy` (inline mini-taxdmp), and the circular-neighborhood/range math. It complements parity (it needs no conda env); it does not replace it. The reference lives at:
+Ported logic is checked by **parity against the original Python tool** — the differential
+sweep below is the primary gate for anything with an upstream counterpart.
+
+**`cargo test` is not a lesser second gate — for roughly a third of the workspace it is the
+only one possible.** Parity can only ask "is this the same as Python"; everything this port
+*adds* has no upstream to compare against, so nothing else can check it:
+`crates/domainator-config` (the config/schema layer is a native Rust format, deliberately
+**not** jsonargparse-compatible), `app_support/` (the GUI seam: workspace, provenance DAG,
+database registry, HMM logo, contig editor, summary dashboard), and the Tauri command layer.
+When adding to any of those, a test is the whole safety net. Two guards there earn their
+keep in particular:
+- **`every_schema_matches_its_config_struct`** (`domainator-config`) — `domainator schema
+  <tool>` is the documented agent interface *and* what the GUI renders its tool dialogs
+  from (`cmd_tools::tool_schema`), while the config struct is what actually deserializes.
+  They are hand-written in different places and drift in both directions: a field missing
+  from the schema is a flag no agent and no GUI dialog can discover (this is how
+  `hmmer-build --window_length` and `format-db --log` went missing), and a property the
+  struct lacks is worse, because every config struct is `deny_unknown_fields`, so a config
+  written to match the schema is *rejected*. Add a tool to `every_tool()` when you add a tool.
+- **`merge_cli` coverage** — a struct field the merge forgets is a CLI flag that silently
+  does nothing.
+
+The rest of the suite (`#[cfg(test)] mod tests` in the owning module) covers the **pure,
+deterministic** logic — `BooleanEvaluator`, `protein_analysis` (MW / pI / charge / PROSITE)
+against BioPython's documented values, `NCBITaxonomy` (inline mini-taxdmp), the
+circular-neighborhood/range math, and the GenBank/HMM writer layouts. Fixture-free where it
+can be; the `app_support` file-round-trip tests use a scratch directory under
+`std::env::temp_dir()` keyed by pid, never the repo. It needs no conda env, so CI runs it.
+The Python reference lives at:
 - Python env: `/home/sean/miniforge3/envs/domainator/bin/python`
 - Vendored Python source: `external/domainator/` (gitignored; a clone kept at the `UPSTREAM.md` pin), with fixtures under `external/domainator/test/data/` and helpers in `test/helpers.py`.
 

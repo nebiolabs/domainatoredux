@@ -174,3 +174,140 @@ pub fn summarize(records: &[SeqRecord]) -> SummaryStats {
         taxonomy: tax.freeze("root".to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::seq::{Annotations, Location, SeqFeature, Topology};
+
+    fn rec(id: &str, len: usize, organism: Option<&str>, lineage: &[&str]) -> SeqRecord {
+        let mut annotations = Annotations {
+            taxonomy: lineage.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        };
+        annotations.organism = organism.map(str::to_string);
+        SeqRecord {
+            id: id.into(),
+            name: id.into(),
+            description: String::new(),
+            seq: vec![b'A'; len],
+            molecule_type: Some("DNA".into()),
+            topology: Topology::Linear,
+            annotations,
+            features: Vec::new(),
+        }
+    }
+
+    fn domain(name: &str, db: &str) -> SeqFeature {
+        let mut f = SeqFeature::new(crate::DOMAIN_FEATURE_NAME, Location::range(0, 9, 1));
+        f.set("name", name);
+        f.set("database", db);
+        f
+    }
+
+    #[test]
+    fn lengths_and_totals() {
+        let stats = summarize(&[rec("a", 10, None, &[]), rec("b", 30, None, &[]), rec("c", 20, None, &[])]);
+        assert_eq!(stats.n_contigs, 3);
+        assert_eq!(stats.total_residues, 60);
+        assert_eq!((stats.length_min, stats.length_max), (10, 30));
+        assert_eq!(stats.length_mean, 20.0);
+        assert_eq!(stats.length_median, 20);
+    }
+
+    /// The median is the **upper** middle of an even-length set, not the mean of
+    /// the two middles -- `sorted[len / 2]` on integer lengths. Pinned because it
+    /// is a silent choice the dashboard displays.
+    #[test]
+    fn even_counts_take_the_upper_middle_length() {
+        let stats = summarize(&[rec("a", 10, None, &[]), rec("b", 20, None, &[])]);
+        assert_eq!(stats.length_median, 20);
+    }
+
+    #[test]
+    fn an_empty_file_summarizes_to_zeros() {
+        let stats = summarize(&[]);
+        assert_eq!(stats.n_contigs, 0);
+        assert_eq!(stats.total_residues, 0);
+        assert_eq!((stats.length_min, stats.length_max), (0, 0));
+        assert_eq!(stats.length_mean, 0.0);
+        assert!(!stats.is_protein);
+        assert!(stats.length_histogram.is_empty());
+        assert_eq!(stats.taxonomy.count, 0);
+    }
+
+    /// A histogram needs at least two records *and* a spread; one record, or many
+    /// records all the same length, would otherwise divide by a zero-width bin.
+    #[test]
+    fn a_histogram_needs_two_distinct_lengths() {
+        assert!(summarize(&[rec("a", 10, None, &[])]).length_histogram.is_empty());
+        assert!(summarize(&[rec("a", 10, None, &[]), rec("b", 10, None, &[])])
+            .length_histogram
+            .is_empty());
+
+        let stats = summarize(&[rec("a", 0, None, &[]), rec("b", 30, None, &[])]);
+        assert_eq!(stats.length_histogram.len(), 30);
+        // Bins are `[bin_low, count]` starting at the minimum, and every record
+        // lands in one -- including the maximum, which would otherwise fall off
+        // the end of the last bin.
+        assert_eq!(stats.length_histogram[0][0], 0.0);
+        let total: f64 = stats.length_histogram.iter().map(|b| b[1]).sum();
+        assert_eq!(total, 2.0);
+    }
+
+    #[test]
+    fn domain_counts_rank_by_frequency_then_name() {
+        let mut r = rec("a", 10, None, &[]);
+        r.features = vec![
+            domain("B", "pfam"),
+            domain("A", "pfam"),
+            domain("A", "pfam"),
+            SeqFeature::new("CDS", Location::range(0, 9, 1)),
+        ];
+        let stats = summarize(std::slice::from_ref(&r));
+        assert_eq!(stats.n_cds, 1);
+        assert_eq!(stats.n_domain_features, 3);
+        assert_eq!(stats.distinct_domains, 2);
+        let names: Vec<&str> = stats.top_domains.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(names, vec!["A", "B"]);
+        assert_eq!(stats.top_domains[0].count, 2);
+        let dbs: Vec<(&str, usize)> =
+            stats.databases.iter().map(|n| (n.name.as_str(), n.count)).collect();
+        assert_eq!(dbs, vec![("pfam", 3)]);
+        // Every feature kind is counted, not just Domainator ones.
+        let kinds: Vec<&str> = stats.feature_kinds.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(kinds, vec![crate::DOMAIN_FEATURE_NAME, "CDS"]);
+    }
+
+    /// Lineages merge by name into one tree, children sort by descending count,
+    /// and the organism becomes the leaf -- unless the lineage already ends with it.
+    #[test]
+    fn taxonomy_merges_lineages_and_sorts_children() {
+        let stats = summarize(&[
+            rec("a", 10, Some("E. coli"), &["Bacteria", "Proteobacteria"]),
+            rec("b", 10, Some("Salmonella"), &["Bacteria", "Proteobacteria"]),
+            rec("c", 10, Some("B. subtilis"), &["Bacteria", "Firmicutes"]),
+            rec("d", 10, None, &[]),
+        ]);
+        assert_eq!(stats.n_with_taxonomy, 3);
+        assert_eq!(stats.taxonomy.name, "root");
+
+        let bacteria = &stats.taxonomy.children[0];
+        assert_eq!((bacteria.name.as_str(), bacteria.count), ("Bacteria", 3));
+        let phyla: Vec<(&str, usize)> =
+            bacteria.children.iter().map(|c| (c.name.as_str(), c.count)).collect();
+        assert_eq!(phyla, vec![("Proteobacteria", 2), ("Firmicutes", 1)]);
+        let leaves: Vec<&str> =
+            bacteria.children[0].children.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(leaves, vec!["E. coli", "Salmonella"]);
+    }
+
+    #[test]
+    fn an_organism_already_ending_the_lineage_is_not_repeated() {
+        let stats = summarize(&[rec("a", 10, Some("E. coli"), &["Bacteria", "E. coli"])]);
+        let bacteria = &stats.taxonomy.children[0];
+        assert_eq!(bacteria.children.len(), 1);
+        assert_eq!(bacteria.children[0].name, "E. coli");
+        assert!(bacteria.children[0].children.is_empty());
+    }
+}
