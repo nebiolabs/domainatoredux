@@ -62,15 +62,31 @@ Run `scripts/sync_upstream.sh` (see its header for options). It:
 1. Fast-forwards `external/domainator/` to the target upstream ref.
 2. Prints `git log --oneline --stat <pin>..<target>` — the changelog to triage against the
    map above.
-3. Runs the automated guards it can: `regen_ssn_viewer_shell.py --check` and the
-   `ssn_probe` example (add per-tool parity gates for any tool whose Python file changed).
+3. Runs the automated guards it can: `regen_ssn_viewer_shell.py --check`, the `ssn_probe`
+   example, the committed-fixture check, and the differential parity sweep (add per-tool
+   parity gates for any tool whose Python file changed).
 4. Reminds you to port whatever surface #2–#4 changes require, then **advance the pin** in
    this file (and note anything deliberately deferred).
 
 The script does not decide *what* needs porting — a human triages each commit. It removes
 the mechanical toil: what changed, where it lands, and which guards to run.
 
-Its guards are real comparisons, not smoke tests: `scripts/ssn_probe.py` prints the same
+### Upstream's tests are a fifth sync surface
+
+`scripts/parity/` replays every `main([...])` invocation in upstream's pytest suite through
+both implementations and diffs the outputs; `scripts/parity/known_gaps.tsv` is the enforced
+list of what does not yet reproduce, and `test/data/` is the committed fixture subset those
+invocations reference. **`docs/parity.md` is the full workflow** — how to read the gap
+list, how to triage a new row, how to migrate a finding into a native `cargo test`, and how
+to widen the harvester when a newly interesting test is being skipped.
+
+When the pin moves, the fixture check and the sweep are the guards that notice upstream
+testing something the port does not do. The `git diff` on `known_gaps.tsv` is the artifact
+worth reading: new rows are features to catch up to, and disappearing rows deserve equal
+suspicion — upstream may have stopped exercising something rather than the port having
+fixed it.
+
+Its other guards are real comparisons, not smoke tests: `scripts/ssn_probe.py` prints the same
 JSON document from `ssn_edges`/`ssn_hierarchy` that `examples/ssn_probe.rs` prints, and
 `scripts/json_parity.py` diffs the parsed form. Compare **parsed** JSON, never bytes —
 `serde_json` is built with `preserve_order` while Python writes `sort_keys=True`, so byte
@@ -94,3 +110,46 @@ Tracked so a later sync does not mistake them for oversights:
   `hmmer-pure-rs` does not expose; the flag is refused rather than silently ignored.
 - **HTML output** for `enum_report`, `hmmer_report`, `matrix_report` and `summary_report`.
   `--json` is offered instead, which is upstream's own recommendation for agents.
+  (`deferred:html` in `known_gaps.tsv`.)
+- **The ward-clustered GenBank report** `compare_contigs -o`, and its `--mst_knn`
+  projections. (`deferred:ward-report`.)
+- **Infernal `.cm` references** in `domainate`/`domain_search`. (`deferred:infernal`.)
+
+## Open gaps the parity sweep tracks
+
+These are *not* deferrals — they are the to-do list, carried in
+`scripts/parity/known_gaps.tsv` under the `gap:` classes and machine-checked on every
+sweep, so none of them can be quietly forgotten. Grouped by root cause:
+
+| class | rows | what is wrong |
+|---|---|---|
+| `gap:hmm-writer` | 13 | Our `.hmm` writer announces `HMMER3/e [3.0 \| March 2010]` where upstream writes `HMMER3/f [3.4 \| Aug 2023]`, **drops the `GA`/`TC`/`NC` cutoff lines entirely** (so `hmmsearch --cut_ga` against our output cannot work), and pads `STATS` columns differently. Affects `hmmer-select`, which ought to round-trip its input verbatim, and `hmmer-search`. |
+| `gap:hmmer-select-alphabet` | 3 | `hmmer-select --alphabet` is not implemented. |
+| `gap:color-domains` | 3 | `color-genbank --color_domains` / `--color_both` are not implemented. |
+| `gap:progress-flag` | 3 | `seq-dist` / `compare-contigs` do not accept `--progress`. |
+| `gap:fuzzy-markers` | 2 | `extract-peptides` keeps `<`/`>` partial-location markers that Python drops: its remap builds `FeatureLocation(start, end, strand)` from plain ints, always yielding `ExactPosition`. |
+| `gap:tsv-float-format` | 1 | `seq-dist --dense_text` on an `hmmer_compare` matrix: Python widens float32 and prints `146.39999389648438` where we print `146.4`. |
+| `gap:clean-sequences-log` | 1 | `clean-sequences --log` writes 4 lines where Python writes 6. |
+| `gap:dedup-representative` | 1 | `deduplicate --usearch` picks a different cluster representative. |
+
+Two GenBank-writer divergences cannot appear in that table at all, because the sweep
+classes them `tolerated`: both files read back equal, so the gap list structurally cannot
+hold them. They are real on-disk differences nonetheless, found by diffing a `tolerated`
+row's bytes:
+
+- **Qualifier line wrapping.** Upstream patched its vendored Biopython so only
+  `/translation` wraps (at 80); every other qualifier is written on one unwrapped line
+  (`Bio/SeqIO/InsdcIO.py`, `MAX_WIDTH = 10000000000000`). Our writer wraps them all, which
+  is also what makes the `break_long_words=False` hazard in `CLAUDE.md` load-bearing.
+  Matching upstream would remove that hazard and turn a large number of `tolerated` rows
+  into `identical` ones, sharpening the whole gate.
+- **Empty `SOURCE`.** We write `SOURCE      .`; upstream writes `SOURCE` with trailing
+  whitespace.
+
+`upstream:hmmer-pure-rs#1` (8 rows) is not ours to fix: `hmmer-pure-rs` cannot build a
+calibrated nucleotide profile from a single sequence, so in-memory profiles built from a
+nucleotide **FASTA** reference lack the `max_length`/STATS calibration and long-target
+E-values diverge. Confirmed by substituting a Python-built `.hmm` for the same query, which
+makes both implementations agree byte for byte. See
+<https://github.com/henriksson-lab/hmmer-pure-rs/issues/1>. File-based `.hmm` references
+are unaffected, and protein is unaffected.

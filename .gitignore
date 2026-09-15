@@ -19,3 +19,7 @@ pnpm-debug.log*
 # Python bytecode from scripts/
 __pycache__/
 
+
+# The taxonomy loader drops a lock file beside the taxdump it extracts, so a
+# parity sweep leaves one in the committed fixture directory.
+test/data/taxdmp/*.lock

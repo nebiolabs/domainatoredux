@@ -109,10 +109,33 @@ else
   done
 fi
 
+# The fixture copy under test/data/ is derived from what upstream's tests reference,
+# so a new or changed fixture upstream must be copied over before the harness runs.
+echo
+echo "== guard: committed fixtures vs upstream test/data =="
+"$PY" "$REPO_ROOT/scripts/parity/sync_fixtures.py" --check \
+  || { echo "  -> run scripts/parity/sync_fixtures.py --update"; FAILED=1; }
+
+# The broad-coverage gate: replay every invocation upstream's pytest suite makes
+# through both implementations. known_gaps.tsv is the tracked list of what does not
+# yet reproduce, and this trips when reality and that list disagree either way --
+# a new divergence, or a stale entry claiming work that is already done.
+echo
+echo "== guard: differential parity sweep (see docs/parity.md) =="
+if [[ ! -x "$REPO_ROOT/target/debug/domainator" ]]; then
+  echo "  -> SKIPPED: no target/debug/domainator (run cargo build)"
+elif ! "$PY" -c 'import domainator' 2>/dev/null; then
+  echo "  -> SKIPPED: $PY cannot import domainator"
+else
+  ( cd "$REPO_ROOT" && "$PY" scripts/parity/differential.py ) \
+    || { echo "  -> parity sweep disagrees with scripts/parity/known_gaps.tsv"; FAILED=1; }
+fi
+
 echo
 echo "== reminders =="
 echo "  * Triage the changelog against UPSTREAM.md's file->owner map; port surfaces #2-#4."
 echo "  * Run the per-tool parity gates for any tool whose Python file changed."
+echo "  * Read the scripts/parity/known_gaps.tsv diff, and triage the class column on new rows."
 echo "  * Advance the pin in UPSTREAM.md to ${TARGET:0:12} and note anything deferred."
 
 if [[ "$FAILED" -ne 0 ]]; then

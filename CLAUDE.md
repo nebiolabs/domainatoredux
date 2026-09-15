@@ -68,14 +68,38 @@ End-to-end correctness is checked by **parity against the original Python tool**
 - Python env: `/home/sean/miniforge3/envs/domainator/bin/python`
 - Vendored Python source: `external/domainator/` (gitignored; a clone kept at the `UPSTREAM.md` pin), with fixtures under `external/domainator/test/data/` and helpers in `test/helpers.py`.
 
+**Differential parity sweep — the broad gate. Read `docs/parity.md` before adding
+tests or chasing a divergence.** `scripts/parity/harvest_invocations.py` mines every
+`main([...])` call out of upstream's pytest suite; `scripts/parity/differential.py`
+replays each argument list through both implementations into two scratch directories
+and diffs every file produced. Upstream's tests are ported as **invocations, not
+assertions** — their assertions encode Python-side internals, while the flag
+combinations are the part we could never enumerate ourselves. `test/data/` is the
+committed fixture subset those invocations reference (kept in step by
+`scripts/parity/sync_fixtures.py --check/--update`; do not hand-edit it).
+
+`scripts/parity/known_gaps.tsv` is the **enforced** list of invocations that do not
+yet reproduce: a run exits non-zero when reality and that file disagree in either
+direction, so a new divergence fails and a fixed one cannot linger as a stale entry.
+Membership and `outcome` are machine-maintained; the `class` column
+(`deferred:` / `gap:` / `upstream:` / `harness:`) is hand-written and carried across
+regenerations, because no script can tell a deliberate deferral from a bug. Needs
+conda + the clone, so it is a `sync_upstream.sh` guard, not a CI job; a full sweep is
+~6 minutes.
+
+A `tolerated` row means the semantic comparator passed while the **bytes differ** —
+worth reading, not just counting. That is how the GenBank qualifier-wrapping
+divergence surfaced (upstream wraps only `/translation`; every other qualifier goes
+on one unwrapped line), invisible to every gate because both files read back equal.
+
 **Committed parity harness** (use it before writing an ad-hoc comparison):
 - `scripts/json_parity.py EXPECTED ACTUAL [--rtol] [--ignore PATH]` — recursive JSON compare that reports the first differing path. Ignores key *order* (required: `preserve_order` vs `sort_keys`) but not key *spelling*, so `{"1": n}` vs `{"1.0": n}` still fails. Accepts a `.dsnv` directly (gunzips it).
 - `scripts/ssn_probe.py MATRIX` — the Python twin of `cargo run -p domainator-core --example ssn_probe -- MATRIX`. Both print the **same** JSON document; keep them in lockstep or the gate silently stops covering a field.
-- `scripts/sync_upstream.sh` runs the viewer-shell drift check, `cargo test`, and the probe comparison at two `--max_merge_events` caps, and **exits non-zero** if any guard trips.
+- `scripts/sync_upstream.sh` runs the viewer-shell drift check, `cargo test`, build+clippy, the probe comparison at two `--max_merge_events` caps, the committed-fixture check and the differential sweep, and **exits non-zero** if any guard trips.
 - CI (`.github/workflows/check.yml`) runs build (`-D warnings`) + clippy (`-D warnings`) + tests, and a second job clones upstream at the pin to run both drift guards.
 
 Typical gate: run the Rust tool and the Python tool on the same fixture, then compare in the conda env:
-- **GenBank**: `helpers.compare_seqfiles` / `compare_seqrecords`. These compare `{seq, id, description, name}`, annotations (iterating the **first** record's keys, skipping `date`), feature **count**, and per-feature **qualifiers** — *not* feature coordinates/types. Pass `skip_qualifiers={'evalue','score','identity'}` for search output (see numeric tolerance below).
+- **GenBank**: `helpers.compare_seqfiles` / `compare_seqrecords`. These compare `{seq, id, description, name}`, annotations (iterating the **first** record's keys, skipping `date`), feature **count**, and per-feature **qualifiers** — *not* feature coordinates/types, and not the LOCUS name. (`differential.py` checks those separately for exactly that reason; the origin-crossing slice bugs lived in that blind spot.) Pass `skip_qualifiers={'evalue','score','identity'}` for search output (see numeric tolerance below).
 - **HDF5/TSV matrices**: `DataMatrix.from_file(...).toarray()` + `np.allclose` and label/`data_type` checks.
 - Records often come back in a **different order** than Python (Rust preserves partition/input order; Python uses a process pool), so compare as a **set keyed by id**, not positionally.
 

@@ -1,0 +1,450 @@
+#!/usr/bin/env python3
+"""Replay upstream's harvested invocations through both implementations and diff.
+
+This is the broad-coverage parity gate. `harvest_invocations.py` mines upstream's
+pytest suite for `main([...])` argument lists; this runs each one twice -- once
+against the Python package, once against `target/debug/domainator` -- into two
+scratch directories, then compares every file the two runs produced.
+
+Outcomes, worst-wins across an invocation's output files:
+
+    identical    byte-for-byte equal
+    tolerated    equal once search numerics are allowed to differ (hmmer-pure-rs
+                 is a different HMMER3 implementation -- see CLAUDE.md)
+    differs      a real divergence
+    rust-failed  the Rust tool exited non-zero where Python succeeded
+    error        timeout or harness failure
+    skipped      Python itself rejected the invocation, or it produced no files
+
+Every invocation that is not identical/tolerated/skipped must be listed in
+`known_gaps.tsv`, which is the tracked list of open work. The run exits non-zero
+when reality and that list disagree in either direction, so a new divergence
+fails the gate and a fixed one is not allowed to linger as a stale entry.
+
+Requires the conda environment and the vendored upstream clone; it is not part
+of the CI check job. See `docs/parity.md`.
+"""
+import argparse
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import tempfile
+import traceback
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+
+# Search numerics are explicitly not a parity target. The `domainator_<db>`
+# rollup packs evalue+score into a single string, so skipping `evalue`/`score`
+# alone cannot reach them -- the rollup keys are added per file at compare time.
+NUMERIC_QUALIFIERS = {"evalue", "score", "identity"}
+
+OK = ("identical", "tolerated", "skipped")
+
+
+# --------------------------------------------------------------------------
+# comparators: (path_a, path_b) -> (outcome, note)
+# --------------------------------------------------------------------------
+
+def _compare_genbank(a, b, helpers, SeqIO):
+    skip = set(NUMERIC_QUALIFIERS)
+    for path in (a, b):
+        try:
+            for rec in SeqIO.parse(path, "genbank"):
+                for feat in rec.features:
+                    skip |= {k for k in feat.qualifiers if k.startswith("domainator_")}
+        except Exception:
+            pass
+    try:
+        helpers.compare_seqfiles(str(a), str(b), skip_qualifiers=skip)
+    except Exception:
+        frame = traceback.extract_tb(sys.exc_info()[2])[-1]
+        return "differs", f"compare_seqfiles failed at helpers.py:{frame.lineno}"
+    # `compare_seqfiles` checks sequence, annotations, feature *count* and
+    # qualifiers -- but not feature coordinates, feature types, or the LOCUS
+    # name. Those are exactly where the origin-crossing slice bugs lived, so
+    # check them here rather than trusting the upstream comparator alone.
+    left, right = list(SeqIO.parse(a, "genbank")), list(SeqIO.parse(b, "genbank"))
+    bad_loc = sum(1 for x, y in zip(left, right)
+                  for fx, fy in zip(x.features, y.features)
+                  if fx.type != fy.type or str(fx.location) != str(fy.location))
+    bad_name = sum(1 for x, y in zip(left, right) if x.name != y.name)
+    if bad_loc or bad_name:
+        return "differs", f"{bad_loc} feature location/type, {bad_name} LOCUS name"
+    return "tolerated", ""
+
+
+def _compare_matrix(a, b):
+    import numpy as np
+    from domainator.data_matrix import DataMatrix
+    ma, mb = DataMatrix.from_file(str(a)), DataMatrix.from_file(str(b))
+    if ma.rows != mb.rows or ma.columns != mb.columns:
+        return "differs", "matrix labels differ"
+    if ma.data_type != mb.data_type:
+        return "differs", f"data_type {ma.data_type} != {mb.data_type}"
+    if not np.allclose(ma.toarray(), mb.toarray(), rtol=1e-3, atol=1e-6, equal_nan=True):
+        return "differs", "matrix values outside tolerance"
+    return "tolerated", ""
+
+
+def _compare_json(a, b):
+    # `json_parity.py` gunzips `.dsnv` itself and ignores key *order*, which is
+    # required: serde_json is built with `preserve_order`, Python sorts keys.
+    script = REPO / "scripts" / "json_parity.py"
+    proc = subprocess.run([sys.executable, str(script), str(a), str(b), "--rtol", "1e-3"],
+                          capture_output=True, text=True)
+    if proc.returncode == 0:
+        return "tolerated", ""
+    detail = (proc.stdout + proc.stderr).strip().splitlines()
+    return "differs", detail[-1][:110] if detail else "json differs"
+
+
+def _compare_xgmml(a, b):
+    import xml.etree.ElementTree as ET
+
+    def summarize(path):
+        root = ET.parse(path).getroot()
+        tag = lambda e: e.tag.rsplit("}", 1)[-1]
+        nodes, edges = set(), set()
+        for el in root:
+            atts = frozenset((c.get("name"), c.get("value"))
+                             for c in el if tag(c) == "att")
+            if tag(el) == "node":
+                nodes.add((el.get("label"), atts))
+            elif tag(el) == "edge":
+                edges.add((el.get("source"), el.get("target"), atts))
+        return nodes, edges
+
+    (na, ea), (nb, eb) = summarize(a), summarize(b)
+    if na != nb:
+        return "differs", f"{len(na ^ nb)} node(s) differ"
+    if ea != eb:
+        return "differs", f"{len(ea ^ eb)} edge(s) differ"
+    return "tolerated", ""
+
+
+def _normalize_hmm(text):
+    # Profiles carry a build DATE and the COM line that produced them; neither is
+    # a parity target. NAME can carry a tool-chosen default too, but that *is*.
+    return "\n".join(l for l in text.splitlines()
+                     if not l.startswith(("DATE ", "COM   ")))
+
+
+def _compare_text(a, b, normalize=None):
+    ta = pathlib.Path(a).read_text(errors="replace")
+    tb = pathlib.Path(b).read_text(errors="replace")
+    if normalize:
+        ta, tb = normalize(ta), normalize(tb)
+    if ta == tb:
+        return "tolerated", ""
+    la, lb = ta.splitlines(), tb.splitlines()
+    if len(la) != len(lb):
+        return "differs", f"{len(la)} vs {len(lb)} lines"
+    first = next(i for i, (x, y) in enumerate(zip(la, lb)) if x != y)
+    return "differs", f"line {first + 1}: {la[first][:40]!r} != {lb[first][:40]!r}"
+
+
+def compare(a, b, helpers, SeqIO):
+    """Classify one pair of output files."""
+    if pathlib.Path(a).read_bytes() == pathlib.Path(b).read_bytes():
+        return "identical", ""
+    ext = pathlib.Path(a).suffix.lower()
+    try:
+        if ext in (".gb", ".gbk", ".genbank"):
+            return _compare_genbank(a, b, helpers, SeqIO)
+        if ext in (".hdf5", ".h5"):
+            return _compare_matrix(a, b)
+        if ext in (".json", ".dsnv", ".ssnv", ".ndjson"):
+            return _compare_json(a, b)
+        if ext == ".xgmml":
+            return _compare_xgmml(a, b)
+        if ext == ".hmm":
+            return _compare_text(a, b, _normalize_hmm)
+        return _compare_text(a, b)
+    except Exception as exc:
+        return "error", f"comparator raised: {type(exc).__name__}: {exc}"[:110]
+
+
+# --------------------------------------------------------------------------
+# replay
+# --------------------------------------------------------------------------
+
+_LONG_OPTS = {}
+
+
+def _long_options(rust, subcommand):
+    """The long options `domainator <subcommand>` accepts, from its own --help."""
+    if subcommand not in _LONG_OPTS:
+        help_text = subprocess.run([rust, subcommand, "--help"],
+                                   capture_output=True, text=True).stdout
+        _LONG_OPTS[subcommand] = set(re.findall(r"--[A-Za-z0-9][A-Za-z0-9_-]*", help_text))
+    return _LONG_OPTS[subcommand]
+
+
+def expand_abbreviations(argv, rust, subcommand):
+    """Expand argparse-style unique prefixes, e.g. `--o` -> `--output`.
+
+    Upstream's tests lean on argparse accepting any unambiguous prefix of an
+    option name; clap does not. Without this, seven `extract_domains` cases look
+    like a missing `--output` flag rather than a spelling difference. An
+    abbreviation that is *not* unique on our side is left alone, so a genuinely
+    absent flag still reports as one.
+    """
+    options = _long_options(rust, subcommand)
+    out = []
+    for arg in argv:
+        if arg.startswith("--") and "=" not in arg and arg not in options:
+            matches = [o for o in options if o.startswith(arg)]
+            if len(matches) == 1:
+                arg = matches[0]
+        out.append(arg)
+    return out
+
+
+def _rust_error(proc):
+    """The useful line of a failed Rust run.
+
+    clap ends its output with `Usage:` and `For more information, try '--help'`,
+    so taking the last line hides the actual complaint -- which is usually the
+    name of a flag this port has not implemented.
+    """
+    lines = [l.strip() for l in proc.stderr.decode(errors="replace").splitlines() if l.strip()]
+    noise = ("Usage:", "For more information", "Try 'domainator")
+    useful = [l for l in lines if not l.startswith(noise)]
+    if not useful:
+        return f"exit {proc.returncode}"
+    errors = [l for l in useful if l.lower().startswith("error")]
+    return (errors[0] if errors else useful[0])[:140]
+
+
+def produced_files(root):
+    return sorted(str(p.relative_to(root)) for p in pathlib.Path(root).rglob("*") if p.is_file())
+
+
+def run_one(row, cfg, helpers, SeqIO):
+    module, key, where, argv = row[0], row[1], row[2], row[3:]
+    with tempfile.TemporaryDirectory() as scratch:
+        py_dir = os.path.join(scratch, "py")
+        rs_dir = os.path.join(scratch, "rs")
+        os.makedirs(py_dir)
+        os.makedirs(rs_dir)
+
+        def substitute(arg, out_dir):
+            return (arg.replace("@DATA@", cfg.data_dir)
+                       .replace("@TMP@", out_dir)
+                       .replace("@OUT@", os.path.join(out_dir, "out")))
+
+        subcommand = cfg.toolmap[module]
+        py_argv = [substitute(a, py_dir) for a in argv]
+        rs_argv = expand_abbreviations([substitute(a, rs_dir) for a in argv],
+                                       cfg.rust, subcommand)
+        try:
+            py = subprocess.run([cfg.python, "-m", f"domainator.{module}"] + py_argv,
+                                capture_output=True, timeout=cfg.timeout, cwd=py_dir)
+            rs = subprocess.run([cfg.rust, subcommand] + rs_argv,
+                                capture_output=True, timeout=cfg.timeout, cwd=rs_dir)
+        except subprocess.TimeoutExpired:
+            return "error", f"timed out after {cfg.timeout}s"
+        except Exception as exc:
+            return "error", f"{type(exc).__name__}: {exc}"[:110]
+
+        if py.returncode != 0:
+            # Upstream rejected its own invocation -- it depends on state an
+            # earlier step in the same test function set up, or on a fixture the
+            # harvester could not resolve. Nothing to compare.
+            return "skipped", "python rejected the invocation"
+        if rs.returncode != 0:
+            return "rust-failed", _rust_error(rs)
+
+        py_files, rs_files = produced_files(py_dir), produced_files(rs_dir)
+        if not py_files:
+            return "skipped", "no output files (stdout-only invocation)"
+        only_py = sorted(set(py_files) - set(rs_files))
+        only_rs = sorted(set(rs_files) - set(py_files))
+        if only_py or only_rs:
+            return "differs", f"output files differ: -{only_py} +{only_rs}"[:110]
+
+        worst, note = "identical", ""
+        rank = {"identical": 0, "tolerated": 1, "error": 2, "differs": 3}
+        for rel in py_files:
+            outcome, why = compare(os.path.join(py_dir, rel), os.path.join(rs_dir, rel),
+                                   helpers, SeqIO)
+            if rank[outcome] > rank[worst]:
+                worst, note = outcome, (f"{rel}: {why}" if why else rel)
+        return worst, note
+
+
+# --------------------------------------------------------------------------
+# the tracked gap list
+# --------------------------------------------------------------------------
+
+def load_baseline(path):
+    """(module, key) -> (outcome, classification, note)."""
+    entries = {}
+    if not pathlib.Path(path).exists():
+        return entries
+    for line in pathlib.Path(path).read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        module, key, outcome, klass, note = (line.split("\t") + [""] * 5)[:5]
+        entries[(module, key)] = (outcome, klass, note)
+    return entries
+
+
+BASELINE_HEADER = """\
+# Tracked parity gaps: upstream invocations that do not yet reproduce.
+#
+# Which rows belong here is machine-maintained: regenerate with
+# `scripts/parity/differential.py --update_baseline`, and an ordinary run exits
+# non-zero whenever reality and this file disagree -- so a new divergence fails
+# the gate, and a fixed one cannot linger here as a stale entry.
+#
+# The `class` column is the opposite: it is written by hand and carried across
+# regenerations, because no script can tell a deliberate deferral from a bug.
+# A new row arrives with an empty class; triage it into one of
+#
+#   deferred   out of scope on purpose, and recorded as such in UPSTREAM.md
+#   gap        a real missing feature -- the tracked to-do list
+#   upstream   the divergence is in a dependency, not in this port
+#   harness    an artifact of how the invocation is replayed, not a divergence
+#
+# Columns: <python module> <test_fn#n> <outcome> <class> <note>
+"""
+
+
+def write_baseline(path, entries):
+    with open(path, "w") as fh:
+        fh.write(BASELINE_HEADER)
+        for (module, key), (outcome, klass, note) in sorted(entries.items()):
+            fh.write(f"{module}\t{key}\t{outcome}\t{klass}\t{note}\n")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("-i", "--invocations",
+                    help="harvested TSV (default: harvest on the fly)")
+    ap.add_argument("--test_dir", default=str(REPO / "external" / "domainator" / "test"))
+    ap.add_argument("--data_dir", default=str(REPO / "test" / "data"),
+                    help="fixture directory substituted for @DATA@")
+    ap.add_argument("--python", default="/home/sean/miniforge3/envs/domainator/bin/python")
+    ap.add_argument("--rust", default=str(REPO / "target" / "debug" / "domainator"))
+    ap.add_argument("--toolmap", default=str(REPO / "scripts" / "parity" / "toolmap.tsv"))
+    ap.add_argument("--baseline", default=str(REPO / "scripts" / "parity" / "known_gaps.tsv"))
+    ap.add_argument("--update_baseline", action="store_true",
+                    help="rewrite the gap list from this run instead of checking it")
+    ap.add_argument("--only", action="append", default=[],
+                    help="restrict to these python modules (repeatable)")
+    ap.add_argument("--timeout", type=int, default=900)
+    ap.add_argument("--report", help="write every invocation's outcome to this TSV. "
+                                     "Worth reading even on a green run: a `tolerated` row "
+                                     "names a file whose bytes differ, which is how the "
+                                     "qualifier-wrapping divergence surfaced.")
+    ap.add_argument("-v", "--verbose", action="store_true",
+                    help="print every invocation as it is classified")
+    cfg = ap.parse_args(argv)
+
+    cfg.data_dir = os.path.abspath(cfg.data_dir)
+    cfg.rust = os.path.abspath(cfg.rust)
+    if not os.path.exists(cfg.rust):
+        sys.exit(f"no Rust binary at {cfg.rust} -- run `cargo build` first")
+    cfg.toolmap = dict(l.split("\t") for l in
+                       pathlib.Path(cfg.toolmap).read_text().splitlines() if l.strip())
+
+    # `helpers.compare_seqfiles` is the upstream comparator; import it from the
+    # vendored clone rather than copying it in, so it can never drift.
+    sys.path.insert(0, os.path.join(REPO, "external", "domainator", "src"))
+    sys.path.insert(0, cfg.test_dir)
+    import helpers
+    from domainator.Bio import SeqIO
+
+    if cfg.invocations:
+        rows = [l.split("\t") for l in
+                pathlib.Path(cfg.invocations).read_text().splitlines() if l.strip()]
+    else:
+        harvested = tempfile.NamedTemporaryFile(suffix=".tsv", delete=False)
+        harvested.close()
+        subprocess.run([sys.executable, str(REPO / "scripts" / "parity" / "harvest_invocations.py"),
+                        "--test_dir", cfg.test_dir, "-o", harvested.name], check=True)
+        rows = [l.split("\t") for l in
+                pathlib.Path(harvested.name).read_text().splitlines() if l.strip()]
+        os.unlink(harvested.name)
+
+    if cfg.only:
+        rows = [r for r in rows if r[0] in cfg.only]
+
+    tally = {k: 0 for k in ("identical", "tolerated", "differs", "rust-failed", "error", "skipped")}
+    found = {}
+    report = open(cfg.report, "w") if cfg.report else None
+    if report:
+        report.write("module\tkey\tsource\toutcome\tnote\n")
+    for row in rows:
+        outcome, note = run_one(row, cfg, helpers, SeqIO)
+        tally[outcome] += 1
+        if report:
+            report.write(f"{row[0]}\t{row[1]}\t{row[2]}\t{outcome}\t{note}\n")
+            report.flush()
+        if cfg.verbose:
+            print(f"  {outcome:12} {row[0]}.{row[1]:52} {note}", flush=True)
+        if outcome not in OK:
+            found[(row[0], row[1])] = (outcome, "", note)
+
+    if report:
+        report.close()
+
+    print()
+    for label, key in (("identical (bytes)", "identical"),
+                       ("equal modulo search numerics", "tolerated"),
+                       ("REAL DIFFERENCES", "differs"),
+                       ("rust failed to run", "rust-failed"),
+                       ("harness errors", "error"),
+                       ("skipped", "skipped")):
+        print(f"  {label:30}: {tally[key]}")
+
+    baseline = load_baseline(cfg.baseline)
+
+    if cfg.update_baseline:
+        # Carry the hand-written classification forward; only membership and the
+        # outcome are regenerated.
+        found = {k: (v[0], baseline.get(k, ("", "", ""))[1], v[2]) for k, v in found.items()}
+        if cfg.only:
+            # A filtered run must not silently drop the gaps it never looked at.
+            merged = {k: v for k, v in baseline.items() if k[0] not in cfg.only}
+            merged.update(found)
+            found = merged
+        write_baseline(cfg.baseline, found)
+        untriaged = sum(1 for v in found.values() if not v[1])
+        print(f"\nwrote {len(found)} tracked gaps to {os.path.relpath(cfg.baseline, REPO)}")
+        if untriaged:
+            print(f"  {untriaged} have an empty `class` column -- triage them by hand")
+        return 0
+
+    # Only the outcome is part of the contract; notes carry line numbers and
+    # comparator detail that churn without meaning a regression.
+    scope = (lambda k: k[0] in cfg.only) if cfg.only else (lambda k: True)
+    baseline = {k: v for k, v in baseline.items() if scope(k)}
+    new = {k: v for k, v in found.items() if baseline.get(k, ("",))[0] != v[0]}
+    fixed = {k: v for k, v in baseline.items() if found.get(k, ("",))[0] != v[0]}
+    if not new and not fixed:
+        where = os.path.relpath(cfg.baseline, REPO)
+        if not found:
+            print(f"\nOK -- nothing diverged, and {where} lists nothing for this scope")
+            return 0
+        print(f"\nOK -- {len(found)} tracked gaps, all as recorded in {where}:")
+        by_class = {}
+        for key in found:
+            by_class.setdefault(baseline[key][1] or "(untriaged)", []).append(key)
+        for klass, keys in sorted(by_class.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+            print(f"    {len(keys):3}  {klass}")
+        return 0
+    for (module, key), (outcome, _klass, note) in sorted(new.items()):
+        print(f"\n  NEW GAP          {module}.{key} [{outcome}] {note}")
+    for (module, key), (outcome, _klass, _note) in sorted(fixed.items()):
+        print(f"\n  NO LONGER A GAP  {module}.{key} [{outcome}] -- drop it from the list")
+    print("\nFAILED: run with --update_baseline once the change is intended.")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

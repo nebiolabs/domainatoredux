@@ -42,6 +42,18 @@ Prioritize the pipeline for building sequence similarity networks.  and analyzin
 
 There are some dependencies that are not easily portable to Rust, such as anything using torch. Also, Infernal, and several other dependencies. These are outside the scope of the first release.
 
+### Verification
+
+Correctness is defined by parity with the Python tool, not by byte-identity. Two gates:
+
+- **`cargo test`** — fixture-free unit tests for the pure, deterministic logic. No conda
+  needed, so CI runs it.
+- **The differential parity sweep** — every `main([...])` invocation in upstream's pytest
+  suite, replayed through both implementations and diffed.
+  `scripts/parity/known_gaps.tsv` is the enforced list of what does not yet reproduce; the
+  sweep fails on a new divergence *or* a stale entry. Needs the conda environment and the
+  vendored clone. **See [`docs/parity.md`](docs/parity.md).**
+
 ### Progress
 
 GUI column: how each tool is reachable in the Tauri app (`apps/domainator-gui/`).
