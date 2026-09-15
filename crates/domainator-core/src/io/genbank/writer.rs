@@ -96,6 +96,38 @@ fn write_wrapped<W: Write>(w: &mut W, tag: &str, value: &str) -> io::Result<()> 
     Ok(())
 }
 
+/// Today's date as GenBank writes it, `DD-MON-YYYY` upper-cased.
+///
+/// Python uses `date.today()`, i.e. *local* time; we have no timezone database and
+/// no date dependency, so this is UTC. The two disagree only for a run that
+/// straddles local midnight, and every parity comparator skips `date`.
+fn today_genbank() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
+    const MONTHS: [&str; 12] = [
+        "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+    ];
+    format!("{d:02}-{}-{y:04}", MONTHS[(m - 1) as usize])
+}
+
+/// Days since the Unix epoch → `(year, month, day)`. Howard Hinnant's
+/// `civil_from_days`, which is exact for the whole proleptic Gregorian range.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
 fn write_references<W: Write>(w: &mut W, refs: &[crate::seq::Reference]) -> io::Result<()> {
     for (i, r) in refs.iter().enumerate() {
         match &r.location_text {
@@ -222,8 +254,13 @@ fn write_feature<W: Write>(w: &mut W, feature: &SeqFeature) -> io::Result<()> {
             write_qualifier(w, key, "", false)?;
         } else {
             for v in values {
-                // A flag qualifier (e.g. /pseudo) is stored as one empty string.
-                write_qualifier(w, key, v, !v.is_empty())?;
+                // Biopython writes a bare `/key` only for a qualifier whose value is
+                // `None`; a present-but-empty value (which is what its parser makes of
+                // a valueless `/environmental_sample`) is written back as `/key=""`.
+                // So a GenBank round trip through either implementation turns `/key`
+                // into `/key=""`, and guessing from the emptiness of the value here
+                // would keep the bare form and differ on the second pass.
+                write_qualifier(w, key, v, true)?;
             }
         }
     }
@@ -345,7 +382,18 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
         }
     };
     let division = rec.annotations.division.as_deref().unwrap_or("UNK");
-    let date = rec.annotations.date.as_deref().unwrap_or("01-JAN-1980");
+    // `utils.write_genbank` stamps `date.today()` on any record that has none, so a
+    // record a tool just built is dated when it was made. Biopython's own
+    // `01-JAN-1980` fallback never fires for tool output, and emitting it instead is
+    // both visibly wrong and a byte difference on every freshly created record.
+    let stamped;
+    let date = match rec.annotations.date.as_deref() {
+        Some(d) => d,
+        None => {
+            stamped = today_genbank();
+            &stamped
+        }
+    };
     // "LOCUS       %s %s    %s %s %s %s"
     writeln!(
         w,

@@ -1273,6 +1273,7 @@ pub struct HmmerSelectConfig {
     pub contains: Vec<String>,
     pub field: Option<String>,
     pub case_sensitive: bool,
+    pub alphabet: Option<String>,
 }
 
 impl HmmerSelectConfig {
@@ -1284,6 +1285,7 @@ impl HmmerSelectConfig {
         merge_vec!(self, cli, contains);
         merge_scalar!(self, cli, field);
         self.case_sensitive |= cli.case_sensitive;
+        merge_scalar!(self, cli, alphabet);
     }
 }
 
@@ -2273,7 +2275,8 @@ fn hmmer_select_schema() -> serde_json::Value {
             "exact": {"type": "array", "items": {"type": "string"}, "description": "Exact string(s) to match"},
             "contains": {"type": "array", "items": {"type": "string"}, "description": "Substring(s) to match"},
             "field": {"enum": ["name", "desc", "acc", "all", null], "description": "Which field(s) to search (default all)"},
-            "case_sensitive": {"type": "boolean", "default": false}
+            "case_sensitive": {"type": "boolean", "default": false},
+            "alphabet": {"enum": ["amino", "dna", "rna", null], "description": "Only read input files whose profiles use this alphabet"}
         }
     })
 }

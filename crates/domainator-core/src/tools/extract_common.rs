@@ -369,7 +369,7 @@ fn slice_record_truncating(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
     let mut new_features: Vec<SeqFeature> = Vec::new();
     for f in keep_features {
         let mut remapped: Vec<(i64, i64, i32, bool, bool)> = Vec::new();
-        for &(fs0, fe0, fstrand, before, after) in &f.location.parts {
+        for &(fs0, fe0, fstrand, _, _) in &f.location.parts {
             let (fs, fe) = if fs0 <= fe0 { (fs0, fe0) } else { (fe0, fs0) };
             for (li, lp) in slice.parts.iter().enumerate() {
                 let (ls, le) = (lp.start, lp.end);
@@ -386,7 +386,13 @@ fn slice_record_truncating(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
                     }
                     a += shifts[li];
                     b += shifts[li];
-                    remapped.push((a, b, st, before, after));
+                    // Python builds `FeatureLocation(new_start, new_end, strand)` from
+                    // plain ints, so every remapped part comes out `ExactPosition`: a
+                    // `<`/`>` partial marker on the original does not survive the slice.
+                    // Carrying it over is wrong twice -- it disagrees with the reference
+                    // and it claims the *new* record is truncated at a boundary that is
+                    // now interior.
+                    remapped.push((a, b, st, false, false));
                 }
             }
         }

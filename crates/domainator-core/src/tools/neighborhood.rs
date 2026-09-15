@@ -554,7 +554,7 @@ pub(crate) fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
         let is_source = f.kind == "source";
         let mut remapped_parts: Vec<(i64, i64, i32, bool, bool)> = Vec::new();
         let mut all_contained = true;
-        for &(fs0, fe0, fstrand, before, after) in &f.location.parts {
+        for &(fs0, fe0, fstrand, _, _) in &f.location.parts {
             let (fs, fe) = if fs0 <= fe0 { (fs0, fe0) } else { (fe0, fs0) };
             let mut found = false;
             for (li, lp) in slice.parts.iter().enumerate() {
@@ -575,7 +575,13 @@ pub(crate) fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
                     }
                     a += shifts[li];
                     b += shifts[li];
-                    remapped_parts.push((a, b, st, before, after));
+                    // Python builds `FeatureLocation(new_start, new_end, strand)` from
+                    // plain ints, so every remapped part comes out `ExactPosition`: a
+                    // `<`/`>` partial marker on the original does not survive the slice.
+                    // Carrying it over is wrong twice -- it disagrees with the reference
+                    // and it claims the *new* record is truncated at a boundary that is
+                    // now interior.
+                    remapped_parts.push((a, b, st, false, false));
                     found = true;
                     // Deliberately no `break`: when the window crosses the origin of a
                     // circular contig the slice has several parts, and one feature part

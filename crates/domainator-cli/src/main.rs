@@ -1290,6 +1290,11 @@ enum Command {
         /// Make matching case-sensitive.
         #[arg(long = "case_sensitive")]
         case_sensitive: bool,
+        /// Only read input files whose profiles use this alphabet (amino, dna, rna),
+        /// skipping the rest. An .hmm file holds one alphabet, so this selects whole
+        /// files -- which is how a mixed input set is split one alphabet at a time.
+        #[arg(long)]
+        alphabet: Option<String>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -2196,9 +2201,21 @@ fn main() -> Result<()> {
             } else {
                 write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
             }
+            // Six lines, spelled exactly as `clean_sequences.py` prints them -- the
+            // log is the tool's report, so its wording is part of the output.
             let msg = format!(
-                "Input sequences:            {}\nOutput sequences:           {}\nFiltered (non-canonical):   {}\nEmpty after strip:          {}\n",
-                stats.input_count, stats.output_count, stats.filtered_count, stats.empty_after_strip_count
+                "Input sequences:            {}\n\
+                 Output sequences:           {}\n\
+                 Filtered (non-canonical):   {}\n\
+                 Filtered (empty after strip): {}\n\
+                 Names changed:              {}\n\
+                 Sequences changed:          {}\n",
+                stats.input_count,
+                stats.output_count,
+                stats.filtered_count,
+                stats.empty_after_strip_count,
+                stats.names_changed_count,
+                stats.sequences_changed_count,
             );
             match &cfg.log {
                 Some(p) => std::fs::write(p, msg).context("writing log")?,
@@ -3506,7 +3523,7 @@ fn main() -> Result<()> {
             }
         }
         Command::HmmerSelect {
-            input, output, regex, exact, contains, field, case_sensitive,
+            input, output, regex, exact, contains, field, case_sensitive, alphabet,
             config: config_path, print_config: do_print,
         } => {
             use domainator_core::tools::hmmer_select as hs;
@@ -3518,6 +3535,7 @@ fn main() -> Result<()> {
                 contains,
                 field,
                 case_sensitive,
+                alphabet,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::HmmerSelectConfig>(p)?,
@@ -3539,8 +3557,10 @@ fn main() -> Result<()> {
                 contains: cfg.contains,
                 fields,
                 case_sensitive: cfg.case_sensitive,
+                alphabet: hs::parse_alphabet(cfg.alphabet.as_deref())
+                    .map_err(|e| anyhow::anyhow!(e))?,
             };
-            let found = match &cfg.output {
+            let summary = match &cfg.output {
                 Some(p) => {
                     let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
                     let n = hs::hmmer_select(&cfg.input, &opts, &mut f).map_err(|e| anyhow::anyhow!(e))?;
@@ -3553,7 +3573,13 @@ fn main() -> Result<()> {
                     hs::hmmer_select(&cfg.input, &opts, &mut h).map_err(|e| anyhow::anyhow!(e))?
                 }
             };
-            eprintln!("Found {found} matching profiles.");
+            eprintln!("Found {} matching profiles.", summary.found);
+            if summary.skipped_files > 0 {
+                eprintln!(
+                    "Skipped {} input file(s) whose alphabet did not match --alphabet.",
+                    summary.skipped_files
+                );
+            }
         }
         Command::HmmerBuild {
             input, output, name, acc, desc, alphabet, window_length, window_beta,

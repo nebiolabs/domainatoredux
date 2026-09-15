@@ -114,29 +114,32 @@ Tracked so a later sync does not mistake them for oversights:
 - **The ward-clustered GenBank report** `compare_contigs -o`, and its `--mst_knn`
   projections. (`deferred:ward-report`.)
 - **Infernal `.cm` references** in `domainate`/`domain_search`. (`deferred:infernal`.)
+- **`--progress`** on `seq_dist` and `compare_contigs`. (`deferred:progress`.)
+- **`color_genbank --color_domains` / `--color_both`.** (`deferred:color-domains`.)
 
-## Open gaps the parity sweep tracks
+## What the parity sweep still tracks
 
-These are *not* deferrals — they are the to-do list, carried in
-`scripts/parity/known_gaps.tsv` under the `gap:` classes and machine-checked on every
-sweep, so none of them can be quietly forgotten. Grouped by root cause:
+`scripts/parity/known_gaps.tsv` holds every upstream invocation that does not reproduce,
+machine-checked on each sweep so none can be quietly forgotten. **There are no open `gap:`
+rows** — everything left is either a deliberate deferral or a dependency issue:
 
-| class | rows | what is wrong |
+| class | rows | |
 |---|---|---|
-| `gap:hmmer-select-alphabet` | 3 | `hmmer-select --alphabet` is not implemented. |
-| `gap:color-domains` | 3 | `color-genbank --color_domains` / `--color_both` are not implemented. |
-| `gap:progress-flag` | 3 | `seq-dist` / `compare-contigs` do not accept `--progress`. |
-| `gap:fuzzy-markers` | 2 | `extract-peptides` keeps `<`/`>` partial-location markers that Python drops: its remap builds `FeatureLocation(start, end, strand)` from plain ints, always yielding `ExactPosition`. |
-| `gap:tsv-float-format` | 1 | `seq-dist --dense_text` on an `hmmer_compare` matrix: Python widens float32 and prints `146.39999389648438` where we print `146.4`. |
-| `gap:clean-sequences-log` | 1 | `clean-sequences --log` writes 4 lines where Python writes 6. |
-| `gap:dedup-representative` | 1 | `deduplicate --usearch` picks a different cluster representative. |
+| `deferred:html` | 9 | `--html` for `enum_report`, `matrix_report`, `summary_report`; `--json` is offered instead |
+| `upstream:hmmer-pure-rs#1` | 8 | nucleotide-FASTA calibration, below |
+| `deferred:ward-report` | 4 | `compare_contigs -o`, the ward-clustered GenBank report |
+| `deferred:progress` | 3 | `seq_dist` / `compare_contigs` `--progress`; intentionally not ported |
+| `deferred:color-domains` | 3 | `color_genbank --color_domains` / `--color_both`; intentionally not ported |
+| `deferred:infernal` | 2 | `.cm` references |
+| `upstream:hmmer-pure-rs` | 1 | a `domainate --evalue 1e-40` hit that lands on the other side of the cutoff |
 
 A `tolerated` row is one where the semantic comparator passed but the **bytes differ**, so
-the gap list structurally cannot hold it. Diffing those bytes is worthwhile: it is how four
-GenBank-writer and one `.hmm`-writer divergence were found, all now fixed —
-qualifier wrapping, qualifier quoting, the LOCUS topology column, the `SOURCE` trailing
-period, and the Pfam `GA`/`TC`/`NC` cutoffs. Byte-identical invocations went from 51 to 89
-as a result, which is what makes the remaining `tolerated` rows worth reading in turn.
+the gap list structurally cannot hold it. Diffing those bytes is the single most productive
+thing to do with a green sweep: nine divergences were found that way and fixed — GenBank
+qualifier wrapping, qualifier quoting, the LOCUS topology column, the missing creation-date
+stamp, `/key` vs `/key=""`, the Pfam `GA`/`TC`/`NC` cutoffs, the `.hmm` model-matrix grid,
+f64-vs-f32 score rounding, and cluster-table ordering. Byte-identical invocations went from
+51 to 133 as a result.
 
 `upstream:hmmer-pure-rs#1` (8 rows) is not ours to fix: `hmmer-pure-rs` cannot build a
 calibrated nucleotide profile from a single sequence, so in-memory profiles built from a

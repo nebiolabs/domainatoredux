@@ -36,7 +36,7 @@ use domainator_core::tools::domainate::{self, domainate, DomainateOptions};
 use domainator_core::tools::enum_report::{enum_report, static_analysis, By, OutputFormat};
 use domainator_core::tools::filter_domains::{filter_domains, AnnotationType, FilterDomainsOptions};
 use domainator_core::tools::hmmer_build::{hmmer_build, write_hmm_out, HmmerBuildOptions};
-use domainator_core::tools::hmmer_select::{hmmer_select, Fields, SelectOptions};
+use domainator_core::tools::hmmer_select::{hmmer_select, parse_alphabet, Fields, SelectOptions};
 use domainator_core::tools::{
     clean_sequences, color_genbank, color_table_to_legend, deduplicate_genbank, extract_domains,
     extract_peptides, extract_unannotated, hmmer_compare as hmmer_compare_m,
@@ -1247,17 +1247,23 @@ fn run_hmmer_select(params: Value) -> Result<RunOutput, String> {
         contains: cfg.contains,
         fields,
         case_sensitive: cfg.case_sensitive,
+        alphabet: parse_alphabet(cfg.alphabet.as_deref())?,
     };
     let mut f = std::io::BufWriter::new(
         std::fs::File::create(&output).map_err(|e| format!("creating {output}: {e}"))?,
     );
-    let found = hmmer_select(&cfg.input, &opts, &mut f).map_err(|e| e.to_string())?;
+    let summary = hmmer_select(&cfg.input, &opts, &mut f).map_err(|e| e.to_string())?;
     std::io::Write::flush(&mut f).map_err(|e| format!("flushing: {e}"))?;
     let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "hmm".into() }).collect();
+    let skipped = if summary.skipped_files > 0 {
+        format!(" ({} file(s) skipped by --alphabet)", summary.skipped_files)
+    } else {
+        String::new()
+    };
     Ok((
         inputs,
         vec![IoRef { path: output, role: "hmm".into() }],
-        format!("selected {found} profiles"),
+        format!("selected {} profiles{skipped}", summary.found),
     ))
 }
 

@@ -23,8 +23,16 @@ const SIM: usize = 2;
 const SDG: usize = 3;
 const SGD: usize = 4;
 
-fn round2(x: f64) -> f64 {
-    (x * 100.0).round() / 100.0
+/// Round to 2 decimals the way Python's `round(x, 2)` does — ties to **even**,
+/// not away from zero (which is what Rust's `round` gives) — and **in f32**.
+///
+/// The profile-profile DP is float32 on both sides (numba `nb.float32` there,
+/// `f32` here), and `round(numpy_float32, 2)` returns a float32. So the score
+/// that reaches a matrix is a float32 widened to double: `146.4` is stored and
+/// printed as `146.39999389648438`. Rounding in f64 instead yields a clean
+/// `146.4`, which is a visible difference in `seq-dist --dense_text`.
+fn round2_f32(x: f32) -> f32 {
+    (x * 100.0).round_ties_even() / 100.0
 }
 
 /// `-ln` of each of the 7 transition probabilities (impossible transitions -> +inf).
@@ -337,7 +345,7 @@ pub fn hmm_compare_scores(query: &[Hmm], reference: &[Hmm], lb: f64) -> Vec<CmpR
         .flat_map_iter(|q| {
             let mut row = Vec::new();
             for r in reference {
-                let score = round2(compare_hmmer(q, r, &bg.f) as f64);
+                let score = round2_f32(compare_hmmer(q, r, &bg.f)) as f64;
                 if score <= lb {
                     continue;
                 }
@@ -495,5 +503,30 @@ mod alphabet_tests {
         assert_eq!(alphabet_name(AlphabetType::Rna), "RNA");
         assert!(is_nucleic_acid_alphabet(AlphabetType::Dna));
         assert!(!is_nucleic_acid_alphabet(AlphabetType::Amino));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The profile-profile DP is float32 on both sides and `round(np.float32, 2)`
+    /// stays float32, so the value that reaches a matrix is a *float32* widened to
+    /// double. Rounding in f64 gives a clean 146.4 where the reference file says
+    /// 146.39999389648438.
+    #[test]
+    fn scores_round_in_f32_so_they_widen_like_numpy() {
+        assert_eq!(round2_f32(146.40234) as f64, 146.39999389648438);
+        assert_eq!(round2_f32(5.0512) as f64, 5.050000190734863);
+    }
+
+    /// Python's `round` -- builtin on floats and `np.round` on numpy scalars --
+    /// breaks ties to even, unlike Rust's `round`, which goes away from zero.
+    #[test]
+    fn ties_round_to_even() {
+        // Both scale to an exact `.5` in f32, so these really are ties: 12 is even
+        // and 38 is even. Rust's own `round` would give 0.13 for the first.
+        assert_eq!(round2_f32(0.125), 0.12);
+        assert_eq!(round2_f32(0.375), 0.38);
     }
 }

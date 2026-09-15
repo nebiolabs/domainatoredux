@@ -24,8 +24,10 @@ pub struct CmpResult {
 const POPEN: f32 = 0.02;
 const PEXTEND: f32 = 0.4;
 
+/// Round to 2 decimals the way Python's `round(x, 2)` does: ties to **even**,
+/// not away from zero (Rust's `f32::round`/`f64::round`).
 fn round2(x: f64) -> f64 {
-    (x * 100.0).round() / 100.0
+    (x * 100.0).round_ties_even() / 100.0
 }
 
 fn make_sequence(name: &str, abc: &Alphabet, residues: &[u8]) -> Sequence {

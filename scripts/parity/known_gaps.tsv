@@ -15,16 +15,14 @@
 #   harness    an artifact of how the invocation is replayed, not a divergence
 #
 # Columns: <python module> <test_fn#n> <outcome> <class> <note>
-clean_sequences	test_clean_sequences_log_file#0	differs	gap:clean-sequences-log	clean_log.txt: 6 vs 4 lines
-color_genbank	test_color_genbank_clear_1#0	rust-failed	gap:color-domains	error: unexpected argument '--color_domains' found
-color_genbank	test_color_genbank_databases_1#0	rust-failed	gap:color-domains	error: unexpected argument '--color_domains' found
-color_genbank	test_color_genbank_legacy_color_both_compatibility#0	rust-failed	gap:color-domains	error: unexpected argument '--color_both' found
+color_genbank	test_color_genbank_clear_1#0	rust-failed	deferred:color-domains	error: unexpected argument '--color_domains' found
+color_genbank	test_color_genbank_databases_1#0	rust-failed	deferred:color-domains	error: unexpected argument '--color_domains' found
+color_genbank	test_color_genbank_legacy_color_both_compatibility#0	rust-failed	deferred:color-domains	error: unexpected argument '--color_both' found
 compare_contigs	test_compare_contigs_1#0	rust-failed	deferred:ward-report	error: unexpected argument '-o' found
 compare_contigs	test_compare_contigs_2#0	rust-failed	deferred:ward-report	error: unexpected argument '-o' found
 compare_contigs	test_compare_contigs_database_1#0	rust-failed	deferred:ward-report	error: unexpected argument '-o' found
-compare_contigs	test_compare_contigs_progress_flag#0	rust-failed	gap:progress-flag	error: unexpected argument '--progress' found
+compare_contigs	test_compare_contigs_progress_flag#0	rust-failed	deferred:progress	error: unexpected argument '--progress' found
 compare_contigs	test_compare_no_annotations_1#0	rust-failed	deferred:ward-report	error: unexpected argument '-o' found
-deduplicate_genbank	test_deduplicate_genbank_usearch#0	differs	gap:dedup-representative	cluster_table.tsv: line 2: 'pDONR201_5_1-4\tpDONR201_5_1 ; pDONR201_5' != 'pDONR201_1_1-4\tpDONR201_1_1 ; pDONR201_1'
 domain_search	test_domain_search_nucleotide_multi_hit_max_hits_per_contig#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:40
 domain_search	test_domain_search_nucleotide_multi_hit_whole_contig#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:16
 domain_search	test_domain_search_nucleotide_query_defaults_to_annotation_span#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:16
@@ -39,16 +37,10 @@ domainate	test_domainator_nucleotide_multi_hit_annotations#0	differs	upstream:hm
 enum_report	test_enum_report_html_1#0	rust-failed	deferred:html	Error: enum_report HTML output is not supported in this port; use TSV or --json
 enum_report	test_enum_report_html_max_height_1#0	rust-failed	deferred:html	Error: enum_report HTML output is not supported in this port; use TSV or --json
 enum_report	test_enum_report_html_quote_escape_1#0	rust-failed	deferred:html	Error: enum_report HTML output is not supported in this port; use TSV or --json
-extract_peptides	test_extract_peptides_end_of_contig#0	differs	gap:fuzzy-markers	peptides.gb: 3 feature location/type, 0 LOCUS name
-extract_peptides	test_extract_peptides_keep_name_1#0	differs	gap:fuzzy-markers	peptides.gb: 3 feature location/type, 0 LOCUS name
-hmmer_select	test_hmmer_select_alphabet_narrows_text_criteria#0	rust-failed	gap:hmmer-select-alphabet	error: unexpected argument '--alphabet' found
-hmmer_select	test_hmmer_select_alphabet_rna#0	rust-failed	gap:hmmer-select-alphabet	error: unexpected argument '--alphabet' found
-hmmer_select	test_hmmer_select_alphabet_splits_mixed_file_set#0	rust-failed	gap:hmmer-select-alphabet	error: unexpected argument '--alphabet' found
 matrix_report	test_matrix_report_default_excludes_mst_knn#0	rust-failed	deferred:html	error: unexpected argument '--html' found
 matrix_report	test_matrix_report_text_includes_mst_knn_projection#0	rust-failed	deferred:html	error: unexpected argument '--html' found
-seq_dist	test_hmm_compare_1#0	differs	gap:tsv-float-format	out.tsv: line 2: '2-oxoacid_dh\t146.39999389648438\t5.050000' != '2-oxoacid_dh\t146.4\t5.05\t12.46\t6.41\t5.82\t'
-seq_dist	test_seq_dist_progress_flag#0	rust-failed	gap:progress-flag	error: unexpected argument '--progress' found
-seq_dist	test_seq_hmmsearch_progress_flag#0	rust-failed	gap:progress-flag	error: unexpected argument '--progress' found
+seq_dist	test_seq_dist_progress_flag#0	rust-failed	deferred:progress	error: unexpected argument '--progress' found
+seq_dist	test_seq_hmmsearch_progress_flag#0	rust-failed	deferred:progress	error: unexpected argument '--progress' found
 summary_report	test_contig_stats_1#0	rust-failed	deferred:html	error: unexpected argument '--html' found
 summary_report	test_contig_stats_empty_input#0	rust-failed	deferred:html	error: unexpected argument '--html' found
 summary_report	test_contig_stats_taxonomy_1#0	rust-failed	deferred:html	error: unexpected argument '--html' found

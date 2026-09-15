@@ -54,8 +54,12 @@ impl Default for DeduplicateOptions {
     }
 }
 
-/// Result of clustering: representative record indices (input order) and the
-/// `(representative_index, member_indices)` clusters (ordered by rep index).
+/// Result of clustering: representative record indices (input order, which is the
+/// order records are emitted in) and the `(representative_index, member_indices)`
+/// clusters **in the order the clustering reported them**, which is what the
+/// `--cluster_table` rows follow. For `hash` that is input order; for
+/// `usearch`/`diamond` it is the tool's own output order (usearch sorts by length),
+/// and sorting it would be a gratuitous difference from the reference table.
 pub struct DedupResult {
     pub representatives: Vec<usize>,
     pub clusters: Vec<(usize, Vec<usize>)>,
@@ -97,6 +101,9 @@ fn hash_dedup(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupR
     // its forward, complement, and reverse-complement keys (mirroring Python).
     let mut seen: HashMap<Vec<u8>, usize> = HashMap::new();
     let mut members: HashMap<usize, Vec<usize>> = HashMap::new();
+    // Python keys `cluster_members` off `seen.values()`, i.e. first-occurrence
+    // order -- which for the hash path is just input order.
+    let mut order: Vec<usize> = Vec::new();
 
     for (i, rec) in records.iter().enumerate() {
         let key = hash_key(&rec.seq);
@@ -116,9 +123,12 @@ fn hash_dedup(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupR
             }
         };
         members.entry(rep).or_default().push(i);
+        if rep == i {
+            order.push(i);
+        }
     }
 
-    finalize(members)
+    finalize(order, members)
 }
 
 enum ExternalTool {
@@ -167,26 +177,36 @@ fn external_dedup(
         ExternalTool::Usearch => run_usearch(opts, &tmp, &input_fasta, cpus, records)?,
     };
 
-    // Map str-index cluster keys back to numeric indices.
+    // Map str-index cluster keys back to numeric indices, keeping the tool's own
+    // cluster order and its member order within each cluster (Python appends them
+    // straight out of the `.uc` / diamond table).
     let mut members: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut order: Vec<usize> = Vec::new();
     for (rep, mem) in clusters_by_str {
         let rep_i: usize = rep.parse().map_err(|_| format!("bad cluster id {rep:?}"))?;
-        let mut mem_i: Vec<usize> = mem
+        let mem_i: Vec<usize> = mem
             .iter()
             .map(|m| m.parse::<usize>().map_err(|_| format!("bad member id {m:?}")))
             .collect::<Result<_, _>>()?;
-        mem_i.sort_unstable();
+        order.push(rep_i);
         members.insert(rep_i, mem_i);
     }
-    finalize(members)
+    finalize(order, members)
 }
 
-/// Turn a `rep -> members` map into a [`DedupResult`], ordered by rep index.
-fn finalize(members: HashMap<usize, Vec<usize>>) -> Result<DedupResult, String> {
-    let mut reps: Vec<usize> = members.keys().copied().collect();
-    reps.sort_unstable();
+/// Turn a `rep -> members` map into a [`DedupResult`].
+///
+/// `order` is the order the clustering reported its clusters in, which the
+/// `--cluster_table` follows; the representatives are sorted independently
+/// because records are always *emitted* in input order.
+fn finalize(
+    order: Vec<usize>,
+    members: HashMap<usize, Vec<usize>>,
+) -> Result<DedupResult, String> {
     let clusters: Vec<(usize, Vec<usize>)> =
-        reps.iter().map(|&r| (r, members[&r].clone())).collect();
+        order.iter().map(|&r| (r, members[&r].clone())).collect();
+    let mut reps: Vec<usize> = order;
+    reps.sort_unstable();
     Ok(DedupResult { representatives: reps, clusters })
 }
 
@@ -374,6 +394,18 @@ mod tests {
             annotations: Annotations::default(),
             features: Vec::new(),
         }
+    }
+
+    /// The cluster table follows the clustering's own order, but records are
+    /// always emitted in input order -- so `clusters` and `representatives` are
+    /// ordered independently. usearch sorts by length, which is how its `.uc`
+    /// comes back with cluster 5 before cluster 1.
+    #[test]
+    fn cluster_order_is_the_tools_and_representatives_are_input_order() {
+        let members = HashMap::from([(5, vec![5, 7]), (1, vec![1]), (3, vec![3, 4])]);
+        let r = finalize(vec![5, 1, 3], members).unwrap();
+        assert_eq!(r.clusters, vec![(5, vec![5, 7]), (1, vec![1]), (3, vec![3, 4])]);
+        assert_eq!(r.representatives, vec![1, 3, 5]);
     }
 
     #[test]
