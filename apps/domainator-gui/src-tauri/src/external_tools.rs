@@ -57,20 +57,23 @@ pub fn platform_key() -> &'static str {
 pub fn specs() -> Vec<ToolSpec> {
     let exe = |n: &str| if cfg!(windows) { format!("{n}.exe") } else { n.to_string() };
 
-    // DIAMOND v2.2.2 ships prebuilt binaries for Linux, macOS, and Windows.
+    // Prebuilt binaries for Linux, macOS, and Windows. The version must be at least
+    // `MIN_DIAMOND_VERSION` -- `deduplicate --algorithm diamond` fails outright on an
+    // older one, and telling a user to "upgrade diamond" is absurd when the app is
+    // what installed it. A test below enforces that.
     let diamond_asset = match platform_key() {
         "linux-x64" => Some(Asset {
-            url: "https://github.com/bbuchfink/diamond/releases/download/v2.2.2/diamond-linux64.tar.gz",
+            url: "https://github.com/bbuchfink/diamond/releases/download/v2.2.5/diamond-linux64.tar.gz",
             archive: Archive::TarGz,
             member: "diamond",
         }),
         "macos-arm64" | "macos-x64" => Some(Asset {
-            url: "https://github.com/bbuchfink/diamond/releases/download/v2.2.2/diamond-macos.tar.gz",
+            url: "https://github.com/bbuchfink/diamond/releases/download/v2.2.5/diamond-macos.tar.gz",
             archive: Archive::TarGz,
             member: "diamond",
         }),
         "windows-x64" => Some(Asset {
-            url: "https://github.com/bbuchfink/diamond/releases/download/v2.2.2/diamond-windows.zip",
+            url: "https://github.com/bbuchfink/diamond/releases/download/v2.2.5/diamond-windows.zip",
             archive: Archive::Zip,
             member: "diamond.exe",
         }),
@@ -81,7 +84,7 @@ pub fn specs() -> Vec<ToolSpec> {
         id: "diamond",
         bin_name: exe("diamond"),
         env_var: "DOMAINATOR_DIAMOND",
-        version: "2.2.2",
+        version: "2.2.5",
         description: "DIAMOND — fast protein aligner, for seq-dist diamond_* algorithms.",
         asset: diamond_asset,
     }]
@@ -182,4 +185,81 @@ fn extract_zip_member(bytes: &[u8], member: &str, dest: &Path) -> Result<(), Str
         }
     }
     Err(format!("'{member}' not found in zip"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parts(v: &str) -> Vec<u32> {
+        v.split('.').map(|p| p.parse().unwrap_or(0)).collect()
+    }
+
+    /// The whole point of the External tools panel is that a user who has no
+    /// diamond can get a working one. Shipping a version older than the core
+    /// requires makes it install a binary that fails on the first single-cluster
+    /// `deduplicate`, with an error telling them to upgrade the thing they just
+    /// installed.
+    #[test]
+    fn the_managed_diamond_is_new_enough_for_deduplicate() {
+        let min = domainator_core::tools::deduplicate_genbank::MIN_DIAMOND_VERSION;
+        let spec = specs().into_iter().find(|s| s.id == "diamond").expect("diamond spec");
+        assert!(
+            parts(spec.version) >= parts(min),
+            "the managed diamond is {} but deduplicate needs >= {min}",
+            spec.version
+        );
+    }
+
+    /// The download URL has to name the version the panel advertises, or the app
+    /// installs one binary while reporting another.
+    #[test]
+    fn the_asset_url_matches_the_advertised_version() {
+        for spec in specs() {
+            let Some(asset) = &spec.asset else { continue };
+            assert!(
+                asset.url.contains(&format!("v{}", spec.version)),
+                "{}: url {:?} does not name version {}",
+                spec.id,
+                asset.url,
+                spec.version
+            );
+            assert!(asset.url.starts_with("https://"), "{}: downloads must be https", spec.id);
+            match asset.archive {
+                Archive::TarGz => assert!(asset.url.ends_with(".tar.gz"), "{}", spec.id),
+                Archive::Zip => assert!(asset.url.ends_with(".zip"), "{}", spec.id),
+                Archive::Raw => {}
+            }
+        }
+    }
+
+    /// `bin_name` is the on-disk file name and `member` is the path inside the
+    /// archive; on Windows both need the `.exe` the extractor looks for.
+    #[test]
+    fn binary_names_carry_the_platform_suffix() {
+        for spec in specs() {
+            assert_eq!(spec.bin_name.ends_with(".exe"), cfg!(windows), "{}", spec.id);
+            assert!(!spec.env_var.is_empty(), "{} has no locator env var", spec.id);
+            if let Some(asset) = &spec.asset {
+                if !matches!(asset.archive, Archive::Raw) {
+                    assert_eq!(asset.member.ends_with(".exe"), cfg!(windows), "{}", spec.id);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_unsupported_platform_offers_no_download_rather_than_a_wrong_one() {
+        // Every key `platform_key` can return is either one the specs handle or
+        // the explicit "unsupported" sentinel -- never a silent fallthrough to
+        // someone else's binary.
+        let key = platform_key();
+        assert!(
+            ["linux-x64", "macos-arm64", "macos-x64", "windows-x64", "unsupported"].contains(&key),
+            "unexpected platform key {key:?}"
+        );
+        if key == "unsupported" {
+            assert!(specs().iter().all(|s| s.asset.is_none()));
+        }
+    }
 }

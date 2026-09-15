@@ -85,6 +85,15 @@ keep in particular:
   written to match the schema is *rejected*. Add a tool to `every_tool()` when you add a tool.
 - **`merge_cli` coverage** — a struct field the merge forgets is a CLI flag that silently
   does nothing.
+- **`every_offered_tool_is_dispatched_and_has_a_schema`** (`domainator-gui`) — the GUI tool
+  registry, `run_one`'s dispatch and the schema emitter are three hand-maintained lists in
+  three files. A menu entry with no dispatch arm fails only when the user presses Run; a
+  dialog field that is not a config property is rejected outright by `deny_unknown_fields`.
+  `ToolField::role` must be one of `ROLES`, because a role `ToolDialog.svelte` cannot
+  render makes the field silently disappear from the form.
+- **`the_managed_diamond_is_new_enough_for_deduplicate`** (`domainator-gui`) — the External
+  tools panel must not install a binary older than `MIN_DIAMOND_VERSION`, or the app hands
+  the user a diamond that fails and then tells them to upgrade it.
 
 The rest of the suite (`#[cfg(test)] mod tests` in the owning module) covers the **pure,
 deterministic** logic — `BooleanEvaluator`, `protein_analysis` (MW / pI / charge / PROSITE)

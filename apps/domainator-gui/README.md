@@ -174,9 +174,11 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   checks (`DOMAINATOR_DIAMOND` → `tools::external::find_binary`). The **External
   tools** panel (left sidebar, collapsed) lists each tool with installed/available
   status and a Download button; `ensure_env` at startup wires up already-downloaded
-  binaries. Handles `.tar.gz` and `.zip` archives. First entry: **diamond v2.2.2**
-  (Linux/macOS `.tar.gz`, Windows `.zip` — all three platforms). Adding a future
-  dependency (mmseqs2, foldseek, prodigal, …) is just another `ToolSpec` in `specs()`.
+  binaries. Handles `.tar.gz` and `.zip` archives. First entry: **diamond v2.2.5**
+  (Linux/macOS `.tar.gz`, Windows `.zip` — all three platforms); it must stay at or
+  above `deduplicate_genbank::MIN_DIAMOND_VERSION`, which a test enforces, since an
+  older binary fails on a single-cluster `deduplicate`. Adding a future dependency
+  (mmseqs2, foldseek, prodigal, …) is just another `ToolSpec` in `specs()`.
 - **All non-trivial commands run off the main thread.** Tauri v2 runs synchronous
   `#[tauri::command]`s on the **main thread**, so a slow one stalls *all* IPC (e.g.
   every tool dialog would sit at "Loading…" while a matrix report or workspace scan

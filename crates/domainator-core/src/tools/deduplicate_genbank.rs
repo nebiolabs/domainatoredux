@@ -131,6 +131,15 @@ fn hash_dedup(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupR
     finalize(order, members)
 }
 
+/// The oldest diamond this port supports for `--algorithm diamond`.
+///
+/// Upstream raised its prereq here and dropped the longest-sequence fallback that
+/// used to paper over the single-cluster crash, so anything older fails on an input
+/// that collapses into one cluster. Anything that *offers* to install diamond --
+/// the GUI's External tools panel -- has to honour this; a test in that crate
+/// checks the managed download against it.
+pub const MIN_DIAMOND_VERSION: &str = "2.2.5";
+
 enum ExternalTool {
     Diamond,
     Usearch,
@@ -237,16 +246,16 @@ fn run_diamond(
         .map_err(|e| spawn_error(e, &bin, "Install diamond or set $DOMAINATOR_DIAMOND.").to_string())?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        // Before diamond 2.2.5 the cluster writer crashed when the whole input collapsed
-        // into a single cluster, reporting "max_oid not set" even though the clustering
-        // itself had succeeded. Upstream dropped its longest-sequence fallback when it
-        // raised the prereq to >= 2.2.5; name the version here so a user on an older
-        // diamond gets an actionable error rather than a bare crash message.
+        // Before MIN_DIAMOND_VERSION the cluster writer crashed when the whole input
+        // collapsed into a single cluster, reporting "max_oid not set" even though the
+        // clustering itself had succeeded. Upstream dropped its longest-sequence
+        // fallback when it raised the prereq; name the version here so a user on an
+        // older diamond gets an actionable error rather than a bare crash message.
         if ["max_oid not set", "Record count not set"].iter().any(|e| stderr.contains(e)) {
             return Err(format!(
                 "diamond cluster failed on an input that collapses into a single cluster. \
-                 This is a bug in diamond before 2.2.5; upgrade diamond (or set \
-                 $DOMAINATOR_DIAMOND to a newer binary).\n{stderr}"
+                 This is a bug in diamond before {MIN_DIAMOND_VERSION}; upgrade diamond \
+                 (or set $DOMAINATOR_DIAMOND to a newer binary).\n{stderr}"
             ));
         }
         return Err(format!("diamond cluster failed:\n{stderr}"));

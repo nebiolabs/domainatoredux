@@ -89,9 +89,18 @@ fn ms_str(ms: u128) -> String {
     ms.to_string()
 }
 
-/// One form field. `role` is `input_file` (dropdown of current-dir files of
-/// `file_type`), `output_file` (filename; the app prepends the current dir), or
-/// `param` (rendered from the tool's JSON schema by type).
+/// One form field.
+///
+/// `role` tells `ToolDialog.svelte` how to render it, so it must be one of the
+/// six the dialog knows — a role it does not handle renders as nothing at all:
+///
+/// * `input_file` / `input_files` — dropdown(s) of current-dir files of `file_type`
+/// * `output_file` — a filename; the app prepends the current directory
+/// * `param` — rendered from the tool's JSON schema by type
+/// * `hmm_columns` / `enum_columns` — the two report column builders, where the
+///   *order* of the chosen columns is the output column order
+///
+/// `ROLES` below is the list, and a test checks every field against it.
 #[derive(Serialize)]
 pub struct ToolField {
     pub name: String,
@@ -109,7 +118,12 @@ pub struct ToolMeta {
     pub fields: Vec<ToolField>,
 }
 
+/// Every `role` [`ToolDialog.svelte`] can render. See [`ToolField`].
+pub const ROLES: [&str; 6] =
+    ["input_file", "input_files", "output_file", "param", "hmm_columns", "enum_columns"];
+
 fn f(name: &str, label: &str, role: &str, file_type: Option<&str>, required: bool) -> ToolField {
+    debug_assert!(ROLES.contains(&role), "field {name:?}: ToolDialog cannot render role {role:?}");
     ToolField {
         name: name.into(),
         label: label.into(),
@@ -1901,4 +1915,180 @@ fn run_build_ssn_viewer(params: Value) -> Result<RunOutput, String> {
     let inputs = vec![IoRef { path: input, role: "matrix".into() }];
     let outputs = vec![IoRef { path: output, role: "dsnv".into() }];
     Ok((inputs, outputs, format!("wrote {}-node .dsnv bundle", m.nrows())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tools() -> Vec<ToolMeta> {
+        tauri::async_runtime::block_on(list_tools())
+    }
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("domainator-gui-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Three hand-maintained lists have to agree, in three different files: the
+    /// GUI registry below, `run_one`'s dispatch, and `domainator-config`'s schema
+    /// emitter. A tool offered in the menu but missing from the dispatch is a
+    /// dialog that fails only when the user presses Run; a dialog field that is
+    /// not a config property is worse, because every config struct is
+    /// `deny_unknown_fields`, so the run is rejected outright.
+    #[test]
+    fn every_offered_tool_is_dispatched_and_has_a_schema() {
+        let root = scratch("dispatch");
+        let root = root.to_string_lossy();
+        for tool in tools() {
+            let schema = domainator_config::schema(&tool.id)
+                .unwrap_or_else(|e| panic!("{} is in the menu but has no schema: {e}", tool.id));
+            let parsed: Value = serde_json::from_str(&schema).unwrap();
+            let props = parsed["properties"].as_object().unwrap();
+            for field in &tool.fields {
+                assert!(
+                    props.contains_key(&field.name),
+                    "{}: dialog field {:?} is not a config property, so a run would be rejected",
+                    tool.id,
+                    field.name
+                );
+            }
+            // Empty params take every runner down its "missing input" path long
+            // before it touches a file, so this reaches the dispatch and nothing
+            // more expensive.
+            if let Err(e) = run_one(&tool.id, serde_json::json!({}), &root, 0, "job_test") {
+                assert!(
+                    !e.contains("not runnable from the GUI"),
+                    "{} is offered in the menu but has no run_one arm",
+                    tool.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_unknown_tool_is_refused_by_name() {
+        let root = scratch("unknown");
+        let err = match run_one("not-a-tool", serde_json::json!({}), &root.to_string_lossy(), 0, "j")
+        {
+            Err(e) => e,
+            Ok(_) => panic!("an unknown tool must not run"),
+        };
+        assert!(err.contains("not runnable from the GUI"), "{err}");
+    }
+
+    /// Required fields are what the dialog gates its Run button on, so every tool
+    /// must declare at least one input and one output; a tool with none would
+    /// present an empty form that silently does nothing.
+    #[test]
+    fn every_tool_declares_its_files() {
+        for tool in tools() {
+            assert!(!tool.label.is_empty() && !tool.description.is_empty(), "{}", tool.id);
+            let roles: Vec<&str> = tool.fields.iter().map(|f| f.role.as_str()).collect();
+            assert!(
+                roles.contains(&"input_file") || roles.contains(&"input_files"),
+                "{} declares no input",
+                tool.id
+            );
+            assert!(roles.contains(&"output_file"), "{} declares no output", tool.id);
+            // The two report tools build their output columns in the dialog, so
+            // that field is the tool -- losing it leaves an empty report.
+            if matches!(tool.id.as_str(), "hmmer-report" | "enum-report") {
+                assert!(
+                    roles.contains(&"hmm_columns") || roles.contains(&"enum_columns"),
+                    "{} lost its column builder",
+                    tool.id
+                );
+            }
+            for f in &tool.fields {
+                // A role ToolDialog.svelte does not handle renders as nothing, so
+                // the field silently disappears from the form.
+                assert!(
+                    ROLES.contains(&f.role.as_str()),
+                    "{}: field {:?} has role {:?}, which ToolDialog.svelte cannot render",
+                    tool.id,
+                    f.name,
+                    f.role
+                );
+            }
+            let mut names: Vec<&str> = tool.fields.iter().map(|f| f.name.as_str()).collect();
+            names.sort_unstable();
+            let before = names.len();
+            names.dedup();
+            assert_eq!(before, names.len(), "{} has a duplicate field", tool.id);
+        }
+        // Tool ids are unique, or `list_tools` would offer the same menu entry twice.
+        let mut ids: Vec<String> = tools().into_iter().map(|t| t.id).collect();
+        ids.sort();
+        let n = ids.len();
+        ids.dedup();
+        assert_eq!(n, ids.len(), "duplicate tool id");
+    }
+
+    #[test]
+    fn strand_accepts_only_f_and_r() {
+        assert_eq!(parse_strand(Some("f")).unwrap(), Some(1));
+        assert_eq!(parse_strand(Some("r")).unwrap(), Some(-1));
+        // Both "unset" spellings the dialog can produce: absent, or an empty box.
+        assert_eq!(parse_strand(None).unwrap(), None);
+        assert_eq!(parse_strand(Some("")).unwrap(), None);
+        for bad in ["F", "+", "forward", "1"] {
+            assert!(parse_strand(Some(bad)).is_err(), "{bad:?} should be rejected");
+        }
+    }
+
+    /// Taxonomy filtering needs a taxdump, and the expression form cannot be
+    /// combined with the include/exclude lists. Both checks run before the
+    /// (expensive) taxonomy load, so they are reachable without one.
+    #[test]
+    fn taxonomy_filters_validate_before_loading_a_taxdump() {
+        // Nothing requested: no filter, and no taxdump required.
+        assert!(compile_allowed_taxids(&[], &[], None, None).unwrap().is_none());
+        assert!(compile_allowed_taxids(&[], &[], Some("   "), None).unwrap().is_none());
+
+        let err = compile_allowed_taxids(&[2], &[], Some("Bacteria"), Some("/tmp")).unwrap_err();
+        assert!(err.contains("mutually exclusive"), "{err}");
+
+        for args in [(vec![2], vec![], None), (vec![], vec![9], None)] {
+            let err = compile_allowed_taxids(&args.0, &args.1, args.2, None).unwrap_err();
+            assert!(err.contains("ncbi_taxonomy_path"), "{err}");
+        }
+        // An empty path is the same as none -- the dialog sends "" for a blank box.
+        let err = compile_allowed_taxids(&[2], &[], None, Some("  ")).unwrap_err();
+        assert!(err.contains("ncbi_taxonomy_path"), "{err}");
+    }
+
+    /// The provenance DAG walk keys off these roles: `sequence` is a leaf source,
+    /// `reference` is ignored. Mislabelling them breaks SSN-node-to-record tracing.
+    #[test]
+    fn reference_inputs_are_labelled_for_the_provenance_walk() {
+        let v = ref_inputs("contigs.gb", &["a.hmm".into(), "b.hmm".into()]);
+        let roles: Vec<(&str, &str)> =
+            v.iter().map(|i| (i.path.as_str(), i.role.as_str())).collect();
+        assert_eq!(
+            roles,
+            vec![("contigs.gb", "sequence"), ("a.hmm", "reference"), ("b.hmm", "reference")]
+        );
+        assert_eq!(ref_inputs("x.gb", &[]).len(), 1);
+    }
+
+    #[test]
+    fn job_timestamps_survive_the_string_round_trip() {
+        // Timestamps cross to the frontend as strings because JS numbers cannot
+        // hold a u128; sorting job history depends on parsing them back.
+        let ms = 1_700_000_000_123u128;
+        assert_eq!(ms_str(ms).parse::<u128>().unwrap(), ms);
+        let j = JobInfo {
+            job_id: "j".into(),
+            tool: "t".into(),
+            status: "completed".into(),
+            message: String::new(),
+            started_at_ms: ms_str(ms),
+            outputs: Vec::new(),
+            params: serde_json::json!({}),
+        };
+        assert_eq!(job_ms(&j), ms);
+    }
 }

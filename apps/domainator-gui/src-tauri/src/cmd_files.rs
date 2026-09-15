@@ -849,3 +849,109 @@ pub async fn extract_records(
     notify_files_changed(&app, &dir_c);
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> String {
+        let d = std::env::temp_dir().join(format!("domainator-files-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d.to_string_lossy().into_owned()
+    }
+
+    /// Every "save as" and "extract to" path in the GUI funnels through this, and
+    /// the name comes straight from a text box. It is the only thing keeping a
+    /// write inside the current directory.
+    #[test]
+    fn a_target_name_cannot_escape_its_directory() {
+        let dir = scratch("escape");
+        for bad in [
+            "../evil.gb",
+            "..",
+            ".",
+            "sub/evil.gb",
+            "/etc/passwd",
+            "..\\evil.gb",
+            "a\\b.gb",
+            "",
+            "   ",
+        ] {
+            assert!(
+                validated_target(&dir, bad).is_err(),
+                "{bad:?} should not be accepted as a file name"
+            );
+        }
+    }
+
+    #[test]
+    fn the_machinery_directory_is_reserved() {
+        let dir = scratch("reserved");
+        // Case-insensitively, so it cannot be shadowed on a case-folding filesystem.
+        for name in [".domainator", ".DOMAINATOR", ".Domainator"] {
+            let err = validated_target(&dir, name).unwrap_err();
+            assert!(err.contains("reserved"), "{name}: {err}");
+        }
+    }
+
+    /// The workspace browser only lists file types it recognizes, so writing an
+    /// unknown extension would create a file the user cannot see again.
+    #[test]
+    fn only_recognized_file_types_can_be_created() {
+        let dir = scratch("types");
+        for ok in ["a.gb", "b.fasta", "c.hmm", "d.tsv", "e.dsnv", "f.hdf5"] {
+            assert!(validated_target(&dir, ok).is_ok(), "{ok} should be accepted");
+        }
+        let err = validated_target(&dir, "notes.rtf").unwrap_err();
+        assert!(err.contains("unrecognized file type"), "{err}");
+        // A name with no extension at all is equally unclassifiable.
+        assert!(validated_target(&dir, "README").is_err());
+    }
+
+    #[test]
+    fn an_existing_file_is_never_silently_overwritten() {
+        let dir = scratch("existing");
+        let target = std::path::Path::new(&dir).join("x.gb");
+        std::fs::write(&target, b"original").unwrap();
+        let err = validated_target(&dir, "x.gb").unwrap_err();
+        assert!(err.contains("already exists"), "{err}");
+        assert_eq!(std::fs::read(&target).unwrap(), b"original");
+        // Surrounding whitespace is trimmed, so it cannot be used to sneak past.
+        assert!(validated_target(&dir, "  x.gb  ").is_err());
+    }
+
+    #[test]
+    fn fasta_names_cover_the_extensions_the_workspace_accepts() {
+        for yes in ["a.fasta", "a.FA", "x.fna", "x.faa", "x.fap", "x.pep"] {
+            assert!(is_fasta_name(yes), "{yes}");
+        }
+        for no in ["a.gb", "a.fasta.gz", "fasta", "a.hmm"] {
+            assert!(!is_fasta_name(no), "{no}");
+        }
+    }
+
+    /// The score histogram behind the matrix report. Distances can be negative or
+    /// non-finite, which is where a naive binning divides by zero or panics.
+    #[test]
+    fn score_histograms_need_two_finite_distinct_values() {
+        assert_eq!(histogram(&[], 10), json!([]));
+        assert_eq!(histogram(&[1.0], 10), json!([]));
+        assert_eq!(histogram(&[2.0, 2.0, 2.0], 10), json!([]), "no spread");
+        assert_eq!(histogram(&[f64::NAN, 1.0], 10), json!([]));
+        assert_eq!(histogram(&[f64::INFINITY, 1.0], 10), json!([]));
+    }
+
+    #[test]
+    fn every_score_lands_in_a_bin_including_the_maximum() {
+        let scores = [-4.0, -2.0, 0.0, 2.0, 4.0];
+        let bins = histogram(&scores, 4);
+        let rows = bins.as_array().unwrap();
+        assert_eq!(rows.len(), 4);
+        // Bins start at the minimum and are equal width across the range.
+        assert_eq!(rows[0][0].as_f64().unwrap(), -4.0);
+        assert_eq!(rows[1][0].as_f64().unwrap(), -2.0);
+        let total: i64 = rows.iter().map(|r| r[1].as_i64().unwrap()).sum();
+        assert_eq!(total, scores.len() as i64, "the maximum must not fall off the end");
+    }
+}
