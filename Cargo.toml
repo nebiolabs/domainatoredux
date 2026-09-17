@@ -35,3 +35,18 @@ codegen-units = 1
 # the published 0.20.0 only exposes as fixed-length strings (h5py -> bytes).
 [patch.crates-io]
 hdf5-pure = { path = "vendor/hdf5-pure" }
+
+# TEMPORARY: hmmer-pure-rs from a fork branch, pinned by commit.
+#
+# Published 0.7.1 cannot build a nucleotide model from a single sequence -- its
+# `build_single_seq_hmm` hardcodes BLOSUM62 and panics on a 4-letter alphabet --
+# so `search/references.rs` built each nhmmer FASTA query from a one-row MSA
+# instead. That detour is not what pyhmmer does (C's `p7_SingleBuilder`: a DNA1
+# score-matrix conversion plus the nucleotide window length nhmmer's E-values
+# are computed against), and it is why eight nucleotide parity invocations
+# diverged. This branch ports the real builder; with it our nucleotide hits
+# match pyhmmer's coordinates, scores and E-values exactly.
+#
+# Pinned to a `rev`, not the branch, so a force-push cannot silently change what
+# CI builds. See `UPSTREAM.md` for the migration back to the crates.io release.
+hmmer-pure-rs = { git = "https://github.com/seanrjohnson-neb/hmmer-pure-rs", rev = "1ec332e512abff0a1e37d61385da501e974ed05e" }

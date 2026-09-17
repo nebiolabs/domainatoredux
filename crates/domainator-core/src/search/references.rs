@@ -97,12 +97,24 @@ fn load_nucl_hmm(file: &str) -> std::io::Result<NuclDb> {
     Ok(NuclDb { name: file_stem(file), hmms })
 }
 
+/// pyhmmer's nucleotide gap-open / gap-extend defaults (C `p7_builder.c`'s
+/// nucleotide branch); the amino pair is `0.02`/`0.4`.
+const NUCL_POPEN: f32 = 0.03125;
+const NUCL_PEXTEND: f32 = 0.75;
+
 /// Build a nucleotide FASTA nhmmer db: one single-sequence DNA profile per ref
 /// sequence (mirrors `read_pyhmmer_fastas` + `pyhmmer.hmmer.nhmmer`).
 ///
-/// The amino single-seq builder (BLOSUM62) can't build DNA models, so we build
-/// each profile from a one-row MSA (the DNA build path) and calibrate it, then
-/// carry the FASTA id/description as name/desc.
+/// Python hands each query sequence to pyhmmer's default `Builder`, i.e. C's
+/// `p7_SingleBuilder`: a score-matrix conversion (DNA1 for nucleotide, not
+/// BLOSUM62) plus the nucleotide-only window length that nhmmer's E-values are
+/// computed against. `popen`/`pextend` are pyhmmer's nucleotide defaults
+/// (`0.03125`/`0.75`, C's `p7_builder.c` nucleotide branch), and the window
+/// length is derived from the default tail mass because we pass neither
+/// `--w_len` nor `--w_beta`.
+///
+/// `build_single_seq_hmm` calibrates internally, so there is no separate
+/// `calibrate()` call here -- a second pass would redraw the Gumbel fit.
 fn load_nucl_fasta(file: &str) -> std::io::Result<NuclDb> {
     use hmmer_pure_rs::{Alphabet, Bg};
     let recs = crate::io::fasta::read_fasta(file, Some("nucleotide"))?;
@@ -121,32 +133,20 @@ fn load_nucl_fasta(file: &str) -> std::io::Result<NuclDb> {
             continue;
         }
         let (id, desc) = super::hmmer::fasta_description(&rec.description);
-        let msa = single_row_msa(&id, &residues);
-        let mut hmm = hmmer_pure_rs::builder::build_hmm_from_msa(&msa, &abc, &bg, 0.5, false);
-        hmm.name = id;
+        let dsq = abc.digitize(&residues);
+        let mut hmm = hmmer_pure_rs::seqmodel::build_single_seq_hmm(
+            &id,
+            &dsq,
+            residues.len(),
+            &abc,
+            &bg,
+            NUCL_POPEN,
+            NUCL_PEXTEND,
+        );
         hmm.desc = desc;
-        hmmer_pure_rs::calibrate::calibrate(&mut hmm, &abc, &bg);
         hmms.push(hmm);
     }
     Ok(NuclDb { name: file_stem(file), hmms })
-}
-
-/// A one-sequence, gap-free MSA (all columns become match states) for building a
-/// single-sequence profile.
-fn single_row_msa(name: &str, residues: &[u8]) -> hmmer_pure_rs::msa::Msa {
-    hmmer_pure_rs::msa::Msa {
-        name: name.to_string(),
-        desc: None,
-        author: None,
-        sqname: vec![name.to_string()],
-        sqdesc: vec![String::new()],
-        aseq: vec![residues.to_vec()],
-        pp: vec![None],
-        nseq: 1,
-        alen: residues.len(),
-        rf: None,
-        pp_cons: None,
-    }
 }
 
 fn file_stem(f: &str) -> String {

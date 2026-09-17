@@ -23,17 +23,14 @@ compare_contigs	test_compare_contigs_2#0	rust-failed	deferred:ward-report	error:
 compare_contigs	test_compare_contigs_database_1#0	rust-failed	deferred:ward-report	error: unexpected argument '-o' found
 compare_contigs	test_compare_contigs_progress_flag#0	rust-failed	deferred:progress	error: unexpected argument '--progress' found
 compare_contigs	test_compare_no_annotations_1#0	rust-failed	deferred:ward-report	error: unexpected argument '-o' found
-domain_search	test_domain_search_nucleotide_multi_hit_max_hits_per_contig#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:40
-domain_search	test_domain_search_nucleotide_multi_hit_whole_contig#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:16
-domain_search	test_domain_search_nucleotide_query_defaults_to_annotation_span#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:16
-domain_search	test_domain_search_nucleotide_query_kb_range_uses_annotation_boundaries#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:16
+domain_search	test_domain_search_nucleotide_multi_hit_max_hits_per_contig#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
+domain_search	test_domain_search_nucleotide_multi_hit_whole_contig#0	differs	gap:feature-order	out.gb: compare_seqfiles failed at helpers.py:28
+domain_search	test_domain_search_nucleotide_query_defaults_to_annotation_span#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
+domain_search	test_domain_search_nucleotide_query_kb_range_uses_annotation_boundaries#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
 domain_search	test_domain_search_whole_contig_infernal_query#0	rust-failed	deferred:infernal	Error: reading references
-domain_search	test_domain_search_whole_contig_nucleotide_query#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:16
-domain_search	test_domain_search_whole_contig_nucleotide_query_without_add_annotations#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:16
+domain_search	test_domain_search_whole_contig_nucleotide_query#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
 domainate	test_domainator_evalue_cutoff_filters_hits#1	differs	upstream:hmmer-pure-rs	strict.gb: compare_seqfiles failed at helpers.py:40
 domainate	test_domainator_infernal_cm_query#0	rust-failed	deferred:infernal	Error: reading references
-domainate	test_domainator_nucleotide_fasta_query_uses_nhmmer#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:40
-domainate	test_domainator_nucleotide_multi_hit_annotations#0	differs	upstream:hmmer-pure-rs#1	out.gb: compare_seqfiles failed at helpers.py:40
 enum_report	test_enum_report_html_1#0	rust-failed	deferred:html	Error: enum_report HTML output is not supported in this port; use TSV or --json
 enum_report	test_enum_report_html_max_height_1#0	rust-failed	deferred:html	Error: enum_report HTML output is not supported in this port; use TSV or --json
 enum_report	test_enum_report_html_quote_escape_1#0	rust-failed	deferred:html	Error: enum_report HTML output is not supported in this port; use TSV or --json

@@ -62,7 +62,15 @@ pub fn nhmmer_db(
             .iter()
             .map(|(name, res)| {
                 let dsq = abc.digitize(res);
-                Sequence { name: name.clone(), acc: String::new(), desc: String::new(), dsq, n: res.len(), l: res.len() }
+                Sequence {
+                    name: name.clone(),
+                    acc: String::new(),
+                    desc: String::new(),
+                    dsq,
+                    n: res.len(),
+                    l: res.len(),
+                    taxid: -1,
+                }
             })
             .collect();
 
@@ -91,7 +99,7 @@ pub fn nhmmer_db(
                     abc.revcomp(&mut rc_dsq, sq.n);
                     let rc_sq = Sequence {
                         name: sq.name.clone(), acc: sq.acc.clone(), desc: sq.desc.clone(),
-                        dsq: rc_dsq, n: sq.n, l: sq.l,
+                        dsq: rc_dsq, n: sq.n, l: sq.l, taxid: sq.taxid,
                     };
                     let mut rc_hits = search_longtarget(
                         &rc_sq, hmm, &gm, &om, &bg, max_length, max_mode, true,
@@ -262,7 +270,7 @@ fn search_longtarget(
     let om = &om_ssv;
 
     let mut windows =
-        unsafe { ssv_longtarget::ssv_filter_longtarget(&sq.dsq, sq.n, om, bg, 0.02, max_length) };
+        unsafe { ssv_longtarget::p7_ssv_filter_longtarget(&sq.dsq, sq.n, om, bg, 0.02, max_length) };
     if windows.is_empty() {
         return Vec::new();
     }
@@ -270,7 +278,7 @@ fn search_longtarget(
     let ml = if max_length > 0 { max_length as usize } else { hmm.m * 4 };
     let (prefix_lens, suffix_lens) =
         ssv_longtarget::compute_prefix_suffix_lengths_from_om(om);
-    ssv_longtarget::extend_and_merge_windows_with_scoredata(
+    ssv_longtarget::p7_pli_extend_and_merge_windows(
         &mut windows, ml, sq.n, 0.0, &prefix_lens, &suffix_lens,
     );
 
@@ -294,7 +302,7 @@ fn search_longtarget(
         bg_win.set_length(win_len);
         let nullsc = bg_win.null_one(win_len);
         let usc = match unsafe {
-            hmmer_pure_rs::simd::msv_filter::msv_filter(&sub_dsq, win_len, &msv_om)
+            hmmer_pure_rs::simd::msv_filter::p7_msv_filter(&sub_dsq, win_len, &msv_om)
         } {
             hmmer_pure_rs::simd::msv_filter::MsvResult::Ok(sc) => sc,
             hmmer_pure_rs::simd::msv_filter::MsvResult::Overflow => f32::INFINITY,
@@ -361,11 +369,11 @@ fn search_longtarget(
         let mut vit_om = om.clone();
         vit_om.reconfig_length(loc_window_len as i32);
         let mut sub_windows = unsafe {
-            hmmer_pure_rs::simd::vit_filter::viterbi_filter_longtarget(
+            hmmer_pure_rs::simd::vit_filter::p7_viterbi_filter_longtarget(
                 &vit_sub_dsq, subseq_len, &vit_om, filtersc, f2_p_thresh,
             )
         };
-        ssv_longtarget::extend_and_merge_windows_with_scoredata(
+        ssv_longtarget::p7_pli_extend_and_merge_windows(
             &mut sub_windows, ml, subseq_len, 0.5, &prefix_lens, &suffix_lens,
         );
         let mut prev_end: Option<usize> = None;
@@ -386,6 +394,10 @@ fn search_longtarget(
                 score: w.score,
                 target_len: sq.n,
                 complement: is_complement,
+                id: 0,
+                fm_n: -1,
+                fm_start: 0,
+                fm_bwt_len: 0,
             });
         }
     }
@@ -418,6 +430,7 @@ fn search_longtarget(
             split_windows.push(ssv_longtarget::HmmWindow {
                 n: new_n, k: 0, length: chunk, score: 0.0,
                 target_len: w.target_len, complement: w.complement,
+                id: w.id, fm_n: w.fm_n, fm_start: w.fm_start, fm_bwt_len: w.fm_bwt_len,
             });
             if new_len <= MAX_WINDOW_LEN {
                 break;
@@ -442,7 +455,7 @@ fn search_longtarget(
         win_dsq.push(DSQ_SENTINEL);
         let win_sq = Sequence {
             name: sq.name.clone(), acc: sq.acc.clone(), desc: sq.desc.clone(),
-            dsq: win_dsq, n: win_len, l: win_len,
+            dsq: win_dsq, n: win_len, l: win_len, taxid: sq.taxid,
         };
         let mut lgm = gm.clone();
         let mut lom = om.clone();

@@ -38,6 +38,7 @@ fn make_sequence(name: &str, abc: &Alphabet, residues: &[u8]) -> Sequence {
         dsq: abc.digitize(residues),
         n: residues.len(),
         l: residues.len(),
+        taxid: -1,
     }
 }
 

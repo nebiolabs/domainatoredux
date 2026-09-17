@@ -152,7 +152,17 @@ pub fn hmmer_build(path: &std::path::Path, opts: &HmmerBuildOptions) -> Result<H
 }
 
 fn build_from(msa: &Msa, abc: &Alphabet, bg: &Bg) -> Hmm {
-    hmmer_pure_rs::builder::build_hmm_from_msa(msa, abc, bg, 0.5, false)
+    hmmer_pure_rs::builder::build_hmm_from_msa(
+        msa,
+        abc,
+        bg,
+        0.5,
+        0.5,
+        false,
+        hmmer_pure_rs::builder::RelativeWeighting::PositionBased,
+        hmmer_pure_rs::builder::EffectiveSeqNumber::Entropy { target_re: None, target_sigma: None },
+        hmmer_pure_rs::builder::DEFAULT_BUILDER_SEED,
+    )
 }
 
 /// Write `hmm` as an HMMER3 profile to `out`.

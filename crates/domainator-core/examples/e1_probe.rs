@@ -38,6 +38,7 @@ fn main() {
                 dsq,
                 n: rec.seq.len(),
                 l: rec.seq.len(),
+                taxid: -1,
             };
             pli.run(&mut gm, &mut om, &bg, hmm, &sq, &mut th);
         }

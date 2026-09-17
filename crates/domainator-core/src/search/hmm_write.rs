@@ -183,24 +183,23 @@ pub fn write_hmm<W: Write>(w: &mut W, hmm: &Hmm) -> io::Result<()> {
         for i in 0..k {
             field(w, hmm.mat[node][i])?;
         }
-        // The annotation columns are all-or-nothing: when MAP is present HMMER
-        // writes every column, using `-` for the ones this profile lacks.
-        if let Some(map) = &hmm.map {
-            let at = |v: &Option<Vec<u8>>| v.as_ref().map_or('-', |s| s[node] as char);
-            write!(
-                w,
-                " {:>6} {} {} {} {}",
-                map[node],
-                at(&hmm.consensus),
-                at(&hmm.rf),
-                at(&hmm.mm),
-                at(&hmm.cs)
-            )?;
-        } else {
-            for chars in [&hmm.consensus, &hmm.rf, &hmm.cs].into_iter().flatten() {
-                write!(w, " {}", chars[node] as char)?;
-            }
-        }
+        // The annotation columns are all-or-nothing: HMMER writes all five on
+        // every match line, using `-` for the ones this profile lacks --
+        // including MAP itself, whose column is present even under `MAP no`
+        // (`p7_hmmfile.c`'s reader consumes the token unconditionally and only
+        // *stores* it when the flag is set, so omitting it shifts every later
+        // column and makes the file unreadable).
+        let at = |v: &Option<Vec<u8>>| v.as_ref().map_or('-', |s| s[node] as char);
+        let map = hmm.map.as_ref().map_or_else(|| "-".to_string(), |m| m[node].to_string());
+        write!(
+            w,
+            " {:>6} {} {} {} {}",
+            map,
+            at(&hmm.consensus),
+            at(&hmm.rf),
+            at(&hmm.mm),
+            at(&hmm.cs)
+        )?;
         writeln!(w)?;
 
         write!(w, "        ")?;

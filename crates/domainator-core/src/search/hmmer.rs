@@ -157,6 +157,7 @@ pub fn hmmsearch_db(
                 dsq,
                 n: pep.len(),
                 l: pep.len(),
+                taxid: -1,
             };
             pli.run(&mut gm, &mut om, &bg, hmm, &sq, &mut th);
         }

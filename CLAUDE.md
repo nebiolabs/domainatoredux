@@ -127,9 +127,11 @@ conda + the clone, so it is a `sync_upstream.sh` guard, not a CI job; a full swe
 A `tolerated` row means the semantic comparator passed while the **bytes differ** —
 worth reading, not just counting. Nine divergences surfaced exactly that way, each
 invisible to every other gate because both files read back equal; fixing them took
-byte-identical invocations from 51 to 133. See the writer invariants below. There are
-now **no open `gap:` rows**: everything the sweep still tracks is a deliberate
-deferral or a `hmmer-pure-rs` issue.
+byte-identical invocations from 51 to 133 (136 once the nucleotide builder landed).
+See the writer invariants below. Exactly **one open `gap:` row** remains —
+`gap:feature-order`, five `domain_search` invocations that emit tied-coordinate
+features in the other order from Python; everything else the sweep tracks is a
+deliberate deferral or a `hmmer-pure-rs` issue.
 
 **Committed parity harness** (use it before writing an ad-hoc comparison):
 - `scripts/json_parity.py EXPECTED ACTUAL [--rtol] [--ignore PATH]` — recursive JSON compare that reports the first differing path. Ignores key *order* (required: `preserve_order` vs `sort_keys`) but not key *spelling*, so `{"1": n}` vs `{"1.0": n}` still fails. Accepts a `.dsnv` directly (gunzips it).
@@ -172,7 +174,7 @@ Key cross-cutting invariants (these gate parity — grep the modules for details
 - **Ordered qualifiers** (`Vec<(String, Vec<String>)>`) — insertion order is load-bearing for the writer and for `cds_id` / `domainator_<db>` rollups.
 - **GenBank writer: `/translation` is the only qualifier that wraps.** Upstream patched its vendored Biopython so `/translation` wraps at 80 columns (the 21-space indent included, so a wrapped line is exactly 80) and every other qualifier gets `MAX_WIDTH = 10000000000000` — one line however long (`Bio/SeqIO/InsdcIO.py::_write_feature_qualifier`). Wrapping the rest still *reads back* equal, which is why parity gates never saw it, and it is what made breaking a long no-space token hazardous (the reader rejoins the halves with a spurious space). Three sibling rules in the same function: a qualifier is written **unquoted only if its key is in upstream's `FTQUAL_NO_QUOTE`** list (values are always strings here, so "looks like a number" is not the rule — that strips the quotes off `/gc="49"`); the LOCUS topology column is `annotations["topology"]` and stays **blank when the record never declared one**, not `linear`; and the SOURCE consumer drops one trailing `.` that the writer does not put back, so the ubiquitous `SOURCE      .` round-trips to a bare `SOURCE` line.
 - **GenBank writer: a record with no `date` annotation is stamped with today's date**, not Biopython's `01-JAN-1980` fallback — `utils.write_genbank` sets `date.today()` before handing the record to the writer, so a record a tool just built is dated when it was made. Ours uses UTC (no timezone database, no date dependency); Python uses local time, so the two disagree only across local midnight, and every parity comparator skips `date`.
-- **HMM writer** (`search/hmm_write.rs`, not the `hmmer-pure-rs` one): `HMMER3/f`, a nine-column model-matrix grid, and the `GA`/`TC`/`NC` Pfam cutoffs — the crate's writer drops those, which breaks `hmmsearch --cut_ga` downstream. Its reader also mis-parses them (Pfam's trailing `;`), so read profiles through `search/hmm_read.rs`. `hmmer-select` reproducing its input byte for byte is the gate.
+- **HMM writer** (`search/hmm_write.rs`, not the `hmmer-pure-rs` one): `HMMER3/f`, a nine-column model-matrix grid, and the `GA`/`TC`/`NC` Pfam cutoffs — the crate's writer drops those, which breaks `hmmsearch --cut_ga` downstream. Its reader also mis-parses them (Pfam's trailing `;`), so read profiles through `search/hmm_read.rs`. `hmmer-select` reproducing its input byte for byte is the gate. **All five annotation columns are written on every match line**, `-` for the ones a profile lacks — MAP included, whose column is present even under `MAP no`: C's reader consumes that token unconditionally and only *stores* it when the flag is set, so omitting it shifts CONS/RF/MM/CS left and makes the file unreadable. Every fixture is `MAP yes`, so no parity gate covers this; the `hmmer_select` round-trip tests are the guard.
 - **Number formatting** (`%.1e` via a custom `py_sci`, `%.1f`, NumPy `str(float64)` for TSV) is replicated to match Python output exactly.
 - **`.didx` / shard resolution / BGZF offsets** are hard on-disk contracts (`io/didx.rs`, `io/shards.rs`, `io/bgzf.rs`): `.didx` is byte-compatible; staleness is rejected via size+mtime_ns; both unsharded + shards present is an error (refuse to guess).
 - **Parser must never reject a record** (handles odd LOCUS layouts, missing molecule unit, `*` stop codons).
@@ -186,6 +188,17 @@ Key cross-cutting invariants (these gate parity — grep the modules for details
 ### Vendored `hdf5-pure` (patched dependency)
 
 `vendor/hdf5-pure/` is a local copy of `hdf5-pure` 0.20.0 wired via `[patch.crates-io]` in the root `Cargo.toml`. It carries two additive patches (see `vendor/hdf5-pure/CHANGELOG.md`): (1) `AttrValue::VarLenUtf8(String)` — a scalar variable-length UTF-8 string attribute so h5py reads the matrix attrs (`ARRAY_TYPE`/`DATA_TYPE`/`MATRIX_FILE_VERSION`) back as `str` (the published crate only offers fixed-length strings, which h5py returns as `bytes`); and (2) enum attributes decode to their underlying integer instead of being silently dropped from `attrs()` — h5py stores a numpy-bool attribute (like `SYMMETRIC_LABELS`) as an enum over `int8`. Matrix `SYMMETRIC_LABELS` is written as an int (h5py reads it truthily); on read, symmetry is determined by `COL_LABELS` presence (the on-disk contract), independent of that attr.
+
+### Forked `hmmer-pure-rs` (temporary, pinned by commit)
+
+`hmmer-pure-rs` comes from a **fork branch**, not crates.io — a second
+`[patch.crates-io]` entry pinned by `rev`. Published 0.7.1 hardcodes BLOSUM62 in
+`build_single_seq_hmm` and panics on a 4-letter alphabet, so it cannot build a nucleotide
+model from a single sequence; the fork ports C's `p7_SingleBuilder` properly, which is what
+made `search/references.rs`'s nhmmer FASTA path match pyhmmer exactly. Don't "clean up" the
+pin, don't move it to a branch ref (a force-push would silently change CI), and note the
+fork is API-incompatible with 0.7.1 — so the eventual release will be a **major** bump, not
+`0.7.x`. `UPSTREAM.md`'s "Temporary fork dependency" section has the migration-back steps.
 
 ## Staying in sync with the Python package
 
