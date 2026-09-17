@@ -72,8 +72,14 @@ jobs:
           git clone --filter=blob:none https://github.com/nebiolabs/domainator.git external/domainator
           git -C external/domainator checkout "$PIN"
 
-      - name: Install the Python deps the probes need
-        run: pip install numpy scipy h5py pandas
+      # The guards below import upstream's `domainator` package -- the shell is
+      # rendered by calling into it -- so its own pyproject is the correct dependency
+      # list. A hand-picked subset was pinned here until it rotted: `ssn_viewer_html`
+      # imports `domainator.utils` for two colour constants, and that module pulls in
+      # pyhmmer, pyinfernal and requests at import time, none of which the guards use
+      # directly. The failure presented as an unrelated ModuleNotFoundError.
+      - name: Install upstream's own dependencies
+        run: pip install -e external/domainator
 
       # The viewer shell is a generated artifact; --check fails if it drifted from the
       # Python source it is rendered from.
