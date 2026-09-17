@@ -35,6 +35,25 @@ scripts/parity/differential.py --report /tmp/report.tsv   # every invocation, no
 
 `scripts/sync_upstream.sh` runs it when the conda environment is present.
 
+### External binaries
+
+`deduplicate_genbank`'s invocations shell out to `cd-hit`, `usearch` or `diamond`,
+and `seq_dist`'s `diamond_*` ones to `diamond`. When a binary is missing **Python
+fails first**, so the harness classifies the invocation `skipped: python rejected
+the invocation` — an `OK` outcome. A sweep run without them is therefore green
+while covering nothing, which is exactly how five broken cd-hit invocations sat
+invisible until the backend was written. Put the conda environment's `bin` on
+`PATH` (it carries all three), and point `$DOMAINATOR_CDHIT` at a `cdhit` binary
+so the Rust side can find one too:
+
+```bash
+PATH=/path/to/conda/envs/domainator/bin:$PATH DOMAINATOR_CDHIT=/path/to/cdhit \
+  scripts/parity/differential.py --only deduplicate_genbank -v
+```
+
+`deduplicate_genbank` should report 8 identical and 1 skipped. If it reports more
+skips, a binary is missing rather than anything being fine.
+
 ## The pieces
 
 | path | role |

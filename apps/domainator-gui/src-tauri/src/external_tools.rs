@@ -11,10 +11,14 @@ use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 
+use domainator_core::tools::deduplicate_genbank::{
+    CDHIT_BIN_NAME, CDHIT_ENV_VAR, DIAMOND_BIN_NAME, DIAMOND_ENV_VAR, USEARCH_BIN_NAME,
+    USEARCH_ENV_VAR,
+};
+
 /// How a downloaded asset is packaged.
 pub enum Archive {
-    /// The URL is the bare executable. (Reserved for future tools.)
-    #[allow(dead_code)]
+    /// The URL is the bare executable; `member` is unused (usearch ships this way).
     Raw,
     /// A `.tar.gz`; extract `member` (matched by file name).
     TarGz,
@@ -80,14 +84,69 @@ pub fn specs() -> Vec<ToolSpec> {
         _ => None,
     };
 
-    vec![ToolSpec {
-        id: "diamond",
-        bin_name: exe("diamond"),
-        env_var: "DOMAINATOR_DIAMOND",
-        version: "2.2.5",
-        description: "DIAMOND — fast protein aligner, for seq-dist diamond_* algorithms.",
-        asset: diamond_asset,
-    }]
+    // The Rust cd-hit port: one `cdhit` multiplexer whose first argument is the
+    // program name, which is what `deduplicate`'s cd-hit backend drives. GPL, so it
+    // is downloaded at runtime and never bundled with the app. No Intel-macOS build
+    // is published; the panel renders that as "n/a on macos-x64".
+    let cdhit_asset = match platform_key() {
+        "linux-x64" => Some(Asset {
+            url: "https://github.com/seanrjohnson-neb/cdhit-rust/releases/download/v0.1.0/cdhit-v0.1.0-x86_64-unknown-linux-gnu.tar.gz",
+            archive: Archive::TarGz,
+            member: "cdhit",
+        }),
+        "macos-arm64" => Some(Asset {
+            url: "https://github.com/seanrjohnson-neb/cdhit-rust/releases/download/v0.1.0/cdhit-v0.1.0-aarch64-apple-darwin.tar.gz",
+            archive: Archive::TarGz,
+            member: "cdhit",
+        }),
+        "windows-x64" => Some(Asset {
+            url: "https://github.com/seanrjohnson-neb/cdhit-rust/releases/download/v0.1.0/cdhit-v0.1.0-x86_64-pc-windows-msvc.zip",
+            archive: Archive::Zip,
+            member: "cdhit.exe",
+        }),
+        _ => None,
+    };
+
+    // usearch v12 is the first open-source release, and ships bare per-platform
+    // executables rather than archives -- the one `Archive::Raw` user. The asset is
+    // named per platform but installs as `usearch`, which is what the core locator
+    // looks for.
+    let usearch_url = match platform_key() {
+        "linux-x64" => Some("https://github.com/rcedgar/usearch12/releases/download/v12.0-beta1/usearch_linux_x86_12.0-beta"),
+        "macos-arm64" => Some("https://github.com/rcedgar/usearch12/releases/download/v12.0-beta1/usearch_osx_m_12.0-beta"),
+        "macos-x64" => Some("https://github.com/rcedgar/usearch12/releases/download/v12.0-beta1/usearch_osx_x86_12.0-beta"),
+        "windows-x64" => Some("https://github.com/rcedgar/usearch12/releases/download/v12.0-beta1/usearch_win_12.0-beta.exe"),
+        _ => None,
+    };
+    let usearch_asset =
+        usearch_url.map(|url| Asset { url, archive: Archive::Raw, member: "" });
+
+    vec![
+        ToolSpec {
+            id: "diamond",
+            bin_name: exe(DIAMOND_BIN_NAME),
+            env_var: DIAMOND_ENV_VAR,
+            version: "2.2.5",
+            description: "DIAMOND — fast protein aligner, for seq-dist diamond_* algorithms.",
+            asset: diamond_asset,
+        },
+        ToolSpec {
+            id: "cdhit",
+            bin_name: exe(CDHIT_BIN_NAME),
+            env_var: CDHIT_ENV_VAR,
+            version: "0.1.0",
+            description: "cd-hit (Rust port) — sequence clustering, for deduplicate --algorithm cd-hit.",
+            asset: cdhit_asset,
+        },
+        ToolSpec {
+            id: "usearch",
+            bin_name: exe(USEARCH_BIN_NAME),
+            env_var: USEARCH_ENV_VAR,
+            version: "12.0-beta1",
+            description: "USEARCH v12 — sequence clustering, for deduplicate --algorithm usearch.",
+            asset: usearch_asset,
+        },
+    ]
 }
 
 /// `<app_data>/bin` (created if missing).
@@ -209,6 +268,27 @@ mod tests {
             "the managed diamond is {} but deduplicate needs >= {min}",
             spec.version
         );
+    }
+
+    /// The panel writes each download to `<app_data>/bin/<bin_name>` and exports
+    /// `env_var`; the core locates the same binary by its own name and env var. The
+    /// two lists are hand-maintained in different crates, so a rename on either side
+    /// leaves a download that lands where nothing looks for it -- the tool still
+    /// reports "not found" right after the app says it installed it.
+    #[test]
+    fn managed_tools_match_the_core_locator() {
+        let exe = |n: &str| if cfg!(windows) { format!("{n}.exe") } else { n.to_string() };
+        let want = [
+            ("diamond", DIAMOND_BIN_NAME, DIAMOND_ENV_VAR),
+            ("cdhit", CDHIT_BIN_NAME, CDHIT_ENV_VAR),
+            ("usearch", USEARCH_BIN_NAME, USEARCH_ENV_VAR),
+        ];
+        let specs = specs();
+        for (id, bin, env) in want {
+            let spec = specs.iter().find(|s| s.id == id).unwrap_or_else(|| panic!("no {id} spec"));
+            assert_eq!(spec.bin_name, exe(bin), "{id} bin_name");
+            assert_eq!(spec.env_var, env, "{id} env_var");
+        }
     }
 
     /// The download URL has to name the version the panel advertises, or the app

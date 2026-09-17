@@ -246,10 +246,12 @@ enum Command {
         /// Molecule type for FASTA input (protein/nucleotide).
         #[arg(long = "fasta_type")]
         fasta_type: Option<String>,
-        /// Clustering algorithm: hash | diamond | usearch (cd-hit deferred).
+        /// Clustering algorithm: cd-hit | hash | diamond | usearch [default: cd-hit].
         #[arg(long)]
         algorithm: Option<String>,
-        /// Path to the external clusterer binary (if not on PATH).
+        /// Path to the external clusterer binary (else $DOMAINATOR_CDHIT / $DOMAINATOR_DIAMOND /
+        /// $DOMAINATOR_USEARCH, then PATH). For cd-hit this is the `cdhit` multiplexer, or a
+        /// `cd-hit`/`cd-hit-est` executable, which is run directly.
         #[arg(long = "bin_path")]
         bin_path: Option<String>,
         /// Identity threshold in [0,1] (must be 1 for hash).
@@ -1615,26 +1617,6 @@ fn write_fasta_bp_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result
     }
 }
 
-/// Write records as FASTA to a file, or to stdout when `output` is None.
-fn write_fasta_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result<()> {
-    match output {
-        Some(p) => fasta::write_fasta(p.to_str().context("non-UTF8 path")?, records).context("writing FASTA"),
-        None => {
-            let stdout = std::io::stdout();
-            let mut h = std::io::BufWriter::new(stdout.lock());
-            for rec in records {
-                let header = if rec.description.is_empty() { &rec.id } else { &rec.description };
-                writeln!(h, ">{header}")?;
-                for chunk in rec.seq.chunks(60) {
-                    writeln!(h, "{}", String::from_utf8_lossy(chunk))?;
-                }
-            }
-            h.flush()?;
-            Ok(())
-        }
-    }
-}
-
 /// Load an `NCBITaxonomy` from `--ncbi_taxonomy_path` (only when a taxonomy
 /// filter/column is in use).
 fn load_taxonomy(path: &str) -> Result<NCBITaxonomy> {
@@ -2119,7 +2101,7 @@ fn main() -> Result<()> {
             }
 
             if cfg.fasta_out {
-                write_fasta_out(&out_records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+                write_fasta_bp_out(&out_records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
             } else {
                 write_genbank_out(&out_records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
             }
@@ -3431,7 +3413,7 @@ fn main() -> Result<()> {
             let out_path = cfg.output.map(PathBuf::from);
             let selected = select_by_contig(records, tax.as_ref(), &opts).map_err(|e| anyhow::anyhow!(e))?;
             if cfg.fasta_out {
-                write_fasta_out(&selected, out_path.as_ref())?;
+                write_fasta_bp_out(&selected, out_path.as_ref())?;
             } else {
                 write_genbank_out(&selected, out_path.as_ref())?;
             }

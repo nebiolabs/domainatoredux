@@ -5,16 +5,17 @@
 //!   both nucleotide strands). This is a faithful port of the Python `hash`
 //!   algorithm — identical grouping without needing SHA-256, since the hashes
 //!   never appear in the output; equal sequences map to the same representative.
-//! - `diamond` / `usearch`: shell out to the external clustering binary.
-//! - `cd-hit` / `cd-hit-est`: deferred (returns an error).
+//! - `cd-hit` / `cd-hit-est` / `diamond` / `usearch`: shell out to the external
+//!   clustering binary. `cd-hit` switches to `cd-hit-est` when the input is not
+//!   protein, mirroring Python.
 //!
 //! The representative of each cluster is the first input record that created it
-//! (`hash`) or the cluster centroid the tool reports (`diamond`/`usearch`).
+//! (`hash`) or the cluster centroid the tool reports (external backends).
 //! Output is always emitted in input order (representatives only).
 
 use std::collections::HashMap;
 use std::io::BufRead;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::seq::translate::{complement, revcomp};
@@ -24,7 +25,7 @@ use super::external::{find_binary, spawn_error, write_fasta_ids, TempDir};
 
 /// Options for [`deduplicate`].
 pub struct DeduplicateOptions {
-    /// `hash` | `diamond` | `usearch` (`cd-hit`/`cd-hit-est` are deferred).
+    /// `hash` | `cd-hit` | `cd-hit-est` | `diamond` | `usearch`.
     pub algorithm: String,
     /// Identity threshold in `[0, 1]` (must be `1.0` for `hash`).
     pub id: f64,
@@ -78,10 +79,13 @@ pub fn deduplicate(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<D
         "hash" => hash_dedup(records, opts),
         "diamond" => external_dedup(records, opts, ExternalTool::Diamond),
         "usearch" => external_dedup(records, opts, ExternalTool::Usearch),
-        "cd-hit" | "cd-hit-est" => {
-            Err("cd-hit deduplication is not yet supported in the Rust port (deferred).".into())
-        }
-        other => Err(format!("unknown --algorithm {other:?} (have: hash, diamond, usearch)")),
+        // Python's argparse only offers `cd-hit`, but its class registry accepts
+        // `cd-hit-est` too, and the caller substitutes it for non-protein input.
+        "cd-hit" => external_dedup(records, opts, ExternalTool::CdHit { force_est: false }),
+        "cd-hit-est" => external_dedup(records, opts, ExternalTool::CdHit { force_est: true }),
+        other => Err(format!(
+            "unknown --algorithm {other:?} (have: hash, cd-hit, cd-hit-est, diamond, usearch)"
+        )),
     }
 }
 
@@ -140,9 +144,27 @@ fn hash_dedup(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupR
 /// checks the managed download against it.
 pub const MIN_DIAMOND_VERSION: &str = "2.2.5";
 
+// The locator identity of each external binary: the file name [`find_binary`]
+// looks for, and the environment variable that overrides the search. Anything
+// that *installs* one of these -- the GUI's External tools panel writes it to
+// `<app_data>/bin/<bin name>` and exports the env var -- has to agree with these
+// or the download lands somewhere the core never looks; a test in that crate
+// checks the managed specs against them.
+pub const DIAMOND_BIN_NAME: &str = "diamond";
+pub const DIAMOND_ENV_VAR: &str = "DOMAINATOR_DIAMOND";
+pub const USEARCH_BIN_NAME: &str = "usearch";
+pub const USEARCH_ENV_VAR: &str = "DOMAINATOR_USEARCH";
+/// cd-hit is driven through the `cdhit` Rust port, a single multiplexer binary
+/// whose first argument is the program name (`cd-hit`, `cd-hit-est`, ...).
+pub const CDHIT_BIN_NAME: &str = "cdhit";
+pub const CDHIT_ENV_VAR: &str = "DOMAINATOR_CDHIT";
+
 enum ExternalTool {
     Diamond,
     Usearch,
+    /// `force_est` is set when the caller asked for `cd-hit-est` by name; otherwise
+    /// the choice follows the input's molecule type.
+    CdHit { force_est: bool },
 }
 
 fn external_dedup(
@@ -184,6 +206,10 @@ fn external_dedup(
     let clusters_by_str = match tool {
         ExternalTool::Diamond => run_diamond(opts, &tmp, &input_fasta, cpus)?,
         ExternalTool::Usearch => run_usearch(opts, &tmp, &input_fasta, cpus, records)?,
+        // Python substitutes cd-hit-est for cd-hit whenever the input is not protein.
+        ExternalTool::CdHit { force_est } => {
+            run_cdhit(opts, &tmp, &input_fasta, cpus, force_est || seqtype != "protein")?
+        }
     };
 
     // Map str-index cluster keys back to numeric indices, keeping the tool's own
@@ -227,7 +253,7 @@ fn run_diamond(
 ) -> Result<Vec<(String, Vec<String>)>, String> {
     let bin = match &opts.bin_path {
         Some(p) => std::path::PathBuf::from(p),
-        None => find_binary("diamond", &["DOMAINATOR_DIAMOND", "DIAMOND"], "diamond"),
+        None => find_binary(DIAMOND_BIN_NAME, &[DIAMOND_ENV_VAR, "DIAMOND"], "diamond"),
     };
     let out_tsv = tmp.path().join("output.tsv");
     let mut cmd = Command::new(&bin);
@@ -299,6 +325,200 @@ fn parse_diamond_tsv(path: &Path) -> Result<Vec<(String, Vec<String>)>, String> 
     Ok(order.into_iter().map(|r| (r.clone(), map.remove(&r).unwrap())).collect())
 }
 
+/// cd-hit's `-n` word size, which Python derives from the identity threshold
+/// rather than exposing (`CdHitProtein` / `CdHitEST`). The thresholds are
+/// strictly-greater except at the bottom of each table, and below that cd-hit's
+/// seeding cannot work at all -- hence the hard error rather than a clamp.
+fn cdhit_word_size(id: f64, est: bool) -> Result<u32, String> {
+    if est {
+        if id > 0.95 {
+            Ok(10)
+        } else if id > 0.9 {
+            Ok(9)
+        } else if id > 0.88 {
+            Ok(7)
+        } else if id > 0.85 {
+            Ok(6)
+        } else if id >= 0.8 {
+            Ok(5)
+        } else {
+            Err("For cd-hit on nucleotide sequences, id must be >= 0.8".into())
+        }
+    } else if id > 0.7 {
+        Ok(5)
+    } else if id > 0.6 {
+        Ok(4)
+    } else if id > 0.5 {
+        Ok(3)
+    } else if id >= 0.4 {
+        Ok(2)
+    } else {
+        Err("For cd-hit on protein sequences, id must be >= 0.4".into())
+    }
+}
+
+/// Resolve `bin` into the command to actually run: the executable, and the program
+/// name to pass as its first argument (or `None` to run it directly).
+///
+/// The Rust cd-hit port is one `cdhit` multiplexer whose first argument selects the
+/// program (`cd-hit`, `cd-hit-est`, ...), while the original C++ suite ships those as
+/// separate executables side by side -- and `cdhit` also works symlinked to those
+/// names. So a binary *called* `cd-hit`/`cd-hit-est` is run directly with no program
+/// argument, and anything else is treated as the multiplexer.
+///
+/// The trap is a **name that does not match the program we need**: pointing
+/// `$DOMAINATOR_CDHIT` at `cd-hit` and then feeding nucleotide input would run the
+/// protein program over DNA and return a plausible-looking wrong answer. Since the
+/// C++ suite installs both executables together, look for the sibling first; only if
+/// it is genuinely absent is this an error, and it is an error rather than a silent
+/// substitution. (Python has the same hazard and does substitute silently, but no
+/// upstream invocation passes `--bin_path`, so nothing here is parity-relevant.)
+fn cdhit_command(bin: &Path, est: bool) -> Result<(PathBuf, Option<&'static str>), String> {
+    let want = if est { "cd-hit-est" } else { "cd-hit" };
+    let name = bin.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    let (stem, ext) = match name.to_ascii_lowercase().strip_suffix(".exe") {
+        Some(s) => (s.to_string(), ".exe"),
+        None => (name.to_ascii_lowercase(), ""),
+    };
+    if stem != "cd-hit" && stem != "cd-hit-est" {
+        return Ok((bin.to_path_buf(), Some(want)));
+    }
+    if stem == want {
+        return Ok((bin.to_path_buf(), None));
+    }
+    let sibling = bin.with_file_name(format!("{want}{ext}"));
+    if sibling.is_file() {
+        return Ok((sibling, None));
+    }
+    Err(format!(
+        "{} is the {stem} program, but this input needs {want}, and no {want}{ext} sits \
+         beside it. Point $DOMAINATOR_CDHIT (or --bin_path) at the `cdhit` multiplexer \
+         or at {want}{ext}.",
+        bin.display()
+    ))
+}
+
+fn run_cdhit(
+    opts: &DeduplicateOptions,
+    tmp: &TempDir,
+    input_fasta: &Path,
+    cpus: usize,
+    est: bool,
+) -> Result<Vec<(String, Vec<String>)>, String> {
+    let bin = match &opts.bin_path {
+        Some(p) => std::path::PathBuf::from(p),
+        None => find_binary(CDHIT_BIN_NAME, &[CDHIT_ENV_VAR, "CDHIT"], "cdhit"),
+    };
+    let word_size = cdhit_word_size(opts.id, est)?;
+    // cd-hit derives the cluster file's name from `-o`, so both live in the temp dir.
+    let out_fasta = tmp.path().join("output.fasta");
+    let clstr = tmp.path().join("output.fasta.clstr");
+
+    let (exe, program) = cdhit_command(&bin, est)?;
+    let mut cmd = Command::new(&exe);
+    if let Some(program) = program {
+        cmd.arg(program);
+    }
+    // Argument order mirrors Python's `CdHit.search_args`. `-d 0` is load-bearing:
+    // it stops cd-hit truncating names in the `.clstr`, which is what the parser
+    // reads the cluster membership out of.
+    cmd.arg("-n")
+        .arg(word_size.to_string())
+        .arg("-M")
+        .arg("0")
+        .arg("-T")
+        .arg(cpus.to_string())
+        .arg("-d")
+        .arg("0")
+        .arg("-c")
+        .arg(format!("{}", opts.id))
+        .arg("-i")
+        .arg(input_fasta)
+        .arg("-o")
+        .arg(&out_fasta);
+    let mut params = opts.params.clone();
+    // Only cd-hit-est has a both-strands mode; Python sets it with `setdefault`, so
+    // an explicit `--params` `-r` wins.
+    if est && opts.both_strands && !params.iter().any(|(k, _)| k == "-r") {
+        params.push(("-r".into(), Some("1".into())));
+    }
+    append_params(&mut cmd, &params);
+
+    let out = cmd.output().map_err(|e| {
+        spawn_error(
+            e,
+            &exe,
+            "Install cdhit (https://github.com/seanrjohnson-neb/cdhit-rust/releases) \
+             or set $DOMAINATOR_CDHIT.",
+        )
+        .to_string()
+    })?;
+    if !out.status.success() {
+        return Err(format!(
+            "{} failed:\n{}{}",
+            if est { "cd-hit-est" } else { "cd-hit" },
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    parse_clstr(&clstr)
+}
+
+/// Parse a cd-hit `.clstr` file into `(representative, members)` clusters, in the
+/// file's own order (cd-hit sorts clusters by representative length).
+///
+/// A member line is `<n>\t<len>aa, ><name>... <*|at [+/-/]<pct>%>`; the
+/// representative is the one marked `*`, and it is also a member of its own
+/// cluster. `-d 0` guarantees `<name>` is the full id up to the first whitespace.
+fn parse_clstr(path: &Path) -> Result<Vec<(String, Vec<String>)>, String> {
+    let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut clusters: Vec<(String, Vec<String>)> = Vec::new();
+    let mut center: Option<String> = None;
+    let mut members: Vec<String> = Vec::new();
+    // Python would silently key a cluster on `None`; a cluster with no `*` means the
+    // file is malformed, and saying so beats emitting a nonsense representative.
+    let mut flush = |center: &mut Option<String>, members: &mut Vec<String>| -> Result<(), String> {
+        if members.is_empty() {
+            return Ok(());
+        }
+        let c = center.take().ok_or_else(|| {
+            format!("{}: cluster with no representative ('*') entry", path.display())
+        })?;
+        clusters.push((c, std::mem::take(members)));
+        Ok(())
+    };
+
+    for line in std::io::BufReader::new(file).lines() {
+        let line = line.map_err(|e| format!("{}: {e}", path.display()))?;
+        if line.starts_with('>') {
+            flush(&mut center, &mut members)?;
+            continue;
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 4 {
+            return Err(format!("{}: malformed cluster line {line:?}", path.display()));
+        }
+        // Exactly one leading `>` and exactly one trailing `...` (Python's
+        // `parts[2][1:-3]`) -- trimming greedily would eat a dot that is part of an
+        // accession such as `NZ_CP012345.`.
+        let raw = fields[2];
+        let name = raw
+            .strip_prefix('>')
+            .and_then(|n| n.strip_suffix("..."))
+            .ok_or_else(|| format!("{}: unexpected cluster entry {raw:?}", path.display()))?
+            .to_string();
+        if fields[3] == "*" {
+            center = Some(name.clone());
+        }
+        members.push(name);
+    }
+    flush(&mut center, &mut members)?;
+    Ok(clusters)
+}
+
 fn run_usearch(
     opts: &DeduplicateOptions,
     tmp: &TempDir,
@@ -308,7 +528,7 @@ fn run_usearch(
 ) -> Result<Vec<(String, Vec<String>)>, String> {
     let bin = match &opts.bin_path {
         Some(p) => std::path::PathBuf::from(p),
-        None => find_binary("usearch", &["DOMAINATOR_USEARCH", "USEARCH"], "usearch"),
+        None => find_binary(USEARCH_BIN_NAME, &[USEARCH_ENV_VAR, "USEARCH"], "usearch"),
     };
     let centroids = tmp.path().join("output.fasta");
     let uc = tmp.path().join("output.uc");
@@ -445,6 +665,118 @@ mod tests {
         let r = deduplicate(&recs, &opts).unwrap();
         assert_eq!(r.representatives, vec![0]);
         assert_eq!(r.clusters, vec![(0, vec![0, 1])]);
+    }
+
+    /// The `.clstr` is the only place cd-hit reports cluster membership, and its
+    /// member lines have two shapes -- `at 96.30%` for protein, `at -/100.00%` for
+    /// cd-hit-est, where the extra strand field shifts nothing but is easy to get
+    /// wrong. The representative is the `*` entry and is a member of its own cluster.
+    #[test]
+    fn parse_clstr_reads_clusters_in_file_order() {
+        let dir = std::env::temp_dir().join(format!("domainator_clstr_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("output.fasta.clstr");
+        std::fs::write(
+            &path,
+            ">Cluster 0\n\
+             0\t254aa, >4... *\n\
+             1\t254aa, >10... at 100.00%\n\
+             >Cluster 1\n\
+             0\t36nt, >0... *\n\
+             1\t36nt, >1... at -/100.00%\n\
+             >Cluster 2\n\
+             0\t26aa, >7... *\n",
+        )
+        .unwrap();
+        let clusters = parse_clstr(&path).unwrap();
+        assert_eq!(
+            clusters,
+            vec![
+                ("4".to_string(), vec!["4".to_string(), "10".to_string()]),
+                ("0".to_string(), vec!["0".to_string(), "1".to_string()]),
+                ("7".to_string(), vec!["7".to_string()]),
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Python keys a `*`-less cluster on `None` and only fails later, somewhere
+    /// unrelated. A malformed cluster file should say so where it is read.
+    #[test]
+    fn parse_clstr_rejects_a_cluster_with_no_representative() {
+        let dir = std::env::temp_dir().join(format!("domainator_clstr_bad_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("output.fasta.clstr");
+        std::fs::write(&path, ">Cluster 0\n0\t254aa, >4... at 100.00%\n").unwrap();
+        let err = parse_clstr(&path).unwrap_err();
+        assert!(err.contains("no representative"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The word size is derived from `--id`, not supplied, so an off-by-one at a
+    /// threshold silently changes cd-hit's seeding and its clustering with it.
+    #[test]
+    fn cdhit_word_size_matches_the_upstream_tables() {
+        for (id, want) in [(1.0, 5), (0.71, 5), (0.7, 4), (0.61, 4), (0.6, 3), (0.51, 3), (0.5, 2), (0.4, 2)] {
+            assert_eq!(cdhit_word_size(id, false).unwrap(), want, "protein id {id}");
+        }
+        for (id, want) in [(1.0, 10), (0.96, 10), (0.95, 9), (0.9, 7), (0.88, 6), (0.85, 5), (0.8, 5)] {
+            assert_eq!(cdhit_word_size(id, true).unwrap(), want, "est id {id}");
+        }
+        assert!(cdhit_word_size(0.39, false).unwrap_err().contains(">= 0.4"));
+        assert!(cdhit_word_size(0.79, true).unwrap_err().contains(">= 0.8"));
+    }
+
+    /// The Rust port is one `cdhit` multiplexer taking the program name as its first
+    /// argument, but `--bin_path` may name a C++ `cd-hit`/`cd-hit-est` (or a symlink
+    /// to those names), which must be run directly or it sees `cd-hit` as an input.
+    #[test]
+    fn cdhit_command_only_prefixes_the_multiplexer() {
+        let go = |p: &str, est: bool| cdhit_command(Path::new(p), est).unwrap();
+        assert_eq!(go("cdhit", false), (PathBuf::from("cdhit"), Some("cd-hit")));
+        assert_eq!(go("cdhit", true), (PathBuf::from("cdhit"), Some("cd-hit-est")));
+        assert_eq!(
+            go(r"C:\tools\cdhit.exe", true),
+            (PathBuf::from(r"C:\tools\cdhit.exe"), Some("cd-hit-est"))
+        );
+        assert_eq!(go("/usr/bin/cd-hit", false), (PathBuf::from("/usr/bin/cd-hit"), None));
+        assert_eq!(
+            go("/opt/conda/bin/cd-hit-est", true),
+            (PathBuf::from("/opt/conda/bin/cd-hit-est"), None)
+        );
+    }
+
+    /// Running the protein program over nucleotides returns a plausible-looking wrong
+    /// answer rather than failing, so a name that cannot serve the request has to be
+    /// caught here. The sibling is preferred when the C++ suite's layout provides it.
+    #[test]
+    fn cdhit_command_resolves_or_rejects_a_mismatched_program_name() {
+        let dir = std::env::temp_dir().join(format!("domainator_cdhit_sib_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let protein = dir.join("cd-hit");
+        std::fs::write(&protein, b"").unwrap();
+
+        // No cd-hit-est beside it yet: refuse rather than cluster DNA as protein.
+        let err = cdhit_command(&protein, true).unwrap_err();
+        assert!(err.contains("needs cd-hit-est"), "{err}");
+
+        // The real conda/C++ layout ships both; use the right one.
+        let est = dir.join("cd-hit-est");
+        std::fs::write(&est, b"").unwrap();
+        assert_eq!(cdhit_command(&protein, true).unwrap(), (est, None));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Below the word-size tables cd-hit cannot run at all, so the error has to come
+    /// out of `deduplicate` itself rather than as a subprocess failure -- and it must
+    /// not depend on a binary being installed.
+    #[test]
+    fn cdhit_rejects_an_identity_below_the_table_without_running_anything() {
+        let recs = vec![rec("a", b"ACDEF", "protein")];
+        let opts = DeduplicateOptions { algorithm: "cd-hit".into(), id: 0.3, ..Default::default() };
+        let Err(err) = deduplicate(&recs, &opts) else { panic!("id 0.3 should be rejected") };
+        assert!(err.contains(">= 0.4"), "{err}");
     }
 
     #[test]

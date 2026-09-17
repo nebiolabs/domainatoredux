@@ -153,7 +153,7 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   `clean-sequences`, `sort-contigs`, `select-by-coord`, `trim-contigs`,
   `extract-domains`, `extract-peptides`, `extract-unannotated`, `color-genbank`
   (batch color-by-name/database + optional `color_table_out`), `color-table-to-legend`
-  (SVG), `deduplicate` (hash backend needs nothing; diamond/cd-hit/usearch need a
+  (SVG), `deduplicate` (hash backend needs nothing; cd-hit/diamond/usearch need a
   binary), `hmmer-compare`, and `hmmer-search`. FASTA-emitting tools use
   `write_fasta_bp` (record **name** as id, matching the CLI's `write_fasta_bp_out`).
   Two more GUI-only `classify_file` types support these: **`table`** (`.tsv`/`.csv`/
@@ -174,11 +174,18 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   checks (`DOMAINATOR_DIAMOND` → `tools::external::find_binary`). The **External
   tools** panel (left sidebar, collapsed) lists each tool with installed/available
   status and a Download button; `ensure_env` at startup wires up already-downloaded
-  binaries. Handles `.tar.gz` and `.zip` archives. First entry: **diamond v2.2.5**
-  (Linux/macOS `.tar.gz`, Windows `.zip` — all three platforms); it must stay at or
-  above `deduplicate_genbank::MIN_DIAMOND_VERSION`, which a test enforces, since an
-  older binary fails on a single-cluster `deduplicate`. Adding a future dependency
-  (mmseqs2, foldseek, prodigal, …) is just another `ToolSpec` in `specs()`.
+  binaries. Handles `.tar.gz`, `.zip`, and bare (`Raw`) executables. Three entries:
+  **diamond v2.2.5** (all platforms), **cdhit v0.1.0** — the Rust cd-hit port, one
+  multiplexer binary, no Intel-macOS build so the panel shows `n/a` there — and
+  **usearch v12.0-beta1**, whose assets are bare per-platform executables and are the
+  one `Archive::Raw` user. cd-hit and usearch are GPL, so they are downloaded at
+  runtime and never bundled with the app. Two tests guard the registry:
+  diamond must stay at or above `deduplicate_genbank::MIN_DIAMOND_VERSION` (an older
+  binary fails on a single-cluster `deduplicate`), and `managed_tools_match_the_core_locator`
+  pins every spec's `bin_name`/`env_var` to the core's `*_BIN_NAME`/`*_ENV_VAR`
+  constants — a rename on either side would install a binary where nothing looks for
+  it. Adding a future dependency (mmseqs2, foldseek, prodigal, …) is just another
+  `ToolSpec` in `specs()`.
 - **All non-trivial commands run off the main thread.** Tauri v2 runs synchronous
   `#[tauri::command]`s on the **main thread**, so a slow one stalls *all* IPC (e.g.
   every tool dialog would sit at "Loading…" while a matrix report or workspace scan
