@@ -12,7 +12,7 @@
 //! by **row-major index descending** (i.e. larger source index first, then larger
 //! target index) — equivalent to a stable ascending sort followed by a reverse.
 
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::HashMap;
 
 use super::{DataMatrix, Storage};
 
@@ -414,6 +414,12 @@ fn uf_find(parent: &mut [usize], mut x: usize) -> usize {
 /// Rows of `[threshold, largest, avg_non_singleton, merge_impact, delta_largest,
 /// delta_avg_non_singleton]`, one per MST edge plus an initial `inf` row.
 /// Mirrors `ssn_hierarchy.component_size_summary_by_threshold`.
+///
+/// The largest component is tracked with a **running maximum**, not a heap. Components
+/// only ever grow under union-find — a merge replaces two components with one strictly
+/// larger than either — so the largest size is monotonically non-decreasing and nothing
+/// ever has to be removed. (Upstream carried a lazy-deletion max-heap here until
+/// `34c4b88`, which is the same answer at more cost.)
 pub fn component_size_summary_by_threshold(tree: &MaxTree, merge_impact_metric: &str) -> Vec<[f64; 6]> {
     if tree.n_nodes == 0 {
         return Vec::new();
@@ -422,38 +428,21 @@ pub fn component_size_summary_by_threshold(tree: &MaxTree, merge_impact_metric: 
     let mut parent: Vec<usize> = (0..n).collect();
     let mut component_sizes: Vec<i64> = vec![1; n];
 
-    // Lazy-deletion max-heap of component sizes.
-    let mut heap: BinaryHeap<i64> = (0..n).map(|_| 1i64).collect();
-    let mut heap_deleted: HashMap<i64, i64> = HashMap::new();
-    let heap_remove = |deleted: &mut HashMap<i64, i64>, size: i64| {
-        *deleted.entry(size).or_insert(0) += 1;
-    };
-    fn heap_max(heap: &mut BinaryHeap<i64>, deleted: &mut HashMap<i64, i64>) -> f64 {
-        while let Some(&s) = heap.peek() {
-            let d = deleted.entry(s).or_insert(0);
-            if *d > 0 {
-                *d -= 1;
-                heap.pop();
-            } else {
-                return s as f64;
-            }
-        }
-        0.0
-    }
-
+    let mut largest_cluster: i64 = 1;
     let mut non_singleton_count: i64 = 0;
     let mut non_singleton_sum: i64 = 0;
     let mut summary: Vec<[f64; 6]> = vec![[0.0; 6]; tree.edges.len() + 1];
 
-    let record = |summary: &mut Vec<[f64; 6]>,
-                      heap: &mut BinaryHeap<i64>,
-                      heap_deleted: &mut HashMap<i64, i64>,
-                      non_singleton_count: i64,
-                      non_singleton_sum: i64,
-                      row_idx: usize,
-                      threshold: f64,
-                      merge_impact: f64| {
-        let largest_cluster = heap_max(heap, heap_deleted);
+    fn record(
+        summary: &mut [[f64; 6]],
+        largest_cluster: i64,
+        non_singleton_count: i64,
+        non_singleton_sum: i64,
+        row_idx: usize,
+        threshold: f64,
+        merge_impact: f64,
+    ) {
+        let largest_cluster = largest_cluster as f64;
         let avg_non_singleton = if non_singleton_count > 0 {
             non_singleton_sum as f64 / non_singleton_count as f64
         } else {
@@ -469,9 +458,17 @@ pub fn component_size_summary_by_threshold(tree: &MaxTree, merge_impact_metric: 
             summary[row_idx][COMPONENT_DELTA_AVG_NON_SINGLETON_COL] =
                 avg_non_singleton - summary[row_idx - 1][COMPONENT_AVG_NON_SINGLETON_COL];
         }
-    };
+    }
 
-    record(&mut summary, &mut heap, &mut heap_deleted, non_singleton_count, non_singleton_sum, 0, f64::INFINITY, 0.0);
+    record(
+        &mut summary,
+        largest_cluster,
+        non_singleton_count,
+        non_singleton_sum,
+        0,
+        f64::INFINITY,
+        0.0,
+    );
 
     for (edge_i, e) in tree.edges.iter().enumerate() {
         let row_idx = edge_i + 1;
@@ -487,9 +484,6 @@ pub fn component_size_summary_by_threshold(tree: &MaxTree, merge_impact_metric: 
                 left_size.min(right_size) as f64
             };
 
-            heap_remove(&mut heap_deleted, left_size);
-            heap_remove(&mut heap_deleted, right_size);
-
             if left_size > 1 {
                 non_singleton_count -= 1;
                 non_singleton_sum -= left_size;
@@ -503,15 +497,14 @@ pub fn component_size_summary_by_threshold(tree: &MaxTree, merge_impact_metric: 
             parent[left_root] = right_root;
             component_sizes[right_root] = merged_size;
 
-            heap.push(merged_size);
+            largest_cluster = largest_cluster.max(merged_size);
             non_singleton_count += 1;
             non_singleton_sum += merged_size;
         }
 
         record(
             &mut summary,
-            &mut heap,
-            &mut heap_deleted,
+            largest_cluster,
             non_singleton_count,
             non_singleton_sum,
             row_idx,
@@ -1203,6 +1196,30 @@ mod tests {
             let total: f64 = e.merge_size_counts.iter().map(|(s, c)| s * *c as f64).sum();
             assert_eq!(total, e.merge_impact);
         }
+    }
+
+    #[test]
+    fn the_largest_component_column_only_ever_grows() {
+        // A merge replaces two components with one strictly larger than either, so the
+        // largest size is monotonically non-decreasing — which is what lets a scalar
+        // running maximum replace the lazy-deletion heap upstream carried until
+        // `34c4b88`. Six nodes whose three strongest edges all tie at 10.0; expected
+        // column from Python's component_size_summary_by_threshold at that commit.
+        let m = sym_matrix(6, &[
+            (0, 1, 10.0),
+            (2, 3, 10.0),
+            (4, 5, 10.0),
+            (1, 2, 5.0),
+            (3, 4, 3.0),
+        ]);
+        let tree = MaxTree::from_matrix(&m);
+        let summary = component_size_summary_by_threshold(&tree, MERGE_IMPACT_MIN_CHILD);
+        let largest: Vec<f64> = summary.iter().map(|r| r[COMPONENT_LARGEST_COL]).collect();
+        assert_eq!(largest, vec![1.0, 2.0, 2.0, 2.0, 4.0, 6.0]);
+        assert!(largest.windows(2).all(|w| w[0] <= w[1]), "must never decrease");
+        // And the running maximum is the real maximum, not just the last merge's size:
+        // row 3 holds 2.0 while three separate 2-node components exist.
+        assert_eq!(summary[3][COMPONENT_LARGEST_COL], 2.0);
     }
 
     #[test]

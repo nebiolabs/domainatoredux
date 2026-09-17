@@ -7,7 +7,12 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `d34ea4c` — *more updates to DSNV* (2026-09-17).
+- **Caught up to:** `34c4b88` — *simplify component_size_summary_by_threshold* (2026-09-17).
+  A pure simplification, ported: the largest-component tracker drops its lazy-deletion
+  max-heap for a scalar running maximum. Components only grow under union-find — a merge
+  replaces two with one strictly larger than either — so `largest = max(largest, merged)`
+  is exact, and nothing ever needs removing. The commit before it is the substantive one:
+- `d34ea4c` — *more updates to DSNV* (2026-09-17).
   A `.dsnv` format change, **v5 → v6, and a removal**: everything derivable from the merge
   order left the file (`cluster_count_by_threshold`, `edges_by_threshold`,
   `merge_event_series`, `merge_event_total`, `max_merge_events`, `merge_moving_sum`,
