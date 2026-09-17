@@ -43,9 +43,9 @@ fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractDomainsOptions) -> Vec<&'
             }
         }
         let mut keep = true;
-        if is_dom && opts.domains.is_some() {
+        if let Some(domains) = opts.domains.as_ref().filter(|_| is_dom) {
             let name = feature.get_first("name").unwrap_or("");
-            if !opts.domains.as_ref().unwrap().contains(name) {
+            if !domains.contains(name) {
                 keep = false;
             }
         } else if opts.search_hits && is_dom && opts.domains.is_none() {

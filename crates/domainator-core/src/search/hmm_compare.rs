@@ -224,9 +224,9 @@ pub fn compare_hmmer_aligned(q: &Hmm, r: &Hmm, bg: &[f32]) -> Alignment {
             bt[qi][ri][SMI] = if a > b { SMM as u8 } else { SMI as u8 };
 
             // argmax (C-order: state layer 0..4) with strict-> (first occurrence wins).
-            for layer in 0..5usize {
-                if scores[qi][ri][layer] > best {
-                    best = scores[qi][ri][layer];
+            for (layer, &score) in scores[qi][ri].iter().enumerate() {
+                if score > best {
+                    best = score;
                     max_index = (qi, ri, layer as u8);
                 }
             }

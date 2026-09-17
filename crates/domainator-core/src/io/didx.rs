@@ -162,7 +162,7 @@ pub fn read_index(
     f.read_exact(&mut body)?;
     let mut offsets = Vec::with_capacity(hdr.record_count as usize);
     let mut cds = Vec::with_capacity(hdr.record_count as usize);
-    for pair in body.chunks_exact(PAIR_SIZE) {
+    for pair in body.as_chunks::<PAIR_SIZE>().0 {
         offsets.push(u64::from_le_bytes(pair[0..8].try_into().unwrap()));
         cds.push(u64::from_le_bytes(pair[8..16].try_into().unwrap()));
     }

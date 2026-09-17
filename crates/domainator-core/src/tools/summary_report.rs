@@ -224,7 +224,7 @@ pub fn summary_report(
         })
         .collect();
     // Stable, so equal counts keep first-encounter order.
-    rows.sort_by(|a, b| b.count.cmp(&a.count));
+    rows.sort_by_key(|a| std::cmp::Reverse(a.count));
 
     let taxonomy_rows = taxa_order
         .into_iter()

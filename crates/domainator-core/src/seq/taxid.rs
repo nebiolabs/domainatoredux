@@ -77,7 +77,7 @@ fn collect_sources(features: &[SeqFeature]) -> Vec<SourceInfo> {
             SourceInfo { taxon: feature_taxon(f), merged: merge_intervals(intervals), length }
         })
         .collect();
-    v.sort_by(|a, b| b.length.cmp(&a.length));
+    v.sort_by_key(|a| std::cmp::Reverse(a.length));
     v
 }
 

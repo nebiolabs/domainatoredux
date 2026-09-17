@@ -86,7 +86,7 @@ pub fn molecular_weight(seq: &[u8], seq_type: SeqType) -> Option<f64> {
 
 // --- Isoelectric point / charge (Bjellqvist pKs) ---------------------------
 
-const CHARGED_AAS: [u8; 7] = [b'K', b'R', b'H', b'D', b'E', b'C', b'Y'];
+const CHARGED_AAS: [u8; 7] = *b"KRHDECY";
 
 /// Charged-residue counts (+ Nterm/Cterm) and seq-specific N-/C-terminal pKs.
 struct ChargeState {

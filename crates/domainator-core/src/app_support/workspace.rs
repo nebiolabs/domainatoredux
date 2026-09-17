@@ -282,7 +282,7 @@ pub fn scan_folder_tree(root: &Path) -> std::io::Result<FolderNode> {
             let path = entry.path();
             children.push(FolderNode { path: path.to_string_lossy().into_owned(), name, children: walk(&path)? });
         }
-        children.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+        children.sort_by_cached_key(|c| c.name.to_ascii_lowercase());
         Ok(children)
     }
 
@@ -321,7 +321,7 @@ pub fn list_files(root: &Path, dir: &Path) -> std::io::Result<Vec<FileEntry>> {
             created_by_job: meta.created_by_job,
         });
     }
-    out.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    out.sort_by_cached_key(|e| e.name.to_ascii_lowercase());
     Ok(out)
 }
 
