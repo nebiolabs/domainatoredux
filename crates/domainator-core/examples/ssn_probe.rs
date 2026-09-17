@@ -1,6 +1,6 @@
-//! Dump the SSN core (MST, threshold tables, merge events, moving sum, slider stops,
-//! hierarchy) as JSON for parity comparison against `domainator.ssn_edges` /
-//! `domainator.ssn_hierarchy`.
+//! Dump the SSN core (MST, threshold tables, merge events, the windowed/pinned
+//! selection, moving sum, slider stops, hierarchy) as JSON for parity comparison
+//! against `domainator.ssn_edges` / `domainator.ssn_hierarchy`.
 //!
 //! The Python twin is `scripts/ssn_probe.py`; both print the SAME document, so
 //! `scripts/json_parity.py` can diff them. **Keep the two in lockstep** — a field added
@@ -81,9 +81,40 @@ fn main() {
     // The moving sum MUST see the uncapped rows; filtering first undercounts exactly
     // the small events the series exists to reveal.
     let moving = merge_event_moving_sum(&all_rows, MOVING_SUM_WINDOW_FRACTION, MOVING_SUM_GRID_POINTS);
-    let events = filter_merge_event_rows_binned(&all_rows, max_merge_events, MERGE_EVENT_DENSITY_BINS);
-    let stops = threshold_slider_stops(&events, Some(&tree));
+    let events =
+        filter_merge_event_rows_binned(&all_rows, max_merge_events, MERGE_EVENT_DENSITY_BINS, None, None);
+    // `true`: only a caller holding the threshold tables can index them, and this probe
+    // builds its tree from the matrix, so it does.
+    let stops = threshold_slider_stops(&events, Some(&tree), true);
     let hier = build_mst_component_hierarchy(&tree);
+
+    // The windowed/pinned selection the viewer's chart uses. Window and pin are derived
+    // from the data so `sync_upstream.sh` needs no extra flags: the middle 40% of the
+    // finite threshold axis, pinned at the first dropped event — which is what makes the
+    // pin actually bite rather than being a no-op that proves nothing.
+    let finite: Vec<f64> =
+        all_rows.iter().map(|e| e.threshold_value).filter(|v| v.is_finite()).collect();
+    let window = match (
+        finite.iter().cloned().fold(f64::INFINITY, f64::min),
+        finite.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+    ) {
+        (lo, hi) if finite.is_empty() || hi <= lo => None,
+        (lo, hi) => Some((lo + 0.3 * (hi - lo), lo + 0.7 * (hi - lo))),
+    };
+    let windowed = filter_merge_event_rows_binned(
+        &all_rows,
+        max_merge_events,
+        MERGE_EVENT_DENSITY_BINS,
+        window,
+        None,
+    );
+    let kept_thresholds: Vec<f64> = windowed.iter().map(|e| e.threshold_value).collect();
+    let pin = all_rows
+        .iter()
+        .map(|e| e.threshold_value)
+        .find(|t| !kept_thresholds.iter().any(|k| k == t));
+    let windowed_pinned =
+        filter_merge_event_rows_binned(&all_rows, max_merge_events, MERGE_EVENT_DENSITY_BINS, window, pin);
 
     let mst: Vec<String> = tree
         .mst_edges()
@@ -126,7 +157,7 @@ fn main() {
                 "{{\"edge_index\":{},\"threshold_index\":{},\"threshold_label\":\"{}\",\
                  \"threshold_value\":{}}}",
                 s.edge_index,
-                s.threshold_index,
+                s.threshold_index.map(|v| v.to_string()).unwrap_or_else(|| "null".into()),
                 s.threshold_label,
                 s.threshold_value.map(num).unwrap_or_else(|| "null".into()),
             )
@@ -152,6 +183,21 @@ fn main() {
     print!("\"max_merge_events\":{},", max_merge_events);
     print!("\"merge_event_total\":{},", all_rows.len());
     print!("\"merge_events\":{},", arr(&events_json));
+    let edge_indices =
+        |rows: &[domainator_core::matrix::ssn::MergeEvent]| -> String {
+            arr(&rows.iter().map(|e| e.edge_index.to_string()).collect::<Vec<_>>())
+        };
+    print!(
+        "\"merge_events_windowed\":{{\"pinned_threshold\":{},\"selected\":{},\
+         \"selected_pinned\":{},\"window\":{}}},",
+        pin.map(num).unwrap_or_else(|| "null".into()),
+        edge_indices(&windowed),
+        edge_indices(&windowed_pinned),
+        match window {
+            Some((lo, hi)) => format!("[{},{}]", num(lo), num(hi)),
+            None => "null".into(),
+        }
+    );
     print!(
         "\"merge_moving_sum\":{{\"window\":{},\"x\":{},\"y\":{}}},",
         num(moving.window),

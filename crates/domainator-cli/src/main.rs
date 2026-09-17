@@ -935,9 +935,6 @@ enum Command {
         /// Merge-impact metric for split events (min_child or product).
         #[arg(long = "merge_impact_metric", value_parser = ["min_child", "product"])]
         merge_impact_metric: Option<String>,
-        /// Max strongest merge events to embed (0 = all; default 500).
-        #[arg(long = "max_merge_events")]
-        max_merge_events: Option<usize>,
         /// Fail if the projected .dsnv bundle output exceeds this many GB (default 25; 0 disables).
         #[arg(long = "max_output_gb")]
         max_output_gb: Option<f64>,
@@ -1032,6 +1029,13 @@ enum Command {
         /// Include the full member id list in `--mode cluster`.
         #[arg(long)]
         members: bool,
+        /// How many split events the `--mode thresholds`/`node` cut-points are drawn
+        /// from: the strongest this many by impact, plus a few so that no 5% band of
+        /// the threshold range with an event to offer is left without one. 0 offers a
+        /// cut-point at every split event. The series is derived from the bundle's
+        /// merge order, so any value works on any bundle. (default 500)
+        #[arg(long = "max_merge_events")]
+        max_merge_events: Option<usize>,
         /// Read parameters from a JSON/YAML config file (CLI flags override it).
         #[arg(long)]
         config: Option<String>,
@@ -2934,7 +2938,7 @@ fn main() -> Result<()> {
         }
         Command::BuildSsnViewer {
             input, output, html, embed_data, name, metadata, subset, subset_file, color_by,
-            label_by, categorical, merge_impact_metric, max_merge_events, max_output_gb,
+            label_by, categorical, merge_impact_metric, max_output_gb,
             config: config_path, print_config: do_print,
         } => {
             let cli = config::BuildSsnViewerConfig {
@@ -2950,7 +2954,6 @@ fn main() -> Result<()> {
                 label_by,
                 categorical,
                 merge_impact_metric,
-                max_merge_events,
                 max_output_gb,
             };
             let mut cfg = match &config_path {
@@ -3060,7 +3063,8 @@ fn main() -> Result<()> {
             }
             let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
             let metric = cfg.merge_impact_metric.clone().unwrap_or_else(|| "min_child".into());
-            let max_events = cfg.max_merge_events.unwrap_or(500);
+            let max_events =
+                cfg.max_merge_events.unwrap_or(config::resolve::DEFAULT_MAX_MERGE_EVENTS);
             let report = matrix_report(&matrix, &metric, max_events);
             if let Some(p) = &cfg.output {
                 std::fs::write(p, render_text(&report))?;
@@ -3134,7 +3138,7 @@ fn main() -> Result<()> {
         }
         Command::SsnNavigator {
             input, output, mode, threshold, id, node, min_size, top_n, members,
-            config: config_path, print_config: do_print,
+            max_merge_events, config: config_path, print_config: do_print,
         } => {
             let cli = config::SsnNavigatorConfig {
                 input: opt_path(&input)?,
@@ -3146,6 +3150,7 @@ fn main() -> Result<()> {
                 min_size,
                 top_n,
                 members,
+                max_merge_events,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::SsnNavigatorConfig>(p)?,

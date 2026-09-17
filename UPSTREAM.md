@@ -7,10 +7,18 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `72ba167` — *Fix the race that made the spindle collapse tests flaky* (2026-09-14).
-  That commit is test-only (`test/test_ssn_viewer_browser.py`); the two before it are the
-  ported ones: `2de50d8` (`stranded_end_human_readable` reading `parts[0]`) and `f0741bc`
-  (`select_by_cds` naming via the human-readable properties).
+- **Caught up to:** `d34ea4c` — *more updates to DSNV* (2026-09-17).
+  A `.dsnv` format change, **v5 → v6, and a removal**: everything derivable from the merge
+  order left the file (`cluster_count_by_threshold`, `edges_by_threshold`,
+  `merge_event_series`, `merge_event_total`, `max_merge_events`, `merge_moving_sum`,
+  `slider_stops` and its `threshold_index`), so a v6 `graph` is just `nodes` + `mst_edges` +
+  `hierarchy` + `merge_impact_metric`. The cap moved from write time to display time:
+  `build_ssn_viewer --max_merge_events` is gone, `ssn_navigator` gained it, and the viewer
+  spends it on the chart's zoom window (pinning the selected cut so zooming cannot
+  re-cluster the network). Ported in full — see `matrix/ssn.rs` (window + pin,
+  `MaxTree::from_mst_edges`, optional `threshold_index`), `tools/ssn_bundle.rs` (the four
+  derivation entry points, and the Θ(depth) `cluster_for_node` walk-up),
+  `tools/{build_ssn_viewer,ssn_navigator}.rs`, and a regenerated viewer shell.
 - **Vendored copy:** `external/domainator/` (gitignored; a git clone of upstream, kept at
   the pin above). It is the deterministic, repo-local source for regeneration and drift
   checks. Refresh it with `scripts/sync_upstream.sh` (fast-forwards to a target ref).
@@ -36,6 +44,7 @@ Use this to triage which module a changed upstream file lands in:
 | Python (`src/domainator/…`) | Rust owner |
 |---|---|
 | `ssn_viewer_html.py` | `crates/domainator-core/assets/ssn_viewer_shell.html` (via `scripts/regen_ssn_viewer_shell.py`) |
+| `docs/algorithms.md` | **reference, not ported** — read `external/domainator/docs/algorithms.md` for the SSN internals (MST, threshold tables, split-event scanning, the cap/window/pin selection, the moving sum, slider stops, dendrogram cutting). Its "Ports that must stay in step" table is the authority on which functions mirror which; this port is a third implementation of that same list. |
 | `build_ssn_viewer.py`, `ssn_hierarchy.py` | `crates/domainator-core/src/tools/build_ssn_viewer.rs`, `.../matrix/ssn.rs` |
 | `ssn_bundle.py` | `.../tools/ssn_bundle.rs` (the `.dsnv` reader) |
 | `ssn_navigator.py` | `.../tools/ssn_navigator.rs` |

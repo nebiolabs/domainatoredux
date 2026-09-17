@@ -80,7 +80,9 @@ pub fn matrix_report(
     );
     let merge_event_total = all_merge_events.len();
     let merge_events = filter_merge_event_rows(&all_merge_events, max_merge_events);
-    let slider_stops = threshold_slider_stops(&merge_events, Some(&tree));
+    // `true`: this report, unlike a `.dsnv` bundle, carries the threshold tables and
+    // reads each cut's edge count out of them.
+    let slider_stops = threshold_slider_stops(&merge_events, Some(&tree), true);
 
     MatrixReport {
         n_nodes: tree.n_nodes,

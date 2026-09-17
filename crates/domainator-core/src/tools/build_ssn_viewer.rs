@@ -1,8 +1,8 @@
 //! `build-ssn-viewer`: build the compact, MST-based `.dsnv` bundle (and the
 //! standalone HTML shell) for the interactive SSN viewer. Mirrors
-//! `domainator.build_ssn_viewer`: the bundle carries only the MST, an
-//! MST-component hierarchy, and threshold merge events (all O(n)); the browser
-//! reconstructs clusters client-side by cutting the tree.
+//! `domainator.build_ssn_viewer`: the bundle carries only the MST and an
+//! MST-component hierarchy (both O(n)); the browser reconstructs clusters
+//! client-side by cutting the tree.
 
 use std::collections::HashSet;
 use std::io;
@@ -11,10 +11,7 @@ use libdeflater::{CompressionLvl, Compressor};
 use serde_json::{json, Map, Value};
 
 use crate::matrix::ssn::{
-    build_mst_component_hierarchy, component_size_summary_by_threshold, filter_merge_event_rows,
-    merge_event_moving_sum, threshold_merge_event_rows, threshold_slider_stops, HierNode,
-    MaxTree, MergeEvent, MovingSum, MERGE_IMPACT_MIN_CHILD, MOVING_SUM_GRID_POINTS,
-    MOVING_SUM_WINDOW_FRACTION,
+    build_mst_component_hierarchy, HierNode, MaxTree, MERGE_IMPACT_MIN_CHILD,
 };
 use crate::matrix::DataMatrix;
 use crate::tools::build_ssn::{read_metadata, subset_matrix};
@@ -23,13 +20,28 @@ pub const SSN_VIEWER_BUNDLE_FORMAT: &str = "domainator_ssn_viewer_bundle";
 /// Bundle schema version. v3 added the per-event `merge_size_counts`/`largest_merge`/
 /// `merge_count` and `graph.merge_moving_sum`; v4 an optional top-level `app_state`
 /// (written only by the HTML viewer's "Save session"); v5 `graph.merge_event_total`
-/// and `graph.max_merge_events`. Upstream's `ssn_bundle.load_bundle` refuses anything
-/// outside [`SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS`], so a bundle written at the old
-/// version 1 is rejected outright by `ssn_navigator.py`.
-pub const SSN_VIEWER_BUNDLE_VERSION: i64 = 5;
+/// and `graph.max_merge_events`.
+///
+/// **v6 is a removal, not an addition.** `graph.cluster_count_by_threshold` and
+/// `graph.edges_by_threshold` described the *full input graph*, which a bundle never
+/// carried and no viewer ever read. `graph.merge_event_series`, `merge_event_total`,
+/// `max_merge_events`, `merge_moving_sum` and `slider_stops` (with its
+/// `threshold_index`) are all a pure function of `(nodes, mst_edges,
+/// merge_impact_metric)`, so readers derive them instead — see
+/// [`super::ssn_bundle`]'s `merge_event_rows` / `merge_event_series` / `moving_sum` /
+/// `slider_stops` and their JavaScript counterparts in the viewer shell. That removes
+/// the build-time `--max_merge_events` cap: the selection is now made where it is
+/// displayed, so raising it needs no rebuild from the source matrix.
+///
+/// Upstream's `ssn_bundle.load_bundle` refuses anything outside
+/// [`SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS`], so a bundle written at the old version 1
+/// is rejected outright by `ssn_navigator.py`.
+pub const SSN_VIEWER_BUNDLE_VERSION: i64 = 6;
 /// Versions this build can read. A tuple rather than an equality check so additive
-/// revisions do not strand previously written bundles.
-pub const SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS: [i64; 3] = [3, 4, 5];
+/// revisions do not strand previously written bundles. Pre-v6 files also carry the
+/// derived keys; they are ignored in favour of recomputing, so a cap baked into an old
+/// file cannot silently limit what is shown now.
+pub const SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS: [i64; 4] = [3, 4, 5, 6];
 
 /// Options for [`build_ssn_viewer_bundle`].
 pub struct BuildSsnViewerOptions {
@@ -37,7 +49,6 @@ pub struct BuildSsnViewerOptions {
     pub metadata_files: Vec<String>,
     pub subset_labels: Option<HashSet<String>>,
     pub merge_impact_metric: String,
-    pub max_merge_events: usize,
     pub color_by: Option<String>,
     pub label_by: Option<String>,
     /// Numeric metadata columns the viewer should color as discrete categories rather
@@ -52,7 +63,6 @@ impl Default for BuildSsnViewerOptions {
             metadata_files: Vec::new(),
             subset_labels: None,
             merge_impact_metric: MERGE_IMPACT_MIN_CHILD.to_string(),
-            max_merge_events: crate::matrix::ssn::DEFAULT_MAX_MERGE_EVENTS,
             color_by: None,
             label_by: None,
             categorical_columns: Vec::new(),
@@ -68,85 +78,6 @@ fn num_or_null(x: f64) -> Value {
     } else {
         Value::Null
     }
-}
-
-/// `{size: count}` with **integral sizes keyed as ints** — the payload carries
-/// `{"1": 33}`, not `{"1.0": 33}`. Both shipped metrics are integral, so the int branch
-/// is the live one; emitting `"1.0"` is a silent parity break. A non-integral size from
-/// some future metric keys by its full float value rather than being truncated, which
-/// would collide distinct sizes.
-fn merge_size_counts_json(counts: &[(f64, u64)]) -> Value {
-    let mut map = Map::new();
-    for &(size, count) in counts {
-        let key = if size.fract() == 0.0 && size.abs() < 1e16 {
-            format!("{}", size as i64)
-        } else {
-            format!("{size}")
-        };
-        map.insert(key, json!(count));
-    }
-    Value::Object(map)
-}
-
-/// `{window, x, y}`. `y` values are emitted as JSON integers when integral, matching
-/// Python's `int(value) if float(value).is_integer() else float(value)`.
-fn moving_sum_json(ms: &MovingSum) -> Value {
-    let y: Vec<Value> = ms
-        .y
-        .iter()
-        .map(|&v| {
-            if v.fract() == 0.0 && v.abs() < 1e16 {
-                json!(v as i64)
-            } else {
-                json!(v)
-            }
-        })
-        .collect();
-    json!({
-        "window": num_or_null(ms.window),
-        "x": ms.x.iter().map(|&v| num_or_null(v)).collect::<Vec<_>>(),
-        "y": y,
-    })
-}
-
-fn merge_event_json(e: &MergeEvent) -> Value {
-    json!({
-        "edge_index": e.edge_index,
-        "summary_row_from": e.summary_row_from,
-        "summary_row_to": e.summary_row_to,
-        "threshold_from_value": num_or_null(e.threshold_from_value),
-        "threshold_from": e.threshold_from,
-        "threshold_to": e.threshold_to,
-        "threshold_value": num_or_null(e.threshold_value),
-        "merge_impact": num_or_null(e.merge_impact),
-        "merge_size_counts": merge_size_counts_json(&e.merge_size_counts),
-        "largest_merge": num_or_null(e.largest_merge),
-        "merge_count": e.merge_count,
-        "delta_largest": num_or_null(e.delta_largest),
-        "delta_avg_non_singleton": num_or_null(e.delta_avg_non_singleton),
-    })
-}
-
-/// Slider stops from the shared engine, so the bundle and `matrix_report` offer the
-/// same cuts. Every stop carries a `threshold_index` into the `MaxTree` threshold
-/// tables, and the list ends with a floor stop below the weakest MST edge — without
-/// which the fully merged network is unreachable under the strictly-above `--lb` rule.
-fn slider_stops_json(events: &[MergeEvent], tree: &MaxTree) -> Value {
-    let stops: Vec<Value> = threshold_slider_stops(events, Some(tree))
-        .into_iter()
-        .map(|s| {
-            json!({
-                "edge_index": s.edge_index,
-                "threshold_index": s.threshold_index,
-                "threshold_label": s.threshold_label,
-                "threshold_value": match s.threshold_value {
-                    Some(v) => num_or_null(v),
-                    None => Value::Null,
-                },
-            })
-        })
-        .collect();
-    Value::Array(stops)
 }
 
 fn hier_node_json(n: &HierNode) -> Value {
@@ -282,33 +213,10 @@ pub fn build_ssn_viewer_bundle(matrix: &DataMatrix, opts: &BuildSsnViewerOptions
     }
 
     let tree = MaxTree::from_matrix(&matrix);
-    let component_summary = component_size_summary_by_threshold(&tree, &opts.merge_impact_metric);
-    // Keep the uncapped rows: `merge_event_total` reports them and the moving sum MUST
-    // be computed from them (filtering first undercounts exactly the small events the
-    // series exists to reveal).
-    let all_merge_events = threshold_merge_event_rows(&component_summary);
-    let merge_moving_sum = merge_event_moving_sum(
-        &all_merge_events,
-        MOVING_SUM_WINDOW_FRACTION,
-        MOVING_SUM_GRID_POINTS,
-    );
-    let merge_events = filter_merge_event_rows(&all_merge_events, opts.max_merge_events);
     let hierarchy = build_mst_component_hierarchy(&tree);
 
     let mst_edges: Vec<Value> =
         tree.mst_edges().map(|(i, j, w)| json!([i, j, w])).collect();
-    let ccbt: Vec<Value> = tree
-        .cluster_count_by_threshold()
-        .into_iter()
-        .map(|(t, c)| Value::Array(vec![num_or_null(t), num_or_null(c)]))
-        .collect();
-    let ebt: Vec<Value> = tree
-        .edges_by_threshold()
-        .into_iter()
-        .map(|(e, t)| Value::Array(vec![num_or_null(e), num_or_null(t)]))
-        .collect();
-    let events_json: Vec<Value> = merge_events.iter().map(merge_event_json).collect();
-    let slider_stops = slider_stops_json(&merge_events, &tree);
     let hier_nodes: Vec<Value> = hierarchy.nodes.iter().map(hier_node_json).collect();
 
     let hierarchy_json = json!({
@@ -317,21 +225,17 @@ pub fn build_ssn_viewer_bundle(matrix: &DataMatrix, opts: &BuildSsnViewerOptions
         "leaf_order": hierarchy.leaf_order,
     });
 
+    // Only what cannot be derived from the merge order itself. The split-event series,
+    // its moving sum and the threshold slider's stops are all a pure function of
+    // (nodes, mst_edges, merge_impact_metric), so readers compute them rather than
+    // carrying a copy: the viewer via the shell's JavaScript ports, other readers via
+    // [`super::ssn_bundle`]. That keeps the file a function of the network alone — no
+    // selection baked in at build time — and keeps it O(nodes) on a network with
+    // hundreds of thousands of split events.
     let graph = json!({
         "nodes": names,
         "mst_edges": mst_edges,
-        "cluster_count_by_threshold": ccbt,
-        "edges_by_threshold": ebt,
         "merge_impact_metric": opts.merge_impact_metric,
-        "merge_event_series": events_json,
-        // How many split events the network has, and the cap that was applied, so a
-        // reader can say "515 of 161,763 plotted" rather than leaving a blank stretch
-        // of axis indistinguishable from a stretch where nothing happens. The series is
-        // capped; these two are not.
-        "merge_event_total": all_merge_events.len(),
-        "max_merge_events": opts.max_merge_events,
-        "merge_moving_sum": moving_sum_json(&merge_moving_sum),
-        "slider_stops": slider_stops,
         "hierarchy": hierarchy_json,
     });
 

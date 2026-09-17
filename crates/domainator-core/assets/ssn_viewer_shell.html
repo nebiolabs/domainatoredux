@@ -896,6 +896,34 @@
         font-weight: 600;
         letter-spacing: 0.01em;
     }
+    .split-event-note {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .split-event-note .note {
+        flex: 1 1 320px;
+    }
+    .split-event-cap {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .split-event-cap label {
+        color: var(--muted);
+        font-size: 0.9rem;
+    }
+    .split-event-cap input {
+        width: 84px;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        border-radius: 10px;
+        padding: 4px 8px;
+        font: inherit;
+        color: var(--ink);
+    }
     .threshold-jump {
         display: inline-flex;
         align-items: center;
@@ -1103,7 +1131,19 @@
                         <input id="threshold-input" type="text" inputmode="decimal" placeholder="Nearest split" disabled />
                     </div>
                 </div>
-                <div class="note" id="split-event-count"></div>
+                <div class="split-event-note">
+                    <div class="note" id="split-event-count"></div>
+                    <div class="split-event-cap">
+                        <label for="split-event-cap">Split events</label>
+                        <!-- The cap used to be build_ssn_viewer.py --max_merge_events,
+                             baked into the bundle. The series is derived on load now, so
+                             it is a control here instead: raising it costs one replay of
+                             the merge order, not a rebuild of the file. -->
+                        <input id="split-event-cap" type="number" min="0" step="50"
+                               title="How many split events the chart plots and the slider offers stops for: the strongest this many by impact, plus a few so no 5% band of the axis with an event to show is left empty. 0 plots every event."
+                               disabled />
+                    </div>
+                </div>
                 <div class="toolbar">
                     <button id="split-chart-reset-zoom" type="button" disabled title="Show the whole threshold range again (or double-click the chart)">Reset zoom</button>
                     <button id="export-split-png" type="button" disabled title="Download this chart as a PNG at the resolution chosen in View Settings">Export chart PNG</button>
@@ -1532,8 +1572,8 @@
     const EMBEDDED_BUNDLE_BASE64 = null;
     const LAYOUT_WORKER_CODE = "\nfunction seededUnit(componentId, salt) {\n    const raw = Math.sin((componentId + 1) * 12.9898 + salt * 78.233) * 43758.5453;\n    return raw - Math.floor(raw);\n}\nfunction componentRadiusForSize(size) {\n    return Math.sqrt(Math.max(1, size) * 48 / Math.PI);\n}\nfunction componentLeafOrder(componentIds, hierarchyNodes) {\n    return [...componentIds].sort((a, b) => {\n        const an = hierarchyNodes[a], bn = hierarchyNodes[b];\n        return an.leaf_start - bn.leaf_start || bn.size - an.size || a - b;\n    });\n}\nfunction treeCenter(nodeIds, adjacency, hierarchyNodes) {\n    if (nodeIds.length <= 2) { return nodeIds[0]; }\n    const degree = new Map();\n    nodeIds.forEach(id => degree.set(id, (adjacency.get(id) || []).length));\n    let leaves = nodeIds.filter(id => (degree.get(id) || 0) <= 1), remaining = nodeIds.length;\n    while (remaining > 2 && leaves.length > 0) {\n        remaining -= leaves.length;\n        const nextLeaves = [];\n        leaves.forEach(leafId => {\n            (adjacency.get(leafId) || []).forEach(nid => {\n                if (!degree.has(nid)) { return; }\n                degree.set(nid, degree.get(nid) - 1);\n                if (degree.get(nid) === 1) { nextLeaves.push(nid); }\n            });\n            degree.delete(leafId);\n        });\n        leaves = nextLeaves;\n    }\n    const candidates = degree.size > 0 ? Array.from(degree.keys()) : nodeIds;\n    candidates.sort((a, b) => hierarchyNodes[b].size - hierarchyNodes[a].size || a - b);\n    return candidates[0];\n}\nfunction rootedTree(rootId, adjacency, hierarchyNodes) {\n    const parent = new Map([[rootId, null]]), order = [rootId];\n    for (let i = 0; i < order.length; i++) {\n        const nodeId = order[i];\n        (adjacency.get(nodeId) || []).forEach(nid => { if (!parent.has(nid)) { parent.set(nid, nodeId); order.push(nid); } });\n    }\n    const children = new Map();\n    order.forEach(id => children.set(id, []));\n    for (let i = 1; i < order.length; i++) { children.get(parent.get(order[i])).push(order[i]); }\n    children.forEach(childIds => {\n        childIds.sort((a, b) => {\n            const an = hierarchyNodes[a], bn = hierarchyNodes[b];\n            return an.leaf_start - bn.leaf_start || bn.size - an.size || a - b;\n        });\n    });\n    return {parent, order, children};\n}\nfunction pointSegmentDistance(point, start, end) {\n    const dx = end.x - start.x, dy = end.y - start.y, lsq = dx * dx + dy * dy;\n    if (lsq < 1e-9) { return {distance: Math.hypot(point.x - start.x, point.y - start.y), t: 0, closestX: start.x, closestY: start.y}; }\n    const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lsq));\n    const cx = start.x + dx * t, cy = start.y + dy * t;\n    return {distance: Math.hypot(point.x - cx, point.y - cy), t, closestX: cx, closestY: cy};\n}\nfunction segmentOrientation(a, b, c) { return (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y); }\nfunction segmentsCross(a, b, c, d) {\n    return segmentOrientation(a,b,c) * segmentOrientation(a,b,d) < 0 && segmentOrientation(c,d,a) * segmentOrientation(c,d,b) < 0;\n}\nfunction refineLayoutGeometry(items, edgePairs, options) {\n    options = options || {};\n    const refined = items.map(item => Object.assign({}, item));\n    if (refined.length <= 1) { return refined; }\n    const itemById = new Map(refined.map(item => [item.componentId, item]));\n    const links = edgePairs.map(pair => Array.isArray(pair) ? {sourceId: pair[0], targetId: pair[1]} : pair)\n        .filter(link => itemById.has(link.sourceId) && itemById.has(link.targetId));\n    const bp = options.bubblePadding != null ? options.bubblePadding : 14;\n    const ep = options.edgePadding != null ? options.edgePadding : 8;\n    const oi = options.overlapIterations != null ? options.overlapIterations : 5;\n    const ei = options.edgeIterations != null ? options.edgeIterations : 3;\n    const ci = options.crossingIterations != null ? options.crossingIterations : 2;\n    const mpc = 180000, menc = 140000, mcc = 90000;\n    const pairChecks = refined.length * (refined.length - 1) / 2;\n    function overlapPass(iters, strength) {\n        if (pairChecks > mpc) { return; }\n        for (let it = 0; it < iters; it++) {\n            for (let li = 0; li < refined.length; li++) {\n                const l = refined[li];\n                for (let ri = li + 1; ri < refined.length; ri++) {\n                    const r = refined[ri];\n                    let dx = r.x - l.x, dy = r.y - l.y, dist = Math.hypot(dx, dy);\n                    if (dist < 1e-6) {\n                        dx = (seededUnit(l.componentId + r.componentId, it + 21) - 0.5) || 0.01;\n                        dy = (seededUnit(l.componentId + r.componentId, it + 22) - 0.5) || 0.01;\n                        dist = Math.hypot(dx, dy);\n                    }\n                    const md = l.radius + r.radius + bp;\n                    if (dist >= md) { continue; }\n                    const sh = (md - dist) / 2 * strength;\n                    l.x -= dx / dist * sh; l.y -= dy / dist * sh;\n                    r.x += dx / dist * sh; r.y += dy / dist * sh;\n                }\n            }\n        }\n    }\n    function edgePass(iters, strength) {\n        if (links.length * refined.length > menc) { return; }\n        for (let it = 0; it < iters; it++) {\n            links.forEach(link => {\n                const s = itemById.get(link.sourceId), t = itemById.get(link.targetId);\n                if (!s || !t) { return; }\n                refined.forEach(item => {\n                    if (item.componentId === link.sourceId || item.componentId === link.targetId) { return; }\n                    const hit = pointSegmentDistance(item, s, t);\n                    if (hit.t <= 0.03 || hit.t >= 0.97) { return; }\n                    const md = item.radius + ep;\n                    if (hit.distance >= md) { return; }\n                    let nx = item.x - hit.closestX, ny = item.y - hit.closestY, nl = Math.hypot(nx, ny);\n                    if (nl < 1e-6) { const ex = t.x - s.x, ey = t.y - s.y; nx = -ey || 1; ny = ex || 0; nl = Math.hypot(nx, ny); }\n                    const push = (md - hit.distance) * strength;\n                    item.x += nx / nl * push; item.y += ny / nl * push;\n                });\n            });\n        }\n    }\n    overlapPass(oi, 0.72);\n    edgePass(ei, 0.68);\n    if (links.length * (links.length - 1) / 2 <= mcc) {\n        for (let it = 0; it < ci; it++) {\n            for (let li = 0; li < links.length; li++) {\n                const la = links[li], a = itemById.get(la.sourceId), b = itemById.get(la.targetId);\n                if (!a || !b) { continue; }\n                for (let ri = li + 1; ri < links.length; ri++) {\n                    const rb = links[ri];\n                    if (la.sourceId === rb.sourceId || la.sourceId === rb.targetId || la.targetId === rb.sourceId || la.targetId === rb.targetId) { continue; }\n                    const c = itemById.get(rb.sourceId), d = itemById.get(rb.targetId);\n                    if (!c || !d || !segmentsCross(a, b, c, d)) { continue; }\n                    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);\n                    if (len < 1e-6) { continue; }\n                    const nx = -dy / len, ny = dx / len, push = 4.5 + it * 1.5;\n                    a.x += nx * push; a.y += ny * push; b.x += nx * push; b.y += ny * push;\n                    c.x -= nx * push; c.y -= ny * push; d.x -= nx * push; d.y -= ny * push;\n                }\n            }\n        }\n    }\n    edgePass(1, 0.82);\n    overlapPass(4, 0.9);\n    return refined;\n}\nfunction normalizeComponentLayout(items, padding) {\n    padding = padding != null ? padding : 20;\n    if (!items.length) { return {items: [], width: 0, height: 0}; }\n    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;\n    items.forEach(item => {\n        minX = Math.min(minX, item.x - item.radius); minY = Math.min(minY, item.y - item.radius);\n        maxX = Math.max(maxX, item.x + item.radius); maxY = Math.max(maxY, item.y + item.radius);\n    });\n    return {\n        items: items.map(item => Object.assign({}, item, {x: item.x - minX + padding, y: item.y - minY + padding})),\n        width: (maxX - minX) + padding * 2, height: (maxY - minY) + padding * 2,\n    };\n}\nfunction tidyComponentLayout(componentIds, adjacency, hierarchyNodes, originX) {\n    const rootId = treeCenter(componentIds, adjacency, hierarchyNodes);\n    const tree = rootedTree(rootId, adjacency, hierarchyNodes);\n    const depthByNode = new Map([[rootId, 0]]);\n    tree.order.forEach(nodeId => { (tree.children.get(nodeId) || []).forEach(childId => { depthByNode.set(childId, (depthByNode.get(nodeId) || 0) + 1); }); });\n    const radii = new Map(componentIds.map(id => [id, componentRadiusForSize(hierarchyNodes[id].size)]));\n    const maxRadius = Math.max(...componentIds.map(id => radii.get(id) || 10), 10);\n    const siblingGap = Math.max(20, maxRadius * 0.42);\n    const levelGap = Math.max(168, maxRadius * 2.2 + 96);\n    const subtreeSpan = new Map();\n    [...tree.order].reverse().forEach(nodeId => {\n        const childIds = tree.children.get(nodeId) || [];\n        const nodeSpan = (radii.get(nodeId) || 12) * 2 + 18;\n        if (childIds.length === 0) { subtreeSpan.set(nodeId, nodeSpan); return; }\n        const childrenSpan = childIds.reduce((s, c) => s + subtreeSpan.get(c), 0) + Math.max(0, childIds.length - 1) * siblingGap;\n        subtreeSpan.set(nodeId, Math.max(nodeSpan, childrenSpan));\n    });\n    const positionById = new Map();\n    function placeNode(nodeId, topY) {\n        const nodeSpan = subtreeSpan.get(nodeId) || 26;\n        const childIds = tree.children.get(nodeId) || [];\n        const x = originX + (depthByNode.get(nodeId) || 0) * levelGap;\n        if (childIds.length === 0) { positionById.set(nodeId, {componentId: nodeId, x, y: topY + nodeSpan / 2, radius: radii.get(nodeId) || 10}); return; }\n        const childrenSpan = childIds.reduce((s, c) => s + subtreeSpan.get(c), 0) + Math.max(0, childIds.length - 1) * siblingGap;\n        let childCursor = topY + Math.max(0, (nodeSpan - childrenSpan) / 2);\n        const childCenters = [];\n        childIds.forEach(childId => { placeNode(childId, childCursor); childCenters.push(positionById.get(childId).y); childCursor += subtreeSpan.get(childId) + siblingGap; });\n        const centerY = childCenters.reduce((s, v) => s + v, 0) / Math.max(1, childCenters.length);\n        positionById.set(nodeId, {componentId: nodeId, x, y: centerY, radius: radii.get(nodeId) || 10});\n    }\n    placeNode(rootId, 0);\n    return {positionById, order: tree.order};\n}\nfunction radialTreeSeed(componentIds, adjacency, hierarchyNodes, ringGap) {\n    const rootId = treeCenter(componentIds, adjacency, hierarchyNodes);\n    const tree = rootedTree(rootId, adjacency, hierarchyNodes);\n    const depthByNode = new Map([[rootId, 0]]);\n    tree.order.forEach(nodeId => { (tree.children.get(nodeId) || []).forEach(c => depthByNode.set(c, (depthByNode.get(nodeId) || 0) + 1)); });\n    const radii = new Map(componentIds.map(id => [id, componentRadiusForSize(hierarchyNodes[id].size)]));\n    const maxRadius = Math.max(...componentIds.map(id => radii.get(id) || 10), 10);\n    const gap = Math.max(ringGap || 0, maxRadius * 2 + 24, 60);\n    // Subtree leaf counts (post-order over reversed BFS order) drive proportional wedge widths.\n    const leafCount = new Map();\n    [...tree.order].reverse().forEach(id => {\n        const ch = tree.children.get(id) || [];\n        leafCount.set(id, ch.length === 0 ? 1 : ch.reduce((s, c) => s + (leafCount.get(c) || 1), 0));\n    });\n    const positionById = new Map();\n    positionById.set(rootId, {componentId: rootId, x: 0, y: 0, radius: radii.get(rootId) || 10});\n    const wedge = new Map([[rootId, [0, Math.PI * 2]]]);\n    tree.order.forEach(id => {\n        const span = wedge.get(id) || [0, Math.PI * 2];\n        const a0 = span[0], a1 = span[1];\n        const ch = tree.children.get(id) || [];\n        const total = ch.reduce((s, c) => s + (leafCount.get(c) || 1), 0) || 1;\n        let cursor = a0;\n        ch.forEach(c => {\n            const ca0 = cursor, ca1 = cursor + (a1 - a0) * ((leafCount.get(c) || 1) / total);\n            cursor = ca1;\n            wedge.set(c, [ca0, ca1]);\n            const ang = (ca0 + ca1) / 2, r = (depthByNode.get(c) || 0) * gap;\n            // Tiny deterministic jitter keeps positions distinct (avoids degenerate quadtree cells).\n            positionById.set(c, {componentId: c, x: Math.cos(ang) * r + (seededUnit(c, 11) - 0.5) * 0.5, y: Math.sin(ang) * r + (seededUnit(c, 12) - 0.5) * 0.5, radius: radii.get(c) || 10});\n        });\n    });\n    return {positionById, order: tree.order};\n}\n// --- Barnes-Hut quadtree: O(n log n) repulsion so physics scales to large forests ---\nfunction bhBuild(ids, positions, radii) {\n    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;\n    for (const id of ids) { const p = positions.get(id); if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; }\n    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 1; maxY = 1; }\n    const size = Math.max(maxX - minX, maxY - minY, 1) * 1.0001;\n    const root = {x0: minX, y0: minY, size, mass: 0, comX: 0, comY: 0, maxR: 0, id: null, px: 0, py: 0, r: 0, children: null, bucket: false};\n    for (const id of ids) { const p = positions.get(id); bhInsert(root, id, p.x, p.y, radii.get(id) || 10, 0); }\n    return root;\n}\nfunction bhInsert(cell, id, px, py, r, depth) {\n    cell.mass += 1; cell.comX += px; cell.comY += py; if (r > cell.maxR) cell.maxR = r;\n    if (cell.children === null) {\n        if (cell.id === null) { cell.id = id; cell.px = px; cell.py = py; cell.r = r; return; }\n        if (depth >= 48 || cell.size < 1e-6) { cell.bucket = true; return; }\n        const eid = cell.id, epx = cell.px, epy = cell.py, er = cell.r;\n        cell.id = null; cell.children = [null, null, null, null];\n        bhInsertChild(cell, eid, epx, epy, er, depth);\n        bhInsertChild(cell, id, px, py, r, depth);\n        return;\n    }\n    bhInsertChild(cell, id, px, py, r, depth);\n}\nfunction bhInsertChild(cell, id, px, py, r, depth) {\n    const half = cell.size / 2;\n    const qx = px >= cell.x0 + half ? 1 : 0, qy = py >= cell.y0 + half ? 1 : 0, qi = qy * 2 + qx;\n    let child = cell.children[qi];\n    if (!child) { child = {x0: cell.x0 + qx * half, y0: cell.y0 + qy * half, size: half, mass: 0, comX: 0, comY: 0, maxR: 0, id: null, px: 0, py: 0, r: 0, children: null, bucket: false}; cell.children[qi] = child; }\n    bhInsert(child, id, px, py, r, depth + 1);\n}\nfunction bhAccumulate(cell, selfId, px, py, selfR, acc, p) {\n    if (cell.mass === 0) return;\n    if (cell.children === null) {\n        if (cell.bucket) {\n            const comX = cell.comX / cell.mass, comY = cell.comY / cell.mass;\n            let dx = px - comX, dy = py - comY, distSq = dx * dx + dy * dy;\n            if (distSq < 1) return;\n            const dist = Math.sqrt(distSq), rf = p.repulsion * cell.mass / Math.max(distSq, 16);\n            acc.x += dx / dist * rf; acc.y += dy / dist * rf;\n            return;\n        }\n        if (cell.id === null || cell.id === selfId) return;\n        let dx = px - cell.px, dy = py - cell.py, distSq = dx * dx + dy * dy;\n        if (distSq < 1e-6) { dx = (seededUnit(selfId + cell.id, p.iter + 7) - 0.5) * 0.01; dy = (seededUnit(selfId + cell.id, p.iter + 8) - 0.5) * 0.01; distSq = dx * dx + dy * dy; }\n        const dist = Math.sqrt(distSq), rf = p.repulsion / Math.max(distSq, 16);\n        const ov = selfR + cell.r + 12 - dist;\n        const cf = ov > 0 ? ov * p.collisionStrength : 0;\n        acc.x += dx / dist * (rf + cf); acc.y += dy / dist * (rf + cf);\n        return;\n    }\n    const comX = cell.comX / cell.mass, comY = cell.comY / cell.mass;\n    let dx = px - comX, dy = py - comY, distSq = dx * dx + dy * dy;\n    if (distSq < 1e-9) distSq = 1e-9;\n    // Always descend cells whose nearest edge is within collision range of self, so the radii-aware\n    // collision is exact in the near field even when theta would aggregate.\n    const nx = px < cell.x0 ? cell.x0 : (px > cell.x0 + cell.size ? cell.x0 + cell.size : px);\n    const ny = py < cell.y0 ? cell.y0 : (py > cell.y0 + cell.size ? cell.y0 + cell.size : py);\n    const bdx = px - nx, bdy = py - ny, colR = selfR + cell.maxR + 12;\n    const near = (bdx * bdx + bdy * bdy) < colR * colR;\n    if (!near && cell.size * cell.size < p.thetaSq * distSq) {\n        const dist = Math.sqrt(distSq), rf = p.repulsion * cell.mass / Math.max(distSq, 16);\n        acc.x += dx / dist * rf; acc.y += dy / dist * rf;\n        return;\n    }\n    for (let i = 0; i < 4; i++) { const c = cell.children[i]; if (c) bhAccumulate(c, selfId, px, py, selfR, acc, p); }\n}\n// Collect the separation push needed to lift `self` out of any bubble it overlaps (local descent).\nfunction bhCollect(cell, selfId, px, py, selfR, d, pad) {\n    if (cell.mass === 0) return;\n    if (cell.children === null) {\n        if (cell.bucket || cell.id === null || cell.id === selfId) return;\n        let dx = px - cell.px, dy = py - cell.py, distSq = dx * dx + dy * dy;\n        const minD = selfR + cell.r + pad;\n        if (distSq >= minD * minD) return;\n        let dist = Math.sqrt(distSq);\n        if (dist < 1e-6) { dx = (seededUnit(selfId + cell.id, 7) - 0.5) || 0.01; dy = (seededUnit(selfId + cell.id, 8) - 0.5) || 0.01; dist = Math.hypot(dx, dy); }\n        const push = (minD - dist) * 0.5;\n        d.x += dx / dist * push; d.y += dy / dist * push;\n        return;\n    }\n    const nx = px < cell.x0 ? cell.x0 : (px > cell.x0 + cell.size ? cell.x0 + cell.size : px);\n    const ny = py < cell.y0 ? cell.y0 : (py > cell.y0 + cell.size ? cell.y0 + cell.size : py);\n    const bdx = px - nx, bdy = py - ny, colR = selfR + cell.maxR + pad;\n    if (bdx * bdx + bdy * bdy > colR * colR) return;\n    for (let i = 0; i < 4; i++) { const c = cell.children[i]; if (c) bhCollect(c, selfId, px, py, selfR, d, pad); }\n}\n// Iteratively separate overlapping bubbles using the quadtree (replaces the O(n^2) overlap pass on\n// large components, where refineLayoutGeometry is skipped). Mutates positions in place.\nfunction bhResolveOverlaps(ids, positions, radii, passes, pad) {\n    for (let pass = 0; pass < passes; pass++) {\n        const tree = bhBuild(ids, positions, radii);\n        const disp = new Map(ids.map(id => [id, {x: 0, y: 0}]));\n        ids.forEach(id => { const pos = positions.get(id); bhCollect(tree, id, pos.x, pos.y, radii.get(id) || 10, disp.get(id), pad); });\n        let maxMoved = 0;\n        ids.forEach(id => { const d = disp.get(id), pos = positions.get(id); pos.x += d.x; pos.y += d.y; maxMoved = Math.max(maxMoved, Math.abs(d.x) + Math.abs(d.y)); });\n        if (maxMoved < 1) break;\n    }\n}\nfunction simulateComponentLayout(componentIds, adjacency, options, hierarchyNodes) {\n    options = options || {};\n    const radii = new Map(componentIds.map(id => [id, componentRadiusForSize(hierarchyNodes[id].size)]));\n    const positions = new Map(), velocities = new Map(), anchors = new Map();\n    const damping = options.damping != null ? options.damping : 0.8;\n    const repulsion = options.repulsion != null ? options.repulsion : 6000;\n    const spring = options.spring != null ? options.spring : 0.07;\n    const gravity = options.gravity != null ? options.gravity : 0.008;\n    const anchorStrength = options.anchorStrength != null ? options.anchorStrength : 0;\n    const iterations = options.iterations != null ? options.iterations : 110;\n    const preferredEdgeLength = options.preferredEdgeLength != null ? options.preferredEdgeLength : 120;\n    const collisionStrength = options.collisionStrength != null ? options.collisionStrength : 0.28;\n    const maxStep = options.maxStep != null ? options.maxStep : 48;\n    const maxPhysicsNodes = options.maxPhysicsNodes != null ? options.maxPhysicsNodes : 50000;\n    const theta = options.theta != null ? options.theta : 0.9;\n    const thetaSq = theta * theta;\n    // Seed from the crossing-free radial tree layout (compact + near-circular), centered on origin.\n    const seed = radialTreeSeed(componentIds, adjacency, hierarchyNodes, preferredEdgeLength);\n    let centerX = 0, centerY = 0;\n    componentIds.forEach(id => { const s = seed.positionById.get(id) || {x: 0, y: 0}; centerX += s.x; centerY += s.y; });\n    centerX /= Math.max(1, componentIds.length); centerY /= Math.max(1, componentIds.length);\n    componentIds.forEach(id => {\n        const s = seed.positionById.get(id) || {x: 0, y: 0};\n        const ax = s.x - centerX, ay = s.y - centerY;\n        anchors.set(id, {x: ax, y: ay});\n        positions.set(id, {x: ax, y: ay});\n        velocities.set(id, {x: 0, y: 0});\n    });\n    const edgePairs = [];\n    componentIds.forEach(id => { (adjacency.get(id) || []).forEach(nid => { if (id < nid) { edgePairs.push([id, nid]); } }); });\n    if (componentIds.length <= maxPhysicsNodes) {\n    for (let iter = 0; iter < iterations; iter++) {\n        const forces = new Map(componentIds.map(id => [id, {x: 0, y: 0}]));\n        const tree = bhBuild(componentIds, positions, radii);\n        const params = {repulsion, collisionStrength, thetaSq, iter};\n        componentIds.forEach(id => { const pos = positions.get(id); bhAccumulate(tree, id, pos.x, pos.y, radii.get(id) || 10, forces.get(id), params); });\n        edgePairs.forEach(([lid, rid]) => {\n            const lp = positions.get(lid), rp = positions.get(rid);\n            let dx = rp.x - lp.x, dy = rp.y - lp.y, dist = Math.hypot(dx, dy);\n            if (dist < 1e-6) { dist = 1e-6; dx = preferredEdgeLength; dy = 0; }\n            // Rest length keeps connected neighbours outside each other's bubbles (radii can exceed\n            // the base edge length), so big clusters don't swallow their neighbours.\n            const rest = Math.max(preferredEdgeLength, (radii.get(lid) || 0) + (radii.get(rid) || 0) + 24);\n            const df = spring * (dist - rest), fx = dx / dist * df, fy = dy / dist * df;\n            forces.get(lid).x += fx; forces.get(lid).y += fy;\n            forces.get(rid).x -= fx; forces.get(rid).y -= fy;\n        });\n        let totalMovement = 0;\n        componentIds.forEach(id => {\n            const pos = positions.get(id), vel = velocities.get(id), f = forces.get(id), anch = anchors.get(id);\n            f.x += (anch.x - pos.x) * anchorStrength - pos.x * gravity;\n            f.y += (anch.y - pos.y) * anchorStrength - pos.y * gravity;\n            vel.x = (vel.x + f.x) * damping; vel.y = (vel.y + f.y) * damping;\n            const speed = Math.hypot(vel.x, vel.y);\n            if (speed > maxStep) { vel.x *= maxStep / speed; vel.y *= maxStep / speed; }\n            pos.x += vel.x; pos.y += vel.y;\n            totalMovement += Math.abs(vel.x) + Math.abs(vel.y);\n        });\n        if (iter > 12 && totalMovement / componentIds.length < 0.05) { break; }\n    }\n    // Large components skip the O(n^2) refine overlap pass; clean residual overlaps via the quadtree.\n    if (componentIds.length > 600) { bhResolveOverlaps(componentIds, positions, radii, 14, 8); }\n    }\n    const rawItems = componentIds.map(id => { const pos = positions.get(id); return {componentId: id, x: pos.x, y: pos.y, radius: radii.get(id) || 10}; });\n    return normalizeComponentLayout(refineLayoutGeometry(rawItems, edgePairs, {\n        bubblePadding: options.bubblePadding != null ? options.bubblePadding : 14,\n        edgePadding: options.edgePadding != null ? options.edgePadding : 8,\n        overlapIterations: options.geometryIterations != null ? options.geometryIterations : 5,\n        edgeIterations: options.edgeIterations != null ? options.edgeIterations : 3,\n        crossingIterations: options.crossingIterations != null ? options.crossingIterations : 2,\n    }), 24);\n}\nfunction clusterGraphComponents(visibleIds, links, hierarchyNodes, sortBySizeEnabled) {\n    const adjacency = new Map();\n    visibleIds.forEach(id => adjacency.set(id, []));\n    links.forEach(link => {\n        (adjacency.get(link.sourceId) || []).push(link.targetId);\n        (adjacency.get(link.targetId) || []).push(link.sourceId);\n    });\n    const components = [], seen = new Set();\n    visibleIds.forEach(id => {\n        if (seen.has(id)) { return; }\n        const stack = [id], comp = [];\n        seen.add(id);\n        while (stack.length > 0) { const cur = stack.pop(); comp.push(cur); (adjacency.get(cur) || []).forEach(nid => { if (!seen.has(nid)) { seen.add(nid); stack.push(nid); } }); }\n        components.push(comp);\n    });\n    components.sort((a, b) => {\n        const ac = a.reduce((s, id) => s + hierarchyNodes[id].size, 0), bc = b.reduce((s, id) => s + hierarchyNodes[id].size, 0);\n        const as_ = Math.min(...a.map(id => hierarchyNodes[id].leaf_start)), bs_ = Math.min(...b.map(id => hierarchyNodes[id].leaf_start));\n        return sortBySizeEnabled ? (bc - ac || as_ - bs_ || b.length - a.length) : (as_ - bs_ || b.length - a.length);\n    });\n    return {adjacency, components};\n}\nfunction packLayouts(componentLayouts, options) {\n    options = options || {};\n    const gapX = options.gapX != null ? options.gapX : 120, gapY = options.gapY != null ? options.gapY : 120;\n    const op = options.outerPadding != null ? options.outerPadding : 72;\n    let rw;\n    if (options.rowTargetWidth != null) {\n        rw = options.rowTargetWidth;\n    } else {\n        const valid = componentLayouts.filter(c => c && c.items.length > 0);\n        const totalArea = valid.reduce((s, c) => s + c.width * c.height, 0);\n        const widest = valid.reduce((m, c) => Math.max(m, c.width), 0);\n        rw = Math.max(widest, Math.sqrt(totalArea) * 1.3) + op;\n    }\n    const packed = []; let cx = op, cy = op, rh = 0;\n    componentLayouts.forEach(comp => {\n        if (!comp || !comp.items.length) { return; }\n        if (cx > op && cx + comp.width > rw) { cx = op; cy += rh + gapY; rh = 0; }\n        comp.items.forEach(item => packed.push({componentId: item.componentId, x: item.x + cx, y: item.y + cy, radius: item.radius}));\n        cx += comp.width + gapX; rh = Math.max(rh, comp.height);\n    });\n    return packed;\n}\nself.onmessage = function(event) {\n    const msg = event.data;\n    if (msg.type !== 'computeLayout') { return; }\n    const {requestId, key, algorithm, visibleIds, links, hierarchyNodes, sortBySizeEnabled} = msg;\n    const {adjacency, components} = clusterGraphComponents(visibleIds, links, hierarchyNodes, sortBySizeEnabled);\n    const componentLayouts = components.map(ids => simulateComponentLayout(ids, adjacency, {\n        repulsion: 5000, spring: 0.08, gravity: 0.004,\n        damping: 0.85, preferredEdgeLength: 124, iterations: Math.max(30, Math.min(90, Math.round(850000 / ids.length))),\n        collisionStrength: 0.5, bubblePadding: 17, edgePadding: 10, geometryIterations: 7,\n        edgeIterations: 4, crossingIterations: 4, anchorStrength: 0.04, maxPhysicsNodes: 50000, theta: 1.5,\n    }, hierarchyNodes));\n    const layout = packLayouts(componentLayouts, {gapX: 36, gapY: 36, outerPadding: 72});\n    self.postMessage({requestId, key, layout});\n};\n";
     const BUNDLE_FORMAT = "domainator_ssn_viewer_bundle";
-    const BUNDLE_VERSION = 5;
-    const SUPPORTED_BUNDLE_VERSIONS = [3, 4, 5];
+    const BUNDLE_VERSION = 6;
+    const SUPPORTED_BUNDLE_VERSIONS = [3, 4, 5, 6];
     const DOMAINATOR_VERSION = "0.11.0";
     const VIEWER_APP_NAME = "Domainator Similarity Network Viewer";
 
@@ -1664,13 +1704,14 @@
         state.pendingRestoreViewTransform = null;
         state.dotLayoutCache = new Map();
         state.layoutCache = new Map();
-        state.sliderModel = buildSliderModel(bundle.graph.slider_stops || []);
-        // Point into the model just replaced, so they cannot outlive it.
-        state.selectedStop = null;
-        state.stopBeforeSplitChartClick = null;
         // A window onto the previous bundle's threshold range means nothing here; a
-        // session restore sets its own afterwards.
+        // session restore sets its own afterwards. Cleared before the series is built,
+        // because the selection is taken against whatever window is in force.
         state.splitChartZoom = null;
+        // Derived here rather than read from the file: see deriveMergeSeries. Every
+        // consumer below reads state.series, never the bundle's own copy (a pre-v6 file
+        // has one, already capped by whoever built it).
+        rebuildMergeSeries(DEFAULT_WINDOWED_MAX_MERGE_EVENTS);
         state.allNodeIndices = bundle.graph.nodes.map((_, i) => i);
         rebuildMetadataCaches();
 
@@ -1925,17 +1966,24 @@
         });
     }
 
-    // The warp is a function of the chart's window, so the stops have to be laid out
-    // again whenever that window moves -- and the thumb put back on the threshold it
-    // was already on, which is a different position under the new map.
+    // Both which stops exist and where they sit are functions of the chart's window, so
+    // both are redone whenever that window moves -- and the thumb put back on the
+    // threshold it was already on, which is a different position, and possibly a
+    // different stop object, under the new map.
+    //
+    // The selection is re-run because the cap spends itself on the window: zoom in and
+    // the same `maxMergeEvents` buys stops among the events actually on screen, which is
+    // what makes small events reachable at all. The threshold in effect is captured
+    // first and pinned through the re-selection, so the cut never changes under a zoom.
     function repositionSliderStops() {
-        if (!state.sliderModel || state.sliderModel.stops.length === 0) {
+        if (!state.series || !state.sliderModel || state.sliderModel.stops.length === 0) {
             return;
         }
-        const stop = currentSliderStop();
-        positionSliderStops(state.sliderModel.stops.filter(entry => entry.threshold_value !== null));
-        snapSliderToStop(stop);
+        const threshold = selectedThresholdValue();
+        applyMergeSelection(threshold);
+        restoreThreshold(threshold);
         updateThresholdStepButtons();
+        updateSplitEventCount();
     }
 
     function buildSliderModel(sourceStops) {
@@ -4492,7 +4540,7 @@
             });
         }
 
-        const events = state.bundle.graph.merge_event_series;
+        const events = state.series ? state.series.selectedRows : [];
         if (events.length === 0) {
             return Object.assign(frame, {
                 message: 'No split events in this bundle.',
@@ -4504,14 +4552,15 @@
         // one big cluster splitting off and a swarm of singletons are opposite stories that
         // the sum renders identically.
         const maxImpact = Math.max(...events.map(event => event.largest_merge), 1);
-        const movingSum = state.bundle.graph.merge_moving_sum || {x: [], y: []};
+        const movingSum = state.series.movingSum || {x: [], y: []};
         const movingSumX = movingSum.x || [];
         const movingSumY = movingSum.y || [];
-        // The moving sum is computed in Python over the UNFILTERED event rows, so its x range
-        // can extend past the capped merge_event_series; plot over the union of the two.
-        const thresholdValues = events.map(event => event.threshold_value).concat(movingSumX);
-        const dataMin = Math.min(...thresholdValues);
-        const dataMax = Math.max(...thresholdValues);
+        // The axis spans the whole series, never just what is selected -- the selection
+        // is a function of the window, so an axis derived from it would chase its own
+        // tail as the user zoomed.
+        const dataRange = splitSeriesDataRange(state.series);
+        const dataMin = dataRange.min;
+        const dataMax = dataRange.max;
         // The slice of the series the chart is showing: all of it unless it has been
         // zoomed. Every scale, tick, mark and marker below is derived from this window,
         // so it is the single place the zoom can be got wrong -- and the single place
@@ -5844,9 +5893,49 @@
             },
         },
         {
+            // The split chart's x window, saved for the same reason the canvas
+            // transform below is: reopening a session onto the whole axis would throw
+            // away the part of it the session was about. Stored in threshold units, so
+            // it survives any change of cap; splitChartLayout clamps it into whatever
+            // range the bundle actually has.
+            //
+            // Restored before max_merge_events, because the window is what that cap is
+            // spent on: selecting first and setting the window afterwards would leave a
+            // zoomed session showing the unzoomed selection.
+            section: 'view',
+            key: 'split_chart_zoom',
+            get: () => state.splitChartZoom
+                ? {min: state.splitChartZoom.min, max: state.splitChartZoom.max}
+                : null,
+            set: value => {
+                if (value === null || value === undefined) {
+                    state.splitChartZoom = null;
+                    return;
+                }
+                if (!Number.isFinite(value.min) || !Number.isFinite(value.max) || !(value.max > value.min)) {
+                    throw new Error('malformed split chart zoom');
+                }
+                state.splitChartZoom = {min: Number(value.min), max: Number(value.max)};
+            },
+        },
+        {
+            // Restored after split_chart_zoom (the window it is spent on) and before
+            // threshold_value, because it decides which stops exist for that field to
+            // snap to. Uses rebuildMergeSeries rather than applyMaxMergeEvents for the
+            // same reason: snapping here would be undone.
+            section: 'view',
+            key: 'max_merge_events',
+            get: () => state.maxMergeEvents,
+            set: value => {
+                const cap = Number(value);
+                if (!Number.isFinite(cap) || cap < 0) { throw new Error('not a count: ' + value); }
+                rebuildMergeSeries(cap);
+            },
+        },
+        {
             // The threshold is stored as its value, not as the slider position:
-            // positions are derived from the bundle's slider_stops and shift
-            // whenever --max_merge_events changes.
+            // positions are derived from the slider's stops and shift whenever the
+            // split-event cap changes.
             section: 'view',
             key: 'threshold_value',
             get: () => {
@@ -5882,28 +5971,6 @@
                 state.pendingRestoreViewTransform = {
                     scale: value.scale, offsetX: value.offsetX, offsetY: value.offsetY,
                 };
-            },
-        },
-        {
-            // The split chart's x window, saved for the same reason the canvas
-            // transform above is: reopening a session onto the whole axis would throw
-            // away the part of it the session was about. Stored in threshold units, so
-            // it survives a rebuild with another --max_merge_events; splitChartLayout
-            // clamps it into whatever range the bundle actually has.
-            section: 'view',
-            key: 'split_chart_zoom',
-            get: () => state.splitChartZoom
-                ? {min: state.splitChartZoom.min, max: state.splitChartZoom.max}
-                : null,
-            set: value => {
-                if (value === null || value === undefined) {
-                    state.splitChartZoom = null;
-                    return;
-                }
-                if (!Number.isFinite(value.min) || !Number.isFinite(value.max) || !(value.max > value.min)) {
-                    throw new Error('malformed split chart zoom');
-                }
-                state.splitChartZoom = {min: Number(value.min), max: Number(value.max)};
             },
         },
         domValueField('table', 'filter', 'metadata-filter'),
@@ -6028,8 +6095,10 @@
         // Controls whose appearance is derived from the values just restored.
         updateComponentSortButton();
         updateCollapseLongPathsControl();
-        // The threshold is restored before the chart window its slider position is
-        // warped by, so the thumb is placed under the old map and has to be re-placed.
+        // Re-select and re-place under the window that was just restored. The registry
+        // order already does this for a session carrying view.max_merge_events, so this
+        // is idempotent there; it is load-bearing for an older session that carries a
+        // window but no cap, whose selection was otherwise made before the window was.
         repositionSliderStops();
 
         const notes = [];
@@ -7198,6 +7267,10 @@
     const MOVING_SUM_WINDOW_FRACTION = 0.05;
     const MOVING_SUM_GRID_POINTS = 800;
     const DEFAULT_MAX_MERGE_EVENTS = 500;
+    // The viewer's own default. It picks its events from the chart's current window, so
+    // a much smaller number shows more: zoom in and the cap re-spends itself on the
+    // stretch being looked at. See ssn_hierarchy.DEFAULT_WINDOWED_MAX_MERGE_EVENTS.
+    const DEFAULT_WINDOWED_MAX_MERGE_EVENTS = 50;
     const MERGE_EVENT_DENSITY_BINS = 20;
 
     function makeUnionFind(size) {
@@ -7345,7 +7418,7 @@
 
     // Port of ssn_hierarchy.component_size_summary_by_threshold followed by
     // threshold_merge_event_rows: one row per distinct MST edge weight.
-    function extractionMergeEventRows(nodeCount, edges, metric) {
+    function mergeEventRows(nodeCount, edges, metric) {
         if (nodeCount === 0 || edges.length === 0) { return []; }
         const unionFind = makeUnionFind(nodeCount);
         const componentSizes = new Int32Array(nodeCount).fill(1);
@@ -7425,7 +7498,7 @@
     }
 
     // Port of ssn_hierarchy.merge_event_rank_key: strongest first.
-    function compareExtractionMergeEventRank(left, right) {
+    function compareMergeEventRank(left, right) {
         return right.merge_impact - left.merge_impact ||
             right.delta_largest - left.delta_largest ||
             right.delta_avg_non_singleton - left.delta_avg_non_singleton ||
@@ -7433,7 +7506,7 @@
     }
 
     // Port of ssn_hierarchy.merge_event_density_bin.
-    function extractionMergeEventDensityBin(thresholdValue, lo, hi, densityBins) {
+    function mergeEventDensityBin(thresholdValue, lo, hi, densityBins) {
         if (densityBins < 1 || !Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) {
             return -1;
         }
@@ -7441,19 +7514,35 @@
         return Math.max(0, Math.min(densityBins - 1, position));
     }
 
-    // Port of ssn_hierarchy.filter_merge_event_rows: the strongest maxMergeEvents
-    // events, plus the strongest event in each otherwise-empty band of the axis.
-    // See that function for why the back-fill exists.
-    function filterExtractionMergeEventRows(rows, maxMergeEvents = DEFAULT_MAX_MERGE_EVENTS,
-                                            densityBins = MERGE_EVENT_DENSITY_BINS) {
+    // Port of ssn_hierarchy.filter_merge_event_rows: the strongest maxMergeEvents events
+    // *within `window`*, plus the strongest event in each otherwise-empty band of the
+    // whole axis, plus `pinnedThreshold`'s event. See that function for the reasoning;
+    // in short, the window is what makes a small cap show more rather than less, the
+    // bands keep every stretch of the slider reachable, and the pin keeps the cut
+    // currently in effect from being filtered out from under the user.
+    function filterMergeEventRows(rows, maxMergeEvents = DEFAULT_MAX_MERGE_EVENTS,
+                                  densityBins = MERGE_EVENT_DENSITY_BINS,
+                                  window = null, pinnedThreshold = null) {
         if (maxMergeEvents === 0 || rows.length <= maxMergeEvents) { return rows.slice(); }
-        const ranked = rows.slice().sort(compareExtractionMergeEventRank);
-        const filtered = ranked.slice(0, maxMergeEvents);
+        const ranked = rows.slice().sort(compareMergeEventRank);
 
-        // Band edges come from the whole series, because that is what the axis spans.
+        let pool = ranked;
+        if (window) {
+            const low = Math.min(window.min, window.max);
+            const high = Math.max(window.min, window.max);
+            pool = ranked.filter(row => {
+                const value = Number(row.threshold_value);
+                return value >= low && value <= high;
+            });
+        }
+        const filtered = pool.slice(0, maxMergeEvents);
+        const selected = new Set(filtered);
+
+        // Band edges come from the whole series, because that is what the axis spans --
+        // a window narrows what the cap ranks, never what the axis has to cover.
         // Scanned rather than spread through Math.min: `rows` is the UNFILTERED series,
-        // which on a large extraction runs to six figures and would overflow the
-        // argument list.
+        // which on a large network runs to six figures and would overflow the argument
+        // list.
         let lo = Infinity;
         let hi = -Infinity;
         let finiteCount = 0;
@@ -7466,24 +7555,33 @@
         }
         if (finiteCount > 0 && densityBins > 0) {
             const covered = new Set(filtered.map(row =>
-                extractionMergeEventDensityBin(row.threshold_value, lo, hi, densityBins)));
-            // `ranked` is strongest-first, so the first row seen in an empty band is
-            // the strongest one available to represent it.
-            for (let index = maxMergeEvents; index < ranked.length; index++) {
-                const row = ranked[index];
-                const bin = extractionMergeEventDensityBin(row.threshold_value, lo, hi, densityBins);
+                mergeEventDensityBin(row.threshold_value, lo, hi, densityBins)));
+            // `ranked` is strongest-first, so the first row seen in an empty band is the
+            // strongest one available to represent it. Candidates come from the whole
+            // series, not the window: a band outside the window still needs its stop.
+            for (const row of ranked) {
+                if (selected.has(row)) { continue; }
+                const bin = mergeEventDensityBin(row.threshold_value, lo, hi, densityBins);
                 if (bin < 0 || covered.has(bin)) { continue; }
                 covered.add(bin);
                 filtered.push(row);
+                selected.add(row);
             }
         }
+
+        if (pinnedThreshold !== null && Number.isFinite(pinnedThreshold)
+                && !filtered.some(row => Number(row.threshold_value) === pinnedThreshold)) {
+            const pinned = ranked.find(row => Number(row.threshold_value) === pinnedThreshold);
+            if (pinned) { filtered.push(pinned); }
+        }
+
         return filtered.sort((left, right) => left.edge_index - right.edge_index);
     }
 
     // Port of ssn_hierarchy.merge_event_moving_sum. Runs over the UNFILTERED rows:
     // filtering keeps the strongest events, so summing afterwards would undercount
     // exactly the small ones this series exists to show.
-    function extractionMovingSum(rows) {
+    function mergeEventMovingSum(rows) {
         const empty = {window: 0, x: [], y: []};
         if (rows.length === 0) { return empty; }
         const points = rows
@@ -7529,48 +7627,23 @@
         return {window, x, y};
     }
 
-    // Distinct MST edge weights and the component count at each, mirroring
-    // MaxTree's cluster_count_by_threshold.
-    function extractionClusterCountByThreshold(nodeCount, edges) {
-        const table = [];
-        const rowIndexByThreshold = new Map();
-        for (let i = 0; i < edges.length; i++) {
-            if (i === 0 || edges[i][2] !== edges[i - 1][2]) {
-                // Edges are weight-descending, so every earlier edge is strictly above.
-                rowIndexByThreshold.set(edges[i][2], table.length);
-                table.push([edges[i][2], nodeCount - i]);
-            }
-        }
-        if (edges.length > 0 && edges[edges.length - 1][2] > 0) {
-            // The --lb 0 default: the complete graph, when every score is positive.
-            rowIndexByThreshold.set(0, table.length);
-            table.push([0, nodeCount - edges.length]);
-        }
-        return {table, rowIndexByThreshold};
-    }
-
-    // Mirrors build_ssn_viewer._slider_stops, including its trailing floor stop:
+    // Port of ssn_hierarchy.threshold_slider_stops, including its trailing floor stop:
     // every other stop excludes its own tie group, so without one strictly below the
     // weakest edge the fully merged network cannot be reached on the slider.
-    function extractionSliderStops(rows, rowIndexByThreshold, edges) {
-        const stops = [{edge_index: -1, threshold_index: -1, threshold_label: '∞', threshold_value: null}];
+    function buildSliderStops(rows, edges) {
+        const stops = [{edge_index: -1, threshold_label: '\u221e', threshold_value: null}];
         rows.forEach(row => {
             stops.push({
                 edge_index: row.edge_index,
-                threshold_index: rowIndexByThreshold.has(row.threshold_value)
-                    ? rowIndexByThreshold.get(row.threshold_value)
-                    : -1,
                 threshold_label: row.threshold_to,
                 threshold_value: row.threshold_value,
             });
         });
         if (edges.length > 0) {
             // edges are weight-descending.
-            const floorValue = extractionFloorThreshold(edges[edges.length - 1][2], edges[0][2]);
+            const floorValue = floorThresholdValue(edges[edges.length - 1][2], edges[0][2]);
             stops.push({
                 edge_index: edges.length - 1,   // every MST edge is strictly above
-                // Stands for the complete-graph cut, so it reads counts from that row.
-                threshold_index: rowIndexByThreshold.has(0) ? rowIndexByThreshold.get(0) : -1,
                 threshold_label: formatThresholdValue(floorValue),
                 threshold_value: floorValue,
             });
@@ -7578,10 +7651,64 @@
         return stops;
     }
 
+    // The window-independent half of the series: the full event list and its moving sum,
+    // derived from the merge order the bundle carries. From bundle v6 the file stores
+    // none of it -- it is a pure function of (node count, mst_edges, metric), and
+    // deriving it here is what lets both the cap and the chart's window decide what is
+    // shown, neither of which is knowable when the file is written. Pre-v6 files still
+    // carry a capped copy; it is ignored in favour of this, so an old bundle is not
+    // stuck with whatever cap it happened to be built with.
+    //
+    // This is the expensive half -- one union-find replay over the MST edges -- so it
+    // runs once per bundle. Zooming re-runs only selectMergeEvents below.
+    function deriveMergeSeries(nodeCount, edges, metric) {
+        const eventRows = mergeEventRows(nodeCount, edges, metric);
+        return {
+            edges,
+            eventRows,
+            // From the UNFILTERED rows, so the chart's axis and the slider's track span
+            // every event whatever the cap and the window are.
+            movingSum: mergeEventMovingSum(eventRows),
+            total: eventRows.length,
+            // Filled in by selectMergeEvents, which needs a window this does not have.
+            selectedRows: [],
+            sliderStops: [],
+            cap: 0,
+        };
+    }
+
+    // The window-dependent half: which of those events the chart plots and the slider
+    // offers stops for. Cheap (a sort and a scan), so it re-runs on every zoom and pan.
+    function selectMergeEvents(series, maxMergeEvents, window, pinnedThreshold) {
+        series.selectedRows = filterMergeEventRows(
+            series.eventRows, maxMergeEvents, MERGE_EVENT_DENSITY_BINS, window, pinnedThreshold);
+        series.sliderStops = buildSliderStops(series.selectedRows, series.edges);
+        series.cap = maxMergeEvents;
+        return series;
+    }
+
+    // The full threshold range of the series, which is what the chart's axis spans and
+    // what a zoom window is clamped against. Taken from the UNFILTERED rows (and the
+    // moving sum, which runs over them too) rather than from the current selection --
+    // the selection depends on the window, so deriving the range from it would be
+    // circular, and would make the axis breathe as the user zoomed.
+    function splitSeriesDataRange(series) {
+        let min = Infinity;
+        let max = -Infinity;
+        const consider = value => {
+            if (!Number.isFinite(value)) { return; }
+            if (value < min) { min = value; }
+            if (value > max) { max = value; }
+        };
+        for (const row of series.eventRows) { consider(Number(row.threshold_value)); }
+        for (const value of (series.movingSum.x || [])) { consider(Number(value)); }
+        return Number.isFinite(min) ? {min, max} : {min: 0, max: 0};
+    }
+
     // Port of ssn_hierarchy.floor_threshold_value.
     const FLOOR_THRESHOLD_SPAN_FRACTION = 0.01;
 
-    function extractionFloorThreshold(lowestMstWeight, highestMstWeight) {
+    function floorThresholdValue(lowestMstWeight, highestMstWeight) {
         const span = highestMstWeight - lowestMstWeight;
         if (span > 0) {
             return lowestMstWeight - (FLOOR_THRESHOLD_SPAN_FRACTION * span);
@@ -7625,9 +7752,6 @@
 
         const nodeCount = induced.nodeIndices.length;
         const metric = state.bundle.graph.merge_impact_metric;
-        const eventRows = extractionMergeEventRows(nodeCount, induced.edges, metric);
-        const clusterCounts = extractionClusterCountByThreshold(nodeCount, induced.edges);
-        const filteredRows = filterExtractionMergeEventRows(eventRows);
         const keptIds = new Set(induced.nodeIndices.map(nodeIndex => nodeId(nodeIndex)));
 
         return {
@@ -7636,25 +7760,15 @@
                 version: BUNDLE_VERSION,
                 name: ((state.bundle.name || 'network') + '_extraction'),
                 domainator_version: DOMAINATOR_VERSION,
+                // A v6 graph: only what cannot be derived from the merge order. The
+                // split-event series, its moving sum and the slider's stops are all a
+                // function of these four keys, so an extraction no longer computes a
+                // frozen copy of them -- whoever opens it derives them, at whatever cap
+                // they are looking at it with.
                 graph: {
                     nodes: induced.nodeIndices.map(nodeIndex => nodeId(nodeIndex)),
                     mst_edges: induced.edges,
-                    cluster_count_by_threshold: clusterCounts.table,
-                    // Counts of *all* graph edges above each threshold. The bundle only
-                    // ever carried the MST, so this cannot be recomputed here; it is
-                    // left empty rather than filled with MST counts that would read as
-                    // full-graph ones. No reader consumes it.
-                    edges_by_threshold: [],
                     merge_impact_metric: metric,
-                    merge_event_series: filteredRows,
-                    // v5 fields: the uncapped event count and the cap, so the viewer can
-                    // report how much of the series it is showing. The extraction applies
-                    // the same default cap build_ssn_viewer.py does.
-                    merge_event_total: eventRows.length,
-                    max_merge_events: DEFAULT_MAX_MERGE_EVENTS,
-                    // From the unfiltered rows -- see extractionMovingSum.
-                    merge_moving_sum: extractionMovingSum(eventRows),
-                    slider_stops: extractionSliderStops(filteredRows, clusterCounts.rowIndexByThreshold, induced.edges),
                     hierarchy: buildExtractionHierarchy(nodeCount, induced.edges),
                 },
                 metadata: {
@@ -11480,34 +11594,110 @@
         drawClusterView(resetView);
     }
 
+    // The bundle carries the merge order; everything the threshold slider and the split
+    // chart show is derived from it, here, on load. See deriveMergeSeries.
+    function normalizeMaxMergeEvents(value) {
+        const cap = Number(value);
+        if (!Number.isFinite(cap) || cap < 0) { return DEFAULT_WINDOWED_MAX_MERGE_EVENTS; }
+        return Math.floor(cap);
+    }
+
+    // The part of the axis the split chart is currently showing, in threshold units, or
+    // null when the whole series is on screen. Clamped by splitChartVisibleWindow against
+    // the series' real range, so a stale zoom left over from another bundle cannot narrow
+    // the selection to a stretch that no longer exists.
+    function currentSplitWindow() {
+        if (!state.series || !state.splitChartZoom) { return null; }
+        const range = splitSeriesDataRange(state.series);
+        const view = splitChartVisibleWindow(range.min, range.max);
+        return view.zoomed ? {min: view.min, max: view.max} : null;
+    }
+
+    // Re-select which events the chart plots and the slider stops at, and re-lay-out the
+    // slider, without redrawing. Every caller that changes the cap or the window goes
+    // through here.
+    //
+    // `pinnedThreshold` is the cut currently in effect. It has to survive the
+    // re-selection: if zooming could filter out the stop the thumb is on, the slider
+    // would land on a neighbouring stop and the network would silently re-cluster.
+    function applyMergeSelection(pinnedThreshold) {
+        selectMergeEvents(state.series, state.maxMergeEvents, currentSplitWindow(),
+                          Number.isFinite(pinnedThreshold) ? pinnedThreshold : null);
+        state.sliderModel = buildSliderModel(state.series.sliderStops);
+        // Point into the model just replaced, so they cannot outlive it.
+        state.selectedStop = null;
+        state.stopBeforeSplitChartClick = null;
+
+        const slider = document.getElementById('threshold-slider');
+        slider.max = String(state.sliderModel.maxPosition);
+        slider.disabled = state.sliderModel.stops.length === 0;
+        document.getElementById('threshold-min-label').textContent = state.sliderModel.minLabel;
+        document.getElementById('threshold-max-label').textContent = state.sliderModel.maxLabel;
+        document.getElementById('threshold-input').disabled = state.sliderModel.stops.length === 0;
+        const capInput = document.getElementById('split-event-cap');
+        capInput.disabled = false;
+        capInput.value = String(state.maxMergeEvents);
+    }
+
+    // Put the thumb back on `threshold` under whatever stop list now exists.
+    function restoreThreshold(threshold) {
+        snapSliderToStop(Number.isFinite(threshold)
+            ? nearestStopForThreshold(threshold)
+            : state.sliderModel.stops.find(stop => stop.threshold_value === null));
+    }
+
+    // A new bundle, or a session restore setting the cap. Replays the merge order, which
+    // is the expensive half, then selects against the current window.
+    //
+    // A session restore uses this directly: the threshold_value field that follows it in
+    // the registry does the snapping, so snapping here would be undone a moment later.
+    function rebuildMergeSeries(maxMergeEvents) {
+        state.maxMergeEvents = normalizeMaxMergeEvents(maxMergeEvents);
+        const graph = state.bundle.graph;
+        state.series = deriveMergeSeries(
+            graph.nodes.length, graph.mst_edges || [], graph.merge_impact_metric);
+        applyMergeSelection(null);
+    }
+
+    // The user moved the cap. The stops are re-laid-out, so the old selection's slider
+    // position means nothing; the threshold *value* is what survives -- exactly as it
+    // does across a session save, and for the same reason. No replay here: the cap only
+    // changes which of the already-derived events are selected.
+    function applyMaxMergeEvents(maxMergeEvents) {
+        if (!state.bundle || !state.series) { return; }
+        const previousThreshold = selectedThresholdValue();
+        state.maxMergeEvents = normalizeMaxMergeEvents(maxMergeEvents);
+        applyMergeSelection(previousThreshold);
+        restoreThreshold(previousThreshold);
+        updateSplitEventCount();
+        updateThresholdUI(false);
+    }
+
     // How much of the network's split-event series the chart is actually showing.
     // Without this the blank stretches of a large network's axis are unreadable: the
     // axis and the moving sum span every merge, but the stems are a capped selection,
     // so "nothing plotted here" and "nothing happens here" look identical.
     //
-    // graph.merge_event_total and graph.max_merge_events arrived in bundle v5. A v3/v4
-    // bundle carries neither, so the label falls back to the plotted count alone
-    // rather than inventing a denominator.
+    // The series is derived on load from the bundle's merge order, so the denominator
+    // is always known -- on a bundle of any version, including the pre-v6 files whose
+    // stored series was already capped when it was written.
     function updateSplitEventCount() {
         const note = document.getElementById('split-event-count');
-        if (!state.bundle) {
+        if (!state.bundle || !state.series) {
             note.textContent = '';
             note.removeAttribute('title');
             return;
         }
-        const graph = state.bundle.graph;
-        const plotted = (graph.merge_event_series || []).length;
-        const total = Number.isFinite(graph.merge_event_total) ? graph.merge_event_total : null;
-        const cap = Number.isFinite(graph.max_merge_events) ? graph.max_merge_events : null;
+        const plotted = state.series.selectedRows.length;
+        const total = state.series.total;
+        const cap = state.series.cap;
         const bandPercent = 100 / MERGE_EVENT_DENSITY_BINS;
         const plural = count => (count === 1 ? '' : 's');
 
-        if (total === null) {
-            note.textContent = plotted.toLocaleString() + ' merge event' + plural(plotted) + ' plotted.';
-        } else if (plotted >= total) {
+        if (plotted >= total) {
             note.textContent = 'All ' + total.toLocaleString() + ' merge event' + plural(total) + ' plotted.';
         } else {
-            const backfilled = cap === null ? 0 : Math.max(0, plotted - cap);
+            const backfilled = cap === 0 ? 0 : Math.max(0, plotted - cap);
             note.textContent = plotted.toLocaleString() + ' of ' + total.toLocaleString() +
                 ' merge events plotted' +
                 (backfilled > 0
@@ -11516,13 +11706,13 @@
                       + ' with an event to show has one.'
                     : ' — the strongest by impact.');
         }
-        note.title = total === null || plotted >= total
+        note.title = plotted >= total
             ? 'Every split event in this network is drawn.'
             : 'The split chart draws a capped selection of the network’s ' +
-              total.toLocaleString() + ' split events, set by build_ssn_viewer.py ' +
-              '--max_merge_events (0 plots them all). The axis and the moving-sum line ' +
-              'always span every event, so a stretch with no stems is a stretch whose ' +
-              'events were too small to make the cut, not necessarily a quiet one.';
+              total.toLocaleString() + ' split events, set by the "Split events" box ' +
+              '(0 plots them all). The axis and the moving-sum line always span every ' +
+              'event, so a stretch with no stems is a stretch whose events were too ' +
+              'small to make the cut, not necessarily a quiet one.';
     }
 
     function scheduleThresholdUI(resetView = true) {
@@ -12284,6 +12474,11 @@
         // Keep the user's current pan/zoom when the slider is released; only snap to the
         // nearest stop. (Use the Reset view button to re-fit.)
         scheduleThresholdUI(false);
+    });
+    document.getElementById('split-event-cap').addEventListener('change', event => {
+        // Re-deriving the whole series is one pass over the MST edges, so this is a
+        // plain 'change' handler rather than anything debounced or deferred.
+        applyMaxMergeEvents(event.target.value);
     });
     document.getElementById('threshold-input').addEventListener('change', jumpToThresholdValue);
     document.getElementById('threshold-input').addEventListener('keydown', event => {

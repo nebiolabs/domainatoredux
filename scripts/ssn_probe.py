@@ -97,8 +97,30 @@ def main() -> None:
     # the small events the series exists to reveal.
     moving = merge_event_moving_sum(all_rows, MOVING_SUM_WINDOW_FRACTION, MOVING_SUM_GRID_POINTS)
     events = filter_merge_event_rows(all_rows, args.max_merge_events, MERGE_EVENT_DENSITY_BINS)
-    stops = threshold_slider_stops(events, tree=tree)
+    # threshold_index_lookup: only a caller holding the threshold tables can index them,
+    # and this probe builds its tree from the matrix, so it does.
+    stops = threshold_slider_stops(events, tree=tree,
+                                   threshold_index_lookup=tree.threshold_row_index)
     hierarchy = build_mst_component_hierarchy(tree)
+
+    # The windowed/pinned selection the viewer's chart uses. Window and pin are derived
+    # from the data so sync_upstream.sh needs no extra flags: the middle 40% of the
+    # finite threshold axis, pinned at the first dropped event -- which is what makes the
+    # pin actually bite rather than being a no-op that proves nothing.
+    finite = [float(r["threshold_value"]) for r in all_rows
+              if math.isfinite(float(r["threshold_value"]))]
+    window = None
+    if finite and max(finite) > min(finite):
+        lo, hi = min(finite), max(finite)
+        window = (lo + 0.3 * (hi - lo), lo + 0.7 * (hi - lo))
+    windowed = filter_merge_event_rows(all_rows, args.max_merge_events,
+                                       MERGE_EVENT_DENSITY_BINS, window=window)
+    kept_thresholds = [float(r["threshold_value"]) for r in windowed]
+    pin = next((float(r["threshold_value"]) for r in all_rows
+                if float(r["threshold_value"]) not in kept_thresholds), None)
+    windowed_pinned = filter_merge_event_rows(all_rows, args.max_merge_events,
+                                              MERGE_EVENT_DENSITY_BINS, window=window,
+                                              pinned_threshold=pin)
 
     document = {
         "n_nodes": int(tree.n_nodes),
@@ -116,6 +138,12 @@ def main() -> None:
         "merge_event_total": len(all_rows),
         "max_merge_events": int(args.max_merge_events),
         "merge_events": [event_json(r) for r in events],
+        "merge_events_windowed": {
+            "window": None if window is None else [num(window[0]), num(window[1])],
+            "pinned_threshold": num(pin),
+            "selected": [int(r["edge_index"]) for r in windowed],
+            "selected_pinned": [int(r["edge_index"]) for r in windowed_pinned],
+        },
         "merge_moving_sum": {
             "window": num(moving["window"]),
             "x": [num(v) for v in moving["x"]],

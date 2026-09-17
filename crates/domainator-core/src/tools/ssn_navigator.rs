@@ -9,12 +9,19 @@
 //! slider: `--threshold inf` is the "∞" stop at its fine end, where every node is its
 //! own cluster, and **omitting `--threshold` uses the floor** at the coarse end, one
 //! cluster per connected component.
+//!
+//! The cut-points offered by `thresholds` and `node` are derived from the bundle's
+//! merge order, not read out of it, so `max_merge_events` controls how many are offered
+//! (`0` for one per split event) whatever the bundle was built with.
 
 use serde_json::{json, Map, Value};
 
+use crate::matrix::ssn::{MergeEvent, SliderStop, DEFAULT_MAX_MERGE_EVENTS};
+
 use super::ssn_bundle::{
     cluster_for_node, clusters_at_threshold, coarsest_threshold, component_members,
-    component_size, node_index_by_name, summarize_cluster_metadata,
+    component_size, merge_event_rows, merge_event_series, node_index_by_name, slider_stops,
+    summarize_cluster_metadata,
 };
 
 /// The query modes, in the order the CLI lists them.
@@ -52,6 +59,11 @@ pub struct SsnNavigatorOptions {
     pub min_size: usize,
     pub top_n: usize,
     pub members: bool,
+    /// How many split events the `thresholds` / `node` cut-points are drawn from:
+    /// the strongest this many by impact, plus a back-fill so no 5% band of the
+    /// threshold range with an event to offer is left without one. `0` offers a
+    /// cut-point at every split event.
+    pub max_merge_events: usize,
 }
 
 impl Default for SsnNavigatorOptions {
@@ -64,6 +76,7 @@ impl Default for SsnNavigatorOptions {
             min_size: 1,
             top_n: 50,
             members: false,
+            max_merge_events: DEFAULT_MAX_MERGE_EVENTS,
         }
     }
 }
@@ -97,23 +110,82 @@ fn threshold_out(threshold: f64) -> Value {
     }
 }
 
-/// `graph.merge_event_series` is a capped selection, and the slider stops derive from
-/// it — so a caller treating either as the complete set of interesting thresholds is
-/// wrong on any large network. Returns nothing extra for a pre-v5 bundle, which did
-/// not record the uncapped total.
-fn merge_event_coverage(graph: &Value) -> Vec<(String, Value)> {
-    let mut out = vec![(
-        "merge_events".to_string(),
-        json!(graph.get("merge_event_series").and_then(Value::as_array).map_or(0, Vec::len)),
-    )];
-    if let Some(total) = graph.get("merge_event_total") {
-        out.push(("merge_event_total".to_string(), total.clone()));
-        out.push((
-            "max_merge_events".to_string(),
-            graph.get("max_merge_events").cloned().unwrap_or(Value::Null),
-        ));
+/// How much of the network's split-event series this run is reporting.
+///
+/// The cut-points offered are one per *selected* split event, and `max_merge_events`
+/// keeps only the strongest (plus a back-fill so no stretch of the threshold range goes
+/// unrepresented). A caller that treats the offered cut-points as the complete set of
+/// interesting thresholds is wrong on any large network, so say what was left out.
+///
+/// The series is derived from the merge order rather than read from the bundle, so the
+/// total is exact on **every** bundle version — including pre-v6 files, whose stored
+/// series was already capped when it was written.
+fn merge_event_coverage(
+    event_total: usize,
+    selected: usize,
+    max_merge_events: usize,
+) -> Vec<(String, Value)> {
+    vec![
+        ("merge_events".to_string(), json!(selected)),
+        ("merge_event_total".to_string(), json!(event_total)),
+        ("max_merge_events".to_string(), json!(max_merge_events)),
+    ]
+}
+
+/// The derived split-event data a query needs, replayed at most once.
+///
+/// Replaying the merge order costs a pass over the MST edges, so only the modes that
+/// report cut-points pay for it, and a mode needing both the rows and the stops replays
+/// once rather than twice.
+#[derive(Default)]
+struct Derived {
+    rows: Option<Vec<MergeEvent>>,
+    selected: Option<Vec<MergeEvent>>,
+    stops: Option<Vec<SliderStop>>,
+}
+
+impl Derived {
+    fn rows(&mut self, bundle: &Value) -> &[MergeEvent] {
+        self.rows.get_or_insert_with(|| merge_event_rows(bundle, None))
     }
-    out
+
+    /// Run `f` over the cached rows without cloning them: a `MergeEvent` owns two
+    /// Strings and a Vec, and the networks the cap exists for have ~10^5 of them, so
+    /// the obvious `self.rows(bundle).to_vec()` would copy all of that twice per query
+    /// just to satisfy the borrow checker.
+    fn with_rows<T>(&mut self, bundle: &Value, f: impl FnOnce(&[MergeEvent]) -> T) -> T {
+        let rows = self.rows.take().unwrap_or_else(|| merge_event_rows(bundle, None));
+        let out = f(&rows);
+        self.rows = Some(rows);
+        out
+    }
+
+    fn selected(&mut self, bundle: &Value, max_merge_events: usize) -> &[MergeEvent] {
+        if self.selected.is_none() {
+            self.selected =
+                Some(self.with_rows(bundle, |rows| {
+                    merge_event_series(bundle, max_merge_events, Some(rows))
+                }));
+        }
+        self.selected.as_deref().unwrap()
+    }
+
+    fn stops(&mut self, bundle: &Value, max_merge_events: usize) -> &[SliderStop] {
+        if self.stops.is_none() {
+            self.stops = Some(
+                self.with_rows(bundle, |rows| slider_stops(bundle, max_merge_events, Some(rows))),
+            );
+        }
+        self.stops.as_deref().unwrap()
+    }
+}
+
+/// A derived stop's `threshold_value`, as the output JSON carries it: `null` for ∞.
+fn stop_value_json(stop: &SliderStop) -> Value {
+    match stop.threshold_value {
+        Some(v) => json!(v),
+        None => Value::Null,
+    }
 }
 
 fn cluster_records(hierarchy: &Value, active: &[usize], min_size: usize) -> Vec<Value> {
@@ -149,6 +221,7 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
     let empty = Vec::new();
     let node_names = graph.get("nodes").and_then(Value::as_array).unwrap_or(&empty);
     let threshold = resolve_threshold(opts.threshold.as_deref(), hierarchy)?;
+    let mut derived = Derived::default();
 
     match opts.mode {
         NavMode::Overview => {
@@ -183,29 +256,29 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
                 "merge_impact_metric".into(),
                 graph.get("merge_impact_metric").cloned().unwrap_or(Value::Null),
             );
-            for (k, v) in merge_event_coverage(graph) {
+            let total = derived.rows(bundle).len();
+            let shown = derived.selected(bundle, opts.max_merge_events).len();
+            for (k, v) in merge_event_coverage(total, shown, opts.max_merge_events) {
                 out.insert(k, v);
             }
             Ok(Value::Object(out))
         }
 
         NavMode::Thresholds => {
-            // The stops are one per plotted merge event, so they inherit the cap.
-            // Saying so is the point: picking a cut-point from a silently truncated
-            // list is the failure this guards against.
-            let stops = graph.get("slider_stops").and_then(Value::as_array).unwrap_or(&empty);
+            // The cut-points are one per selected merge event, so they inherit the
+            // cap. Saying so is the point: picking a cut-point from a silently
+            // truncated list is the failure this guards against. Raise
+            // `max_merge_events` (0 for all of them) to see more.
+            let stops = derived.stops(bundle, opts.max_merge_events).to_vec();
             let summaries: Vec<Value> = stops
                 .iter()
                 .map(|stop| {
-                    let tv = stop.get("threshold_value").and_then(Value::as_f64);
-                    let active = clusters_at_threshold(hierarchy, tv);
+                    let active = clusters_at_threshold(hierarchy, stop.threshold_value);
                     let sizes: Vec<usize> =
                         active.iter().map(|&id| component_size(hierarchy, id)).collect();
                     json!({
-                        "threshold_value": stop.get("threshold_value")
-                            .cloned().unwrap_or(Value::Null),
-                        "threshold_label": stop.get("threshold_label")
-                            .cloned().unwrap_or(Value::Null),
+                        "threshold_value": stop_value_json(stop),
+                        "threshold_label": stop.threshold_label,
                         "clusters": active.len(),
                         "non_singleton_clusters": sizes.iter().filter(|&&s| s > 1).count(),
                         "largest_cluster": sizes.iter().max().copied().unwrap_or(0),
@@ -214,7 +287,9 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
                 .collect();
             let mut out = Map::new();
             out.insert("thresholds".into(), Value::Array(summaries));
-            for (k, v) in merge_event_coverage(graph) {
+            let total = derived.rows(bundle).len();
+            let shown = derived.selected(bundle, opts.max_merge_events).len();
+            for (k, v) in merge_event_coverage(total, shown, opts.max_merge_events) {
                 out.insert(k, v);
             }
             Ok(Value::Object(out))
@@ -247,7 +322,7 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
                 let idx = *by_name
                     .get(name.as_str())
                     .ok_or_else(|| format!("Node '{name}' not found in the bundle."))?;
-                cluster_for_node(hierarchy, &active, idx)
+                cluster_for_node(hierarchy, idx, threshold)
                     .ok_or_else(|| format!("No active cluster found for node '{name}'."))?
             } else if let Some(id) = opts.cluster_id {
                 if !active.contains(&id) {
@@ -291,18 +366,21 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
             let node_index = *by_name
                 .get(name.as_str())
                 .ok_or_else(|| format!("Node '{name}' not found in the bundle."))?;
-            let stops = graph.get("slider_stops").and_then(Value::as_array).unwrap_or(&empty);
+            let stops = derived.stops(bundle, opts.max_merge_events).to_vec();
             let memberships: Vec<Value> = stops
                 .iter()
                 .map(|stop| {
-                    let tv = stop.get("threshold_value").and_then(Value::as_f64);
-                    let active = clusters_at_threshold(hierarchy, tv);
-                    let cid = cluster_for_node(hierarchy, &active, node_index);
+                    // One walk up from this node's leaf per cut-point, rather than
+                    // rebuilding the whole partition at each one only to look up a
+                    // single member.
+                    let cid = cluster_for_node(
+                        hierarchy,
+                        node_index,
+                        stop.threshold_value.unwrap_or(f64::INFINITY),
+                    );
                     json!({
-                        "threshold_value": stop.get("threshold_value")
-                            .cloned().unwrap_or(Value::Null),
-                        "threshold_label": stop.get("threshold_label")
-                            .cloned().unwrap_or(Value::Null),
+                        "threshold_value": stop_value_json(stop),
+                        "threshold_label": stop.threshold_label,
                         "cluster_id": cid,
                         "cluster_size": cid.map(|c| component_size(hierarchy, c)),
                     })
@@ -350,5 +428,109 @@ mod tests {
     fn infinite_threshold_serializes_as_null() {
         assert_eq!(threshold_out(f64::INFINITY), Value::Null);
         assert_eq!(threshold_out(3.5), json!(3.5));
+    }
+
+    /// A real bundle, so the cut-points under test are the ones a `.dsnv` would give.
+    fn six_node_bundle() -> Value {
+        let mut dense = vec![0.0f64; 36];
+        for &(i, j, w) in &[
+            (0usize, 1usize, 10.0f64),
+            (2, 3, 9.0),
+            (1, 2, 5.0),
+            (4, 5, 8.0),
+            (3, 4, 4.0),
+            (0, 5, 2.0),
+        ] {
+            dense[i * 6 + j] = w;
+            dense[j * 6 + i] = w;
+        }
+        let labels: Vec<String> = (0..6).map(|i| format!("n{i}")).collect();
+        let m = crate::matrix::DataMatrix {
+            rows: labels.clone(),
+            cols: labels,
+            row_lengths: None,
+            col_lengths: None,
+            data_type: "score".into(),
+            storage: crate::matrix::Storage::Dense(dense),
+        };
+        let opts = super::super::build_ssn_viewer::BuildSsnViewerOptions {
+            name: "t".into(),
+            ..Default::default()
+        };
+        super::super::build_ssn_viewer::build_ssn_viewer_bundle(&m, &opts).unwrap()
+    }
+
+    fn run(bundle: &Value, opts: SsnNavigatorOptions) -> Value {
+        ssn_navigator(bundle, &opts).unwrap()
+    }
+
+    #[test]
+    fn node_membership_matches_the_full_partition_at_every_cut() {
+        // `--mode node` walks up from the leaf instead of rebuilding the partition at
+        // each cut-point. The two must agree everywhere, or the cheap path is a lie.
+        let bundle = six_node_bundle();
+        let hierarchy = &bundle["graph"]["hierarchy"];
+        let out = run(&bundle, SsnNavigatorOptions {
+            mode: NavMode::Node,
+            node: Some("n0".into()),
+            max_merge_events: 0,
+            ..Default::default()
+        });
+        let memberships = out["memberships"].as_array().unwrap();
+        assert!(memberships.len() > 2, "∞ + one per split event + floor");
+        for m in memberships {
+            let cut = m["threshold_value"].as_f64();
+            let active = clusters_at_threshold(hierarchy, cut);
+            let expected = active
+                .iter()
+                .copied()
+                .find(|&id| component_members(hierarchy, id).contains(&0usize))
+                .unwrap();
+            assert_eq!(m["cluster_id"], json!(expected), "at cut {cut:?}");
+            assert_eq!(m["cluster_size"], json!(component_size(hierarchy, expected)));
+        }
+        // The ∞ stop leads, where every node stands alone.
+        assert_eq!(memberships[0]["threshold_value"], Value::Null);
+        assert_eq!(memberships[0]["cluster_size"], json!(1));
+    }
+
+    #[test]
+    fn the_cap_is_applied_at_query_time_not_baked_into_the_file() {
+        // The whole point of bundle v6: the same file answers at any cap, because the
+        // series is derived from its merge order rather than read out of it.
+        let bundle = six_node_bundle();
+        let count = |max: usize| -> usize {
+            run(&bundle, SsnNavigatorOptions {
+                mode: NavMode::Thresholds,
+                max_merge_events: max,
+                ..Default::default()
+            })["thresholds"]
+                .as_array()
+                .unwrap()
+                .len()
+        };
+        let uncapped = count(0);
+        assert!(uncapped > 3, "need a series worth capping");
+        assert!(count(1) <= uncapped, "a cap can only remove cut-points");
+        assert_eq!(count(0), uncapped, "and 0 means no cap at all");
+    }
+
+    #[test]
+    fn coverage_is_reported_on_every_bundle_version() {
+        // Derived, so the total is exact even on a pre-v6 file whose stored series was
+        // already capped when it was written — there is no "unknown denominator" case
+        // left to fall back to.
+        let mut bundle = six_node_bundle();
+        for version in [5, 6] {
+            bundle["version"] = json!(version);
+            let out = run(&bundle, SsnNavigatorOptions {
+                mode: NavMode::Overview,
+                max_merge_events: 2,
+                ..Default::default()
+            });
+            assert_eq!(out["max_merge_events"], json!(2));
+            assert!(out["merge_event_total"].as_u64().unwrap() > 0);
+            assert!(out["merge_events"].as_u64().unwrap() > 0);
+        }
     }
 }

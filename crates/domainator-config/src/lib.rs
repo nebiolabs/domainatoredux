@@ -1091,6 +1091,7 @@ pub struct SsnNavigatorConfig {
     pub min_size: Option<usize>,
     pub top_n: Option<usize>,
     pub members: bool,
+    pub max_merge_events: Option<usize>,
 }
 
 impl SsnNavigatorConfig {
@@ -1103,6 +1104,7 @@ impl SsnNavigatorConfig {
         merge_scalar!(self, cli, node);
         merge_scalar!(self, cli, min_size);
         merge_scalar!(self, cli, top_n);
+        merge_scalar!(self, cli, max_merge_events);
         self.members |= cli.members;
     }
 }
@@ -1123,7 +1125,6 @@ pub struct BuildSsnViewerConfig {
     pub label_by: Option<String>,
     pub categorical: Vec<String>,
     pub merge_impact_metric: Option<String>,
-    pub max_merge_events: Option<usize>,
     pub max_output_gb: Option<f64>,
 }
 
@@ -1141,7 +1142,6 @@ impl BuildSsnViewerConfig {
         merge_scalar!(self, cli, label_by);
         merge_vec!(self, cli, categorical);
         merge_scalar!(self, cli, merge_impact_metric);
-        merge_scalar!(self, cli, max_merge_events);
         merge_scalar!(self, cli, max_output_gb);
     }
 }
@@ -1523,7 +1523,7 @@ fn common_help(name: &str) -> Option<&'static str> {
         "log" => "Write a run log/summary to this file.",
         "max_hits" => "Maximum number of hits to keep.",
         "max_hits_per_contig" => "Maximum number of hits to keep per contig.",
-        "max_merge_events" => "Maximum number of cluster-merge events to record.",
+        "max_merge_events" => "How many of the strongest cluster-merge (split) events to select, applied where the series is displayed.",
         "max_mode" => "Score-aggregation mode when picking the best hit.",
         "max_overlap" => "Maximum allowed fractional overlap between domains.",
         "max_region_overlap" => "Maximum allowed fractional overlap between extracted regions.",
@@ -2049,8 +2049,7 @@ fn build_ssn_viewer_schema() -> serde_json::Value {
             "color_by": {"type": ["string", "null"]},
             "label_by": {"type": ["string", "null"]},
             "categorical": {"type": "array", "items": {"type": "string"}, "description": "Numeric metadata columns to color as discrete categories instead of a gradient"},
-            "merge_impact_metric": {"enum": ["min_child", "product"], "default": "min_child"},
-            "max_merge_events": {"type": ["integer", "null"], "default": 500},
+            "merge_impact_metric": {"enum": ["min_child", "product"], "default": "min_child", "description": "Metric the viewer uses for split events, recorded in the bundle as the default; switchable in the viewer"},
             "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected .dsnv bundle output exceeds this many GB (0 disables)"}
         }
     })
@@ -2091,7 +2090,8 @@ fn ssn_navigator_schema() -> serde_json::Value {
             "node": {"type": ["string", "null"], "description": "Node id, for mode 'cluster' or 'node'"},
             "min_size": {"type": ["integer", "null"], "default": 1, "description": "Ignore clusters smaller than this (mode 'clusters')"},
             "top_n": {"type": ["integer", "null"], "default": 50, "description": "Bound every list in the output"},
-            "members": {"type": "boolean", "default": false, "description": "Include the full member id list in mode 'cluster'"}
+            "members": {"type": "boolean", "default": false, "description": "Include the full member id list in mode 'cluster'"},
+            "max_merge_events": {"type": ["integer", "null"], "default": 500, "description": "How many split events the mode 'thresholds'/'node' cut-points are drawn from; 0 offers one per split event"}
         }
     })
 }

@@ -72,7 +72,6 @@ pub fn resolve_build_ssn_viewer(
             .merge_impact_metric
             .clone()
             .unwrap_or_else(|| DEFAULT_MERGE_IMPACT_METRIC.into()),
-        max_merge_events: cfg.max_merge_events.unwrap_or(DEFAULT_MAX_MERGE_EVENTS),
         color_by: cfg.color_by.clone(),
         label_by: cfg.label_by.clone(),
         categorical_columns: cfg.categorical.clone(),
@@ -80,8 +79,8 @@ pub fn resolve_build_ssn_viewer(
 }
 
 /// Map an `SsnNavigatorConfig` to options. Defaults mirror Python's: mode `overview`,
-/// `min_size` 1, `top_n` 50, and a `threshold` of `None` meaning the floor (one
-/// cluster per connected component), **not** infinity.
+/// `min_size` 1, `top_n` 50, `max_merge_events` 500, and a `threshold` of `None`
+/// meaning the floor (one cluster per connected component), **not** infinity.
 pub fn resolve_ssn_navigator(cfg: &SsnNavigatorConfig) -> SsnNavigatorOptions {
     SsnNavigatorOptions {
         mode: cfg
@@ -97,5 +96,6 @@ pub fn resolve_ssn_navigator(cfg: &SsnNavigatorConfig) -> SsnNavigatorOptions {
         min_size: cfg.min_size.unwrap_or(1),
         top_n: cfg.top_n.unwrap_or(50),
         members: cfg.members,
+        max_merge_events: cfg.max_merge_events.unwrap_or(DEFAULT_MAX_MERGE_EVENTS),
     }
 }

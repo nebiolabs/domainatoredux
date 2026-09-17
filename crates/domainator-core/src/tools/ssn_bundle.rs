@@ -6,6 +6,15 @@
 //! active at a chosen similarity threshold and summarize their members, mirroring the
 //! viewer's `activeClustersAtThreshold` / `componentMembers`.
 //!
+//! From v6 the bundle carries only what cannot be derived from the merge order, so the
+//! split-event series, its moving sum and the threshold slider's stops are computed
+//! here on demand — [`merge_event_rows`], [`merge_event_series`], [`moving_sum`] and
+//! [`slider_stops`] — rather than read out of the file. The viewer does the same thing
+//! in JavaScript. A caller therefore picks its own `max_merge_events` at the point of
+//! display instead of inheriting one chosen when the file was written. Pre-v6 bundles
+//! carry the derived keys as well; they are **ignored in favour of recomputing**, so a
+//! capped series written into an old file cannot silently limit what is shown now.
+//!
 //! A v4 bundle may also carry a top-level `app_state` section written by the HTML
 //! viewer's "Save session" button. It holds viewer UI state only and is ignored here;
 //! the rest of such a file is an ordinary bundle, so a saved session's `metadata`
@@ -17,7 +26,12 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::matrix::ssn::floor_threshold_value;
+use crate::matrix::ssn::{
+    component_size_summary_by_threshold, filter_merge_event_rows, floor_threshold_value,
+    merge_event_moving_sum, threshold_merge_event_rows, threshold_slider_stops, MaxTree,
+    MergeEvent, MovingSum, SliderStop, MERGE_IMPACT_MIN_CHILD, MOVING_SUM_GRID_POINTS,
+    MOVING_SUM_WINDOW_FRACTION,
+};
 
 pub use super::build_ssn_viewer::{
     SSN_VIEWER_BUNDLE_FORMAT, SSN_VIEWER_BUNDLE_VERSION, SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS,
@@ -96,6 +110,103 @@ pub fn parse_bundle(raw: &[u8], display: &str) -> io::Result<Value> {
         }
     }
     Ok(bundle)
+}
+
+/// Adapt a loaded bundle to what the `ssn_hierarchy` mirror in [`crate::matrix::ssn`]
+/// expects: those functions need only `n_nodes` and the MST edges, and a bundle carries
+/// both. Everything else on a real [`MaxTree`] is derived from the input matrix, which
+/// a bundle does not carry. Mirrors upstream's `ssn_bundle._BundleTree`.
+pub fn bundle_tree(bundle: &Value) -> MaxTree {
+    let graph = bundle.get("graph");
+    let n_nodes = graph
+        .and_then(|g| g.get("nodes"))
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let edges: Vec<(usize, usize, f64)> = graph
+        .and_then(|g| g.get("mst_edges"))
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    let a = row.as_array()?;
+                    Some((
+                        a.first()?.as_u64()? as usize,
+                        a.get(1)?.as_u64()? as usize,
+                        a.get(2)?.as_f64()?,
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    MaxTree::from_mst_edges(n_nodes, &edges)
+}
+
+/// The bundle's **complete, uncapped** split-event series.
+///
+/// Recomputed from `graph.mst_edges` rather than read from the file. Before v6 a capped
+/// copy was stored under `graph.merge_event_series`; deriving it here means a caller is
+/// never silently limited to whatever cap the file happened to be built with, and
+/// pre-v6 bundles get the full series too.
+///
+/// The metric defaults to the one the bundle records. Pass `merge_impact_metric` to
+/// recompute under the other one — the series is a pure function of the merge order and
+/// the metric, so nothing about the file constrains the choice.
+pub fn merge_event_rows(bundle: &Value, merge_impact_metric: Option<&str>) -> Vec<MergeEvent> {
+    let recorded = bundle
+        .get("graph")
+        .and_then(|g| g.get("merge_impact_metric"))
+        .and_then(Value::as_str);
+    let metric = merge_impact_metric.or(recorded).unwrap_or(MERGE_IMPACT_MIN_CHILD);
+    let summary = component_size_summary_by_threshold(&bundle_tree(bundle), metric);
+    threshold_merge_event_rows(&summary)
+}
+
+/// The capped selection of split events, as the viewer's split chart plots it.
+///
+/// `max_merge_events == 0` means no cap. Pass `event_rows` from [`merge_event_rows`] to
+/// avoid replaying the merge order twice.
+pub fn merge_event_series(
+    bundle: &Value,
+    max_merge_events: usize,
+    event_rows: Option<&[MergeEvent]>,
+) -> Vec<MergeEvent> {
+    let derived;
+    let rows = match event_rows {
+        Some(rows) => rows,
+        None => {
+            derived = merge_event_rows(bundle, None);
+            &derived
+        }
+    };
+    filter_merge_event_rows(rows, max_merge_events)
+}
+
+/// The centred moving sum of split impact, over the **uncapped** rows.
+pub fn moving_sum(bundle: &Value, event_rows: Option<&[MergeEvent]>) -> MovingSum {
+    let derived;
+    let rows = match event_rows {
+        Some(rows) => rows,
+        None => {
+            derived = merge_event_rows(bundle, None);
+            &derived
+        }
+    };
+    merge_event_moving_sum(rows, MOVING_SUM_WINDOW_FRACTION, MOVING_SUM_GRID_POINTS)
+}
+
+/// The threshold cuts a slider over this bundle should offer.
+///
+/// `∞`, one stop per selected split event, then the floor stop that reaches the fully
+/// merged network. Stops carry **no** `threshold_index`: that indexed threshold tables
+/// which described the full input graph, and no bundle ever carried those.
+pub fn slider_stops(
+    bundle: &Value,
+    max_merge_events: usize,
+    event_rows: Option<&[MergeEvent]>,
+) -> Vec<SliderStop> {
+    let selected = merge_event_series(bundle, max_merge_events, event_rows);
+    threshold_slider_stops(&selected, Some(&bundle_tree(bundle)), false)
 }
 
 fn hier_nodes(hierarchy: &Value) -> &Vec<Value> {
@@ -203,25 +314,36 @@ pub fn node_index_by_name(bundle: &Value) -> HashMap<&str, usize> {
         .unwrap_or_default()
 }
 
-/// The active cluster whose `leaf_order` range covers `node_index`.
-pub fn cluster_for_node(
-    hierarchy: &Value,
-    active_ids: &[usize],
-    node_index: usize,
-) -> Option<usize> {
-    let leaf_order: Vec<usize> = hierarchy
-        .get("leaf_order")
-        .and_then(Value::as_array)
-        .map(|lo| lo.iter().filter_map(Value::as_u64).map(|v| v as usize).collect())
-        .unwrap_or_default();
-    let position = leaf_order.iter().position(|&v| v == node_index)?;
+/// The cluster containing `node_index` at `threshold`, by walking up from its leaf.
+///
+/// Asking which cluster holds *one* node does not need the whole partition: climb from
+/// the node's leaf while the parent merge scores **strictly above** the cut, and the
+/// last node reached is the cluster [`clusters_at_threshold`] would have emitted for
+/// it. A cluster's ancestors merged later and therefore score lower, so the condition
+/// fails once and the walk stops — no other branch of the tree is ever visited.
+///
+/// That is Θ(depth) rather than Θ(clusters), which matters because `--mode node` asks
+/// the question again at every cut-point. The `>` is the same strictly-above `--lb`
+/// rule the descent uses, so a merge sitting exactly on the cut is not taken.
+///
+/// `threshold` is `f64::INFINITY` for the ∞ cut, where every node stands alone: no
+/// parent can score above it, so the walk returns the leaf without a special case
+/// (leaf ids equal node indices — see `build_mst_component_hierarchy`).
+pub fn cluster_for_node(hierarchy: &Value, node_index: usize, threshold: f64) -> Option<usize> {
     let nodes = hier_nodes(hierarchy);
-    active_ids.iter().copied().find(|&id| {
-        nodes.get(id).is_some_and(|n| {
-            let start = u(n, "leaf_start");
-            position >= start && position < start + u(n, "leaf_count")
-        })
-    })
+    let mut current = node_index;
+    nodes.get(current)?;
+    loop {
+        let parent = match nodes.get(current).and_then(|n| n.get("parent")).and_then(Value::as_u64)
+        {
+            Some(p) => p as usize,
+            None => return Some(current),
+        };
+        match nodes.get(parent) {
+            Some(n) if f(n, "threshold") > threshold => current = parent,
+            _ => return Some(current),
+        }
+    }
 }
 
 /// `np.percentile` with linear interpolation — **not** nearest-rank.
@@ -340,11 +462,11 @@ mod tests {
             assert!(parse(&tiny(v)).is_ok(), "version {v} should load");
         }
         // 1 is what this port used to write; 2 predates the additive v3 fields;
-        // 6 is from the future.
-        for v in [1, 2, 6] {
+        // 7 is from the future.
+        for v in [1, 2, 7] {
             let err = parse(&tiny(v)).unwrap_err().to_string();
             assert!(err.contains("Unsupported"), "version {v} should be refused: {err}");
-            assert!(err.contains("3, 4, 5"), "error should name the supported set: {err}");
+            assert!(err.contains("3, 4, 5, 6"), "error should name the supported set: {err}");
         }
     }
 
@@ -361,6 +483,159 @@ mod tests {
         let gz = super::super::build_ssn_viewer::gzip(&plain);
         assert_eq!(&gz[..2], &[0x1f, 0x8b]);
         assert_eq!(parse_bundle(&gz, "t").unwrap(), parse_bundle(&plain, "t").unwrap());
+    }
+
+    /// A real bundle built the way `build-ssn-viewer` builds one, so the derivation
+    /// under test is exercised against the values the matrix itself produces.
+    fn bundle_from_matrix(m: &crate::matrix::DataMatrix) -> Value {
+        let opts = super::super::build_ssn_viewer::BuildSsnViewerOptions {
+            name: "t".into(),
+            ..Default::default()
+        };
+        super::super::build_ssn_viewer::build_ssn_viewer_bundle(m, &opts).unwrap()
+    }
+
+    fn six_node_matrix() -> crate::matrix::DataMatrix {
+        let mut dense = vec![0.0f64; 36];
+        for &(i, j, w) in &[
+            (0usize, 1usize, 10.0f64),
+            (2, 3, 9.0),
+            (1, 2, 5.0),
+            (4, 5, 8.0),
+            (3, 4, 4.0),
+            (0, 5, 2.0),
+        ] {
+            dense[i * 6 + j] = w;
+            dense[j * 6 + i] = w;
+        }
+        let labels: Vec<String> = (0..6).map(|i| format!("n{i}")).collect();
+        crate::matrix::DataMatrix {
+            rows: labels.clone(),
+            cols: labels,
+            row_lengths: None,
+            col_lengths: None,
+            data_type: "score".into(),
+            storage: crate::matrix::Storage::Dense(dense),
+        }
+    }
+
+    #[test]
+    fn a_v6_bundle_carries_only_what_cannot_be_derived() {
+        let bundle = bundle_from_matrix(&six_node_matrix());
+        assert_eq!(bundle["version"], json!(6));
+        let mut keys: Vec<&str> =
+            bundle["graph"].as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, vec!["hierarchy", "merge_impact_metric", "mst_edges", "nodes"]);
+    }
+
+    #[test]
+    fn derived_series_matches_the_matrix_it_was_built_from() {
+        use crate::matrix::ssn::{
+            component_size_summary_by_threshold, filter_merge_event_rows,
+            threshold_merge_event_rows, MaxTree,
+        };
+        let m = six_node_matrix();
+        let bundle = bundle_from_matrix(&m);
+        let tree = MaxTree::from_matrix(&m);
+        let expected = threshold_merge_event_rows(&component_size_summary_by_threshold(
+            &tree,
+            MERGE_IMPACT_MIN_CHILD,
+        ));
+
+        let rows = merge_event_rows(&bundle, None);
+        let shape = |v: &[MergeEvent]| -> Vec<(i64, f64, f64)> {
+            v.iter().map(|e| (e.edge_index, e.threshold_value, e.merge_impact)).collect()
+        };
+        assert_eq!(shape(&rows), shape(&expected));
+        assert_eq!(
+            shape(&merge_event_series(&bundle, 2, None)),
+            shape(&filter_merge_event_rows(&expected, 2))
+        );
+        // Passing the rows in must give the same answer as letting it replay them.
+        assert_eq!(
+            shape(&merge_event_series(&bundle, 2, Some(&rows))),
+            shape(&merge_event_series(&bundle, 2, None))
+        );
+        assert_eq!(moving_sum(&bundle, Some(&rows)), moving_sum(&bundle, None));
+
+        // The stops end at the floor and carry no threshold_index: a bundle has no
+        // threshold tables to index.
+        let stops = slider_stops(&bundle, 0, Some(&rows));
+        assert!(stops.iter().all(|s| s.threshold_index.is_none()));
+        assert_eq!(stops[0].threshold_value, None, "the ∞ stop leads");
+        // The 2.0 edge closes a cycle, so the weakest MST edge is 4.0 and the floor
+        // sits 1% of the MST weight range below it.
+        let weakest = tree.mst_edges().map(|(_, _, w)| w).fold(f64::INFINITY, f64::min);
+        assert_eq!(weakest, 4.0);
+        assert!(
+            stops.last().unwrap().threshold_value.unwrap() < weakest,
+            "floor must clear the weakest merge"
+        );
+        assert_eq!(stops.len(), rows.len() + 2, "∞ + one per event + floor");
+    }
+
+    #[test]
+    fn a_stale_capped_series_in_a_pre_v6_bundle_is_ignored() {
+        // The regression this change exists to prevent: a v5 file stored a series
+        // capped by whoever wrote it, and honouring that would silently limit what a
+        // caller can see now. Everything is recomputed from the merge order instead.
+        let mut bundle = bundle_from_matrix(&six_node_matrix());
+        let full = merge_event_rows(&bundle, None);
+        assert!(full.len() > 1, "need a series worth truncating");
+
+        bundle["version"] = json!(5);
+        bundle["graph"]["merge_event_series"] = json!([]);
+        bundle["graph"]["merge_event_total"] = json!(1);
+        bundle["graph"]["max_merge_events"] = json!(1);
+        bundle["graph"]["slider_stops"] = json!([]);
+        bundle["graph"]["merge_moving_sum"] = json!({"window": 0.0, "x": [], "y": []});
+
+        assert_eq!(merge_event_rows(&bundle, None).len(), full.len());
+        assert_eq!(slider_stops(&bundle, 0, None).len(), full.len() + 2);
+        assert!(!moving_sum(&bundle, None).x.is_empty());
+    }
+
+    #[test]
+    fn the_metric_can_be_overridden_at_read_time() {
+        // The series is a pure function of the merge order and the metric, so nothing
+        // about the file constrains the choice — the bundle's own value is only a
+        // default.
+        use crate::matrix::ssn::MERGE_IMPACT_PRODUCT;
+        let bundle = bundle_from_matrix(&six_node_matrix());
+        let default = merge_event_rows(&bundle, None);
+        let product = merge_event_rows(&bundle, Some(MERGE_IMPACT_PRODUCT));
+        assert_eq!(default.len(), product.len(), "same events, different weighting");
+        assert_ne!(
+            default.iter().map(|e| e.merge_impact).collect::<Vec<_>>(),
+            product.iter().map(|e| e.merge_impact).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn walking_up_from_a_leaf_finds_the_cluster_the_descent_would_emit() {
+        // `--mode node` asks this at every cut-point, so it walks instead of
+        // partitioning. The two must never disagree — including at the ∞ cut, where
+        // every node stands alone, and below the coarsest merge.
+        let bundle = bundle_from_matrix(&six_node_matrix());
+        let hierarchy = &bundle["graph"]["hierarchy"];
+        let cuts: Vec<f64> = vec![f64::INFINITY, 10.0, 9.0, 8.0, 5.0, 4.0, 2.0, 1.9, -1.0];
+        for cut in cuts {
+            let active = clusters_at_threshold(
+                hierarchy,
+                if cut.is_infinite() { None } else { Some(cut) },
+            );
+            for node_index in 0..6 {
+                let walked = cluster_for_node(hierarchy, node_index, cut)
+                    .unwrap_or_else(|| panic!("no cluster for node {node_index} at {cut}"));
+                let descended = active
+                    .iter()
+                    .copied()
+                    .find(|&id| component_members(hierarchy, id).contains(&node_index))
+                    .unwrap_or_else(|| panic!("descent lost node {node_index} at {cut}"));
+                assert_eq!(walked, descended, "node {node_index} at cut {cut}");
+            }
+        }
     }
 
     #[test]

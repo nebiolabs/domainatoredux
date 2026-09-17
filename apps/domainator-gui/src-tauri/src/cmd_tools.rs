@@ -609,7 +609,6 @@ pub async fn list_tools() -> Vec<ToolMeta> {
                 f("output", "Output (.dsnv)", "output_file", None, true),
                 f("metadata", "Metadata (TSV)", "input_files", Some("table"), false),
                 f("merge_impact_metric", "Merge metric", "param", None, false),
-                f("max_merge_events", "Max merge events", "param", None, false),
             ],
         },
     ]

@@ -20,6 +20,14 @@ pub const MERGE_IMPACT_MIN_CHILD: &str = "min_child";
 pub const MERGE_IMPACT_PRODUCT: &str = "product";
 pub const MERGE_IMPACT_CHOICES: [&str; 2] = [MERGE_IMPACT_PRODUCT, MERGE_IMPACT_MIN_CHILD];
 pub const DEFAULT_MAX_MERGE_EVENTS: usize = 500;
+/// The cap a chart with a viewport uses instead.
+///
+/// The viewer picks its events from the chart's current window rather than from the
+/// whole axis, so a much smaller number shows *more*: zoom in and the cap re-spends
+/// itself on the stretch being looked at. A chart with no viewport (`matrix_report`,
+/// `ssn_navigator`) has only one shot at the whole range and keeps the larger default
+/// above.
+pub const DEFAULT_WINDOWED_MAX_MERGE_EVENTS: usize = 50;
 /// Equal bands the threshold axis is cut into for the merge-event density back-fill.
 pub const MERGE_EVENT_DENSITY_BINS: usize = 20;
 /// Moving-sum window, as a fraction of the threshold range.
@@ -217,6 +225,46 @@ impl MaxTree {
         };
         tree.build_threshold_tables();
         tree
+    }
+
+    /// Rebuild a tree from a stored merge order alone — what a `.dsnv` bundle carries.
+    ///
+    /// The analogue of upstream's `ssn_bundle._BundleTree`: a bundle stores `nodes` and
+    /// `mst_edges` and nothing derived, so the split-event series, its moving sum and
+    /// the slider's stops are recomputed from those on demand. Everything that
+    /// derivation touches — [`component_size_summary_by_threshold`],
+    /// [`build_mst_component_hierarchy`] and the floor stop in
+    /// [`threshold_slider_stops`] — reads only `n_nodes` and `edges`.
+    ///
+    /// What it cannot reconstruct is the threshold tables, which describe the **full
+    /// input graph** that no bundle ever carried. They are left empty, so
+    /// [`MaxTree::threshold_row_index`] answers `-1` for every threshold and
+    /// [`threshold_slider_stops`] must be called with `with_threshold_index: false`.
+    /// `edges_above` / `mst_edges_above` are zeroed for the same reason and are **not**
+    /// meaningful on such a tree.
+    ///
+    /// `mst_edges` must arrive weight-descending, as the bundle writes them: the merge
+    /// replay is a Kruskal scan and reordering it would change the hierarchy.
+    pub fn from_mst_edges(n_nodes: usize, mst_edges: &[(usize, usize, f64)]) -> MaxTree {
+        MaxTree {
+            n_nodes,
+            edges: mst_edges
+                .iter()
+                .map(|&(i, j, weight)| MstEdge {
+                    i,
+                    j,
+                    weight,
+                    edges_above: 0,
+                    mst_edges_above: 0,
+                })
+                .collect(),
+            n_edges: 0,
+            min_score: 0.0,
+            thresholds: Vec::new(),
+            edges_above_threshold: Vec::new(),
+            mst_edges_above_threshold: Vec::new(),
+            threshold_rows: HashMap::new(),
+        }
     }
 
     /// Collapse the per-MST-edge counters into one row per distinct threshold, then
@@ -596,10 +644,24 @@ pub fn merge_event_density_bin(threshold_value: f64, lo: f64, hi: f64, density_b
 ///
 /// The band edges come from the whole series, not from the top-N — taking them from the
 /// kept rows would silently change the selection on exactly the networks this exists for.
+///
+/// `window` is an optional `(low, high)` threshold range: the part of the axis a
+/// zoomable chart is currently showing. It narrows **the top-N pool only**, so zooming
+/// in reveals the small events a whole-range ranking buries, while the band back-fill
+/// still runs over the whole axis and every stretch of the slider keeps a stop. `None`
+/// is the whole range — what a consumer with no viewport (`matrix_report`,
+/// `ssn_navigator`) wants, and exactly the behaviour this had before windows existed.
+///
+/// `pinned_threshold` is a threshold whose event must survive the cut whatever the
+/// window is. The viewer passes the cut currently in effect: were the selection allowed
+/// to drop it, the slider thumb would land on a neighbouring stop and zooming would
+/// silently re-cluster the network under the user.
 pub fn filter_merge_event_rows_binned(
     events: &[MergeEvent],
     max_merge_events: usize,
     density_bins: usize,
+    window: Option<(f64, f64)>,
+    pinned_threshold: Option<f64>,
 ) -> Vec<MergeEvent> {
     if max_merge_events == 0 || events.len() <= max_merge_events {
         return events.to_vec();
@@ -610,7 +672,24 @@ pub fn filter_merge_event_rows_binned(
     let mut ranked: Vec<usize> = (0..events.len()).collect();
     ranked.sort_by(|&a, &b| merge_event_rank_cmp(&events[a], &events[b]));
 
-    let mut kept: Vec<usize> = ranked[..max_merge_events].to_vec();
+    let mut kept: Vec<usize> = match window {
+        None => ranked.iter().copied().take(max_merge_events).collect(),
+        Some((a, b)) => {
+            let (low, high) = if a > b { (b, a) } else { (a, b) };
+            ranked
+                .iter()
+                .copied()
+                .filter(|&i| {
+                    let t = events[i].threshold_value;
+                    low <= t && t <= high
+                })
+                .take(max_merge_events)
+                .collect()
+        }
+    };
+    // A windowed pool is no longer a prefix of `ranked`, so the back-fill has to scan
+    // the whole ranking and skip what is already in.
+    let mut selected: std::collections::HashSet<usize> = kept.iter().copied().collect();
 
     let finite: Vec<f64> =
         events.iter().map(|e| e.threshold_value).filter(|v| v.is_finite()).collect();
@@ -622,14 +701,27 @@ pub fn filter_merge_event_rows_binned(
             .map(|&i| merge_event_density_bin(events[i].threshold_value, lo, hi, density_bins))
             .collect();
         // `ranked` is strongest-first, so the first row seen in an empty band is the
-        // strongest one available to represent it.
-        for &i in &ranked[max_merge_events..] {
+        // strongest one available to represent it. Candidates come from the whole
+        // series, not the window: a band outside the window still needs its stop.
+        for &i in &ranked {
+            if selected.contains(&i) {
+                continue;
+            }
             let bin = merge_event_density_bin(events[i].threshold_value, lo, hi, density_bins);
             if bin < 0 || covered.contains(&bin) {
                 continue;
             }
             covered.insert(bin);
             kept.push(i);
+            selected.insert(i);
+        }
+    }
+
+    if let Some(pinned) = pinned_threshold.filter(|p| p.is_finite()) {
+        if !kept.iter().any(|&i| events[i].threshold_value == pinned) {
+            if let Some(&i) = ranked.iter().find(|&&i| events[i].threshold_value == pinned) {
+                kept.push(i);
+            }
         }
     }
 
@@ -637,9 +729,9 @@ pub fn filter_merge_event_rows_binned(
     kept.into_iter().map(|i| events[i].clone()).collect()
 }
 
-/// Back-compat wrapper using the default band count.
+/// Back-compat wrapper: the default band count, the whole axis, nothing pinned.
 pub fn filter_merge_event_rows(events: &[MergeEvent], max_merge_events: usize) -> Vec<MergeEvent> {
-    filter_merge_event_rows_binned(events, max_merge_events, MERGE_EVENT_DENSITY_BINS)
+    filter_merge_event_rows_binned(events, max_merge_events, MERGE_EVENT_DENSITY_BINS, None, None)
 }
 
 /// A centred moving sum of `merge_impact` over the plotted threshold range.
@@ -724,8 +816,11 @@ pub fn merge_event_moving_sum(
 #[derive(Clone, Debug, PartialEq)]
 pub struct SliderStop {
     pub edge_index: i64,
-    /// Row index in the [`MaxTree`] threshold tables, or `-1` when absent.
-    pub threshold_index: i64,
+    /// Row index in the [`MaxTree`] threshold tables (`-1` when the threshold has no
+    /// row), or `None` when the caller has no threshold tables to index at all — a
+    /// `.dsnv` bundle carries none, so its stops omit the field rather than pointing
+    /// into something that is not there.
+    pub threshold_index: Option<i64>,
     pub threshold_label: String,
     /// `None` renders as JSON `null` and means ∞.
     pub threshold_value: Option<f64>,
@@ -750,21 +845,38 @@ pub fn floor_threshold_value(lowest_merge_threshold: f64, highest_merge_threshol
 
 /// Slider stops for a merge-event series: `∞`, one per event, then a floor.
 ///
-/// Shared by `build_ssn_viewer` and `matrix_report` so their sliders offer the same
-/// cuts. **The trailing floor stop is what makes the fully merged network reachable at
-/// all**: every other stop excludes its own tie group under the strictly-above `--lb`
-/// rule, so the lowest event stop still splits the weakest merge back apart. It is
-/// derived from the MST rather than from `events`, which `max_merge_events` may have
-/// capped.
+/// Shared by `matrix_report`, the `.dsnv` viewer (via its JavaScript port) and
+/// [`super::super::tools::ssn_bundle`] so their sliders offer the same cuts. **The
+/// trailing floor stop is what makes the fully merged network reachable at all**: every
+/// other stop excludes its own tie group under the strictly-above `--lb` rule, so the
+/// lowest event stop still splits the weakest merge back apart. It is derived from the
+/// MST rather than from `events`, which a cap may have thinned.
+///
+/// `with_threshold_index` asks each stop to carry its row in the tree's threshold
+/// tables, which is how `matrix_report` reports a cut's edge count. Only that report
+/// has those tables: a bundle-derived tree ([`MaxTree::from_mst_edges`]) has none, so
+/// it passes `false` and the stops omit the field entirely.
 ///
 /// Two upstream quirks are reproduced deliberately: the first event stop also carries
 /// `edge_index == -1` (colliding with the `∞` stop), and the floor stop's
 /// `threshold_index` is `-1` whenever the graph has a non-positive score, because then
 /// no `0.0` row exists.
-pub fn threshold_slider_stops(events: &[MergeEvent], tree: Option<&MaxTree>) -> Vec<SliderStop> {
+pub fn threshold_slider_stops(
+    events: &[MergeEvent],
+    tree: Option<&MaxTree>,
+    with_threshold_index: bool,
+) -> Vec<SliderStop> {
+    let index_of = |threshold: f64| -> Option<i64> {
+        if with_threshold_index {
+            Some(tree.map(|t| t.threshold_row_index(threshold)).unwrap_or(-1))
+        } else {
+            None
+        }
+    };
+
     let mut stops = vec![SliderStop {
         edge_index: -1,
-        threshold_index: -1,
+        threshold_index: if with_threshold_index { Some(-1) } else { None },
         threshold_label: "∞".to_string(),
         threshold_value: None,
     }];
@@ -772,9 +884,9 @@ pub fn threshold_slider_stops(events: &[MergeEvent], tree: Option<&MaxTree>) -> 
     for event in events {
         stops.push(SliderStop {
             edge_index: event.edge_index,
-            threshold_index: tree
-                .map(|t| t.threshold_row_index(event.threshold_value))
-                .unwrap_or(-1),
+            // Row in the tree's threshold tables for this cut. Those are keyed by
+            // distinct threshold, not by MST edge, so the lookup is separate.
+            threshold_index: index_of(event.threshold_value),
             threshold_label: event.threshold_to.clone(),
             threshold_value: Some(event.threshold_value),
         });
@@ -787,7 +899,9 @@ pub fn threshold_slider_stops(events: &[MergeEvent], tree: Option<&MaxTree>) -> 
             let floor = floor_threshold_value(weakest, strongest);
             stops.push(SliderStop {
                 edge_index: tree.edges.len() as i64 - 1,
-                threshold_index: tree.threshold_row_index(0.0),
+                // This stop stands for the complete-graph cut, so it reads its edge
+                // counts from that row of the threshold tables.
+                threshold_index: index_of(0.0),
                 threshold_label: format_threshold_value(floor),
                 threshold_value: Some(floor),
             });
@@ -1150,10 +1264,10 @@ mod tests {
         let tree = MaxTree::from_matrix(&m);
         let summary = component_size_summary_by_threshold(&tree, MERGE_IMPACT_MIN_CHILD);
         let rows = threshold_merge_event_rows(&summary);
-        let stops = threshold_slider_stops(&rows, Some(&tree));
+        let stops = threshold_slider_stops(&rows, Some(&tree), true);
         let shape: Vec<(i64, i64, &str)> = stops
             .iter()
-            .map(|s| (s.edge_index, s.threshold_index, s.threshold_label.as_str()))
+            .map(|s| (s.edge_index, s.threshold_index.unwrap(), s.threshold_label.as_str()))
             .collect();
         // Reference from Python threshold_slider_stops at upstream 896a0c8. Note the
         // first event stop also carries edge_index -1, colliding with the inf stop --
@@ -1194,7 +1308,7 @@ mod tests {
                 delta_avg_non_singleton: 0.0,
             })
             .collect();
-        let kept = filter_merge_event_rows_binned(&events, 2, MERGE_EVENT_DENSITY_BINS);
+        let kept = filter_merge_event_rows_binned(&events, 2, MERGE_EVENT_DENSITY_BINS, None, None);
         // Bounded by cap + bands, and strictly more than the cap because bands were empty.
         assert!(kept.len() > 2, "back-fill should have added rows");
         assert!(kept.len() <= 2 + MERGE_EVENT_DENSITY_BINS);
@@ -1216,7 +1330,182 @@ mod tests {
             .collect();
         assert_eq!(bands.len(), MERGE_EVENT_DENSITY_BINS);
         // A cap of 0 means no cap AND no back-fill.
-        assert_eq!(filter_merge_event_rows_binned(&events, 0, MERGE_EVENT_DENSITY_BINS).len(), 40);
+        assert_eq!(
+            filter_merge_event_rows_binned(&events, 0, MERGE_EVENT_DENSITY_BINS, None, None).len(),
+            40
+        );
+    }
+
+    /// 40 events evenly spaced on the axis; impact 100 at the two ends and 50 at three
+    /// points in the middle, 1 everywhere else. That shape makes the window observable:
+    /// a whole-range ranking takes the ends, a windowed one takes the middle bumps.
+    fn banded_events() -> Vec<MergeEvent> {
+        (0..40)
+            .map(|i| MergeEvent {
+                edge_index: i as i64,
+                summary_row_from: 0,
+                summary_row_to: 0,
+                threshold_from_value: f64::INFINITY,
+                threshold_from: "∞".into(),
+                threshold_to: format!("{i}"),
+                threshold_value: i as f64,
+                merge_impact: match i {
+                    0 | 39 => 100.0,
+                    18 | 20 | 22 => 50.0,
+                    _ => 1.0,
+                },
+                merge_size_counts: vec![(1.0, 1)],
+                largest_merge: 1.0,
+                merge_count: 1,
+                delta_largest: 0.0,
+                delta_avg_non_singleton: 0.0,
+            })
+            .collect()
+    }
+
+    fn kept_indices(rows: &[MergeEvent]) -> Vec<i64> {
+        rows.iter().map(|e| e.edge_index).collect()
+    }
+
+    #[test]
+    fn a_window_narrows_the_top_n_pool() {
+        // Band back-fill switched off (density_bins = 0) so this sees the top-N pool
+        // alone. Expected values from Python's filter_merge_event_rows at upstream
+        // d34ea4c on the same synthetic rows.
+        let events = banded_events();
+        assert_eq!(kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, None, None)), vec![
+            0, 18, 39
+        ]);
+        // Zoomed into 15..25, the same three slots are re-spent on that stretch: the
+        // small events a whole-range ranking buries become the selection.
+        let window = Some((15.0, 25.0));
+        assert_eq!(kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, window, None)), vec![
+            18, 20, 22
+        ]);
+        // An inverted window means the same range.
+        assert_eq!(
+            kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, Some((25.0, 15.0)), None)),
+            vec![18, 20, 22]
+        );
+    }
+
+    #[test]
+    fn a_window_does_not_narrow_the_band_backfill() {
+        // The window narrows what the cap *ranks*, never what the axis has to cover:
+        // a band outside it still needs its stop, or the slider goes dead there.
+        let events = banded_events();
+        let kept = filter_merge_event_rows_binned(
+            &events,
+            3,
+            MERGE_EVENT_DENSITY_BINS,
+            Some((15.0, 25.0)),
+            None,
+        );
+        let bands: std::collections::HashSet<i64> = kept
+            .iter()
+            .map(|e| merge_event_density_bin(e.threshold_value, 0.0, 39.0, MERGE_EVENT_DENSITY_BINS))
+            .collect();
+        assert_eq!(bands.len(), MERGE_EVENT_DENSITY_BINS, "every band must keep a stop");
+        assert!(kept.iter().any(|e| e.edge_index == 0), "a band below the window still counts");
+        assert!(kept.iter().any(|e| e.edge_index == 39), "and one above it");
+        // Still bounded, and still ordered by edge_index.
+        assert!(kept.len() <= 3 + MERGE_EVENT_DENSITY_BINS);
+        assert!(kept_indices(&kept).windows(2).all(|w| w[0] <= w[1]));
+    }
+
+    #[test]
+    fn a_pinned_threshold_survives_a_window_that_excludes_it() {
+        // The cut currently in effect must outlive a zoom. Were it droppable, the
+        // slider thumb would land on a neighbouring stop and the displayed clustering
+        // would change as a side effect of zooming.
+        let events = banded_events();
+        let window = Some((15.0, 25.0));
+        assert_eq!(
+            kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, window, Some(39.0))),
+            vec![18, 20, 22, 39]
+        );
+        // A pin already in the selection is a no-op, not a duplicate.
+        assert_eq!(
+            kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, window, Some(18.0))),
+            vec![18, 20, 22]
+        );
+        // A pin naming no event, and a non-finite one, are both ignored.
+        for pin in [1234.5, f64::INFINITY, f64::NAN] {
+            assert_eq!(
+                kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, window, Some(pin))),
+                vec![18, 20, 22],
+                "pin {pin} should change nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn stops_omit_the_threshold_index_when_there_are_no_tables() {
+        // A .dsnv bundle carries no threshold tables, so its stops must omit the field
+        // rather than index something that is not there — while still ending at the
+        // floor stop, which comes from the MST and is always available.
+        let m = sym_matrix(4, &[(0, 1, 10.0), (2, 3, 9.0), (1, 2, 5.0)]);
+        let tree = MaxTree::from_matrix(&m);
+        let summary = component_size_summary_by_threshold(&tree, MERGE_IMPACT_MIN_CHILD);
+        let rows = threshold_merge_event_rows(&summary);
+
+        let stops = threshold_slider_stops(&rows, Some(&tree), false);
+        assert!(stops.iter().all(|s| s.threshold_index.is_none()));
+        // Same cuts either way — only the index field differs.
+        let indexed = threshold_slider_stops(&rows, Some(&tree), true);
+        assert!(indexed.iter().all(|s| s.threshold_index.is_some()));
+        let cuts = |v: &[SliderStop]| -> Vec<(i64, Option<f64>, String)> {
+            v.iter()
+                .map(|s| (s.edge_index, s.threshold_value, s.threshold_label.clone()))
+                .collect()
+        };
+        assert_eq!(cuts(&stops), cuts(&indexed));
+        assert_eq!(stops.last().unwrap().threshold_value, Some(4.95));
+    }
+
+    #[test]
+    fn a_tree_rebuilt_from_stored_mst_edges_derives_the_same_series() {
+        // What ssn_bundle does with a .dsnv: the split events, their moving sum and the
+        // slider cuts are a pure function of (n_nodes, mst_edges, metric), so a tree
+        // carrying only those must reproduce what the matrix-built tree gives.
+        let m = sym_matrix(6, &[
+            (0, 1, 10.0),
+            (2, 3, 9.0),
+            (1, 2, 5.0),
+            (4, 5, 8.0),
+            (3, 4, 4.0),
+            (0, 5, 2.0),
+        ]);
+        let full = MaxTree::from_matrix(&m);
+        let stored: Vec<(usize, usize, f64)> = full.mst_edges().collect();
+        let rebuilt = MaxTree::from_mst_edges(full.n_nodes, &stored);
+
+        let rows_of = |t: &MaxTree| {
+            threshold_merge_event_rows(&component_size_summary_by_threshold(
+                t,
+                MERGE_IMPACT_MIN_CHILD,
+            ))
+        };
+        let a = rows_of(&full);
+        let b = rows_of(&rebuilt);
+        assert_eq!(
+            a.iter().map(|e| (e.edge_index, e.threshold_value, e.merge_impact)).collect::<Vec<_>>(),
+            b.iter().map(|e| (e.edge_index, e.threshold_value, e.merge_impact)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            merge_event_moving_sum(&a, MOVING_SUM_WINDOW_FRACTION, MOVING_SUM_GRID_POINTS),
+            merge_event_moving_sum(&b, MOVING_SUM_WINDOW_FRACTION, MOVING_SUM_GRID_POINTS)
+        );
+        // The hierarchy too — that is what the bundle stores rather than derives, so
+        // the two must agree or a rebuilt cut would name different clusters.
+        let ha = build_mst_component_hierarchy(&full);
+        let hb = build_mst_component_hierarchy(&rebuilt);
+        assert_eq!(ha.roots, hb.roots);
+        assert_eq!(ha.leaf_order, hb.leaf_order);
+        // The threshold tables are the one thing it cannot reconstruct, and it says so
+        // rather than inventing a row.
+        assert_eq!(rebuilt.threshold_row_index(10.0), -1);
+        assert!(rebuilt.thresholds().is_empty());
     }
 
     #[test]
