@@ -36,17 +36,21 @@ codegen-units = 1
 [patch.crates-io]
 hdf5-pure = { path = "vendor/hdf5-pure" }
 
-# TEMPORARY: hmmer-pure-rs from a fork branch, pinned by commit.
+# TEMPORARY: hmmer-pure-rs pinned to a commit on the official repo, pending a
+# crates.io release.
 #
-# Published 0.7.1 cannot build a nucleotide model from a single sequence -- its
+# Published 0.7.4 cannot build a nucleotide model from a single sequence -- its
 # `build_single_seq_hmm` hardcodes BLOSUM62 and panics on a 4-letter alphabet --
 # so `search/references.rs` built each nhmmer FASTA query from a one-row MSA
 # instead. That detour is not what pyhmmer does (C's `p7_SingleBuilder`: a DNA1
 # score-matrix conversion plus the nucleotide window length nhmmer's E-values
 # are computed against), and it is why eight nucleotide parity invocations
-# diverged. This branch ports the real builder; with it our nucleotide hits
+# diverged. The fix (formerly seanrjohnson-neb/hmmer-pure-rs#1) merged upstream
+# as henriksson-lab/hmmer-pure-rs#2 on 2026-09-19; with it our nucleotide hits
 # match pyhmmer's coordinates, scores and E-values exactly.
 #
-# Pinned to a `rev`, not the branch, so a force-push cannot silently change what
-# CI builds. See `UPSTREAM.md` for the migration back to the crates.io release.
-hmmer-pure-rs = { git = "https://github.com/seanrjohnson-neb/hmmer-pure-rs", rev = "1ec332e512abff0a1e37d61385da501e974ed05e" }
+# Pinned to the merge commit, not `main`, so an unrelated later commit on the
+# official repo cannot silently change what CI builds. Move to a plain version
+# requirement once the fix ships in a published crates.io release -- see
+# UPSTREAM.md.
+hmmer-pure-rs = { git = "https://github.com/henriksson-lab/hmmer-pure-rs", rev = "7756ef5a00267e5c6d68de102f0fc22d0f55c425" }

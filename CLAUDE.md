@@ -196,16 +196,16 @@ Key cross-cutting invariants (these gate parity — grep the modules for details
 
 `vendor/hdf5-pure/` is a local copy of `hdf5-pure` 0.20.0 wired via `[patch.crates-io]` in the root `Cargo.toml`. It carries two additive patches (see `vendor/hdf5-pure/CHANGELOG.md`): (1) `AttrValue::VarLenUtf8(String)` — a scalar variable-length UTF-8 string attribute so h5py reads the matrix attrs (`ARRAY_TYPE`/`DATA_TYPE`/`MATRIX_FILE_VERSION`) back as `str` (the published crate only offers fixed-length strings, which h5py returns as `bytes`); and (2) enum attributes decode to their underlying integer instead of being silently dropped from `attrs()` — h5py stores a numpy-bool attribute (like `SYMMETRIC_LABELS`) as an enum over `int8`. Matrix `SYMMETRIC_LABELS` is written as an int (h5py reads it truthily); on read, symmetry is determined by `COL_LABELS` presence (the on-disk contract), independent of that attr.
 
-### Forked `hmmer-pure-rs` (temporary, pinned by commit)
+### `hmmer-pure-rs` pinned to a commit (temporary, pending a crates.io release)
 
-`hmmer-pure-rs` comes from a **fork branch**, not crates.io — a second
-`[patch.crates-io]` entry pinned by `rev`. Published 0.7.1 hardcodes BLOSUM62 in
-`build_single_seq_hmm` and panics on a 4-letter alphabet, so it cannot build a nucleotide
-model from a single sequence; the fork ports C's `p7_SingleBuilder` properly, which is what
-made `search/references.rs`'s nhmmer FASTA path match pyhmmer exactly. Don't "clean up" the
-pin, don't move it to a branch ref (a force-push would silently change CI), and note the
-fork is API-incompatible with 0.7.1 — so the eventual release will be a **major** bump, not
-`0.7.x`. `UPSTREAM.md`'s "Temporary fork dependency" section has the migration-back steps.
+`hmmer-pure-rs` is pinned to a commit on the **official** `henriksson-lab/hmmer-pure-rs`
+repo, not a published crate — a second `[patch.crates-io]` entry pinned by `rev`. Published
+0.7.4 hardcodes BLOSUM62 in `build_single_seq_hmm` and panics on a 4-letter alphabet, so it
+cannot build a nucleotide model from a single sequence; the fix (merged upstream as
+`henriksson-lab/hmmer-pure-rs#2`) ports C's `p7_SingleBuilder` properly, which is what made
+`search/references.rs`'s nhmmer FASTA path match pyhmmer exactly. Don't "clean up" the pin
+and don't move it to `main` (an unrelated later commit would silently change CI). `UPSTREAM.md`'s
+"Pinned dependency" section has the migration-back steps once the fix ships in a release.
 
 ## Staying in sync with the Python package
 

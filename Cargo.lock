@@ -1039,7 +1039,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1555,7 +1555,7 @@ dependencies = [
 [[package]]
 name = "hmmer-pure-rs"
 version = "0.7.4"
-source = "git+https://github.com/seanrjohnson-neb/hmmer-pure-rs?rev=1ec332e512abff0a1e37d61385da501e974ed05e#1ec332e512abff0a1e37d61385da501e974ed05e"
+source = "git+https://github.com/henriksson-lab/hmmer-pure-rs?rev=7756ef5a00267e5c6d68de102f0fc22d0f55c425#7756ef5a00267e5c6d68de102f0fc22d0f55c425"
 dependencies = [
  "anyhow",
  "clap",
@@ -2961,7 +2961,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4630,7 +4630,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
