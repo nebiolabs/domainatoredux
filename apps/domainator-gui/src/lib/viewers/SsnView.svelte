@@ -138,6 +138,9 @@
     {/if}
     <!-- The bundle is embedded in the shell, which self-loads via DecompressionStream. -->
     <iframe title="SSN viewer" srcdoc={html} sandbox="allow-scripts allow-same-origin"></iframe>
+  {:else}
+    <!-- No HTML and no error: don't leave the pane blank with no explanation. -->
+    <div class="msg">No network to show for this bundle.</div>
   {/if}
 
   {#if naming}

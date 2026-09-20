@@ -1,6 +1,8 @@
 <script lang="ts">
   import { listHmmProfiles, loadHmmLogo, saveTextFile } from "../api";
   import { cached } from "../cache";
+  import { untrack } from "svelte";
+  import { ws } from "../state.svelte";
   import type { HmmLogo, HmmSummary, LogoPosition } from "../types";
 
   // `index` set → single-profile mode (a popped-out logo): show just that profile,
@@ -26,13 +28,32 @@
       selectedIndex = index ?? 0;
       return;
     }
-    selectedIndex = 0;
+    // A profile requested by the Profiles table's "logo" button; consumed once so
+    // it doesn't override the user's later clicks in this view's own list. Read
+    // untracked, or this effect would re-run on every later request and reset the
+    // filter box — the effect below is what handles those.
+    selectedIndex = untrack(() => takeRequestedProfile()) ?? 0;
     filter = "";
     listError = null;
     cached(`hmmprofiles:${path}`, () => listHmmProfiles(path))
       .then((p) => (profiles = p))
       .catch((e) => (listError = String(e)));
   });
+
+  // A later request for a different profile (the tab is already open, and the user
+  // clicked another row in the Profiles table) — same consume-and-clear channel.
+  $effect(() => {
+    if (single) return;
+    const requested = takeRequestedProfile();
+    if (requested !== undefined) selectedIndex = requested;
+  });
+
+  /// Consume the pending profile request for this file, if any.
+  function takeRequestedProfile(): number | undefined {
+    const requested = ws.focusHmmProfile[path];
+    if (requested !== undefined) delete ws.focusHmmProfile[path];
+    return requested;
+  }
 
   // Load the selected profile's logo (cached per index).
   $effect(() => {

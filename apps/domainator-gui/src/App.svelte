@@ -1,6 +1,12 @@
 <script lang="ts">
   import { ws } from "./lib/state.svelte";
-  import { listTools, pickDirectory, toolSchemaCached } from "./lib/api";
+  import {
+    forgetRecentWorkspace,
+    listTools,
+    pickDirectory,
+    startupInfo,
+    toolSchemaCached,
+  } from "./lib/api";
   import FolderTree from "./lib/FolderTree.svelte";
   import FileTable from "./lib/FileTable.svelte";
   import ViewerDock from "./lib/ViewerDock.svelte";
@@ -55,23 +61,91 @@
   // GenBank contig view was rendering.
   $effect(() => {
     if (isStandalone) return;
-    listTools().then((t) => {
-      tools = t;
-      for (const m of t) void toolSchemaCached(m.id);
-    });
+    listTools()
+      .then((t) => {
+        tools = t;
+        for (const m of t) void toolSchemaCached(m.id);
+      })
+      // Without this the Tools menu just renders empty and the rejection only
+      // reaches the console.
+      .catch((e) => (ws.error = `Could not load the tool list: ${e}`));
   });
+
+  // Recent workspaces, and the one reopened at launch. The app used to start cold
+  // every time, with no memory of where you were working.
+  let recent = $state<string[]>([]);
+  let restoring = $state(true);
+
+  $effect(() => {
+    if (isStandalone) {
+      restoring = false;
+      return;
+    }
+    startupInfo()
+      .then(async (info) => {
+        recent = info.recent;
+        if (info.reopen) await ws.open(info.reopen);
+      })
+      .catch((e) => (ws.error = String(e)))
+      .finally(() => (restoring = false));
+  });
+
+  /// Open `dir` and move it to the front of the recent list.
+  async function openWorkspace(dir: string): Promise<void> {
+    await ws.open(dir);
+    recent = [dir, ...recent.filter((r) => r !== dir)];
+  }
+
+  async function forgetRecent(dir: string): Promise<void> {
+    try {
+      recent = await forgetRecentWorkspace(dir);
+    } catch (e) {
+      ws.error = String(e);
+    }
+  }
+
+  const shortName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 
   // Live job status from the backend JobRegistry (main window only).
   $effect(() => {
     if (isStandalone) return;
+    // `disposed`: this effect re-runs when the workspace changes (ws.loadJobs
+    // reads ws.root), and without it a re-run before the listen promise resolves
+    // leaks the old handler — every job update would then be applied twice.
+    let disposed = false;
     let unlisten: (() => void) | undefined;
-    listen<JobInfo>("job-update", (e) => ws.upsertJob(e.payload)).then((u) => (unlisten = u));
+    listen<JobInfo>("job-update", (e) => ws.upsertJob(e.payload)).then((u) => {
+      unlisten = u;
+      if (disposed) u();
+    });
     ws.loadJobs();
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   });
 
-  let leftWidth = $state(260);
-  let tableHeight = $state(240);
+  // Panel sizes persist per machine, like the file table's columns and sort.
+  // Reads are guarded: storage can be unavailable or hold junk.
+  function storedNumber(key: string, fallback: number): number {
+    try {
+      const v = Number(localStorage.getItem(key));
+      return Number.isFinite(v) && v > 0 ? v : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  let leftWidth = $state(storedNumber("shell.leftWidth", 260));
+  let tableHeight = $state(storedNumber("shell.tableHeight", 240));
+  $effect(() => {
+    try {
+      localStorage.setItem("shell.leftWidth", String(leftWidth));
+      localStorage.setItem("shell.tableHeight", String(tableHeight));
+    } catch {
+      /* storage unavailable (private window, blocked site data) — sizes just
+         won't persist; nothing else depends on it */
+    }
+  });
   let tools = $state<ToolMeta[]>([]);
   let toolsOpen = $state(false);
   let activeTool = $state<string | null>(null);
@@ -92,11 +166,18 @@
   // popped-out window), refresh the browser if the changed dir is the open folder.
   $effect(() => {
     if (isStandalone) return;
+    let disposed = false;
     let unlisten: (() => void) | undefined;
     listen<string>("files-changed", (e) => {
       if (e.payload === ws.selectedFolder) ws.refreshFolder();
-    }).then((u) => (unlisten = u));
-    return () => unlisten?.();
+    }).then((u) => {
+      unlisten = u;
+      if (disposed) u();
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   });
 
   async function submitNewFolder() {
@@ -108,9 +189,18 @@
     newFolderOpen = false;
   }
 
+  let opening = $state(false);
   async function chooseWorkspace() {
-    const dir = await pickDirectory();
-    if (dir) await ws.open(dir);
+    if (opening) return;
+    opening = true;
+    try {
+      const dir = await pickDirectory();
+      if (dir) await openWorkspace(dir);
+    } catch (e) {
+      ws.error = String(e);
+    } finally {
+      opening = false;
+    }
   }
 
   async function toggleTools() {
@@ -143,27 +233,39 @@
 
 {#if isStandalone}
   <div class="standalone">
-    {#if standalonePath}
-      {#key standalonePath}
-        {#if standaloneView === "hmmlogo"}
-          <HmmLogo path={standalonePath} index={standaloneIndex} />
-        {:else if standaloneView === "file"}
-          <FileWindow path={standalonePath} />
-        {:else}
-          <ContigView path={standalonePath} />
-        {/if}
-      {/key}
-    {:else if standaloneErr}
-      <p class="empty">{standaloneErr}</p>
-    {:else}
-      <p class="empty">Loading…</p>
+    <div class="standalone-body">
+      {#if standalonePath}
+        {#key standalonePath}
+          {#if standaloneView === "hmmlogo"}
+            <HmmLogo path={standalonePath} index={standaloneIndex} />
+          {:else if standaloneView === "file"}
+            <FileWindow path={standalonePath} />
+          {:else}
+            <ContigView path={standalonePath} />
+          {/if}
+        {/key}
+      {:else if standaloneErr}
+        <p class="empty">{standaloneErr}</p>
+      {:else}
+        <p class="empty">Loading…</p>
+      {/if}
+    </div>
+    {#if ws.error}
+      <!-- Detached windows had no error surface at all, so a failed extract or
+           rename in one was completely invisible. -->
+      <div class="errbar standalone-err" role="alert">
+        <span class="errtext">{ws.error}</span>
+        <button class="errclose" onclick={() => (ws.error = null)} aria-label="Dismiss">×</button>
+      </div>
     {/if}
   </div>
 {:else}
 <div class="shell" style="--left-width: {leftWidth}px; --table-height: {tableHeight}px;">
   <header class="toolbar">
     <span class="brand">Domainator</span>
-    <button onclick={chooseWorkspace}>Open workspace…</button>
+    <button onclick={chooseWorkspace} disabled={opening}>
+      {opening ? "Opening…" : "Open workspace…"}
+    </button>
     <div class="menu">
       <button onclick={toggleTools} disabled={!ws.root}>Tools ▾</button>
       {#if toolsOpen}
@@ -184,10 +286,16 @@
       {/if}
     </div>
     <span class="root-path" title={ws.root ?? ""}>{ws.root ?? "No workspace open"}</span>
-    {#if ws.error}
-      <span class="err">{ws.error}</span>
-    {/if}
   </header>
+
+  {#if ws.error}
+    <!-- Selectable (so the text can be copied into a bug report) and dismissible;
+         it used to be a squeezed toolbar <span> that never cleared. -->
+    <div class="errbar" role="alert">
+      <span class="errtext">{ws.error}</span>
+      <button class="errclose" onclick={() => (ws.error = null)} aria-label="Dismiss">×</button>
+    </div>
+  {/if}
 
   {#if activeTool}
     <ToolDialog
@@ -228,6 +336,27 @@
     <div class="tree-scroll">
       {#if ws.tree}
         <FolderTree node={ws.tree} depth={0} />
+      {:else if restoring}
+        <p class="empty">Restoring your last workspace…</p>
+      {:else if recent.length > 0}
+        <div class="recent">
+          <p class="empty">Open a workspace directory to browse its folders.</p>
+          <div class="recent-title">Recent</div>
+          {#each recent as r (r)}
+            <div class="recent-row">
+              <button class="recent-open" title={r} onclick={() => openWorkspace(r)}>
+                <span class="recent-name">{shortName(r)}</span>
+                <span class="recent-path">{r}</span>
+              </button>
+              <button
+                class="recent-forget"
+                title="Remove from this list"
+                aria-label="Remove from recent list"
+                onclick={() => forgetRecent(r)}>×</button
+              >
+            </div>
+          {/each}
+        </div>
       {:else}
         <p class="empty">Open a workspace directory to browse its folders.</p>
       {/if}
@@ -252,16 +381,27 @@
 {/if}
 
 <style>
+  .standalone-err {
+    flex: none;
+  }
   .standalone {
+    display: flex;
+    flex-direction: column;
     height: 100%;
+    min-height: 0;
+  }
+  .standalone-body {
+    flex: 1;
     min-height: 0;
   }
   .shell {
     display: grid;
     grid-template-columns: var(--left-width) 4px 1fr;
-    grid-template-rows: 44px 1fr;
+    /* The error row is `auto`, so it takes no space at all when there is no error. */
+    grid-template-rows: 44px auto 1fr;
     grid-template-areas:
       "toolbar toolbar toolbar"
+      "errbar  errbar  errbar"
       "left    lres    main";
     height: 100%;
   }
@@ -315,9 +455,100 @@
     white-space: nowrap;
     flex: 1;
   }
-  .err {
-    color: #e5484d;
+  .errbar {
+    grid-area: errbar;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 12px;
+    background: color-mix(in srgb, #e5484d 12%, var(--bg-panel));
+    border-bottom: 1px solid color-mix(in srgb, #e5484d 40%, var(--border));
     font-size: 12px;
+  }
+  .errtext {
+    color: #e5484d;
+    flex: 1;
+    /* Selectable and wrapping: the whole point is being able to read and copy it. */
+    user-select: text;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 6.5em;
+    overflow-y: auto;
+  }
+  .errclose {
+    border: none;
+    background: none;
+    color: #e5484d;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 2px;
+    flex: none;
+  }
+  .recent {
+    padding-bottom: 8px;
+  }
+  .recent-title {
+    padding: 4px 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+  }
+  .recent-row {
+    display: flex;
+    align-items: center;
+  }
+  .recent-row:hover {
+    background: var(--row-hover);
+  }
+  .recent-open {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    border: none;
+    background: none;
+    color: var(--text);
+    text-align: left;
+    padding: 4px 10px;
+    cursor: pointer;
+    border-radius: 0;
+  }
+  .recent-name {
+    font-size: 12px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .recent-path {
+    font-size: 10.5px;
+    color: var(--text-dim);
+    direction: rtl;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .recent-forget {
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 8px;
+    opacity: 0;
+  }
+  .recent-row:hover .recent-forget {
+    opacity: 0.7;
+  }
+  .recent-forget:hover {
+    color: #e5484d;
+    opacity: 1;
   }
   .left {
     grid-area: left;

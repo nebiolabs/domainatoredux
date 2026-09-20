@@ -4,6 +4,7 @@ pub mod contig_edit;
 pub mod contig_view;
 pub mod genbank_summary;
 pub mod hmm_logo;
+pub mod prefs;
 pub mod provenance;
 pub mod registry;
 pub mod summary_stats;

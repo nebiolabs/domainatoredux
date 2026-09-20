@@ -4,20 +4,27 @@
   import { viewsFor } from "./viewers/registry";
   import type { OpenTab } from "./types";
 
+  // A new window takes a visible moment to appear; without this the ⧉ click
+  // looked like it did nothing.
+  let popping = $state(false);
   async function popOut(tab: OpenTab) {
+    if (popping) return;
+    popping = true;
     try {
       await openFileWindow(tab.file.path, tab.file.name);
     } catch (e) {
       ws.error = String(e);
+    } finally {
+      popping = false;
     }
   }
 
   const active = $derived(ws.tabs.find((t) => t.id === ws.activeTabId) ?? null);
   const views = $derived(active ? viewsFor(active.file.file_type) : []);
 
-  // Remember the selected sub-view per open file.
-  let subActive = $state<Record<string, string>>({});
-  const currentViewId = $derived(active ? (subActive[active.id] ?? views[0]?.id ?? "") : "");
+  // The selected sub-view per open file lives on the store, so a viewer can
+  // switch the dock to a sibling tab (HmmReport's "logo" button → the Logo view).
+  const currentViewId = $derived(active ? (ws.subActive[active.id] ?? views[0]?.id ?? "") : "");
   const currentView = $derived(views.find((v) => v.id === currentViewId) ?? views[0] ?? null);
 </script>
 
@@ -28,7 +35,7 @@
         <button class="tab-label" onclick={() => ws.setActive(tab.id)} title={tab.file.path}>
           {tab.file.name}
         </button>
-        <button class="tab-pop" onclick={() => popOut(tab)} title="Open in a new window" aria-label="Open in new window">⧉</button>
+        <button class="tab-pop" onclick={() => popOut(tab)} disabled={popping} title="Open in a new window" aria-label="Open in new window">⧉</button>
         <button class="tab-close" onclick={() => ws.closeTab(tab.id)} aria-label="Close">×</button>
       </div>
     {/each}
@@ -42,7 +49,7 @@
           class:active={v.id === currentViewId}
           role="tab"
           aria-selected={v.id === currentViewId}
-          onclick={() => (subActive[active.id] = v.id)}
+          onclick={() => (ws.subActive[active.id] = v.id)}
         >
           {v.label}
         </button>

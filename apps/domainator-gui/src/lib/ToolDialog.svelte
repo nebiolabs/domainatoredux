@@ -22,7 +22,6 @@
   let schema = $state<JsonSchema | null>(null);
   let values = $state<Record<string, any>>({});
   let error = $state<string | null>(null);
-  let result = $state<string | null>(null);
   let running = $state(false);
 
   // The current directory: outputs land here, and input dropdowns list its files.
@@ -174,7 +173,6 @@
     void tool;
     void initial;
     error = null;
-    result = null;
     schema = null;
     if (!meta) {
       error = `Unknown tool "${tool}".`;
@@ -297,7 +295,6 @@
     }
     running = true;
     error = null;
-    result = null;
     try {
       await runTool(tool, collectParams(), ws.root);
       if (ws.selectedFolder) await ws.selectFolder(ws.selectedFolder);
@@ -308,12 +305,26 @@
       running = false;
     }
   }
+  /// Close, but don't silently discard a form the user has filled in — a stray
+  /// click on the backdrop used to throw the whole thing away.
+  function requestClose(): void {
+    if (running) return;
+    if (dirty && !confirmingClose) {
+      confirmingClose = true;
+      return;
+    }
+    onclose();
+  }
+
+  /// Whether the user has typed anything into the form yet.
+  const dirty = $derived(Object.keys(values).length > 0);
+  let confirmingClose = $state(false);
 </script>
 
 <div
   class="backdrop"
-  onclick={(e) => e.target === e.currentTarget && onclose()}
-  onkeydown={(e) => e.key === "Escape" && onclose()}
+  onclick={(e) => e.target === e.currentTarget && requestClose()}
+  onkeydown={(e) => e.key === "Escape" && requestClose()}
   role="presentation"
 >
   <div class="dialog" role="dialog" aria-modal="true" aria-label="Run tool">
@@ -325,7 +336,6 @@
     <p class="folder">Directory: <code>{folderName}</code></p>
 
     {#if error}<div class="err">{error}</div>{/if}
-    {#if result}<div class="ok">{result}</div>{/if}
 
     {#if error && !schema}
       <!-- error banner already shown above; nothing else to render -->
@@ -412,7 +422,13 @@
       </div>
 
       <footer>
-        <button onclick={onclose}>Cancel</button>
+        {#if confirmingClose}
+          <span class="confirm">Discard this form?</span>
+          <button onclick={onclose}>Discard</button>
+          <button onclick={() => (confirmingClose = false)}>Keep editing</button>
+        {:else}
+          <button onclick={onclose}>Cancel</button>
+        {/if}
         <button class="run" onclick={run} disabled={running}>{running ? "Running…" : "Run"}</button>
       </footer>
     {/if}
@@ -529,12 +545,11 @@
     border-radius: 5px;
     margin: 8px 0;
   }
-  .ok {
-    background: #06842b22;
-    color: #06842b;
-    padding: 6px 10px;
-    border-radius: 5px;
-    margin: 8px 0;
+  .confirm {
+    margin-right: auto;
+    align-self: center;
+    color: var(--text-dim);
+    font-size: 12px;
   }
   .msg {
     padding: 20px;

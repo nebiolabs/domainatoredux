@@ -6,6 +6,7 @@ mod cmd_db;
 mod cmd_edit;
 mod cmd_external;
 mod cmd_files;
+mod cmd_prefs;
 mod cmd_tools;
 mod cmd_windows;
 mod cmd_workspace;
@@ -14,6 +15,15 @@ mod external_tools;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Remember the main window's size/position/maximized across launches.
+        // Detached viewer windows get generated labels (`hmm0`, `file3`, …), so
+        // persisting their geometry is meaningless and would just accumulate dead
+        // entries in the state file — the filter keeps them out.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_filter(|label| label == "main")
+                .build(),
+        )
         .manage(cmd_tools::JobRegistry::default())
         .manage(cmd_windows::PendingWindows::default())
         .manage(cmd_files::SeqCacheState::default())
@@ -77,6 +87,10 @@ pub fn run() {
             cmd_windows::standalone_params,
             cmd_external::list_external_tools,
             cmd_external::download_external_tool,
+            cmd_prefs::get_prefs,
+            cmd_prefs::startup_info,
+            cmd_prefs::forget_recent_workspace,
+            cmd_prefs::set_reopen_last_workspace,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Domainator GUI");

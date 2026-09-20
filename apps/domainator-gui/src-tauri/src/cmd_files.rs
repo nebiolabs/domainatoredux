@@ -208,6 +208,14 @@ pub struct SeqCacheEntry {
     seqs: Vec<String>,
 }
 
+/// Lock that survives a poisoned mutex. Every mutex in this module guards a plain
+/// cache — a panic elsewhere can't leave one half-updated in a way that matters —
+/// so `.lock().unwrap()` would only turn a transient panic into a permanently
+/// broken feature for the rest of the session.
+pub(crate) fn lock_poison_tolerant<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn file_mtime_ns(path: &str) -> Result<u128, String> {
     let m = std::fs::metadata(path).map_err(|e| format!("stat {path}: {e}"))?;
     let t = m.modified().map_err(|e| format!("mtime {path}: {e}"))?;
@@ -218,12 +226,18 @@ fn file_size(path: &str) -> Result<u64, String> {
     Ok(std::fs::metadata(path).map_err(|e| format!("stat {path}: {e}"))?.len())
 }
 
-/// Cached header-only index of the most-recently-touched HMM library, so listing
-/// profiles, loading a single logo, and extracting profiles don't each re-scan (or,
-/// worse, fully re-parse) the whole file. On Pfam-scale libraries (20k+ models,
-/// gigabytes) the first access scans once; every access after that is O(1) seeks.
-/// Holds one file at a time (replaced on path/size/mtime change) to bound memory.
-type HmmIndexCache = std::sync::Arc<std::sync::Mutex<Option<HmmIndexEntry>>>;
+/// Cached header-only index of recently-touched HMM libraries, so listing profiles,
+/// loading a single logo, and extracting profiles don't each re-scan (or, worse,
+/// fully re-parse) the whole file. On Pfam-scale libraries (20k+ models, gigabytes)
+/// the first access scans once; every access after that is O(1) seeks.
+///
+/// Holds a few files (not one) because the logo viewer, the profile table and a
+/// popped-out window can be looking at different libraries at once — a single slot
+/// made them evict each other and re-scan gigabytes on every switch.
+type HmmIndexCache = std::sync::Arc<std::sync::Mutex<Vec<HmmIndexEntry>>>;
+
+/// How many HMM libraries' indexes to keep (LRU: most recent first).
+const HMM_INDEX_CACHE_SLOTS: usize = 4;
 
 #[derive(Default)]
 pub struct HmmIndexState(pub HmmIndexCache);
@@ -237,18 +251,49 @@ pub struct HmmIndexEntry {
 
 /// Return the (cached) profile index for `path`, rebuilding it if the file is new
 /// or has changed on disk (size or mtime).
-fn cached_hmm_index(cache: &HmmIndexCache, path: &str) -> Result<std::sync::Arc<Vec<HmmEntry>>, String> {
+///
+/// The scan runs with the lock RELEASED: `index_hmm_file` reads the whole library,
+/// and holding the mutex across it serialized every other HMM command behind a
+/// gigabyte-scale read. Two callers racing on the same cold path both scan, and the
+/// second simply refreshes the entry — cheaper than making everyone wait.
+fn cached_hmm_index(
+    cache: &HmmIndexCache,
+    path: &str,
+) -> Result<std::sync::Arc<Vec<HmmEntry>>, String> {
     let size = file_size(path)?;
     let mtime_ns = file_mtime_ns(path)?;
-    let mut guard = cache.lock().unwrap();
-    if let Some(e) = guard.as_ref() {
-        if e.path == path && e.size == size && e.mtime_ns == mtime_ns {
-            return Ok(e.entries.clone());
-        }
+    if let Some(hit) = lookup_hmm_index(cache, path, size, mtime_ns) {
+        return Ok(hit);
     }
     let entries = std::sync::Arc::new(index_hmm_file(path)?);
-    *guard = Some(HmmIndexEntry { path: path.to_string(), size, mtime_ns, entries: entries.clone() });
+    let mut guard = lock_poison_tolerant(cache);
+    guard.retain(|e| e.path != path);
+    guard.insert(
+        0,
+        HmmIndexEntry { path: path.to_string(), size, mtime_ns, entries: entries.clone() },
+    );
+    guard.truncate(HMM_INDEX_CACHE_SLOTS);
     Ok(entries)
+}
+
+/// Cache hit for `path` if it's present and still matches the file on disk; also
+/// promotes it to most-recently-used.
+fn lookup_hmm_index(
+    cache: &HmmIndexCache,
+    path: &str,
+    size: u64,
+    mtime_ns: u128,
+) -> Option<std::sync::Arc<Vec<HmmEntry>>> {
+    let mut guard = lock_poison_tolerant(cache);
+    let i = guard.iter().position(|e| e.path == path)?;
+    if guard[i].size != size || guard[i].mtime_ns != mtime_ns {
+        guard.remove(i);
+        return None;
+    }
+    let entry = guard.remove(i);
+    let hit = entry.entries.clone();
+    guard.insert(0, entry);
+    Some(hit)
 }
 
 /// Per-file cache of `(id, name)` record identities, keyed by path with a
@@ -277,7 +322,7 @@ fn cached_record_ids(
 ) -> Option<std::sync::Arc<Vec<(String, String)>>> {
     let size = file_size(path).ok()?;
     let mtime_ns = file_mtime_ns(path).ok()?;
-    if let Some(e) = cache.lock().unwrap().get(path) {
+    if let Some(e) = lock_poison_tolerant(cache).get(path) {
         if e.size == size && e.mtime_ns == mtime_ns {
             return Some(e.ids.clone());
         }
@@ -346,7 +391,7 @@ pub async fn get_contig_sequences(
             if start >= e { Vec::new() } else { seqs[start..e].to_vec() }
         };
         {
-            let guard = cache.lock().unwrap();
+            let guard = lock_poison_tolerant(&cache);
             if let Some(entry) = guard.as_ref() {
                 if entry.path == path && entry.mtime_ns == mtime {
                     return Ok(slice(&entry.seqs));
@@ -355,7 +400,7 @@ pub async fn get_contig_sequences(
         }
         let seqs = parse_all_seqs(&path)?;
         let out = slice(&seqs);
-        *cache.lock().unwrap() = Some(SeqCacheEntry { path, mtime_ns: mtime, seqs });
+        *lock_poison_tolerant(&cache) = Some(SeqCacheEntry { path, mtime_ns: mtime, seqs });
         Ok(out)
     })
     .await
@@ -369,8 +414,11 @@ pub async fn get_contig_sequences(
 /// a meaningful one. Size and mtime are the staleness check.
 type RecordCountEntry = (u64, u128, Option<u64>);
 
+type RecordCountCache =
+    std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, RecordCountEntry>>>;
+
 #[derive(Default)]
-pub struct RecordCountState(pub std::sync::Mutex<std::collections::HashMap<String, RecordCountEntry>>);
+pub struct RecordCountState(pub RecordCountCache);
 
 /// Record counts for `paths` (streamed once per file, then cached). `null` for
 /// types without a meaningful count (matrices/tables) or unreadable files. Called
@@ -381,9 +429,17 @@ pub async fn count_records(
     state: tauri::State<'_, RecordCountState>,
     paths: Vec<String>,
 ) -> Result<Vec<Option<u64>>, String> {
-    let map = &state.0;
+    // Off the runtime's async threads: `workspace::count_records` streams each file
+    // end to end, so a folder of large GenBanks would pin a worker for seconds.
+    let map = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || count_records_blocking(&map, &paths))
+        .await
+        .map_err(|e| format!("counting records failed: {e}"))
+}
+
+fn count_records_blocking(map: &RecordCountCache, paths: &[String]) -> Vec<Option<u64>> {
     let mut out = Vec::with_capacity(paths.len());
-    for p in &paths {
+    for p in paths {
         let stamp = std::fs::metadata(p).ok().map(|m| {
             let mt = m
                 .modified()
@@ -397,17 +453,17 @@ pub async fn count_records(
             out.push(None);
             continue;
         };
-        if let Some(&(cs, cm, cnt)) = map.lock().unwrap().get(p) {
+        if let Some(&(cs, cm, cnt)) = lock_poison_tolerant(map).get(p) {
             if cs == size && cm == mtime {
                 out.push(cnt);
                 continue;
             }
         }
         let count = domainator_core::app_support::workspace::count_records(std::path::Path::new(p));
-        map.lock().unwrap().insert(p.clone(), (size, mtime, count));
+        lock_poison_tolerant(map).insert(p.clone(), (size, mtime, count));
         out.push(count);
     }
-    Ok(out)
+    out
 }
 
 /// Read a text file (e.g. a TSV/CSV table) as a UTF-8 string. Rejects files over
@@ -474,23 +530,30 @@ pub async fn list_hmm_profiles(
 /// `None` if the user cancelled. `default_name` seeds the dialog's filename;
 /// `extension`/`filter_name` set the type filter (e.g. `"svg"` / `"SVG image"`).
 #[tauri::command]
-pub fn save_text_file(
+pub async fn save_text_file(
+    window: tauri::WebviewWindow,
     default_name: String,
     extension: String,
     filter_name: String,
     contents: String,
 ) -> Result<Option<String>, String> {
-    let picked = rfd::FileDialog::new()
+    // `async` + `AsyncFileDialog`: a sync command would show the dialog on Tauri's
+    // main thread — see the note on `cmd_workspace::pick_directory`. The write goes
+    // to a blocking thread too; `contents` can be a multi-megabyte SVG export.
+    let picked = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
         .set_file_name(&default_name)
         .add_filter(&filter_name, &[extension.as_str()])
-        .save_file();
-    match picked {
-        Some(path) => {
-            std::fs::write(&path, contents).map_err(|e| format!("writing file: {e}"))?;
-            Ok(Some(path.to_string_lossy().into_owned()))
-        }
-        None => Ok(None),
-    }
+        .save_file()
+        .await;
+    let Some(handle) = picked else { return Ok(None) };
+    let path = handle.path().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::write(&path, contents).map_err(|e| format!("writing file: {e}"))?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|e| format!("saving file failed: {e}"))?
 }
 
 /// A record located in a workspace sequence file (for SSN → sequence navigation).
@@ -859,6 +922,70 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d.to_string_lossy().into_owned()
+    }
+
+    /// A minimal two-profile HMM library: enough for the index scan, which only
+    /// looks at the `HMMER3/` line, the header keys and the closing `//`.
+    fn hmm_library(dir: &str, name: &str, profiles: &[(&str, usize)]) -> String {
+        let mut body = String::new();
+        for (pname, len) in profiles {
+            body.push_str(&format!(
+                "HMMER3/f [3.3.2]\nNAME  {pname}\nLENG  {len}\nALPH  amino\n//\n"
+            ));
+        }
+        let path = std::path::Path::new(dir).join(name);
+        std::fs::write(&path, body).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    /// The HMM index cache used to hold a single file, so the Profiles table and a
+    /// logo in another window evicted each other and re-scanned the whole library
+    /// (gigabytes, for Pfam) on every switch. Alternating between two files must
+    /// hit the cache, not thrash it.
+    #[test]
+    fn the_hmm_index_cache_holds_more_than_one_library() {
+        let dir = scratch("hmm-cache");
+        let a = hmm_library(&dir, "a.hmm", &[("AAA", 10), ("BBB", 20)]);
+        let b = hmm_library(&dir, "b.hmm", &[("CCC", 30)]);
+        let cache: HmmIndexCache = Default::default();
+
+        for _ in 0..3 {
+            assert_eq!(cached_hmm_index(&cache, &a).unwrap().len(), 2);
+            assert_eq!(cached_hmm_index(&cache, &b).unwrap().len(), 1);
+        }
+        // Both are resident, and the most recent use leads.
+        let guard = lock_poison_tolerant(&cache);
+        assert_eq!(guard.len(), 2, "both libraries should stay cached");
+        assert_eq!(guard[0].path, b);
+    }
+
+    /// Only `HMM_INDEX_CACHE_SLOTS` libraries are kept, so browsing many HMM files
+    /// can't grow the cache without bound.
+    #[test]
+    fn the_hmm_index_cache_is_bounded() {
+        let dir = scratch("hmm-cache-bound");
+        let cache: HmmIndexCache = Default::default();
+        for i in 0..HMM_INDEX_CACHE_SLOTS + 3 {
+            let p = hmm_library(&dir, &format!("{i}.hmm"), &[("X", 5)]);
+            cached_hmm_index(&cache, &p).unwrap();
+        }
+        assert_eq!(lock_poison_tolerant(&cache).len(), HMM_INDEX_CACHE_SLOTS);
+    }
+
+    /// A rewritten library must be re-scanned, not served from the cache.
+    #[test]
+    fn the_hmm_index_cache_notices_a_changed_file() {
+        let dir = scratch("hmm-cache-stale");
+        let a = hmm_library(&dir, "a.hmm", &[("AAA", 10)]);
+        let cache: HmmIndexCache = Default::default();
+        assert_eq!(cached_hmm_index(&cache, &a).unwrap().len(), 1);
+        hmm_library(&dir, "a.hmm", &[("AAA", 10), ("BBB", 20)]);
+        assert_eq!(
+            cached_hmm_index(&cache, &a).unwrap().len(),
+            2,
+            "a rewritten library must be re-indexed"
+        );
+        assert_eq!(lock_poison_tolerant(&cache).len(), 1, "no duplicate entry for the same path");
     }
 
     /// Every "save as" and "extract to" path in the GUI funnels through this, and

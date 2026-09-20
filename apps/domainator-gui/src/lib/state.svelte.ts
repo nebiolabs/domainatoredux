@@ -46,12 +46,30 @@ class WorkspaceStore {
   // Requested contig to scroll to when a viewer opens (keyed by file path);
   // consumed and cleared by the contig viewer. Used by SSN → sequence nav.
   focusContig = $state<Record<string, number>>({});
+  // Same channel for HMM files: the profile index the Logo view should show,
+  // consumed and cleared by HmmLogo. Set by the profile table's "logo" button.
+  focusHmmProfile = $state<Record<string, number>>({});
+  // Selected sub-view per open file (e.g. "contig" | "enum" | "summary"). Lives
+  // here rather than in ViewerDock so a viewer can switch the dock to a sibling
+  // tab — HmmReport → Logo, for instance.
+  subActive = $state<Record<string, string>>({});
+  // Set while a multi-file copy is running, so the file table can show progress
+  // instead of appearing to do nothing.
+  importing = $state(0);
+  // Set while a folder create / file delete is in flight.
+  busy = $state(false);
   databases = $state<DatabaseEntry[]>([]);
   dbError = $state<string | null>(null);
   jobs = $state<JobInfo[]>([]);
   // A request to open the tool dialog (from the Tools menu or a job "clone"),
   // consumed by App. `initial` pre-fills the form (clone).
   requestedTool = $state<{ id: string; initial?: Record<string, unknown> } | null>(null);
+
+  /// Switch the viewer dock to sibling view `viewId` for the file at `path`.
+  showSubView(path: string, viewId: string): void {
+    this.subActive[path] = viewId;
+    this.activeTabId = path;
+  }
 
   /// Open the tool dialog for `id`, optionally pre-filled with `initial` params.
   openTool(id: string, initial?: Record<string, unknown>): void {
@@ -129,20 +147,25 @@ class WorkspaceStore {
   }
 
   /// Restore this workspace's persisted job history (no-op until a workspace opens).
+  /// A failure here used to be swallowed, so a corrupt `jobs.json` looked exactly
+  /// like an empty history.
   async loadJobs(): Promise<void> {
     if (!this.root) return;
     try {
       this.jobs = this.sortJobs(await apiLoadJobs(this.root));
-    } catch {
-      /* ignore */
+    } catch (e) {
+      this.error = `Could not load the job history: ${e}`;
     }
   }
 
+  /// Ask the backend to cancel a running job. Cancellation is best-effort (the
+  /// core tools have no interruption points), so the job flips to `cancelling`
+  /// and settles when the tool actually stops.
   async cancelJob(id: string): Promise<void> {
     try {
       await apiCancelJob(id);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      this.error = `Could not cancel the job: ${e}`;
     }
   }
 
@@ -197,6 +220,7 @@ class WorkspaceStore {
   async deleteFile(path: string): Promise<void> {
     if (!this.root) return;
     this.error = null;
+    this.busy = true;
     try {
       await deleteFile(this.root, path);
       this.closeTab(path);
@@ -204,6 +228,8 @@ class WorkspaceStore {
       if (this.selectedFolder) await this.selectFolder(this.selectedFolder);
     } catch (e) {
       this.error = String(e);
+    } finally {
+      this.busy = false;
     }
   }
 
@@ -244,6 +270,7 @@ class WorkspaceStore {
     const dir = this.selectedFolder ?? this.root;
     if (!this.root || !dir || sources.length === 0) return 0;
     this.error = null;
+    this.importing = sources.length;
     try {
       const imported = await importFiles(this.root, dir, sources);
       if (this.selectedFolder) await this.selectFolder(this.selectedFolder);
@@ -251,17 +278,22 @@ class WorkspaceStore {
     } catch (e) {
       this.error = String(e);
       return 0;
+    } finally {
+      this.importing = 0;
     }
   }
 
   async createSubfolder(parent: string, name: string): Promise<void> {
     this.error = null;
+    this.busy = true;
     try {
       const path = await createFolder(parent, name);
       await this.refreshTree();
       await this.selectFolder(path);
     } catch (e) {
       this.error = String(e);
+    } finally {
+      this.busy = false;
     }
   }
 

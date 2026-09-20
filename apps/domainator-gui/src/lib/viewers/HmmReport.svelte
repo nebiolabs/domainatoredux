@@ -8,6 +8,10 @@
 
   let { path }: { path: string } = $props();
 
+  // True in the main window's viewer dock (which has a sibling "Logo" tab), false
+  // in a detached `?view=file` window, which renders a single view with no tabs.
+  const inDock = !new URLSearchParams(window.location.search).get("view");
+
   let profiles = $state<HmmSummary[]>([]);
   let error = $state<string | null>(null);
   let loading = $state(true);
@@ -88,6 +92,15 @@
     if (scrollEl) scrollEl.scrollTop = 0;
   }
 
+  // Show this profile's logo in the dock's sibling "Logo" tab. In a detached
+  // file window there is no dock, so fall back to a logo window there.
+  function showLogo(p: HmmSummary) {
+    ws.focusHmmProfile[path] = p.index;
+    if (inDock) ws.showSubView(path, "logo");
+    else void popLogo(p);
+  }
+
+  // Open this profile's logo in its own window.
   async function popLogo(p: HmmSummary) {
     try {
       await openHmmLogoWindow(path, p.index, p.name);
@@ -177,7 +190,8 @@
               <td class="c-len num">{p.length}</td>
               <td class="c-desc" title={p.desc ?? ""}>{p.desc ?? ""}</td>
               <td class="c-act">
-                <button class="logo" title="Pop out sequence logo" onclick={(e) => { e.stopPropagation(); popLogo(p); }}>logo ↗</button>
+                <button class="logo" title="Show this profile's sequence logo" onclick={(e) => { e.stopPropagation(); showLogo(p); }}>logo</button>
+                <button class="logo pop" title="Open the logo in a new window" aria-label="Open the logo in a new window" onclick={(e) => { e.stopPropagation(); popLogo(p); }}>⧉</button>
               </td>
             </tr>
           {/each}
@@ -187,7 +201,8 @@
     </div>
     <p class="legend dim">
       Click a row to select (Ctrl/Shift for multi-select), then <b>Extract →</b> to save the chosen
-      profiles as a new HMM file. Click <b>logo ↗</b> to open a profile's sequence logo.
+      profiles as a new HMM file. Click <b>logo</b> to draw a profile's sequence logo, or
+      <b>⧉</b> to open it in its own window.
     </p>
   {/if}
 </div>
@@ -268,6 +283,7 @@
   }
   .c-act {
     text-align: right;
+    white-space: nowrap;
   }
   tbody tr {
     cursor: pointer;
@@ -319,6 +335,10 @@
   .logo:hover {
     border-color: var(--accent);
     color: var(--accent);
+  }
+  .logo.pop {
+    margin-left: 4px;
+    padding: 1px 5px;
   }
   .arrow {
     color: var(--accent);

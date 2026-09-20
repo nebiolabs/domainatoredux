@@ -4,17 +4,21 @@
 
   let expanded = $state(true);
 
-  const runningCount = $derived(ws.jobs.filter((j) => j.status === "running").length);
+  const runningCount = $derived(ws.jobs.filter((j) => isActive(j.status)).length);
 
   function baseName(p: string): string {
     return p.split(/[\\/]/).pop() ?? p;
   }
   const STATUS_ICON: Record<string, string> = {
     running: "◐",
+    cancelling: "◌",
     completed: "✓",
     failed: "✕",
     cancelled: "∅",
   };
+  // A job is still on the blocking pool in both states; `cancelling` means the
+  // flag is set but the tool hasn't reached a point where it can stop.
+  const isActive = (s: string) => s === "running" || s === "cancelling";
 
   function clearAll(e: MouseEvent) {
     e.stopPropagation();
@@ -52,7 +56,9 @@
               <span class="ic">{STATUS_ICON[job.status] ?? "•"}</span>
               <span class="tool">{job.tool}</span>
               <button class="clone" onclick={() => ws.openTool(job.tool, job.params)} title="Clone into a new tool dialog">⎘</button>
-              {#if job.status === "running"}
+              {#if job.status === "cancelling"}
+                <span class="cancelling" title="The tool has no interruption point; waiting for it to finish">cancelling…</span>
+              {:else if job.status === "running"}
                 <button class="cancel" onclick={() => ws.cancelJob(job.job_id)} title="Cancel">×</button>
               {:else}
                 <button class="del" onclick={(e) => removeJob(e, job)} title="Delete from history">×</button>
@@ -111,6 +117,11 @@
     color: var(--accent);
     margin-left: auto;
     font-size: 11px;
+  }
+  .cancelling {
+    color: var(--text-dim);
+    font-size: 11px;
+    white-space: nowrap;
   }
   .empty {
     padding: 6px 12px;

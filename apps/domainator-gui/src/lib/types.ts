@@ -221,7 +221,10 @@ export interface RunResult {
 export interface JobInfo {
   job_id: string;
   tool: string;
-  status: "running" | "completed" | "failed" | "cancelled";
+  /// `cancelling` is set the moment the user clicks cancel; the job stays on the
+  /// blocking pool until the tool reaches a point where it can stop (the core
+  /// tools have no interruption points), then settles as `cancelled`.
+  status: "running" | "cancelling" | "completed" | "failed" | "cancelled";
   message: string;
   started_at_ms: string;
   outputs: string[];

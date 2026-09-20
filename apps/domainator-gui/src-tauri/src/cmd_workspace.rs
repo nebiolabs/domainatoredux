@@ -17,22 +17,36 @@ pub struct WorkspaceInfo {
 }
 
 /// Native folder picker (returns `None` if the user cancels).
+///
+/// `async` + `AsyncFileDialog` is required, not cosmetic: a synchronous
+/// `#[tauri::command]` runs on Tauri's main thread, and rfd's *blocking* API shows
+/// the dialog on the calling thread (`IFileDialog::Show` on Windows), spinning a
+/// nested modal message loop inside WebView2's IPC dispatch — the same re-entrancy
+/// documented at length in `cmd_windows::spawn_window`. The async variants run the
+/// dialog on their own thread instead. `set_parent` also makes the dialog owned by
+/// the app window, so Windows can't raise it *behind* the app.
 #[tauri::command]
-pub fn pick_directory() -> Result<Option<String>, String> {
-    Ok(rfd::FileDialog::new()
+pub async fn pick_directory(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+    Ok(rfd::AsyncFileDialog::new()
+        .set_parent(&window)
         .pick_folder()
-        .map(|p| p.to_string_lossy().into_owned()))
+        .await
+        .map(|h| h.path().to_string_lossy().into_owned()))
 }
 
 /// Native multi-file picker for import (returns `None` if the user cancels).
 #[tauri::command]
-pub fn pick_files() -> Result<Option<Vec<String>>, String> {
-    Ok(rfd::FileDialog::new().pick_files().map(|paths| {
-        paths
-            .into_iter()
-            .map(|p| p.to_string_lossy().into_owned())
-            .collect()
-    }))
+pub async fn pick_files(window: tauri::WebviewWindow) -> Result<Option<Vec<String>>, String> {
+    Ok(rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .pick_files()
+        .await
+        .map(|handles| {
+            handles
+                .into_iter()
+                .map(|h| h.path().to_string_lossy().into_owned())
+                .collect()
+        }))
 }
 
 /// Pick a collision-free destination path for `name` inside `dir`: if it already
@@ -101,11 +115,14 @@ pub async fn import_files(
 /// folder tree. The tree is derived from the filesystem so files added out-of-band
 /// (e.g. by the CLI) always show up.
 #[tauri::command]
-pub async fn open_workspace(root: String) -> Result<WorkspaceInfo, String> {
+pub async fn open_workspace(
+    app: tauri::AppHandle,
+    root: String,
+) -> Result<WorkspaceInfo, String> {
     // Off the UI thread: scanning the tree classifies each file (reading first
     // records), which can be slow on a large workspace. A synchronous command
     // would freeze all IPC while it runs.
-    tauri::async_runtime::spawn_blocking(move || {
+    let info = tauri::async_runtime::spawn_blocking(move || {
         let root_path = Path::new(&root);
         if !root_path.is_dir() {
             return Err(format!("not a directory: {root}"));
@@ -116,7 +133,10 @@ pub async fn open_workspace(root: String) -> Result<WorkspaceInfo, String> {
         Ok(WorkspaceInfo { root, tree, settings: manifest.settings })
     })
     .await
-    .map_err(|e| format!("opening workspace failed: {e}"))?
+    .map_err(|e| format!("opening workspace failed: {e}"))??;
+    // Only a workspace that actually opened goes in the recent list.
+    crate::cmd_prefs::remember_workspace(&app, &info.root);
+    Ok(info)
 }
 
 /// List the recognized data files directly inside `dir` (sidecar metadata is read

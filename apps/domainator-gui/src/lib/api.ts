@@ -261,3 +261,17 @@ export const clearJobs = (): Promise<void> => invoke("clear_jobs");
 export const listExternalTools = (): Promise<ExternalToolStatus[]> => invoke("list_external_tools");
 export const downloadExternalTool = (id: string): Promise<string> =>
   invoke("download_external_tool", { id });
+
+// --- app preferences (recent workspaces / reopen-on-launch) ---
+
+/// What the shell needs on launch: the recent workspaces that still exist, and
+/// the one to reopen automatically (null if reopening is off or none are left).
+export interface StartupInfo {
+  recent: string[];
+  reopen: string | null;
+}
+export const startupInfo = (): Promise<StartupInfo> => invoke("startup_info");
+export const forgetRecentWorkspace = (root: string): Promise<string[]> =>
+  invoke("forget_recent_workspace", { root });
+export const setReopenLastWorkspace = (enabled: boolean): Promise<void> =>
+  invoke("set_reopen_last_workspace", { enabled });

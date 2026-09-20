@@ -185,6 +185,47 @@
   }
 
   const header = $derived(rows[0] ?? []);
+
+  // Row virtualization. A wide TSV at the 5000-row CAP used to mount one <input>
+  // per cell for every row — 100k focusable elements — which WebView2 in
+  // particular chokes on. Render only the visible window plus an overscan, with
+  // padding rows carrying the scroll height (same shape as HmmReport).
+  const ROW_H = 24; // must match `tbody td` height in the stylesheet
+  const OVERSCAN = 10;
+  let scrollEl = $state<HTMLDivElement>();
+  let scrollTop = $state(0);
+  let clientH = $state(400);
+  let rafPending = false;
+  function onScroll() {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      if (scrollEl) {
+        scrollTop = scrollEl.scrollTop;
+        clientH = scrollEl.clientHeight;
+      }
+    });
+  }
+  $effect(() => {
+    if (!scrollEl) return;
+    clientH = scrollEl.clientHeight;
+    const ro = new ResizeObserver(() => {
+      if (scrollEl) clientH = scrollEl.clientHeight;
+    });
+    ro.observe(scrollEl);
+    return () => ro.disconnect();
+  });
+
+  // Data rows are `rows[1..]`; `firstRow`/`lastRow` are indices into `rows`, so
+  // `setCell`/`deleteRow`/`rowSelect` keep taking the same absolute row number.
+  const firstRow = $derived(Math.max(1, Math.floor(scrollTop / ROW_H) - OVERSCAN + 1));
+  const lastRow = $derived(
+    Math.min(rows.length, firstRow + Math.ceil(clientH / ROW_H) + 2 * OVERSCAN),
+  );
+  const visibleRows = $derived(rows.slice(firstRow, lastRow));
+  const topPad = $derived((firstRow - 1) * ROW_H);
+  const bottomPad = $derived(Math.max(0, (rows.length - lastRow) * ROW_H));
 </script>
 
 <div class="tv">
@@ -207,7 +248,7 @@
       {#if msg}<span class="dim">{msg}</span>{/if}
       {#if truncated > 0}<span class="warn">showing first {CAP.toLocaleString()} rows ({truncated.toLocaleString()} more — read-only)</span>{/if}
     </div>
-    <div class="grid-scroll">
+    <div class="grid-scroll" bind:this={scrollEl} onscroll={onScroll}>
       <table>
         <thead>
           <tr>
@@ -226,8 +267,9 @@
           </tr>
         </thead>
         <tbody>
-          {#each rows.slice(1) as row, ri (ri)}
-            {@const r = ri + 1}
+          {#if topPad > 0}<tr class="pad" style="height:{topPad}px"><td colspan={ncols + 1}></td></tr>{/if}
+          {#each visibleRows as row, ri (firstRow + ri)}
+            {@const r = firstRow + ri}
             <tr class:sel={selected.has(r)}>
               <td class="rownum" onclick={(e) => rowSelect(e, r)} title="Click to select (Ctrl/Shift for multiple)">
                 <span>{r}</span>
@@ -238,6 +280,7 @@
               {/each}
             </tr>
           {/each}
+          {#if bottomPad > 0}<tr class="pad" style="height:{bottomPad}px"><td colspan={ncols + 1}></td></tr>{/if}
         </tbody>
       </table>
     </div>
@@ -355,6 +398,16 @@
     outline: 2px solid var(--accent);
     outline-offset: -2px;
     background: var(--bg);
+  }
+  /* Fixed data-row height — the virtualizer's ROW_H depends on it. */
+  tbody td {
+    height: 24px;
+    box-sizing: border-box;
+  }
+  tbody tr.pad td {
+    height: auto;
+    border: none;
+    padding: 0;
   }
   tbody tr.sel {
     background: var(--row-selected);

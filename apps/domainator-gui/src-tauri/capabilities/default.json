@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core permissions for all windows (events + window management for detached sequence viewers).",
-  "windows": ["*"],
-  "permissions": ["core:default"]
+  "description": "Core permissions for all windows (events + window management for detached sequence viewers) plus persisted window geometry.",
+  "windows": [
+    "*"
+  ],
+  "permissions": [
+    "core:default",
+    "window-state:default"
+  ]
 }

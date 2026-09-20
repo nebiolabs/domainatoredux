@@ -6,12 +6,18 @@
   let tools = $state<ExternalToolStatus[]>([]);
   let busy = $state<Record<string, boolean>>({});
   let errors = $state<Record<string, string>>({});
+  let listError = $state<string | null>(null);
+  let loading = $state(true);
 
   async function refresh() {
     try {
       tools = await listExternalTools();
+      listError = null;
     } catch (e) {
-      /* ignore */ void e;
+      // Swallowing this made the panel report "0" tools as though none existed.
+      listError = String(e);
+    } finally {
+      loading = false;
     }
   }
 
@@ -44,6 +50,11 @@
     <span class="count">{installedCount}/{tools.length}</span>
   </div>
   {#if expanded}
+    {#if loading}
+      <div class="empty">Checking…</div>
+    {:else if listError}
+      <div class="err">{listError}</div>
+    {/if}
     {#each tools as t (t.id)}
       <div class="tool">
         <div class="row1">
@@ -61,7 +72,9 @@
         {#if errors[t.id]}<div class="err">{errors[t.id]}</div>{/if}
       </div>
     {/each}
-    {#if tools.length === 0}<div class="empty">No managed external tools.</div>{/if}
+    {#if tools.length === 0 && !loading && !listError}
+      <div class="empty">No managed external tools.</div>
+    {/if}
   {/if}
 </div>
 

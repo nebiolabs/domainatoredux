@@ -168,6 +168,10 @@
         </table>
       {/if}
     </div>
+  {:else}
+    <!-- No data and no error: an empty/unsupported matrix. Say so rather than
+         rendering a blank pane. -->
+    <div class="msg">No report for this matrix.</div>
   {/if}
 </div>
 

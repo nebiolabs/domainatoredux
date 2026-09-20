@@ -94,7 +94,9 @@
         missing.forEach((p, i) => (next[p] = counts[i]));
         recordCounts = next;
       })
-      .catch(() => {})
+      // Surfaced rather than swallowed: the column otherwise sits at "…" forever
+      // with no hint why.
+      .catch((e) => (ws.error = `Could not count records: ${e}`))
       .finally(() => (countPending = false));
   });
 
@@ -152,8 +154,12 @@
 
   async function importViaDialog() {
     if (!ws.selectedFolder) return;
-    const files = await pickFiles();
-    if (files && files.length) await ws.importInto(files);
+    try {
+      const files = await pickFiles();
+      if (files && files.length) await ws.importInto(files);
+    } catch (e) {
+      ws.error = String(e);
+    }
   }
 
   let newOpen = $state(false);
@@ -191,6 +197,9 @@
     return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
   }
   $effect(() => {
+    // `disposed` matters: if this effect re-runs before the listen promise
+    // resolves, `unlisten` is still undefined and the old listener would leak.
+    let disposed = false;
     let unlisten: (() => void) | undefined;
     getCurrentWebview()
       .onDragDropEvent((e) => {
@@ -203,8 +212,14 @@
           if (over && p.paths.length) void ws.importInto(p.paths);
         }
       })
-      .then((u) => (unlisten = u));
-    return () => unlisten?.();
+      .then((u) => {
+        unlisten = u;
+        if (disposed) u();
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   });
 </script>
 
@@ -227,8 +242,17 @@
     <button class="import" onclick={() => (newOpen = true)} disabled={!ws.currentDir} title="Create a new file from pasted text">
       ＋ New file…
     </button>
-    <button class="import" onclick={importViaDialog} disabled={!ws.selectedFolder} title="Copy files into this folder">
-      ⬆ Import files…
+    <button
+      class="import"
+      onclick={importViaDialog}
+      disabled={!ws.selectedFolder || ws.importing > 0}
+      title="Copy files into this folder"
+    >
+      {#if ws.importing > 0}
+        Importing {ws.importing} file{ws.importing === 1 ? "" : "s"}…
+      {:else}
+        ⬆ Import files…
+      {/if}
     </button>
   </div>
 

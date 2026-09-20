@@ -26,7 +26,9 @@ cargo build -p domainator-gui   # backend
 ```
 
 Then: **Open workspace…** → pick a folder of data files → click a folder in the
-tree → double-click / click a file in the table to open a viewer tab.
+tree → double-click / click a file in the table to open a viewer tab. After the
+first time, the app reopens the workspace you were last in and offers the rest
+from a **Recent** list in the left panel.
 
 ## Developing on Windows vs WSL2
 
@@ -41,9 +43,16 @@ Linux) and use Windows only to *validate the GUI*:
   Windows is a hard-requirement target. Run `cargo tauri dev` on the Windows side
   (Windows hosts WSL2, so it's not either/or) or smoke-test the GitHub Actions
   Windows installer periodically.
-- **WebView2-sensitive spots to check first:** the SSN `<iframe srcdoc>` shell
-  (blob Web Worker + `DecompressionStream`, `sandbox="allow-scripts
-  allow-same-origin"`) and the SVG contig/logo rendering.
+- **WebView2-sensitive spots to check first:** anything that creates a window or
+  opens a native dialog (see the main-thread rule under "Deferred details" — this
+  is where the one confirmed Windows-only hang lived), the SSN `<iframe srcdoc>`
+  shell (blob Web Worker + `DecompressionStream`, `sandbox="allow-scripts
+  allow-same-origin"`) and the canvas contig/logo rendering.
+- **Windows smoke list** after touching any of that: pop out a viewer window *and
+  then confirm the main window still loads a file* (a wedged event loop still
+  paints and handles clicks, so "the UI responds" is not evidence it is healthy);
+  Export SVG from a logo and check the dialog comes up *in front*; quit and
+  relaunch to confirm the workspace and window geometry come back.
 - **`seq_dist` needs a Windows `diamond.exe`** on Windows (it shells out to the
   external `diamond` binary; the Linux binary in WSL2 won't run natively).
 
@@ -186,10 +195,24 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   constants — a rename on either side would install a binary where nothing looks for
   it. Adding a future dependency (mmseqs2, foldseek, prodigal, …) is just another
   `ToolSpec` in `specs()`.
-- **All non-trivial commands run off the main thread.** Tauri v2 runs synchronous
-  `#[tauri::command]`s on the **main thread**, so a slow one stalls *all* IPC (e.g.
-  every tool dialog would sit at "Loading…" while a matrix report or workspace scan
-  runs). The heavy commands are therefore `async` + `spawn_blocking`: `load_contig_view`,
+- **All non-trivial commands run off the main thread — and so does anything that
+  spins a nested message loop.** Tauri v2 runs synchronous `#[tauri::command]`s on
+  the **main thread**, so a slow one stalls *all* IPC (e.g. every tool dialog would
+  sit at "Loading…" while a matrix report or workspace scan runs).
+
+  On Windows the consequence is worse than slowness. Anything that runs a nested
+  message pump from a sync command — creating a WebView2 window, or showing a
+  native dialog with rfd's *blocking* API — re-enters WebView2 from inside its own
+  IPC dispatch. tao's event loop never returns to the top, so queued user events
+  and **IPC responses are buffered forever**: the app keeps painting and handling
+  clicks (WebView2 renders out of process) while nothing ever loads again. Note
+  that `AppHandle::run_on_main_thread` does **not** help: it is
+  `send_user_message(Message::Task(..))`, and `send_user_message` short-circuits to
+  running the message *inline* when the caller is already on the main thread. The
+  only fix is for the command itself to be `async` (or `#[tauri::command(async)]`).
+  See the long comment on `cmd_windows::spawn_window`.
+
+  The heavy commands are therefore `async` + `spawn_blocking`: `load_contig_view`,
   `run_enum_report`, `run_summary_stats`, `load_hmm_logo`/`list_hmm_profiles`,
   `load_matrix_report`, `resolve_record` (scans the workspace), `render_ssn_html`,
   `open_workspace`/`list_folder`/`rescan_tree`, `register_database`, and the GenBank
@@ -198,8 +221,12 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   dialog fetches its schema via `tool_schema`, and on Linux/WebKitGTK the main thread
   also drives WebView layout/paint — a *synchronous* schema fetch could queue behind
   a heavy viewer render and leave the dialog stuck at "Loading…". Running them on the
-  async runtime makes them immune to whatever the main thread is doing. (Window
-  creation — `open_sequence_window` — deliberately stays on the main thread.)
+  async runtime makes them immune to whatever the main thread is doing. **Window
+  creation (`open_sequence_window` / `open_file_window` / `open_hmm_logo_window`)
+  and every native picker (`pick_directory`, `pick_files`, `pick_file`,
+  `save_text_file`) are `async` for the reason above** — don't make any of them
+  synchronous again. The pickers also `set_parent(&window)`, so Windows can't raise
+  an ownerless dialog *behind* the app.
   **Belt-and-suspenders for the tool dialog:** tool JSON Schemas are static, so the
   frontend prefetches every tool's schema **at app startup** (before any workspace/
   GenBank viewer is mounted, i.e. while the main thread is idle) into a dedicated
@@ -214,9 +241,18 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   state, and broadcast as `job-update` events. The **Jobs panel** (left sidebar,
   above Databases; `JobsPanel.svelte`) shows live status (running/completed/
   failed/cancelled), the result message, and clickable output files (openable ones
-  open in a viewer); running jobs have a Cancel button (`cancel_job`, best-effort —
-  core tools aren't interruptible, so a cancelled job's result is discarded). Each
-  run writes provenance (`jobs/<id>/job.json` + output `.dom.json`).
+  open in a viewer); running jobs have a Cancel button. **Cancellation is genuinely
+  best-effort and the UI says so.** `cancel_job` sets an `Arc<AtomicBool>` the
+  worker can see and flips the row to `cancelling…` immediately; `run_one` checks
+  it before dispatch (so a job cancelled while queued does no work at all) and
+  again before the provenance write (so an abandoned run is not recorded). None of
+  the core tools has an interruption point, so a tool already running finishes:
+  whatever output file it had written stays on disk — it may have overwritten
+  something, so deleting it behind the user's back would be worse — and the job's
+  message says so. Killing the `diamond`/`cd-hit`/`usearch` child processes would
+  need a `Child` handle plumbed out of `domainator-core`'s `tools/external.rs`; see
+  "Deferred details". Each completed run writes provenance (`jobs/<id>/job.json` +
+  output `.dom.json`).
 - **Report-export tools** (also shown as jobs): `enum-report` writes a per-contig/
   cds/domain **TSV**, `matrix-report` writes a **text** summary + suggested cutoffs.
   (These export files to disk; the in-app Enum Report / Matrix Report *viewer* tabs
@@ -249,15 +285,20 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   what the core `read_references` accepts (protein/nucleotide HMM or FASTA; `.cm` and
   GenBank are not references). The dropdown lists folder files and registered
   databases of either kind.
-- **HMM files open as a profile table, logos pop out on demand.** `.hmm` files now
+- **HMM files open as a profile table with a Logo tab beside it.** `.hmm` files
   default to `HmmReport.svelte` — a fast, filterable, row-virtualized table of every
   profile (name / length / description) built from `list_hmm_profiles` (which never
-  computes a logo, so opening a 25k-profile file is instant). Each row has a
-  **logo ↗** button that opens that single profile's sequence logo in a detached
-  window (`open_hmm_logo_window` → `?view=hmmlogo`; `App.svelte`'s standalone branch
-  renders `HmmLogo` in single-profile mode via an `index` prop that hides the browser
-  list). This replaces the old always-loaded logo browser (slow, and there's no real
-  use case for scrolling through thousands of logos).
+  computes a logo, so opening a 25k-profile file is instant). `viewsFor("hmm")`
+  gives it a sibling **Logo** tab (`HmmLogo.svelte`, which carries its own filterable
+  profile browser). A row's **logo** button sets `ws.focusHmmProfile[path]` and
+  switches the dock to that tab — the same consume-and-clear channel as
+  `ws.focusContig`; **⧉** still opens the profile in a detached window
+  (`open_hmm_logo_window` → `?view=hmmlogo`, where the `index` prop hides the
+  browser list). The dock tab is the primary path deliberately: the logo used to be
+  the only viewer that required spawning an OS window, which put WebView2 window
+  creation in the hot path of an everyday action.
+  `ViewerDock`'s per-file sub-view selection lives on the store (`ws.subActive`) so
+  a viewer can switch the dock to a sibling tab like this.
 - **Contig viewer renders multi-part features + circular wrap.** Each feature is
   drawn as one segment per location part (joined/multi-exon genes show boxes joined
   by thin intron connectors; only the terminal part gets the arrowhead). Because the
@@ -314,15 +355,15 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   filter) and lazily render the selected profile's logo (`list_hmm_profiles` +
   per-index `load_hmm_logo`, both cached). `app_support/hmm_logo.rs` computes
   per-position IC (`log2 K − H`, uniform background), letter heights, and HMMER
-  occupancy; `HmmLogo.svelte` renders stacked SVG glyphs + an occupancy strip.
-  The logo is **column-virtualized** (only the visible columns are in the DOM;
-  per-column glyph geometry is precomputed once, avoiding an O(n²) cumulative-sum).
-  It also paints into a **viewport-sized** `svg.viewport` (a full-width spacer div
-  carries the scrollbar; the SVG is `position:absolute` and follows `scrollLeft` via
-  CSS `left` + `viewBox`, width clamped to remaining content) rather than a
-  model-wide SVG (which was ~13k px for a 500-position model and repainted every
-  scroll frame → the earlier lag). (Do NOT port GPL `Bio-HMM-Logo`; true
-  expected-insert-length bars are future work.)
+  occupancy; `HmmLogo.svelte` renders stacked glyphs + an occupancy strip **to a
+  canvas**. It is **column-virtualized**: a full-width spacer div carries the
+  scrollbar while the canvas is only viewport-sized and follows `scrollLeft`, so the
+  browser never paints a model-wide (10k+ px) layer, and `draw()` touches only the
+  visible columns on each rAF. Each `(char, colour)` glyph is rasterized once into
+  an offscreen canvas and blitted with `drawImage`; below 11 px/column it falls back
+  to coloured rects. **Export SVG** re-emits the full logo as vectors using the same
+  ink-box metrics. (Do NOT port GPL `Bio-HMM-Logo`; true expected-insert-length bars
+  are future work.)
 - **Databases panel — DONE.** Workspace-global registry in `databases.json`
   (`app_support/registry.rs`); the left sidebar's Databases section lists entries
   with a molecule dot + `<molecule> <format>` label and shard count. Add via file
@@ -338,3 +379,37 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   features). `set_color_by_name` exists in core but isn't surfaced in the UI yet.
 - **Non-symmetric matrices**: the matrix report assumes a symmetric SSN-style
   matrix (via `MaxTree`); query×reference matrices aren't meaningfully handled.
+- **App preferences — DONE.** `app_support/prefs.rs` owns the format and the
+  recent-workspace list semantics (most-recent-first set, capped at 10, entries
+  whose directory is missing are filtered out of the offered list but kept in the
+  file — an unplugged drive is *missing*, not *gone*); `cmd_prefs.rs` resolves it to
+  `<app_data>/prefs.json`, next to the managed external-tool binaries. On launch the
+  shell calls `startup_info` and reopens the most recent workspace, or shows the
+  recent list in the left panel. Window size/position/maximized persist via
+  `tauri-plugin-window-state`, filtered to the `main` label (detached windows get
+  generated labels like `hmm0`, so persisting their geometry is meaningless).
+  Splitter positions persist in `localStorage`, like the file table's columns.
+  `app_support` has no parity counterpart, so its `cargo test`s are the whole
+  safety net — see `CLAUDE.md`.
+- **Still deferred, in rough priority order:**
+  - **Killing a running tool's subprocess.** Needs a `Child` handle plumbed out of
+    `domainator-core`'s `tools/external.rs` (diamond / cd-hit / usearch); the
+    pure-Rust tools would still need interruption points of their own.
+  - **A job queue with a concurrency cap.** `run_tool` spawns one blocking task per
+    invocation with no limit, and the tools use rayon's global pool, so two or three
+    concurrent runs saturate every core and starve the renderer.
+  - **Per-tool progress events.** `set_job` emits exactly twice per job (start and
+    terminal state); there is no progress channel, elapsed time, or output log.
+  - **A native app menu with accelerators.** `tauri.conf.json` defines no menu, so
+    there are no OS-level shortcuts; in-app keyboard handling is limited to Escape /
+    Enter in the modals and Ctrl+C in the contig view. No Ctrl+O / Ctrl+S / Ctrl+W.
+  - **Styled confirm modals.** `JobsPanel` and `FileTable` still use native
+    `window.confirm()` for their three destructive actions. `NameModal.svelte` exists
+    because `window.prompt` is unreliable in Tauri webviews; `confirm` carries the
+    same portability risk and none of the app's styling.
+  - **`FileTable` / `FolderTree` virtualization.** Both render every row.
+    `TableView`, `EnumReport` and `HmmReport` are virtualized.
+  - **Streaming the SSN payload.** `render_ssn_html` returns the whole embedded
+    bundle as one JSON string over IPC, which then becomes an `<iframe srcdoc>`.
+  - **Viewer cache eviction.** `cache.ts` is a plain `Map` cleared only on workspace
+    change, so SSN HTML, enum row arrays and contig views accumulate for the session.
