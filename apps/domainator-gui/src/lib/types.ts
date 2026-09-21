@@ -261,3 +261,36 @@ export interface MatrixReport {
   data_type: string;
   symmetric: boolean;
 }
+
+/// Colour scheme preference. Mirrors `app_support::prefs::Theme`.
+export type Theme = "system" | "light" | "dark";
+
+/// Mirrors `app_support::prefs::Prefs`.
+export interface Prefs {
+  schema_version: number;
+  recent_workspaces: string[];
+  reopen_last_workspace: boolean;
+  theme: Theme;
+  default_cpu: number;
+  check_updates_on_launch: boolean;
+  last_update_check_ms: number | null;
+  last_seen_release: string | null;
+}
+
+/// A partial settings update. Omitted fields are left alone.
+export interface PrefsPatch {
+  reopen_last_workspace?: boolean;
+  theme?: Theme;
+  default_cpu?: number;
+  check_updates_on_launch?: boolean;
+}
+
+/// Mirrors `app_support::version_check::UpdateCheck`.
+export interface UpdateCheck {
+  current: string;
+  latest: { tag: string; url: string; published: string | null } | null;
+  newer: boolean;
+  /// Set when the check could not complete (offline, rate-limited, no releases).
+  /// Always shown inline — never on the app-wide error bar.
+  note: string | null;
+}

@@ -59,12 +59,25 @@ struct WinSpec {
 /// handled exactly once at the top of the event loop, and `Context::create_window`
 /// is fire-and-forget (it waits on no channel), so there is nothing to deadlock on.
 fn spawn_window(app: &AppHandle, label: String, title: String, spec: WinSpec) -> Result<(), String> {
-    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(spec.url.into()))
+    let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(spec.url.into()))
         .title(title)
         .inner_size(spec.w, spec.h)
-        .min_inner_size(spec.min_w, spec.min_h)
-        .build()
-        .map_err(|e| format!("opening detached window: {e}"))?;
+        .min_inner_size(spec.min_w, spec.min_h);
+
+    // A reduced menu: workspace and tool commands belong to the main window's
+    // state, and a detached viewer has none of it. On macOS the menu is app-wide
+    // (`Window::set_menu` is unsupported there) so these windows share the main
+    // menu -- the platform norm -- and the frontend dispatcher is the backstop,
+    // no-oping workspace commands when it is running standalone.
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.menu(
+            crate::app_menu::build_detached(app)
+                .map_err(|e| format!("building the detached window menu: {e}"))?,
+        );
+    }
+
+    let window = builder.build().map_err(|e| format!("opening detached window: {e}"))?;
 
     // Drop the window's parameters when it closes. Keeping them until then (rather
     // than removing them on the first `standalone_params` read) means a reload of

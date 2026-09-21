@@ -3,6 +3,9 @@
   import { ws } from "./state.svelte";
   import type { FolderNode } from "./types";
   import Self from "./FolderTree.svelte";
+  import { openContextMenu, SEP, type CtxItem } from "./contextmenu.svelte";
+  import { copyText } from "./clipboard";
+  import { revealInFileManager } from "./api";
 
   let { node, depth }: { node: FolderNode; depth: number } = $props();
   // Auto-expand the top level once; `depth` is fixed per node instance.
@@ -13,6 +16,41 @@
   function select() {
     ws.selectFolder(node.path);
     if (node.children.length) expanded = true;
+  }
+
+  // Folder rename/delete are absent on purpose: `cmd_workspace`'s rename_file /
+  // delete_file are file-level, and folder equivalents would be new backend
+  // commands with their own reserved-name and recursion rules.
+  function menu(e: MouseEvent) {
+    const items: CtxItem[] = [
+      { label: "Select", action: select },
+      {
+        label: node.children.length ? (expanded ? "Collapse" : "Expand") : "Expand",
+        disabled: !node.children.length,
+        action: () => {
+          expanded = !expanded;
+        },
+      },
+      SEP,
+      {
+        label: "New Subfolder…",
+        action: () => {
+          ws.selectFolder(node.path);
+          ws.requestNewFolder = node.path;
+        },
+      },
+      SEP,
+      {
+        label: "Copy Full Path",
+        action: async () => {
+          if (!(await copyText(node.path))) ws.error = "Could not copy to the clipboard.";
+        },
+      },
+      { label: "Show in File Manager", action: () => revealInFileManager(ws.root, node.path) },
+      SEP,
+      { label: "Refresh Tree", action: () => ws.refreshTree() },
+    ];
+    openContextMenu(e, items);
   }
 </script>
 
@@ -26,6 +64,7 @@
   aria-expanded={node.children.length ? expanded : undefined}
   tabindex="0"
   onkeydown={(e) => e.key === "Enter" && select()}
+  oncontextmenu={menu}
 >
   {#if node.children.length}
     <button

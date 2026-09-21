@@ -53,6 +53,29 @@
     return null;
   });
 
+  // The SSN shell runs in its own document inside a sandboxed iframe, so the app's
+  // global `contextmenu` suppressor (main.ts) never sees events from it and the raw
+  // WebKit/WebView2 menu would still appear there.
+  //
+  // Injected here rather than in the shell itself:
+  // `crates/domainator-core/assets/ssn_viewer_shell.html` is a *generated*
+  // artifact, regenerated from Python by `scripts/regen_ssn_viewer_shell.py` and
+  // covered by a drift check, so it must never be hand-edited. Post-processing the
+  // string in this consumer leaves those bytes untouched.
+  //
+  // The app cannot put its own menu inside the iframe either (a host-document menu
+  // cannot read the iframe's selection or rows); the viewer's own selection UI
+  // covers what one would offer.
+  const IFRAME_CONTEXTMENU_SUPPRESSOR = `<script>
+document.addEventListener("contextmenu", function (e) {
+  var t = e.target;
+  if (t && t.closest && t.closest("input, textarea, [contenteditable]")) return;
+  var s = document.getSelection();
+  if (s && !s.isCollapsed) return;
+  e.preventDefault();
+});
+<\/script>`;
+
   $effect(() => {
     void path;
     loading = true;
@@ -63,7 +86,7 @@
     naming = false;
     trace = null;
     cached(`ssnhtml:${path}`, () => renderSsnHtml(path))
-      .then((h) => (html = h))
+      .then((h) => (html = h + IFRAME_CONTEXTMENU_SUPPRESSOR))
       .catch((e) => (error = String(e)))
       .finally(() => (loading = false));
     // Trace provenance in parallel (cached — it only reads small JSON sidecars).

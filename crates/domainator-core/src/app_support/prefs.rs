@@ -23,6 +23,16 @@ pub const MAX_RECENT: usize = 10;
 /// Current on-disk schema. Bump when a field's meaning changes incompatibly.
 const SCHEMA_VERSION: u32 = 1;
 
+/// Which colour scheme to use. `System` follows `prefers-color-scheme`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Prefs {
     #[serde(default = "default_schema_version")]
@@ -33,6 +43,30 @@ pub struct Prefs {
     /// Whether to reopen the most recent workspace on launch.
     #[serde(default = "default_true")]
     pub reopen_last_workspace: bool,
+    /// Colour scheme.
+    #[serde(default)]
+    pub theme: Theme,
+    /// Default thread count for tools that accept one. `0` means all cores.
+    ///
+    /// App-level rather than per-workspace on purpose: it is a property of the
+    /// *machine*. A workspace copied from a 64-core node to a laptop must not
+    /// bring `default_cpu = 64` with it.
+    #[serde(default)]
+    pub default_cpu: usize,
+    /// Whether to check for a newer release at launch.
+    ///
+    /// Defaults to **off**: a lab machine may be air-gapped or on a restricted
+    /// network, and a scientific tool should not phone home unasked.
+    #[serde(default)]
+    pub check_updates_on_launch: bool,
+    /// When the last update check ran (ms since the epoch), so a failing endpoint
+    /// backs off instead of being retried every launch.
+    #[serde(default)]
+    pub last_update_check_ms: Option<u64>,
+    /// The newest release tag already shown to the user, so the same version is
+    /// not announced twice.
+    #[serde(default)]
+    pub last_seen_release: Option<String>,
 }
 
 fn default_schema_version() -> u32 {
@@ -49,6 +83,11 @@ impl Default for Prefs {
             schema_version: SCHEMA_VERSION,
             recent_workspaces: Vec::new(),
             reopen_last_workspace: true,
+            theme: Theme::System,
+            default_cpu: 0,
+            check_updates_on_launch: false,
+            last_update_check_ms: None,
+            last_seen_release: None,
         }
     }
 }
@@ -90,6 +129,35 @@ impl Prefs {
     }
 }
 
+/// A partial update from the Preferences dialog.
+///
+/// One command instead of one per field, and `None` means "leave alone" — so a
+/// dialog that only knows about some fields can never clear the others. Notably
+/// it cannot touch `recent_workspaces`.
+#[derive(Debug, Default, Deserialize)]
+pub struct PrefsPatch {
+    pub reopen_last_workspace: Option<bool>,
+    pub theme: Option<Theme>,
+    pub default_cpu: Option<usize>,
+    pub check_updates_on_launch: Option<bool>,
+}
+
+/// Apply a patch in place.
+pub fn apply_patch(p: &mut Prefs, patch: &PrefsPatch) {
+    if let Some(v) = patch.reopen_last_workspace {
+        p.reopen_last_workspace = v;
+    }
+    if let Some(v) = patch.theme {
+        p.theme = v;
+    }
+    if let Some(v) = patch.default_cpu {
+        p.default_cpu = v;
+    }
+    if let Some(v) = patch.check_updates_on_launch {
+        p.check_updates_on_launch = v;
+    }
+}
+
 /// Read the preferences at `path`. A missing, unreadable or malformed file yields
 /// defaults — see the module note on best-effort behaviour.
 pub fn load_prefs(path: &Path) -> Prefs {
@@ -128,6 +196,77 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+
+    /// The new fields are all `#[serde(default)]`, which is exactly why
+    /// `SCHEMA_VERSION` stays at 1 (the module's own rule: bump only when a
+    /// field's *meaning* changes incompatibly). This proves the claim rather than
+    /// asserting it in a comment: a file written by the previous build still
+    /// loads, keeps its recent list, and picks up defaults for the rest.
+    #[test]
+    fn a_prefs_file_from_before_these_fields_still_loads() {
+        let dir = std::env::temp_dir().join(format!("domainator-prefs-old-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("prefs.json");
+        fs::write(
+            &path,
+            br#"{"schema_version":1,"recent_workspaces":["/tmp"],"reopen_last_workspace":false}"#,
+        )
+        .unwrap();
+
+        let p = load_prefs(&path);
+        assert_eq!(p.recent_workspaces, vec![PathBuf::from("/tmp")], "recent list survived");
+        assert!(!p.reopen_last_workspace, "existing field kept its value");
+        assert_eq!(p.theme, Theme::System);
+        assert_eq!(p.default_cpu, 0);
+        assert!(!p.check_updates_on_launch);
+        assert_eq!(p.last_update_check_ms, None);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_empty_patch_changes_nothing() {
+        let mut p = Prefs { default_cpu: 8, theme: Theme::Dark, ..Default::default() };
+        p.push_recent("/a");
+        let before = format!("{p:?}");
+        apply_patch(&mut p, &PrefsPatch::default());
+        assert_eq!(format!("{p:?}"), before);
+    }
+
+    #[test]
+    fn a_patch_sets_only_the_fields_it_names() {
+        let mut p = Prefs { default_cpu: 8, ..Default::default() };
+        apply_patch(&mut p, &PrefsPatch { theme: Some(Theme::Dark), ..Default::default() });
+        assert_eq!(p.theme, Theme::Dark);
+        assert_eq!(p.default_cpu, 8, "an unnamed field is untouched");
+        assert!(p.reopen_last_workspace, "an unnamed bool is not reset to false");
+    }
+
+    /// The patch has no field for it, but it is worth pinning: losing the recent
+    /// list to a settings change would be a bad surprise.
+    #[test]
+    fn a_patch_never_clears_the_recent_list() {
+        let mut p = Prefs::default();
+        p.push_recent("/a");
+        p.push_recent("/b");
+        apply_patch(
+            &mut p,
+            &PrefsPatch {
+                reopen_last_workspace: Some(false),
+                theme: Some(Theme::Light),
+                default_cpu: Some(4),
+                check_updates_on_launch: Some(true),
+            },
+        );
+        assert_eq!(p.recent_workspaces.len(), 2);
+    }
+
+    #[test]
+    fn theme_round_trips_as_lowercase_json() {
+        assert_eq!(serde_json::to_string(&Theme::Dark).unwrap(), "\"dark\"");
+        assert_eq!(serde_json::from_str::<Theme>("\"system\"").unwrap(), Theme::System);
+    }
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {

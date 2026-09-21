@@ -3,6 +3,8 @@
   import { openFileWindow } from "./api";
   import { viewsFor } from "./viewers/registry";
   import type { OpenTab } from "./types";
+  import { openContextMenu, SEP, type CtxItem } from "./contextmenu.svelte";
+  import { copyText } from "./clipboard";
 
   // A new window takes a visible moment to appear; without this the ⧉ click
   // looked like it did nothing.
@@ -19,6 +21,34 @@
     }
   }
 
+  function tabMenu(e: MouseEvent, tab: OpenTab) {
+    const items: CtxItem[] = [
+      { label: "Activate", action: () => ws.setActive(tab.id) },
+      { label: "Open in New Window", action: () => popOut(tab) },
+      SEP,
+      { label: "Close", action: () => ws.closeTab(tab.id) },
+      {
+        label: "Close Others",
+        disabled: ws.tabs.length < 2,
+        action: () => ws.closeOtherTabs(tab.id),
+      },
+      { label: "Close All", action: () => ws.closeAllTabs() },
+      {
+        label: "Reopen Closed Tab",
+        disabled: ws.closedTabs.length === 0,
+        action: () => ws.reopenClosedTab(),
+      },
+      SEP,
+      {
+        label: "Copy Full Path",
+        action: async () => {
+          if (!(await copyText(tab.file.path))) ws.error = "Could not copy to the clipboard.";
+        },
+      },
+    ];
+    openContextMenu(e, items);
+  }
+
   const active = $derived(ws.tabs.find((t) => t.id === ws.activeTabId) ?? null);
   const views = $derived(active ? viewsFor(active.file.file_type) : []);
 
@@ -31,7 +61,14 @@
 <div class="dock">
   <div class="tabstrip" role="tablist">
     {#each ws.tabs as tab (tab.id)}
-      <div class="tab" class:active={tab.id === ws.activeTabId} role="tab" aria-selected={tab.id === ws.activeTabId}>
+      <div
+        class="tab"
+        class:active={tab.id === ws.activeTabId}
+        role="tab"
+        aria-selected={tab.id === ws.activeTabId}
+        oncontextmenu={(e) => tabMenu(e, tab)}
+        tabindex="-1"
+      >
         <button class="tab-label" onclick={() => ws.setActive(tab.id)} title={tab.file.path}>
           {tab.file.name}
         </button>

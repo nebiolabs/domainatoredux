@@ -9,7 +9,9 @@
 
 use std::path::PathBuf;
 
-use domainator_core::app_support::prefs::{load_prefs, update_prefs, Prefs};
+use domainator_core::app_support::prefs::{
+    apply_patch, load_prefs, update_prefs, Prefs, PrefsPatch,
+};
 use tauri::{AppHandle, Manager};
 
 const PREFS_NAME: &str = "prefs.json";
@@ -49,13 +51,15 @@ pub fn forget_recent_workspace(app: AppHandle, root: String) -> Result<Vec<PathB
     Ok(prefs.existing_recent())
 }
 
-/// Turn "reopen the last workspace on launch" on or off.
+/// Apply a partial settings update and return the saved preferences.
+///
+/// One command rather than one per field. This replaces the old
+/// `set_reopen_last_workspace`, which had a frontend wrapper but no caller —
+/// keeping both would have left two paths to the same field.
 #[tauri::command(async)]
-pub fn set_reopen_last_workspace(app: AppHandle, enabled: bool) -> Result<(), String> {
+pub fn set_prefs(app: AppHandle, patch: PrefsPatch) -> Result<Prefs, String> {
     let path = prefs_path(&app)?;
-    update_prefs(&path, |p| p.reopen_last_workspace = enabled)
-        .map_err(|e| format!("saving preferences: {e}"))?;
-    Ok(())
+    update_prefs(&path, |p| apply_patch(p, &patch)).map_err(|e| format!("saving preferences: {e}"))
 }
 
 /// Record `root` as the most recently opened workspace. Best-effort: failing to

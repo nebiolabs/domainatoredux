@@ -4,6 +4,11 @@
   import { countRecords, createTextFile, pickFiles } from "./api";
   import { validateFilename } from "./filetypes";
   import NameModal from "./NameModal.svelte";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
+  import { openContextMenu, SEP, type CtxItem } from "./contextmenu.svelte";
+  import { ui } from "./ui.svelte";
+  import { openFileWindow, revealInFileManager } from "./api";
+  import { copyText } from "./clipboard";
   import type { FileEntry } from "./types";
 
   const TYPE_LABEL: Record<string, string> = {
@@ -143,11 +148,96 @@
   function activate(f: FileEntry) {
     ws.openFile(f);
   }
-  async function remove(e: MouseEvent, f: FileEntry) {
+  // The file pending deletion, shown in ConfirmDialog. Was a raw window.confirm(),
+  // which is unstyled (a destructive action looked like a benign one) and not
+  // dependable in these webviews -- the same reason NameModal exists.
+  let deleteFor = $state<FileEntry | null>(null);
+  function remove(e: MouseEvent, f: FileEntry) {
     e.stopPropagation();
-    if (confirm(`Delete "${f.name}"?\nThis permanently removes the file from disk.`)) {
-      await ws.deleteFile(f.path);
-    }
+    deleteFor = f;
+  }
+
+  // ── context menus ───────────────────────────────────────────────────────────
+  /// Copy, surfacing a failure. These rows are `user-select: none`, so if the
+  /// clipboard write fails there is no other way to get the text out.
+  async function copy(text: string) {
+    if (!(await copyText(text))) ws.error = "Could not copy to the clipboard.";
+  }
+
+
+  // Copy Name / Copy Full Path are not conveniences: `.row` sets
+  // `user-select: none` (rows are click-to-open, so selecting text in them fights
+  // the click), which left filenames and paths with no way at all to be copied.
+  function rowMenu(e: MouseEvent, f: FileEntry) {
+    const items: CtxItem[] = [
+      { label: "Open", action: () => activate(f) },
+      {
+        label: "Open in New Window",
+        action: () => openFileWindow(f.path, f.name),
+      },
+      SEP,
+      {
+        label: "Rename…",
+        action: () => {
+          renameFor = f;
+        },
+      },
+      SEP,
+      { label: "Copy Name", action: () => copy(f.name) },
+      { label: "Copy Full Path", action: () => copy(f.path) },
+      { label: "Show in File Manager", action: () => revealInFileManager(ws.root, f.path) },
+      SEP,
+      {
+        label: "Delete…",
+        danger: true,
+        action: () => {
+          deleteFor = f;
+        },
+      },
+    ];
+    openContextMenu(e, items);
+  }
+
+  function blankMenu(e: MouseEvent) {
+    const items: CtxItem[] = [
+      {
+        label: "New File…",
+        disabled: !ws.currentDir,
+        action: () => {
+          newOpen = true;
+        },
+      },
+      {
+        label: "Import Files…",
+        disabled: !ws.selectedFolder || ws.importing > 0,
+        action: importViaDialog,
+      },
+      SEP,
+      { label: "Refresh", disabled: !ws.selectedFolder, action: () => ws.refreshFolder() },
+      {
+        label: "Show Folder in File Manager",
+        disabled: !ws.selectedFolder,
+        action: () => revealInFileManager(ws.root, ws.selectedFolder!),
+      },
+      SEP,
+      {
+        label: "Columns",
+        submenu: TOGGLEABLE.map((c) => ({
+          label: c.label,
+          checked: visibleCols.has(c.key),
+          action: () => toggleCol(c.key),
+        })),
+      },
+      {
+        label: "Sort By",
+        submenu: COLUMNS.map((c) => ({
+          label: c.label,
+          checked: sortKey === c.key,
+          action: () => setSort(c.key),
+        })),
+      },
+    ];
+    openContextMenu(e, items);
   }
 
   const folderName = $derived(ws.selectedFolder?.split(/[\\/]/).pop() ?? "workspace");
@@ -163,6 +253,10 @@
   }
 
   let newOpen = $state(false);
+  // File → New File… lives in the native menu but the modal lives here.
+  $effect(() => {
+    if (ui.newFileRequest > 0 && ws.currentDir) newOpen = true;
+  });
   let renameFor = $state<FileEntry | null>(null);
 
   // Both throw on failure so the modal shows it inline and keeps the pasted text;
@@ -223,7 +317,14 @@
   });
 </script>
 
-<div class="table" role="table" bind:this={rootEl} class:dragover={dragActive} style="--grid: {gridTemplate};">
+<div
+  class="table"
+  role="table"
+  bind:this={rootEl}
+  class:dragover={dragActive}
+  style="--grid: {gridTemplate};"
+  oncontextmenu={blankMenu}
+>
   <div class="actionbar">
     <span class="ab-folder" title={ws.selectedFolder ?? ""}>{folderName}</span>
     <div class="colmenu">
@@ -287,6 +388,7 @@
         style="grid-template-columns: var(--grid);"
         onclick={() => activate(f)}
         onkeydown={(e) => e.key === "Enter" && activate(f)}
+        oncontextmenu={(e) => rowMenu(e, f)}
       >
         {#each visibleColDefs as c (c.key)}
           {#if c.key === "name"}
@@ -330,6 +432,20 @@
     validate={validateFilename}
     onsubmit={createNew}
     oncancel={() => (newOpen = false)}
+  />
+{/if}
+{#if deleteFor}
+  <ConfirmDialog
+    title="Delete “{deleteFor.name}”?"
+    body="This permanently removes the file from disk. It cannot be undone."
+    confirmLabel="Delete"
+    danger={true}
+    onconfirm={async () => {
+      const f = deleteFor;
+      if (f) await ws.deleteFile(f.path);
+      deleteFor = null;
+    }}
+    oncancel={() => (deleteFor = null)}
   />
 {/if}
 {#if renameFor}

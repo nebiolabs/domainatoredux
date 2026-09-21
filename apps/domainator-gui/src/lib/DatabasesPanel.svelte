@@ -1,9 +1,18 @@
 <script lang="ts">
   import { pickFile } from "./api";
   import { ws } from "./state.svelte";
+  import { ui } from "./ui.svelte";
   import type { DatabaseEntry } from "./types";
 
   let expanded = $state(true);
+
+  // Tools menu → expand and clear the request.
+  $effect(() => {
+    if (ui.focusPanel === "databases") {
+      expanded = true;
+      ui.focusPanel = null;
+    }
+  });
 
   async function add() {
     const path = await pickFile();

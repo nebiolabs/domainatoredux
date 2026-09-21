@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createTextFile, readTextFile, writeTextFile } from "../api";
+  import { ui } from "../ui.svelte";
   import { ws } from "../state.svelte";
   import { validateFilename } from "../filetypes";
   import NameModal from "../NameModal.svelte";
@@ -15,6 +16,18 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let dirty = $state(false);
+
+  // Report unsaved state for the File menu's Save item and the close guard.
+  $effect(() => {
+    if (dirty) ws.markDirty(path);
+    else ws.clearDirty(path);
+    return () => ws.clearDirty(path);
+  });
+
+  // File → Save.
+  $effect(() => {
+    if (ui.saveRequest > 0 && dirty && truncated === 0) void save();
+  });
   let saving = $state(false);
   let msg = $state<string | null>(null);
   let trailingNewline = true; // preserve a final newline on save

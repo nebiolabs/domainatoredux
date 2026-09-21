@@ -39,6 +39,24 @@ pub fn is_reserved_name(name: &str) -> bool {
 /// the first directory that holds a `.domainator/` machinery dir. Lets provenance
 /// be located from a file path alone (e.g. in a detached window that doesn't know
 /// the workspace root). Returns `None` if the file isn't inside a workspace.
+/// Whether `candidate` lies inside `root`.
+///
+/// Both sides are canonicalized first, so `..` segments and symlinks cannot walk
+/// out of the workspace and then appear to be inside it. Comparison is
+/// **component-wise**, not string-prefix: `/data/workspace2` is not inside
+/// `/data/workspace`, though its path string starts with it.
+///
+/// Used to bound "reveal this in the file manager" — the one place the GUI hands
+/// a user-supplied path to the OS.
+pub fn is_within(root: &Path, candidate: &Path) -> bool {
+    // A path that cannot be canonicalized (deleted, or a broken symlink) is not
+    // something to reveal, so failing closed is the right answer.
+    let (Ok(root), Ok(candidate)) = (root.canonicalize(), candidate.canonicalize()) else {
+        return false;
+    };
+    candidate.starts_with(&root)
+}
+
 pub fn find_workspace_root(data_file: &Path) -> Option<PathBuf> {
     let mut cur = data_file.parent();
     while let Some(dir) = cur {
@@ -355,6 +373,34 @@ mod tests {
         assert_eq!(classify_file(Path::new("logo.svg")), Some("svg"));
         assert_eq!(classify_file(Path::new("notes.md")), None);
         assert_eq!(classify_file(Path::new("a.gb.dom.json")), None);
+    }
+
+    /// The sibling-with-a-shared-prefix case is the one a string `starts_with`
+    /// on the *path text* gets wrong, and it is the difference between bounding a
+    /// reveal to the workspace and not bounding it at all.
+    #[test]
+    fn is_within_bounds_a_path_to_its_workspace() {
+        let base = std::env::temp_dir().join(format!("domainator-within-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let root = base.join("workspace");
+        let nested = root.join("sub");
+        let sibling = base.join("workspace2");
+        fs::create_dir_all(&nested).unwrap();
+        fs::create_dir_all(&sibling).unwrap();
+        let file = nested.join("f.gb");
+        fs::write(&file, b"x").unwrap();
+
+        assert!(is_within(&root, &root), "a root contains itself");
+        assert!(is_within(&root, &nested));
+        assert!(is_within(&root, &file));
+        assert!(!is_within(&root, &sibling), "shared name prefix is not containment");
+        assert!(!is_within(&root, &base), "the parent is not inside the child");
+        // `..` must not be able to escape and come back looking legitimate.
+        assert!(!is_within(&root, &root.join("..").join("workspace2")));
+        // Nonexistent paths fail closed.
+        assert!(!is_within(&root, &root.join("nope").join("gone.gb")));
+
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

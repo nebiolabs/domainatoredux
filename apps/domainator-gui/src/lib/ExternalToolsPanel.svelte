@@ -1,8 +1,17 @@
 <script lang="ts">
   import { downloadExternalTool, listExternalTools } from "./api";
   import type { ExternalToolStatus } from "./types";
+  import { ui } from "./ui.svelte";
 
   let expanded = $state(false);
+
+  // Tools menu → expand and clear the request.
+  $effect(() => {
+    if (ui.focusPanel === "external") {
+      expanded = true;
+      ui.focusPanel = null;
+    }
+  });
   let tools = $state<ExternalToolStatus[]>([]);
   let busy = $state<Record<string, boolean>>({});
   let errors = $state<Record<string, string>>({});

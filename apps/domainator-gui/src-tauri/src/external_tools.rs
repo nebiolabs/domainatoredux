@@ -150,7 +150,7 @@ pub fn specs() -> Vec<ToolSpec> {
 }
 
 /// `<app_data>/bin` (created if missing).
-fn managed_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn managed_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_data_dir()

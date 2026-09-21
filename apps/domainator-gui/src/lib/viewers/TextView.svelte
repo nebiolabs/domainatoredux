@@ -1,5 +1,7 @@
 <script lang="ts">
   import { readTextFile, writeTextFile } from "../api";
+  import { ws } from "../state.svelte";
+  import { ui } from "../ui.svelte";
 
   let { path }: { path: string } = $props();
 
@@ -10,6 +12,20 @@
   let error = $state<string | null>(null);
   let msg = $state<string | null>(null);
   const dirty = $derived(text !== original);
+
+  // Report unsaved state so the File menu's Save item enables and the window
+  // close guard can see it. Cleared on teardown -- a closed tab is not unsaved
+  // work the user can still act on.
+  $effect(() => {
+    if (dirty) ws.markDirty(path);
+    else ws.clearDirty(path);
+    return () => ws.clearDirty(path);
+  });
+
+  // File → Save.
+  $effect(() => {
+    if (ui.saveRequest > 0 && dirty) void save();
+  });
 
   async function load() {
     loading = true;

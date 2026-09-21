@@ -42,6 +42,17 @@ class WorkspaceStore {
   loadingFiles = $state(false);
   tabs = $state<OpenTab[]>([]);
   activeTabId = $state<string | null>(null);
+  // Most-recently-closed first, so "Reopen Closed Tab" is a stack. Bounded in
+  // `rememberClosed`.
+  closedTabs = $state<OpenTab[]>([]);
+  // Paths with unsaved editor buffers, reported by TableView / TextView. A plain
+  // object rather than a Set: a bare `Set` inside `$state` is not deeply reactive
+  // in Svelte 5 (that needs `SvelteSet`), and this has to drive both the File
+  // menu's Save item and the close guard.
+  //
+  // ContigView is deliberately absent -- it writes through `cmd_edit` on every
+  // action, so it is never dirty.
+  dirty = $state<Record<string, true>>({});
   error = $state<string | null>(null);
   // Requested contig to scroll to when a viewer opens (keyed by file path);
   // consumed and cleared by the contig viewer. Used by SSN → sequence nav.
@@ -64,6 +75,10 @@ class WorkspaceStore {
   // A request to open the tool dialog (from the Tools menu or a job "clone"),
   // consumed by App. `initial` pre-fills the form (clone).
   requestedTool = $state<{ id: string; initial?: Record<string, unknown> } | null>(null);
+  // A request to open the "new subfolder" input for this folder (from the folder
+  // tree's context menu), consumed by App -- which owns that inline form. Same
+  // consume-and-clear channel as `requestedTool`.
+  requestNewFolder = $state<string | null>(null);
 
   /// Switch the viewer dock to sibling view `viewId` for the file at `path`.
   showSubView(path: string, viewId: string): void {
@@ -189,6 +204,18 @@ class WorkspaceStore {
     }
   }
 
+  markDirty(path: string): void {
+    this.dirty[path] = true;
+  }
+
+  clearDirty(path: string): void {
+    delete this.dirty[path];
+  }
+
+  get dirtyPaths(): string[] {
+    return Object.keys(this.dirty);
+  }
+
   canOpen(path: string): boolean {
     return classifyPath(path) !== null;
   }
@@ -196,11 +223,40 @@ class WorkspaceStore {
   closeTab(id: string): void {
     const idx = this.tabs.findIndex((t) => t.id === id);
     if (idx === -1) return;
+    this.rememberClosed(this.tabs[idx]);
     this.tabs = this.tabs.filter((t) => t.id !== id);
     if (this.activeTabId === id) {
       const next = this.tabs[idx] ?? this.tabs[idx - 1] ?? null;
       this.activeTabId = next ? next.id : null;
     }
+  }
+
+  /// Close every tab but `id`, which becomes active.
+  closeOtherTabs(id: string): void {
+    for (const t of this.tabs) if (t.id !== id) this.rememberClosed(t);
+    this.tabs = this.tabs.filter((t) => t.id === id);
+    this.activeTabId = this.tabs.length ? id : null;
+  }
+
+  closeAllTabs(): void {
+    for (const t of this.tabs) this.rememberClosed(t);
+    this.tabs = [];
+    this.activeTabId = null;
+  }
+
+  /// Push a tab onto the reopen stack. Bounded because it holds file entries and
+  /// a long session would otherwise keep every file ever opened alive.
+  private rememberClosed(tab: OpenTab | undefined): void {
+    if (!tab) return;
+    this.closedTabs = [tab, ...this.closedTabs.filter((t) => t.id !== tab.id)].slice(0, 20);
+  }
+
+  /// Reopen the most recently closed tab (Ctrl+Shift+T, once the menu lands).
+  reopenClosedTab(): void {
+    const [tab, ...rest] = this.closedTabs;
+    if (!tab) return;
+    this.closedTabs = rest;
+    this.openFile(tab.file);
   }
 
   setActive(id: string): void {

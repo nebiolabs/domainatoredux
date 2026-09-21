@@ -17,6 +17,15 @@
   import ContigView from "./lib/viewers/ContigView.svelte";
   import HmmLogo from "./lib/viewers/HmmLogo.svelte";
   import FileWindow from "./lib/FileWindow.svelte";
+  import AboutDialog from "./lib/AboutDialog.svelte";
+  import PreferencesDialog from "./lib/PreferencesDialog.svelte";
+  import ConfirmDialog from "./lib/ConfirmDialog.svelte";
+  import ContextMenu from "./lib/ContextMenu.svelte";
+  import StatusBar from "./lib/StatusBar.svelte";
+  import { ui } from "./lib/ui.svelte";
+  import { installMenuListener } from "./lib/menu";
+  import { setMenuState, getPrefs, checkForUpdates } from "./lib/api";
+  import { applyTheme } from "./lib/theme";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { standaloneParams } from "./lib/api";
@@ -147,9 +156,12 @@
     }
   });
   let tools = $state<ToolMeta[]>([]);
-  let toolsOpen = $state(false);
   let activeTool = $state<string | null>(null);
   let toolInitial = $state<Record<string, unknown> | null>(null);
+  let aboutOpen = $state(false);
+  let prefsOpen = $state(false);
+  let pendingClose = $state<string[] | null>(null);
+  let updateBanner = $state<string | null>(null);
   let newFolderOpen = $state(false);
   let newFolderName = $state("");
 
@@ -160,6 +172,136 @@
     activeTool = req.id;
     toolInitial = req.initial ?? null;
     ws.requestedTool = null;
+  });
+
+  // Same channel for the folder tree's "New Subfolder…" context item: the inline
+  // form lives here, so the tree asks rather than rendering its own.
+  $effect(() => {
+    if (ws.requestNewFolder === null) return;
+    newFolderOpen = true;
+    newFolderName = "";
+    ws.requestNewFolder = null;
+  });
+
+  // Native-menu commands. Registered in detached windows too: on macOS they share
+  // the app menu outright, so the dispatcher has to refuse shell-only commands
+  // rather than half-apply them (`menu.ts`'s SHELL_ONLY).
+  $effect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    installMenuListener(isStandalone).then((u) => {
+      unlisten = u;
+      if (disposed) u();
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  });
+
+  // Menu requests that this component owns.
+  $effect(() => {
+    if (ui.aboutRequest > 0) aboutOpen = true;
+  });
+  $effect(() => {
+    if (ui.preferencesRequest > 0) prefsOpen = true;
+  });
+
+  // Optional launch-time update check. Off by default, throttled by the stored
+  // last-checked stamp, and completely silent on failure -- being offline must
+  // never look like an app problem. Main window only.
+  $effect(() => {
+    if (isStandalone) return;
+    getPrefs()
+      .then(async (p) => {
+        if (!p.check_updates_on_launch) return;
+        const DAY = 24 * 60 * 60 * 1000;
+        if (p.last_update_check_ms && Date.now() - p.last_update_check_ms < DAY) return;
+        const res = await checkForUpdates();
+        if (res.newer && res.latest && res.latest.tag !== p.last_seen_release) {
+          updateBanner = res.latest.tag;
+        }
+      })
+      .catch(() => {
+        /* silent by design */
+      });
+  });
+
+  // Theme, applied as early as possible. `app.css` already renders the right
+  // colours for a "system" user via prefers-color-scheme, so this only matters
+  // for an explicit light/dark choice -- and runs in detached windows too, which
+  // load the same entry point.
+  $effect(() => {
+    getPrefs()
+      .then((p) => applyTheme(p.theme))
+      .catch(() => {
+        /* defaults to the OS preference; not worth surfacing */
+      });
+  });
+
+  // Window title: "file — workspace — Domainator", with a bullet when the active
+  // buffer is unsaved. Needs `core:window:allow-set-title`.
+  $effect(() => {
+    const tab = ws.tabs.find((t) => t.id === ws.activeTabId);
+    const parts: string[] = [];
+    if (tab) parts.push((ws.dirty[tab.id] ? "• " : "") + tab.file.name);
+    if (ws.root) parts.push(shortName(ws.root));
+    parts.push("Domainator");
+    getCurrentWindow()
+      .setTitle(parts.join(" — "))
+      .catch(() => {
+        /* a title is cosmetic; never surface a failure */
+      });
+  });
+
+  // Guard unsaved editor buffers on window close.
+  //
+  // NOTE: registering this handler is what makes `core:window:allow-destroy`
+  // mandatory -- the JS helper calls destroy() itself whenever the handler does
+  // not preventDefault(), so without that permission even a clean close throws
+  // and the window never closes.
+  $effect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow()
+      .onCloseRequested((e) => {
+        const dirty = ws.dirtyPaths;
+        if (dirty.length === 0) return; // falls through; the helper destroys it
+        e.preventDefault();
+        pendingClose = dirty;
+      })
+      .then((u) => {
+        unlisten = u;
+        if (disposed) u();
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  });
+
+
+  // Publish what the menu needs to grey items out. Diffed before sending so a
+  // pointer move that touches the store does not spam IPC; only the main window
+  // publishes, since a detached window's "is a tab open" is not the shell's.
+  let lastMenuState = "";
+  $effect(() => {
+    if (isStandalone) return;
+    const state = {
+      has_workspace: !!ws.root,
+      has_folder: !!ws.selectedFolder,
+      has_tab: !!ws.activeTabId,
+      can_save: ws.dirtyPaths.length > 0,
+      can_find: !!ws.activeTabId,
+      can_export: !!ws.activeTabId,
+      has_closed_tab: ws.closedTabs.length > 0,
+    };
+    const json = JSON.stringify(state);
+    if (json === lastMenuState) return;
+    lastMenuState = json;
+    setMenuState(state).catch(() => {
+      /* the menu just keeps its previous enabled state; not worth an error bar */
+    });
   });
 
   // Cross-window refresh: when any window creates a file (e.g. Extract from a
@@ -201,11 +343,6 @@
     } finally {
       opening = false;
     }
-  }
-
-  async function toggleTools() {
-    toolsOpen = !toolsOpen;
-    if (toolsOpen && tools.length === 0) tools = await listTools();
   }
 
   // Generic drag helper: while the pointer is down, feed clientX/clientY to `apply`.
@@ -258,35 +395,45 @@
         <button class="errclose" onclick={() => (ws.error = null)} aria-label="Dismiss">×</button>
       </div>
     {/if}
+    <ContextMenu />
+    {#if pendingClose}
+      <ConfirmDialog
+        title="Close with unsaved changes?"
+        body={`These files have unsaved edits:\n\n${pendingClose.map((p) => p.split(/[\\/]/).pop()).join("\n")}`}
+        confirmLabel="Discard and close"
+        danger={true}
+        onconfirm={async () => {
+          ws.dirty = {};
+          pendingClose = null;
+          await getCurrentWindow().destroy();
+        }}
+        oncancel={() => (pendingClose = null)}
+      />
+    {/if}
   </div>
 {:else}
-<div class="shell" style="--left-width: {leftWidth}px; --table-height: {tableHeight}px;">
+<div
+  class="shell"
+  style="--left-width: {ui.sidebarVisible ? leftWidth : 0}px; --table-height: {ui.tableVisible ? tableHeight : 0}px;"
+>
   <header class="toolbar">
     <span class="brand">Domainator</span>
     <button onclick={chooseWorkspace} disabled={opening}>
       {opening ? "Opening…" : "Open workspace…"}
     </button>
-    <div class="menu">
-      <button onclick={toggleTools} disabled={!ws.root}>Tools ▾</button>
-      {#if toolsOpen}
-        <div class="dropdown" role="menu">
-          {#each tools as t (t.id)}
-            <button
-              class="menu-item"
-              role="menuitem"
-              onclick={() => {
-                activeTool = t.id;
-                toolInitial = null;
-                toolsOpen = false;
-              }}
-              title={t.description}>{t.label}</button
-            >
-          {/each}
-        </div>
-      {/if}
-    </div>
     <span class="root-path" title={ws.root ?? ""}>{ws.root ?? "No workspace open"}</span>
+    <button class="about" title="Version and diagnostics" onclick={() => (aboutOpen = true)}>About</button>
   </header>
+
+  {#if updateBanner}
+    <div class="updatebar" role="status">
+      <span>Version {updateBanner} is available.</span>
+      <button onclick={() => { updateBanner = null; prefsOpen = true; ui.updateCheckRequest++; }}>
+        Details
+      </button>
+      <button class="errclose" onclick={() => (updateBanner = null)} aria-label="Dismiss">×</button>
+    </div>
+  {/if}
 
   {#if ws.error}
     <!-- Selectable (so the text can be copied into a bug report) and dismissible;
@@ -295,6 +442,14 @@
       <span class="errtext">{ws.error}</span>
       <button class="errclose" onclick={() => (ws.error = null)} aria-label="Dismiss">×</button>
     </div>
+  {/if}
+
+  {#if aboutOpen}
+    <AboutDialog onclose={() => (aboutOpen = false)} />
+  {/if}
+
+  {#if prefsOpen}
+    <PreferencesDialog onclose={() => (prefsOpen = false)} />
   {/if}
 
   {#if activeTool}
@@ -377,6 +532,25 @@
       <ViewerDock />
     </div>
   </section>
+
+  <StatusBar />
+
+  <ContextMenu />
+
+  {#if pendingClose}
+    <ConfirmDialog
+      title="Close with unsaved changes?"
+      body={`These files have unsaved edits:\n\n${pendingClose.map((p) => p.split(/[\\/]/).pop()).join("\n")}`}
+      confirmLabel="Discard and close"
+      danger={true}
+      onconfirm={async () => {
+        ws.dirty = {};
+        pendingClose = null;
+        await getCurrentWindow().destroy();
+      }}
+      oncancel={() => (pendingClose = null)}
+    />
+  {/if}
 </div>
 {/if}
 
@@ -398,11 +572,12 @@
     display: grid;
     grid-template-columns: var(--left-width) 4px 1fr;
     /* The error row is `auto`, so it takes no space at all when there is no error. */
-    grid-template-rows: 44px auto 1fr;
+    grid-template-rows: 44px auto 1fr 22px;
     grid-template-areas:
       "toolbar toolbar toolbar"
       "errbar  errbar  errbar"
-      "left    lres    main";
+      "left    lres    main"
+      "status  status  status";
     height: 100%;
   }
   .toolbar {
@@ -418,33 +593,8 @@
     font-weight: 700;
     letter-spacing: 0.02em;
   }
-  .menu {
-    position: relative;
-  }
-  .dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    margin-top: 4px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-    z-index: 60;
-    min-width: 180px;
-    padding: 4px;
-  }
-  .menu-item {
-    display: block;
-    width: 100%;
-    text-align: left;
-    border: none;
-    background: none;
-    padding: 6px 10px;
-    border-radius: 4px;
-  }
-  .menu-item:hover {
-    background: var(--row-hover);
+  .about {
+    flex: none;
   }
   .root-path {
     color: var(--text-dim);
@@ -454,6 +604,20 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     flex: 1;
+  }
+  .updatebar {
+    grid-area: errbar;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .updatebar .errclose {
+    margin-left: auto;
+    color: var(--text-dim);
   }
   .errbar {
     grid-area: errbar;

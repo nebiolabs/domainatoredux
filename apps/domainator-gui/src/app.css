@@ -1,31 +1,90 @@
+/* Both palettes are named once as --l-* / --d-*, then aliased onto the tokens the
+   app actually uses. Only the ten aliasing lines repeat; no colour is written
+   twice, so there is one place to change a shade.
+
+   Order matters: the media query comes FIRST so a dark-mode OS gets dark colours
+   from the stylesheet, before any JS runs -- otherwise the app flashes light on
+   every launch. The explicit [data-theme] blocks then win in both directions for
+   a user who has chosen a theme in Preferences. */
 :root {
-  --bg: #ffffff;
-  --bg-panel: #f4f5f7;
-  --bg-elevated: #fafbfc;
-  --border: #d8dbe0;
-  --text: #1c1f24;
-  --text-dim: #6b7280;
-  --accent: #2f6feb;
-  --accent-soft: #dbe6ff;
-  --row-hover: #eef1f6;
-  --row-selected: #d6e4ff;
+  --l-bg: #ffffff;
+  --l-bg-panel: #f4f5f7;
+  --l-bg-elevated: #fafbfc;
+  --l-border: #d8dbe0;
+  --l-text: #1c1f24;
+  --l-text-dim: #6b7280;
+  --l-accent: #2f6feb;
+  --l-accent-soft: #dbe6ff;
+  --l-row-hover: #eef1f6;
+  --l-row-selected: #d6e4ff;
+
+  --d-bg: #1b1d21;
+  --d-bg-panel: #232629;
+  --d-bg-elevated: #2a2e33;
+  --d-border: #3a3f45;
+  --d-text: #e6e8eb;
+  --d-text-dim: #9aa1ab;
+  --d-accent: #5b8dff;
+  --d-accent-soft: #2b3a5c;
+  --d-row-hover: #2c3138;
+  --d-row-selected: #33405c;
+
+  --bg: var(--l-bg);
+  --bg-panel: var(--l-bg-panel);
+  --bg-elevated: var(--l-bg-elevated);
+  --border: var(--l-border);
+  --text: var(--l-text);
+  --text-dim: var(--l-text-dim);
+  --accent: var(--l-accent);
+  --accent-soft: var(--l-accent-soft);
+  --row-hover: var(--l-row-hover);
+  --row-selected: var(--l-row-selected);
+
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --mono: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
 }
 
+/* What "System" resolves to. Skipped when the user has explicitly chosen light. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1b1d21;
-    --bg-panel: #232629;
-    --bg-elevated: #2a2e33;
-    --border: #3a3f45;
-    --text: #e6e8eb;
-    --text-dim: #9aa1ab;
-    --accent: #5b8dff;
-    --accent-soft: #2b3a5c;
-    --row-hover: #2c3138;
-    --row-selected: #33405c;
+  :root:not([data-theme="light"]) {
+    --bg: var(--d-bg);
+    --bg-panel: var(--d-bg-panel);
+    --bg-elevated: var(--d-bg-elevated);
+    --border: var(--d-border);
+    --text: var(--d-text);
+    --text-dim: var(--d-text-dim);
+    --accent: var(--d-accent);
+    --accent-soft: var(--d-accent-soft);
+    --row-hover: var(--d-row-hover);
+    --row-selected: var(--d-row-selected);
   }
+}
+
+/* An explicit choice wins in both directions. */
+:root[data-theme="dark"] {
+  --bg: var(--d-bg);
+  --bg-panel: var(--d-bg-panel);
+  --bg-elevated: var(--d-bg-elevated);
+  --border: var(--d-border);
+  --text: var(--d-text);
+  --text-dim: var(--d-text-dim);
+  --accent: var(--d-accent);
+  --accent-soft: var(--d-accent-soft);
+  --row-hover: var(--d-row-hover);
+  --row-selected: var(--d-row-selected);
+}
+
+:root[data-theme="light"] {
+  --bg: var(--l-bg);
+  --bg-panel: var(--l-bg-panel);
+  --bg-elevated: var(--l-bg-elevated);
+  --border: var(--l-border);
+  --text: var(--l-text);
+  --text-dim: var(--l-text-dim);
+  --accent: var(--l-accent);
+  --accent-soft: var(--l-accent-soft);
+  --row-hover: var(--l-row-hover);
+  --row-selected: var(--l-row-selected);
 }
 
 * {

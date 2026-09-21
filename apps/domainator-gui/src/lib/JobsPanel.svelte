@@ -1,6 +1,11 @@
 <script lang="ts">
   import { ws } from "./state.svelte";
   import type { JobInfo } from "./types";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
+  import { openContextMenu, SEP, type CtxItem } from "./contextmenu.svelte";
+  import { copyText } from "./clipboard";
+  import { revealInFileManager } from "./api";
+  import { ui } from "./ui.svelte";
 
   let expanded = $state(true);
 
@@ -20,17 +25,86 @@
   // flag is set but the tool hasn't reached a point where it can stop.
   const isActive = (s: string) => s === "running" || s === "cancelling";
 
+  // Pending destructive actions, shown through ConfirmDialog. These were raw
+  // window.confirm() calls -- unstyled, and unreliable in these webviews.
+  let confirmClear = $state(false);
+
+  // Tools → Clear Job History… routes here, where the confirm lives.
+  $effect(() => {
+    if (ui.clearJobsRequest > 0 && ws.jobs.length) confirmClear = true;
+  });
+  let deleteFor = $state<JobInfo | null>(null);
+
   function clearAll(e: MouseEvent) {
     e.stopPropagation();
-    if (ws.jobs.length && confirm(`Clear all ${ws.jobs.length} job(s) from history?`)) {
-      ws.clearJobs();
-    }
+    if (ws.jobs.length) confirmClear = true;
   }
   function removeJob(e: MouseEvent, job: JobInfo) {
     e.stopPropagation();
-    if (confirm(`Delete this "${job.tool}" job from history?`)) {
-      ws.deleteJob(job.job_id);
-    }
+    deleteFor = job;
+  }
+
+  async function copy(text: string) {
+    if (!(await copyText(text))) ws.error = "Could not copy to the clipboard.";
+  }
+
+  function jobMenu(e: MouseEvent, job: JobInfo) {
+    const items: CtxItem[] = [
+      {
+        label: "Clone into Tool Dialog",
+        action: () => ws.openTool(job.tool, job.params),
+      },
+      {
+        label: "Open Output",
+        disabled: job.outputs.length === 0,
+        submenu: job.outputs.map((out) => ({
+          label: baseName(out),
+          // A job can produce a file this build has no viewer for; offering to
+          // open it and doing nothing would be worse than showing it greyed.
+          disabled: !ws.canOpen(out),
+          action: () => ws.openOutput(out),
+        })),
+      },
+      {
+        label: "Show Output in File Manager",
+        disabled: job.outputs.length === 0,
+        submenu: job.outputs.map((out) => ({
+          label: baseName(out),
+          action: () => revealInFileManager(ws.root, out),
+        })),
+      },
+      SEP,
+      { label: "Copy Parameters (JSON)", action: () => copy(JSON.stringify(job.params, null, 2)) },
+      {
+        label: "Copy Output Paths",
+        disabled: job.outputs.length === 0,
+        action: () => copy(job.outputs.join("\n")),
+      },
+      SEP,
+      {
+        label: "Cancel Run",
+        disabled: job.status !== "running",
+        action: () => ws.cancelJob(job.job_id),
+      },
+      {
+        label: "Delete from History…",
+        danger: true,
+        disabled: isActive(job.status),
+        action: () => {
+          deleteFor = job;
+        },
+      },
+      SEP,
+      {
+        label: "Clear History…",
+        danger: true,
+        disabled: ws.jobs.length === 0,
+        action: () => {
+          confirmClear = true;
+        },
+      },
+    ];
+    openContextMenu(e, items);
   }
 </script>
 
@@ -51,7 +125,11 @@
     {:else}
       <div class="list">
         {#each ws.jobs as job (job.job_id)}
-          <div class="job status-{job.status}">
+          <div
+            class="job status-{job.status}"
+            role="presentation"
+            oncontextmenu={(e) => jobMenu(e, job)}
+          >
             <div class="row1">
               <span class="ic">{STATUS_ICON[job.status] ?? "•"}</span>
               <span class="tool">{job.tool}</span>
@@ -78,6 +156,34 @@
     {/if}
   {/if}
 </div>
+
+{#if confirmClear}
+  <ConfirmDialog
+    title="Clear job history?"
+    body="Removes all {ws.jobs.length} entries and their provenance records. The output files they produced are not touched."
+    confirmLabel="Clear"
+    danger={true}
+    onconfirm={async () => {
+      await ws.clearJobs();
+      confirmClear = false;
+    }}
+    oncancel={() => (confirmClear = false)}
+  />
+{/if}
+{#if deleteFor}
+  <ConfirmDialog
+    title="Delete this “{deleteFor.tool}” job?"
+    body="Removes the entry and its provenance record. The output files it produced are not touched."
+    confirmLabel="Delete"
+    danger={true}
+    onconfirm={async () => {
+      const j = deleteFor;
+      if (j) await ws.deleteJob(j.job_id);
+      deleteFor = null;
+    }}
+    oncancel={() => (deleteFor = null)}
+  />
+{/if}
 
 <style>
   .jobs {

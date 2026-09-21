@@ -70,6 +70,80 @@ Linux) and use Windows only to *validate the GUI*:
   `lib/ViewerDock.svelte`, `lib/viewers/*` (per-file-type views), `lib/api.ts`
   (typed `invoke` wrappers), `lib/types.ts` (DTO mirrors).
 
+## Desktop shell (menus, context menus, preferences)
+
+- **Native menu bar** (`src-tauri/src/app_menu.rs`), built from the data table in
+  `src-tauri/src/menu_ids.rs`. Native rather than HTML because macOS is not
+  opt-out — Tauri installs `Menu::default()` there when none is set, so an HTML
+  bar would mean two menu bars unless the default is disabled, which deletes the
+  app's only Quit/Hide/Services. Native also gives the only clipboard items that
+  work in a webview (`PredefinedMenuItem::{cut,copy,paste,select_all}`) and
+  accelerators that fire with focus inside a `<canvas>` or the SSN `<iframe>`.
+  - **`on_menu_event` runs on the main thread, so the handler only emits.**
+    Anything needing a window or a native dialog goes
+    `emit → frontend → invoke(async command)` — the same re-entrancy rule
+    `cmd_windows::spawn_window` documents.
+  - Routing uses `webview_windows()` + `is_focused()`; `Manager::get_focused_window`
+    is behind Tauri's `unstable` feature. Do **not** use
+    `WebviewWindow::on_menu_event` to scope per window — Tauri's dispatch loop
+    calls *every* registered window listener for *every* event, so two of them run
+    each command twice.
+  - The **Tools** menu is built from `cmd_tools::list_tools()` and grouped by
+    `TOOL_CATEGORIES`, so it cannot drift from what `run_tool` can dispatch.
+  - Detached viewer windows get a reduced menu via `WebviewWindowBuilder::menu()`
+    on non-macOS; on macOS they share the app menu (`Window::set_menu` is
+    unsupported there) and `menu.ts`'s `SHELL_ONLY` set is the backstop.
+- **Context menus** are app-drawn HTML (`lib/ContextMenu.svelte` +
+  `lib/contextmenu.svelte.ts`), one instance mounted by `App.svelte`. Native
+  popups were rejected: the items are per-row/per-job/per-tab, so each right-click
+  would build a fresh `Menu` plus N `MenuItem` resources over IPC, and every
+  action is a frontend call on `ws` anyway.
+- **The browser context menu is suppressed** by one bubble-phase listener in
+  `src/main.ts`, which stands down for `defaultPrevented` (so component menus
+  compose), for `input`/`textarea`/`contenteditable`, for a live text selection,
+  and for `[data-native-menu]`. Those exceptions matter — the browser menu is the
+  only thing offering a working **Paste**. The SSN viewer is a separate document,
+  so its suppressor is appended to the `srcdoc` string in `SsnView.svelte`;
+  **never** edit the generated `ssn_viewer_shell.html`.
+- **Opening URLs / revealing files** goes through `tauri-plugin-opener`, which is
+  registered but deliberately granted **no `opener:` permission**. Capabilities
+  gate the JS→Rust IPC surface, not Rust-side calls, so the webview (including the
+  SSN iframe) cannot reach the plugin; the only route out is `cmd_open`'s
+  commands, which check the URL against `about::ALLOWED_HOSTS` and bound a reveal
+  with `workspace::is_within`.
+- **Preferences** (`lib/PreferencesDialog.svelte`) over `Prefs`: reopen-last-workspace,
+  theme, default thread count, update checking, and the app's data locations.
+  Thread count is app-level, not per-workspace, because it is a property of the
+  *machine* — a workspace copied from a 64-core node to a laptop must not carry
+  `default_cpu = 64`. It reaches runs through
+  `app_support::tool_params::apply_default_cpu`, which consults the tool's schema
+  first: every config struct is `deny_unknown_fields`, so injecting `cpu` into a
+  tool that has no such property would make the run be *rejected*.
+- **Theme** is `app.css`'s `--l-*` / `--d-*` palettes aliased onto the app tokens.
+  The `prefers-color-scheme` block stays first so there is no flash before JS
+  runs; `:root[data-theme]` then wins in both directions. The SSN viewer's shell
+  is generated and does **not** follow the app theme.
+- **Two capability lines are load-bearing** in `capabilities/default.json`:
+  `core:window:allow-set-title` for the window title, and
+  `core:window:allow-destroy` — required merely by *registering*
+  `onCloseRequested`, because the JS helper calls `destroy()` itself whenever the
+  handler does not `preventDefault()`. Without it even a clean close throws.
+- **The contig viewer's sequence copy is `Cmd/Ctrl+Shift+C`**, not plain
+  `Ctrl+C`. Edit → Copy owns that, and a menu accelerator is dispatched *before*
+  the focused widget sees the key (AppKit checks `performKeyEquivalent:` ahead of
+  the responder chain; GTK3 runs `gtk_window_activate_key` ahead of
+  `gtk_window_propagate_key_event`), so the old binding would have gone quietly
+  dead on macOS and Linux rather than merely double-copying — and
+  `preventDefault` could not have helped, since the key never reaches JS. The bp
+  selection is canvas state, not a DOM selection, so the webview's own Copy could
+  never have served it. `CmdOrCtrl+Shift+C` is reserved in
+  `menu_accelerators_are_unique` so no menu command can take it back.
+- **Guard tests.** `menu_ids.rs` pins the Rust id table against
+  `src/lib/menuIds.ts` with `include_str!` (so editing the TypeScript alone
+  re-runs the test), plus uniqueness, accelerator, layout and separator checks;
+  `menu.ts`'s `HANDLERS: Record<MenuId, Handler>` is the frontend half, enforced
+  by `npm run check`. Do not relax it to `Partial<Record<…>>`.
+
 ## Persistence model
 
 In-place browsing: the app points at a real directory; the folder tree is derived
@@ -98,6 +172,7 @@ automatically. Everything else stays Python/CLI-readable.
 | 2 | matrix report tab + SSN viewer tab + multi-view registry | ✅ done |
 | 3 | config crate + tool forms + off-thread run + provenance + cross-view nav | ✅ done (curated tools) |
 | 4 | HMM logo view + enum-report tab + databases panel + contig editing | ✅ done |
+| 5 | desktop shell: native menu bar, context menus, About/Preferences, theme, window title, close guard | ✅ done |
 
 ## Deferred details / known limitations
 

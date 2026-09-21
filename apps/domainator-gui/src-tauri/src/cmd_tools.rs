@@ -127,11 +127,50 @@ pub struct ToolMeta {
     pub label: String,
     pub description: String,
     pub fields: Vec<ToolField>,
+    /// Which menu group this tool belongs to. Filled in by [`list_tools`] from
+    /// [`category_for`] rather than repeated in all 28 literals below.
+    #[serde(default)]
+    pub category: String,
 }
 
 /// Every `role` [`ToolDialog.svelte`] can render. See [`ToolField`].
 pub const ROLES: [&str; 6] =
     ["input_file", "input_files", "output_file", "param", "hmm_columns", "enum_columns"];
+
+/// The Tools menu's groups, in the order they appear. Mirrors the grouping in the
+/// repository's CLAUDE.md so the menu and the docs agree.
+pub const TOOL_CATEGORIES: [&str; 7] = [
+    "Annotation & search",
+    "Selection & extraction",
+    "Matrices & networks",
+    "Reports",
+    "HMM profiles",
+    "Colour",
+    "Conversion",
+];
+
+/// The group a tool belongs to, or `None` if it has not been assigned one.
+///
+/// Deliberately not defaulting to an "Other" bucket: a tool with no category
+/// would quietly land in a junk submenu instead of failing the guard test, which
+/// is the same failure mode `ToolField::role` already protects against.
+pub fn category_for(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "domainate" | "domain-search" | "filter-domains" => "Annotation & search",
+        "select-by-cds" | "select-by-contig" | "select-by-coord" | "extract-domains"
+        | "extract-peptides" | "extract-unannotated" | "trim-contigs" | "sort-contigs"
+        | "clean-sequences" | "deduplicate" => "Selection & extraction",
+        "seq-dist" | "compare-contigs" | "transform-matrix" | "build-ssn" | "build-ssn-viewer"
+        | "matrix-report" => "Matrices & networks",
+        "enum-report" | "summary-report" => "Reports",
+        "hmmer-compare" | "hmmer-report" | "hmmer-select" | "hmmer-build" | "hmmer-search" => {
+            "HMM profiles"
+        }
+        "color-genbank" | "color-table-to-legend" => "Colour",
+        "genbank-to-fasta" | "convert" | "format-db" => "Conversion",
+        _ => return None,
+    })
+}
 
 fn f(name: &str, label: &str, role: &str, file_type: Option<&str>, required: bool) -> ToolField {
     debug_assert!(ROLES.contains(&role), "field {name:?}: ToolDialog cannot render role {role:?}");
@@ -151,11 +190,24 @@ fn f(name: &str, label: &str, role: &str, file_type: Option<&str>, required: boo
 /// running, a big viewer painting), which would leave a tool dialog at "Loading…".
 #[tauri::command]
 pub async fn list_tools() -> Vec<ToolMeta> {
+    let mut tools = tool_registry();
+    for t in &mut tools {
+        // `category_for` returning None is a programming error the guard test
+        // catches; in a release build an unassigned tool still shows, grouped
+        // under its own id, rather than vanishing from the menu.
+        t.category = category_for(&t.id).unwrap_or("Other").to_string();
+    }
+    tools
+}
+
+/// The tools the GUI offers, before categories are applied.
+fn tool_registry() -> Vec<ToolMeta> {
     vec![
         ToolMeta {
             id: "domain-search".into(),
             label: "Domain search".into(),
             description: "Search sequences with HMM/FASTA references and extract hit CDSs or their genomic neighborhoods (step 1).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_file", Some("sequence"), true),
                 f("references", "References (HMM/FASTA)", "input_files", Some("reference"), true),
@@ -189,6 +241,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "domainate".into(),
             label: "Domainate".into(),
             description: "Annotate sequences with domains from HMM/FASTA references (step 2).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_file", Some("sequence"), true),
                 f("references", "References (HMM/FASTA)", "input_files", Some("reference"), true),
@@ -209,6 +262,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "seq-dist".into(),
             label: "Sequence distance".into(),
             description: "All-vs-all sequence similarity matrix (step 3; default 'hmmer' is pure-Rust — diamond algorithms need the diamond binary).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_file", Some("sequence"), true),
                 f("reference", "Reference (optional)", "input_file", Some("sequence"), false),
@@ -223,6 +277,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "compare-contigs".into(),
             label: "Compare contigs".into(),
             description: "Neighborhood-similarity matrix from domain content (step 3 alternative; pure-Rust).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input GenBank", "input_files", Some("genbank"), true),
                 f("sparse", "Output (matrix)", "output_file", None, true),
@@ -237,6 +292,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "select-by-cds".into(),
             label: "Select by CDS".into(),
             description: "Extract CDSs (and optionally their genomic neighborhoods) by name, domain content, or search hit.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output (GenBank)", "output_file", None, true),
@@ -273,6 +329,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "select-by-contig".into(),
             label: "Select by contig".into(),
             description: "Select whole contigs by name/regex, domain content, taxonomy, length, or CDS count.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output", "output_file", None, true),
@@ -311,6 +368,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "filter-domains".into(),
             label: "Filter domains".into(),
             description: "Remove domain annotations from records by e-value, overlap, name, or database (keeps the sequences).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output (GenBank)", "output_file", None, true),
@@ -329,6 +387,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "hmmer-select".into(),
             label: "HMM select".into(),
             description: "Extract a subset of profiles from HMM file(s) by name/description/accession (regex, exact, or substring match).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input HMM(s)", "input_files", Some("hmm"), true),
                 f("output", "Output (HMM)", "output_file", None, true),
@@ -343,6 +402,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "hmmer-build".into(),
             label: "HMM build".into(),
             description: "Build an HMM profile from a Stockholm multiple-sequence alignment.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input MSA (Stockholm)", "input_file", Some("stockholm"), true),
                 f("output", "Output (HMM)", "output_file", None, true),
@@ -356,6 +416,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "genbank-to-fasta".into(),
             label: "GenBank → FASTA".into(),
             description: "Convert sequence records to FASTA.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output (FASTA)", "output_file", None, true),
@@ -365,6 +426,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "clean-sequences".into(),
             label: "Clean sequences".into(),
             description: "Normalize sequences: clean/deduplicate names, strip gaps, filter non-canonical residues.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output", "output_file", None, true),
@@ -380,6 +442,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "sort-contigs".into(),
             label: "Sort contigs".into(),
             description: "Sort contigs by best search/domain score; optionally keep only the top N.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output (GenBank)", "output_file", None, true),
@@ -392,6 +455,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "select-by-coord".into(),
             label: "Select by coordinate".into(),
             description: "Extract sub-regions listed in a coordinate table (contig, start, end).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("coords", "Coordinate table", "input_file", Some("table"), true),
@@ -402,6 +466,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "trim-contigs".into(),
             label: "Trim contigs".into(),
             description: "Trim the ends of contigs by kb, CDS count, or up to a domain boundary.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output (GenBank)", "output_file", None, true),
@@ -421,6 +486,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "extract-domains".into(),
             label: "Extract domains".into(),
             description: "Extract annotated domain regions as their own records (GenBank or FASTA).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output", "output_file", None, true),
@@ -443,6 +509,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "extract-peptides".into(),
             label: "Extract peptides".into(),
             description: "Extract CDS translations (peptides) by domain/CDS name, search hit, or all.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output", "output_file", None, true),
@@ -464,6 +531,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "extract-unannotated".into(),
             label: "Extract unannotated".into(),
             description: "Extract the regions of each CDS/contig with no domain annotation.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output", "output_file", None, true),
@@ -483,6 +551,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "color-genbank".into(),
             label: "Color GenBank".into(),
             description: "Batch-assign feature colors by name/database (color table or auto palette).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output (GenBank)", "output_file", None, true),
@@ -500,6 +569,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "color-table-to-legend".into(),
             label: "Color table → legend".into(),
             description: "Render a color table as an SVG legend.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Color table(s)", "input_files", Some("table"), true),
                 f("svg", "Output (SVG)", "output_file", None, true),
@@ -510,6 +580,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "deduplicate".into(),
             label: "Deduplicate".into(),
             description: "Collapse near-identical sequences to representatives (hash, or diamond/cd-hit/usearch backends).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_files", Some("sequence"), true),
                 f("output", "Output", "output_file", None, true),
@@ -529,6 +600,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "hmmer-compare".into(),
             label: "HMM compare".into(),
             description: "Profile-vs-profile Viterbi comparison; writes a scores/alignments table.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Query HMM(s)", "input_files", Some("hmm"), true),
                 f("reference", "Reference HMM(s)", "input_files", Some("hmm"), true),
@@ -542,6 +614,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "hmmer-search".into(),
             label: "HMM search".into(),
             description: "Keep query profiles that score against a reference HMM set (writes an HMM file).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Query HMM(s)", "input_files", Some("hmm"), true),
                 f("reference", "Reference HMM(s)", "input_files", Some("hmm"), true),
@@ -554,6 +627,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "hmmer-report".into(),
             label: "HMM report (export)".into(),
             description: "Export a per-profile TSV/JSON report from HMM file(s) with a custom column set.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input HMM(s)", "input_files", Some("hmm"), true),
                 f("output", "Output", "output_file", None, true),
@@ -565,6 +639,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "enum-report".into(),
             label: "Enum report (export)".into(),
             description: "Export a per-contig/cds/domain TSV report from a sequence file with a chosen column set.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input sequences", "input_file", Some("sequence"), true),
                 f("output", "Output (TSV)", "output_file", None, true),
@@ -576,6 +651,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "matrix-report".into(),
             label: "Matrix report (export)".into(),
             description: "Export a text summary + suggested cutoffs from a similarity matrix.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input matrix", "input_file", Some("hdf5"), true),
                 f("output", "Output (text)", "output_file", None, true),
@@ -585,6 +661,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "transform-matrix".into(),
             label: "Transform matrix".into(),
             description: "Rescale or prune a similarity matrix (mode, lower bound, MST-kNN).".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input matrix", "input_file", Some("hdf5"), true),
                 f("sparse", "Output (matrix)", "output_file", None, true),
@@ -597,6 +674,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "build-ssn".into(),
             label: "Build SSN (XGMML)".into(),
             description: "Build a Cytoscape XGMML network from a similarity matrix.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input matrix", "input_file", Some("hdf5"), true),
                 f("xgmml", "Output (XGMML)", "output_file", None, true),
@@ -615,6 +693,7 @@ pub async fn list_tools() -> Vec<ToolMeta> {
             id: "build-ssn-viewer".into(),
             label: "Build SSN viewer".into(),
             description: "Build a .dsnv bundle for the interactive network viewer.".into(),
+            category: String::new(),
             fields: vec![
                 f("input", "Input matrix", "input_file", Some("hdf5"), true),
                 f("output", "Output (.dsnv)", "output_file", None, true),
@@ -656,6 +735,24 @@ pub async fn run_tool(
 ) -> Result<RunResult, String> {
     let started = now_ms();
     let job_id = new_job_id(started);
+
+    // Apply the app-level default thread count, but only where the tool's schema
+    // actually has a `cpu` property -- every config struct is
+    // `deny_unknown_fields`, so a blind injection would make the run be rejected.
+    // Guarded across all tools by `injecting_the_default_cpu_never_breaks_a_tool`.
+    let mut params = params;
+    if let Ok(path) = crate::cmd_prefs::prefs_path(&app) {
+        let default_cpu = domainator_core::app_support::prefs::load_prefs(&path).default_cpu;
+        if let Ok(schema_text) = domainator_config::schema(&tool) {
+            if let Ok(schema) = serde_json::from_str::<Value>(&schema_text) {
+                domainator_core::app_support::tool_params::apply_default_cpu(
+                    &mut params,
+                    &schema,
+                    default_cpu,
+                );
+            }
+        }
+    }
 
     let running = JobInfo {
         job_id: job_id.clone(),
@@ -2041,6 +2138,73 @@ mod tests {
                     tool.id
                 );
             }
+        }
+    }
+
+    /// `cpu` is a config property on only some tools, and every config struct is
+    /// `deny_unknown_fields` -- so injecting the preference blindly would not be
+    /// ignored, it would make the run be **rejected**. This walks every offered
+    /// tool and asserts the injection never produces an unknown-field rejection,
+    /// which is the failure a user would otherwise only see on pressing Run.
+    #[test]
+    fn injecting_the_default_cpu_never_breaks_a_tool() {
+        let root = scratch("default-cpu");
+        let root = root.to_string_lossy();
+        for tool in tools() {
+            let schema_text = domainator_config::schema(&tool.id).unwrap();
+            let schema: Value = serde_json::from_str(&schema_text).unwrap();
+            let mut params = serde_json::json!({});
+            domainator_core::app_support::tool_params::apply_default_cpu(&mut params, &schema, 4);
+
+            let has_cpu = schema["properties"].get("cpu").is_some();
+            assert_eq!(
+                params.get("cpu").is_some(),
+                has_cpu,
+                "{}: cpu injected iff the schema declares it",
+                tool.id
+            );
+
+            let not_cancelled = AtomicBool::new(false);
+            if let Err(e) = run_one(&tool.id, params, &root, 0, "job_cpu", &not_cancelled) {
+                assert!(
+                    !e.contains("unknown field"),
+                    "{}: injecting cpu made the config be rejected: {e}",
+                    tool.id
+                );
+            }
+        }
+    }
+
+    /// Every tool must land in a known group. An unassigned one falls into an
+    /// "Other" bucket at runtime rather than disappearing, but that is a bug --
+    /// the same class as `ToolField::role` naming a role `ToolDialog` cannot
+    /// render, and guarded the same way.
+    #[test]
+    fn every_tool_has_a_known_category() {
+        for tool in tools() {
+            let cat = category_for(&tool.id).unwrap_or_else(|| {
+                panic!(
+                    "{} is offered in the Tools menu but `category_for` has no arm for it, \
+                     so it would be grouped under \"Other\"",
+                    tool.id
+                )
+            });
+            assert!(
+                TOOL_CATEGORIES.contains(&cat),
+                "{} has category {cat:?}, which is not in TOOL_CATEGORIES",
+                tool.id
+            );
+            assert_eq!(tool.category, cat, "{}: list_tools did not apply the category", tool.id);
+        }
+    }
+
+    /// A category no tool uses is a submenu that would render empty.
+    #[test]
+    fn every_category_is_used_by_at_least_one_tool() {
+        let used: std::collections::HashSet<String> =
+            tools().into_iter().map(|t| t.category).collect();
+        for cat in TOOL_CATEGORIES {
+            assert!(used.contains(cat), "no tool uses category {cat:?}; its submenu would be empty");
         }
     }
 

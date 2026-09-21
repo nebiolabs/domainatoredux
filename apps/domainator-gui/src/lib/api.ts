@@ -14,6 +14,9 @@ import type {
   SummaryStats,
   ToolMeta,
   WorkspaceInfo,
+  Prefs,
+  PrefsPatch,
+  UpdateCheck,
 } from "./types";
 
 export const pickDirectory = (): Promise<string | null> =>
@@ -273,5 +276,72 @@ export interface StartupInfo {
 export const startupInfo = (): Promise<StartupInfo> => invoke("startup_info");
 export const forgetRecentWorkspace = (root: string): Promise<string[]> =>
   invoke("forget_recent_workspace", { root });
-export const setReopenLastWorkspace = (enabled: boolean): Promise<void> =>
-  invoke("set_reopen_last_workspace", { enabled });
+/// The full preferences. (There was no getter at all before the Preferences
+/// dialog existed.)
+export const getPrefs = (): Promise<Prefs> => invoke("get_prefs");
+
+/// Apply a partial settings update; returns the saved preferences.
+export const setPrefs = (patch: PrefsPatch): Promise<Prefs> => invoke("set_prefs", { patch });
+
+/// Ask GitHub whether a newer release exists. Never rejects for "offline" —
+/// that comes back as `note`.
+export const checkForUpdates = (): Promise<UpdateCheck> => invoke("check_for_updates");
+
+/// One managed external binary as the About box lists it.
+export interface ToolLine {
+  name: string;
+  version: string;
+  installed: boolean;
+}
+
+/// Everything the About dialog shows. `diagnostics` is the pre-rendered blob a
+/// bug report should carry — the frontend never re-derives it, so what the user
+/// pastes always matches what the dialog displays.
+export interface AppDiagnostics {
+  product: string;
+  version: string;
+  tauri_version: string;
+  webview_version: string;
+  os: string;
+  arch: string;
+  profile: string;
+  app_data_dir: string;
+  prefs_path: string;
+  managed_tools_dir: string;
+  external_tools: ToolLine[];
+  diagnostics: string;
+  project_url: string;
+  issues_url: string;
+  license: string;
+}
+
+export const appDiagnostics = (): Promise<AppDiagnostics> => invoke("app_diagnostics");
+
+/// Open one of the app's own links in the user's browser. The Rust side refuses
+/// anything not on its allow-list, so this cannot open an arbitrary URL.
+export const openExternalUrl = (url: string): Promise<void> =>
+  invoke("open_external_url", { url });
+
+/// Show a file or folder in the OS file manager. Bounded on the Rust side to the
+/// open workspace and the app's own data directory.
+export const revealInFileManager = (
+  workspaceRoot: string | null,
+  path: string,
+): Promise<void> => invoke("reveal_in_file_manager", { workspaceRoot, path });
+
+export const openAppDataDir = (): Promise<void> => invoke("open_app_data_dir");
+
+/// What the native menu needs in order to grey items out. Sent from the main
+/// window only; `app_menu.rs` ignores it from any other label.
+export interface MenuState {
+  has_workspace: boolean;
+  has_folder: boolean;
+  has_tab: boolean;
+  can_save: boolean;
+  can_find: boolean;
+  can_export: boolean;
+  has_closed_tab: boolean;
+}
+
+export const setMenuState = (state: MenuState): Promise<void> =>
+  invoke("set_menu_state", { state });

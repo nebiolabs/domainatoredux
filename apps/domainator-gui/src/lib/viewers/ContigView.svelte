@@ -330,6 +330,12 @@
   let selFeat = $state<{ ci: number; feat: FeatureView } | null>(null);
   let dragging = false;
   let copyMsg = $state<string | null>(null);
+  // Shown in the copy buttons' tooltips so the shortcut is discoverable rather
+  // than folklore. Cmd on macOS, Ctrl elsewhere.
+  const COPY_HINT =
+    typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform ?? "")
+      ? "\u2318\u21E7C"
+      : "Ctrl+Shift+C";
 
   // Multi-contig selection (by contig index) for Extract → new sequence file.
   let contigSel = $state(new Set<number>());
@@ -1066,10 +1072,27 @@
     return () => clearTimeout(timer);
   });
 
-  // Copy on Ctrl/Cmd+C when a selection exists (nucleotides/residues; use the
-  // Protein button for a CDS translation).
+  // Copy the selected bases/residues (use the Protein button for a CDS
+  // translation).
+  //
+  // **Shift is load-bearing.** This used to be a plain Ctrl/Cmd+C, which stopped
+  // being viable once the native menu landed: Edit → Copy registers a real OS
+  // accelerator for Cmd/Ctrl+C, and menu accelerators are dispatched before the
+  // focused widget sees the key (AppKit checks `performKeyEquivalent:` ahead of
+  // the responder chain; GTK3 runs `gtk_window_activate_key` ahead of
+  // `gtk_window_propagate_key_event`). So the old binding would not have
+  // double-copied so much as silently stopped firing on macOS and Linux —
+  // `preventDefault` cannot help, because the key never reaches JS at all.
+  //
+  // The bp selection here is canvas state, not a DOM selection, so the webview's
+  // own Copy could never have served it anyway. The visible ⧉ buttons below are
+  // the primary affordance; this is the shortcut for them.
   function onKeydown(e: KeyboardEvent) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && hasSel) {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c" && hasSel) {
+      // WebView2 binds Ctrl+Shift+C to the DevTools element picker when dev tools
+      // are enabled (debug builds); swallow it so the shortcut behaves the same
+      // in dev as in release.
+      e.preventDefault();
       copyNucleotides();
     }
   }
@@ -1097,12 +1120,12 @@
         {/if}
         {#if hasSel && selRange}
           {#if cdsSelected}
-            <button class="copy" onclick={copyNucleotides} title="Copy CDS nucleotides">
+            <button class="copy" onclick={copyNucleotides} title="Copy CDS nucleotides ({COPY_HINT})">
               ⧉ NT ({(selRange.hi - selRange.lo).toLocaleString()} bp)
             </button>
             <button class="copy" onclick={copyTranslation} title="Copy CDS translation">⧉ Protein</button>
           {:else}
-            <button class="copy" onclick={copyNucleotides} title="Copy selected sequence">
+            <button class="copy" onclick={copyNucleotides} title="Copy selected sequence ({COPY_HINT})">
               ⧉ Copy {(selRange.hi - selRange.lo).toLocaleString()} {data.contigs[selRange.ci].is_protein ? "aa" : "bp"}
             </button>
           {/if}
