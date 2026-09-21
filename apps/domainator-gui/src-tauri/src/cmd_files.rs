@@ -169,7 +169,29 @@ fn run_enum_report_blocking(
 
     let mut buf: Vec<u8> = Vec::new();
     enum_report(recs, by, &analyses, None, None, None, OutputFormat::Json, &mut buf)?;
-    serde_json::from_slice(&buf).map_err(|e| format!("parsing enum_report json: {e}"))
+    ndjson_to_array(&buf)
+}
+
+/// Collect streaming NDJSON (one compact object per line) into a single JSON
+/// array.
+///
+/// `OutputFormat::Json` is the agent-facing *newline-delimited* contract, not a
+/// JSON document — feeding the whole buffer to `serde_json::from_slice` fails on
+/// the second row ("trailing characters at line 2 column 1"), which is what the
+/// grid used to do.
+fn ndjson_to_array(buf: &[u8]) -> Result<Value, String> {
+    let text = std::str::from_utf8(buf).map_err(|e| format!("enum_report output not utf-8: {e}"))?;
+    let mut rows = Vec::new();
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        rows.push(
+            serde_json::from_str::<Value>(line)
+                .map_err(|e| format!("parsing enum_report json: {e}"))?,
+        );
+    }
+    Ok(Value::Array(rows))
 }
 
 /// Load an HMM file and return skylign-style logo data for one profile
@@ -550,6 +572,41 @@ pub async fn save_text_file(
     let path = handle.path().to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::write(&path, contents).map_err(|e| format!("writing file: {e}"))?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|e| format!("saving file failed: {e}"))?
+}
+
+/// Pop a native "Save As" dialog and write decoded base64 bytes to the chosen
+/// path. The binary twin of [`save_text_file`], used by viewers that export a
+/// raster image (PNG). The payload arrives base64-encoded because the IPC bridge
+/// is JSON: a `Vec<u8>` would serialize as a decimal array, roughly four bytes of
+/// wire per byte of image. Returns the saved path, or `None` if cancelled.
+#[tauri::command]
+pub async fn save_binary_file(
+    window: tauri::WebviewWindow,
+    default_name: String,
+    extension: String,
+    filter_name: String,
+    contents_base64: String,
+) -> Result<Option<String>, String> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(contents_base64.as_bytes())
+        .map_err(|e| format!("decoding image data: {e}"))?;
+    // `async` + `AsyncFileDialog`: a sync command would show the dialog on Tauri's
+    // main thread — see the note on `cmd_workspace::pick_directory`.
+    let picked = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .set_file_name(&default_name)
+        .add_filter(&filter_name, &[extension.as_str()])
+        .save_file()
+        .await;
+    let Some(handle) = picked else { return Ok(None) };
+    let path = handle.path().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::write(&path, bytes).map_err(|e| format!("writing file: {e}"))?;
         Ok(Some(path.to_string_lossy().into_owned()))
     })
     .await
@@ -1080,5 +1137,25 @@ mod tests {
         assert_eq!(rows[1][0].as_f64().unwrap(), -2.0);
         let total: i64 = rows.iter().map(|r| r[1].as_i64().unwrap()).sum();
         assert_eq!(total, scores.len() as i64, "the maximum must not fall off the end");
+    }
+
+    /// `enum_report`'s `OutputFormat::Json` writes NDJSON, so the grid must parse
+    /// it line by line. Parsing the buffer as one document worked for a
+    /// single-row report and failed for every real one — the exact shape a
+    /// single-row unit test would miss, so this asserts on multiple rows.
+    #[test]
+    fn ndjson_rows_become_a_json_array() {
+        let buf = b"{\"contig\":\"a\",\"length\":10}\n{\"contig\":\"b\",\"length\":20}\n";
+        let v = ndjson_to_array(buf).expect("multi-row NDJSON must parse");
+        let rows = v.as_array().expect("an array");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["contig"], "a");
+        assert_eq!(rows[1]["length"], 20);
+        // Column order is load-bearing for the grid (serde_json `preserve_order`).
+        let keys: Vec<_> = rows[0].as_object().unwrap().keys().collect();
+        assert_eq!(keys, ["contig", "length"]);
+        // Empty output is an empty grid, not an error.
+        assert_eq!(ndjson_to_array(b"").unwrap().as_array().unwrap().len(), 0);
+        assert!(ndjson_to_array(b"{not json}\n").is_err());
     }
 }

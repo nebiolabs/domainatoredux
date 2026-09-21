@@ -5,7 +5,7 @@
   import { validateFilename } from "./filetypes";
   import NameModal from "./NameModal.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
-  import { openContextMenu, SEP, type CtxItem } from "./contextmenu.svelte";
+  import { openContextMenu, SEP, type CtxItem } from "./ctxmenu.svelte";
   import { ui } from "./ui.svelte";
   import { openFileWindow, revealInFileManager } from "./api";
   import { copyText } from "./clipboard";

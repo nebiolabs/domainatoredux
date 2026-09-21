@@ -1,5 +1,11 @@
 // Shared state and API for the app's right-click menus.
 //
+// Named `ctxmenu`, not `contextmenu`: macOS and Windows have case-insensitive
+// filesystems, so `import ... from "./contextmenu.svelte"` resolves to the
+// sibling component `ContextMenu.svelte` there and the component imports
+// itself — a build that is green on Linux and fails on the other two. The
+// guard is the name; keep the two spellings distinct.
+//
 // The app used to have none at all, so every right-click fell through to the
 // webview's own menu (Reload / Save as / Inspect Element) — see the global
 // suppressor in `main.ts`. This is the replacement.

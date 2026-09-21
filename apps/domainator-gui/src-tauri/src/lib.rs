@@ -76,6 +76,7 @@ pub fn run() {
             cmd_files::count_records,
             cmd_files::save_text_file,
             cmd_files::run_enum_report,
+            cmd_files::save_binary_file,
             cmd_files::run_summary_stats,
             cmd_files::resolve_records,
             cmd_files::trace_network_sources,
@@ -142,5 +143,62 @@ mod tests {
              also what CARGO_PKG_VERSION (and therefore the About dialog and job \
              provenance) resolves to. Pinning it here re-creates the drift."
         );
+    }
+
+    /// Two frontend modules whose paths differ only by case are a Linux-only build.
+    ///
+    /// macOS (APFS) and Windows (NTFS) are case-insensitive, so there
+    /// `import ... from "./contextmenu.svelte"` resolves to the sibling component
+    /// `ContextMenu.svelte` rather than to `contextmenu.svelte.ts` — and the
+    /// component ends up importing itself. Rollup reports it as
+    /// `"ctx" is not exported by "src/lib/ContextMenu.svelte", imported by
+    /// "src/lib/ContextMenu.svelte"`, which says nothing about case and is
+    /// unreproducible on the machine this is developed on. It shipped exactly once,
+    /// as a green Linux build and two red cross-compiles.
+    ///
+    /// The collision is between *module specifiers*, not filenames, so the extension
+    /// is stripped first: `Foo.svelte` and `foo.svelte.ts` both answer to
+    /// `./foo.svelte`. This walks the tree rather than `include_str!`-ing a list,
+    /// because the failure arrives with a *new* file; `cargo test` re-runs the test
+    /// binary on every invocation, so the scan is not cached away.
+    #[test]
+    fn no_two_frontend_modules_differ_only_by_case() {
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).expect("frontend src/ is readable") {
+                let path = entry.expect("readable dir entry").path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else {
+                    out.push(path);
+                }
+            }
+        }
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let mut files = Vec::new();
+        walk(&root, &mut files);
+
+        let mut seen: std::collections::HashMap<String, std::path::PathBuf> =
+            std::collections::HashMap::new();
+        for path in files {
+            let rel = path.strip_prefix(&root).unwrap().to_owned();
+            let name = rel.to_string_lossy().to_string();
+            // Strip what a bare `./foo` specifier may omit, longest suffix first.
+            let stem = [".svelte.ts", ".svelte", ".ts", ".js"]
+                .iter()
+                .find_map(|ext| name.strip_suffix(ext))
+                .unwrap_or(&name);
+            let key = stem.to_lowercase();
+            if let Some(other) = seen.insert(key, rel.clone()) {
+                panic!(
+                    "`src/{}` and `src/{}` differ only by case (and extension). On \
+                     macOS and Windows one import specifier resolves to whichever the \
+                     filesystem hands back, so the build breaks there and nowhere \
+                     else. Rename one of them.",
+                    other.display(),
+                    rel.display()
+                );
+            }
+        }
     }
 }

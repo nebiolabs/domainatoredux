@@ -3,7 +3,7 @@
   import { ws } from "./state.svelte";
   import type { FolderNode } from "./types";
   import Self from "./FolderTree.svelte";
-  import { openContextMenu, SEP, type CtxItem } from "./contextmenu.svelte";
+  import { openContextMenu, SEP, type CtxItem } from "./ctxmenu.svelte";
   import { copyText } from "./clipboard";
   import { revealInFileManager } from "./api";
 

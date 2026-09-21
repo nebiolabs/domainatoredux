@@ -2,7 +2,7 @@
   // The single context-menu instance. Mounted once by App.svelte (in both the
   // shell and the detached-window branch), so there is one keyboard model, one
   // z-index, and no per-open mount cost.
-  import { ctx, closeContextMenu, type CtxItem } from "./contextmenu.svelte";
+  import { ctx, closeContextMenu, type CtxItem } from "./ctxmenu.svelte";
   import { ws } from "./state.svelte";
 
   let menuEl = $state<HTMLDivElement>();

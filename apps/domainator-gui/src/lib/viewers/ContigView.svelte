@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addFeature, extractContigs, extractRegion, getContigSequences, loadContigView, removeFeature, setFeatureColor } from "../api";
+  import { addFeature, extractContigs, extractRegion, getContigSequences, loadContigView, removeFeature, saveBinaryFile, saveTextFile, setFeatureColor } from "../api";
   import { cached, invalidatePath } from "../cache";
   import { ws } from "../state.svelte";
   import { validateFilename } from "../filetypes";
@@ -17,6 +17,8 @@
 
   // ── editing (GenBank only) ─────────────────────────────────────────────────
   const canEdit = $derived(/\.(gb|gbk|genbank|gbff)$/i.test(path));
+  // The clicked feature: drives the pinned detail panel (all file types) and, for
+  // GenBank, the colour/remove edit controls at the bottom of it.
   let selected = $state<{ contigIndex: number; feat: FeatureView } | null>(null);
   let addOpen = $state(false);
   let addForm = $state({ contigIndex: 0, kind: "misc_feature", start: 0, end: 100, strand: 1, note: "" });
@@ -33,15 +35,44 @@
 
   // ── geometry constants ─────────────────────────────────────────────────────
   const GUTTER = 134; // fixed left label column (pinned during horizontal scroll)
-  const RULER_H = 16;
   const SEQ_H = 16; // nucleotide/residue letter track
   const SEQBAR_H = 7; // collapsed sequence bar (zoomed out)
   const TRANS_H = 16; // translation track (nucleotide contigs)
-  const LANE_H = 20;
   const FEAT_H = 14;
-  const CONTIG_GAP = 16;
   const LETTERS_MIN = 4.5; // px/bp at/above which residue letters render (~1 zoom step earlier)
   const CONTIG_PAD_TOP = 4;
+
+  // ── user-adjustable appearance ─────────────────────────────────────────────
+  // Everything here feeds both the live canvas and the SVG/PNG export, which
+  // share one `renderScene`; changing any of them re-derives `vlayout` (track
+  // heights) and repaints.
+  let optsOpen = $state(false);
+  let laneH = $state(20); // vertical pitch of one feature lane
+  let contigGap = $state(16); // blank space between stacked contigs
+  let rulerFontSize = $state(10); // bp ruler tick labels
+  let labelFontSize = $state(10); // feature labels
+  let rulerUnits = $state<"auto" | "bp" | "kb">("auto");
+  let sharedRuler = $state(false); // one pinned ruler instead of one per contig
+  let labelPlacement = $state<"inside" | "outside" | "both">("inside");
+
+  // Height of a ruler band (the tick label plus its tick mark and padding).
+  const rulerBandH = $derived(rulerFontSize + 7);
+  // Per-contig ruler height — zero when a single shared ruler is pinned on top.
+  const perContigRulerH = $derived(sharedRuler ? 0 : rulerBandH);
+  // Outside labels need their own strip above each feature box.
+  const outsideLabelH = $derived(labelPlacement === "inside" ? 0 : labelFontSize + 3);
+  // Full vertical pitch of a lane slot (label strip + feature row).
+  const laneSlotH = $derived(laneH + outsideLabelH);
+
+  function resetViewOptions() {
+    laneH = 20;
+    contigGap = 16;
+    rulerFontSize = 10;
+    labelFontSize = 10;
+    rulerUnits = "auto";
+    sharedRuler = false;
+    labelPlacement = "inside";
+  }
 
   // ── lane-stacking (port of plot_contigs.py add_z_order) ─────────────────────
   const PRECEDENCE = [
@@ -124,7 +155,12 @@
   }
   function contigHeight(c: Contig, lay: Layout): number {
     return (
-      CONTIG_PAD_TOP + RULER_H + seqTrackH() + transTrackH(c) + (lay.maxLane + 1) * LANE_H + CONTIG_GAP
+      CONTIG_PAD_TOP +
+      perContigRulerH +
+      seqTrackH() +
+      transTrackH(c) +
+      (lay.maxLane + 1) * laneSlotH +
+      contigGap
     );
   }
 
@@ -138,7 +174,9 @@
     void pxPerBp;
     const contigs = data.contigs;
     const offsets: number[] = new Array(contigs.length + 1);
-    offsets[0] = 0;
+    // A pinned shared ruler occupies the top of the viewport, so the content
+    // starts below it (it then scrolls underneath, sticky-header style).
+    offsets[0] = sharedRuler ? rulerBandH : 0;
     for (let i = 0; i < contigs.length; i++) {
       offsets[i + 1] = offsets[i] + contigHeight(contigs[i], contigLayout(contigs[i]));
     }
@@ -220,7 +258,7 @@
     c: Contig;
     lay: Layout;
     yTop: number;
-    rulerY: number;
+    rulerY: number; // -1 when a single shared ruler is pinned instead
     seqY: number;
     transY: number; // -1 if no translation track
     laneBaseY: number; // y of lane 0's top
@@ -228,34 +266,33 @@
     winL: number;
     winR: number;
   };
-  const frame = $derived.by((): Frame[] => {
+  // Frames for the contigs intersecting an arbitrary window. Parameterized (not
+  // closing over the live viewport) so the exporter can lay out a window the
+  // screen never shows — e.g. every contig at full track width.
+  function computeFrames(vTop: number, vH: number, vLeft: number, vW: number): Frame[] {
     if (!data) return [];
-    void viewLeft;
-    void viewTop;
-    void viewW;
-    void viewH;
     const { offsets } = vlayout;
     const contigs = data.contigs;
-    // binary search first contig whose bottom > viewTop
+    // binary search first contig whose bottom > vTop
     let lo = 0,
       hi = contigs.length;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
-      if (offsets[mid + 1] <= viewTop) lo = mid + 1;
+      if (offsets[mid + 1] <= vTop) lo = mid + 1;
       else hi = mid;
     }
     const out: Frame[] = [];
-    for (let ci = lo; ci < contigs.length && offsets[ci] < viewTop + viewH; ci++) {
+    for (let ci = lo; ci < contigs.length && offsets[ci] < vTop + vH; ci++) {
       const c = contigs[ci];
       const lay = contigLayout(c);
       const yTop = offsets[ci] + CONTIG_PAD_TOP;
-      const rulerY = yTop;
-      const seqY = rulerY + RULER_H;
+      const rulerY = perContigRulerH > 0 ? yTop : -1;
+      const seqY = yTop + perContigRulerH;
       const th = transTrackH(c);
       const transY = th > 0 ? seqY + seqTrackH() : -1;
       const laneBaseY = seqY + seqTrackH() + th;
-      const winL = Math.max(0, viewLeft / pxPerBp);
-      const winR = Math.min(c.length, (viewLeft + viewW - GUTTER) / pxPerBp);
+      const winL = Math.max(0, vLeft / pxPerBp);
+      const winR = Math.min(c.length, (vLeft + vW - GUTTER) / pxPerBp);
       out.push({
         ci, c, lay, yTop, rulerY, seqY, transY, laneBaseY,
         height: offsets[ci + 1] - offsets[ci],
@@ -263,7 +300,9 @@
       });
     }
     return out;
-  });
+  }
+
+  const frame = $derived.by((): Frame[] => computeFrames(viewTop, viewH, viewLeft, viewW));
 
   // ── genetic code + colours ──────────────────────────────────────────────────
   const CODON_TABLE: Record<string, string> = buildCodonTable();
@@ -329,6 +368,10 @@
   // "copy nucleotides vs. translation" choice for a CDS on a nucleotide contig.
   let selFeat = $state<{ ci: number; feat: FeatureView } | null>(null);
   let dragging = false;
+  // Live cursor coordinate (bp within `cursorContig`), for the toolbar readout and
+  // the canvas guide line. Null when the pointer is off the track.
+  let cursorBp = $state<number | null>(null);
+  let cursorContig = $state<number | null>(null);
   let copyMsg = $state<string | null>(null);
   // Shown in the copy buttons' tooltips so the shortcut is discoverable rather
   // than folklore. Cmd on macOS, Ctrl elsewhere.
@@ -358,6 +401,14 @@
   const cdsSelected = $derived(
     !!selFeat && selFeat.feat.kind === "CDS" && !!data && !data.contigs[selFeat.ci].is_protein,
   );
+  // Coordinates are displayed 1-based inclusive — the GenBank/annotation
+  // convention — while the model is 0-based half-open.
+  const selCoords = $derived(
+    selRange ? `${(selRange.lo + 1).toLocaleString()}:${selRange.hi.toLocaleString()}` : null,
+  );
+  const selUnit = $derived(selRange && data ? (data.contigs[selRange.ci].is_protein ? "aa" : "bp") : "bp");
+  const caretLabel = $derived(sel && !hasSel ? (sel.a + 1).toLocaleString() : null);
+  const cursorLabel = $derived(cursorBp === null ? null : (Math.floor(cursorBp) + 1).toLocaleString());
 
   async function writeClip(text: string, msg: string) {
     try {
@@ -440,7 +491,7 @@
     if (!fr) return null;
     const laneRegion = contentY - fr.laneBaseY;
     if (laneRegion < 0) return null;
-    const laneFromTop = Math.floor(laneRegion / LANE_H);
+    const laneFromTop = Math.floor(laneRegion / laneSlotH);
     const lane = fr.lay.maxLane - laneFromTop; // lane 0 drawn at bottom
     const bp = bpAt(clientX);
     // topmost matching feature in that lane
@@ -460,6 +511,9 @@
   function onPointerDown(e: PointerEvent) {
     if (!scrollEl) return;
     const rect0 = scrollEl.getBoundingClientRect();
+    // The pinned shared ruler floats over the top of the viewport; a click on it
+    // would otherwise select whatever scrolled underneath.
+    if (sharedRuler && e.clientY - rect0.top < rulerBandH) return;
     // Click in the left margin (name gutter): select the whole sequence (copy) and
     // manage the multi-contig set for Extract (Ctrl/Cmd toggles, Shift ranges).
     if (e.clientX - rect0.left < GUTTER) {
@@ -510,7 +564,10 @@
       sel = { ci: hit.ci, a: hit.f.start, b: hit.f.end };
       selFeat = { ci: hit.ci, feat: hit.f };
       ensureSeq(hit.ci); // load sequence so Copy is ready
-      if (canEdit) selected = { contigIndex: hit.ci, feat: hit.f };
+      // The detail panel opens for every file type — it carries the same fields
+      // the hover tooltip shows, so a click pins them instead of replacing them
+      // with a bare colour picker. The edit controls inside it stay GenBank-only.
+      selected = { contigIndex: hit.ci, feat: hit.f };
       scheduleDraw();
       return;
     }
@@ -527,7 +584,29 @@
     scrollEl.setPointerCapture?.(e.pointerId);
     scheduleDraw();
   }
+  // Track the bp under the cursor so the toolbar can show a live coordinate and
+  // the canvas can draw a guide line at it.
+  function updateCursorBp(e: PointerEvent) {
+    if (!scrollEl) return;
+    const rect = scrollEl.getBoundingClientRect();
+    if (e.clientX - rect.left < GUTTER) {
+      cursorBp = null;
+      cursorContig = null;
+      return;
+    }
+    const fr = frameAtY(viewTop + (e.clientY - rect.top));
+    if (!fr) {
+      cursorBp = null;
+      cursorContig = null;
+      return;
+    }
+    const bp = bpAt(e.clientX);
+    cursorBp = bp < 0 || bp > fr.c.length ? null : bp;
+    cursorContig = cursorBp === null ? null : fr.ci;
+  }
+
   function onPointerMove(e: PointerEvent) {
+    updateCursorBp(e);
     if (dragging && sel && scrollEl) {
       dragClientX = e.clientX;
       const c = data?.contigs[sel.ci];
@@ -538,6 +617,7 @@
     }
     const hit = featureAt(e.clientX, e.clientY);
     tooltip = hit ? { x: e.clientX + 12, y: e.clientY + 12, feature: hit.f } : null;
+    scheduleDraw(); // the hover guide follows the cursor
   }
   function onPointerUp() {
     dragging = false;
@@ -546,6 +626,9 @@
   }
   function onPointerLeave() {
     tooltip = null;
+    cursorBp = null;
+    cursorContig = null;
+    scheduleDraw();
   }
 
   // ── drag auto-scroll (extend selection past the viewport edge) ────────────────
@@ -670,20 +753,37 @@
   }
 
   // ── ruler ticks ───────────────────────────────────────────────────────────────
-  function ticks(length: number): number[] {
-    const spanBp = Math.min(length, (viewW - GUTTER) / pxPerBp);
-    const n = Math.max(3, Math.floor((viewW - GUTTER) / 110));
+  // Tick positions for the window [vLeft, vLeft + vW - GUTTER) in track px.
+  function ticks(length: number, vLeft: number, vW: number): { pos: number[]; step: number } {
+    const spanBp = Math.min(length, (vW - GUTTER) / pxPerBp);
+    const n = Math.max(3, Math.floor((vW - GUTTER) / 110));
     const raw = spanBp / n;
     const mag = Math.pow(10, Math.floor(Math.log10(Math.max(1, raw))));
     const step = Math.max(1, Math.round(raw / mag) * mag);
-    const first = Math.floor(Math.max(0, viewLeft / pxPerBp) / step) * step;
-    const out: number[] = [];
-    for (let x = first; x <= Math.min(length, (viewLeft + viewW - GUTTER) / pxPerBp); x += step) out.push(x);
-    return out;
+    const first = Math.floor(Math.max(0, vLeft / pxPerBp) / step) * step;
+    const pos: number[] = [];
+    for (let x = first; x <= Math.min(length, (vLeft + vW - GUTTER) / pxPerBp); x += step) pos.push(x);
+    return { pos, step };
   }
 
+  // Tick label in the chosen unit. `auto` switches to kb once the tick spacing is
+  // at least 1 kb, which is where raw bp counts stop being readable.
+  function tickLabel(bp: number, step: number): string {
+    const kb = rulerUnits === "kb" || (rulerUnits === "auto" && step >= 1000);
+    if (!kb) return bp.toLocaleString();
+    const v = bp / 1000;
+    // Enough decimals to keep consecutive ticks distinct.
+    const dp = step >= 1000 ? 0 : step >= 100 ? 1 : 2;
+    return `${v.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp })} kb`;
+  }
+  // Unit suffix for the shared ruler's gutter caption.
+  const rulerUnitLabel = $derived(rulerUnits === "kb" ? "kb" : rulerUnits === "bp" ? "bp" : "bp/kb");
+
   // ── canvas draw ───────────────────────────────────────────────────────────────
-  function drawArrow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, mode: "box" | "right" | "left") {
+  // The 2D subset both backends implement (real canvas, and the SVG shim below).
+  type Ctx2D = CanvasRenderingContext2D;
+
+  function drawArrow(ctx: Ctx2D, x: number, y: number, w: number, h: number, mode: "box" | "right" | "left") {
     const head = Math.min(8, Math.max(0, w));
     ctx.beginPath();
     if (mode === "right") {
@@ -697,83 +797,110 @@
     ctx.closePath();
   }
 
-  function draw() {
-    const cv = canvas;
-    if (!cv || !data || !scrollEl) return;
-    const dpr = window.devicePixelRatio || 1;
-    cv.width = Math.round(viewW * dpr);
-    cv.height = Math.round(viewH * dpr);
-    cv.style.width = viewW + "px";
-    cv.style.height = viewH + "px";
-    cv.style.left = "0px"; // fills the viewport width; x is handled by viewLeft in-draw
-    cv.style.top = viewTop + "px"; // follows native vertical scroll
-    const ctx = cv.getContext("2d")!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, viewW, viewH);
+  type Palette = {
+    text: string; dim: string; border: string; accent: string; panel: string; bg: string;
+  };
+  function palette(): Palette {
+    const css = scrollEl ? getComputedStyle(scrollEl) : null;
+    const get = (n: string, d: string) => css?.getPropertyValue(n).trim() || d;
+    return {
+      text: get("--text", "#111"),
+      dim: get("--text-dim", "#888"),
+      border: get("--border", "#ccc"),
+      accent: get("--accent", "#3b82f6"),
+      panel: get("--bg-panel", "#fff"),
+      bg: get("--bg", "#ffffff"),
+    };
+  }
 
-    const css = getComputedStyle(scrollEl);
-    const cText = css.getPropertyValue("--text").trim() || "#111";
-    const cDim = css.getPropertyValue("--text-dim").trim() || "#888";
-    const cBorder = css.getPropertyValue("--border").trim() || "#ccc";
-    const cAccent = css.getPropertyValue("--accent").trim() || "#3b82f6";
-    const cPanel = css.getPropertyValue("--bg-panel").trim() || "#fff";
+  // One window of the view, drawn into any Ctx2D. Everything positional is derived
+  // from `scene` rather than the live viewport, so the exporter can render a window
+  // the screen never shows (all contigs, full track width) with identical output.
+  type Scene = {
+    frames: Frame[];
+    vLeft: number;
+    vTop: number;
+    vW: number;
+    vH: number;
+    pal: Palette;
+    interactive: boolean; // selection highlight, caret, hover guide
+    opaque: boolean; // paint a background (exports need one; the live canvas is layered)
+  };
+
+  function renderScene(ctx: Ctx2D, scene: Scene) {
+    if (!data) return;
+    const { frames, vLeft, vTop, vW, vH, pal } = scene;
+    const cText = pal.text, cDim = pal.dim, cBorder = pal.border, cAccent = pal.accent, cPanel = pal.panel;
     const cSeqBar = cDim;
+    const sx = (bp: number) => GUTTER + bp * pxPerBp - vLeft;
+
+    if (scene.opaque) {
+      ctx.fillStyle = pal.bg;
+      ctx.fillRect(0, 0, vW, vH);
+    }
 
     // Font tracks cell width (≈0.6em glyph advance) so letters fit even at the
     // lower zoom threshold without overlapping.
     const letterFont = `${Math.min(13, Math.max(6, pxPerBp * 1.15))}px ui-monospace, monospace`;
+    const rulerFont = `${rulerFontSize}px ui-monospace, monospace`;
+    const featFont = `${labelFontSize}px system-ui, sans-serif`;
+
+    // Draw one ruler band: baseline at `ry`, ticks over [0, length].
+    const drawRuler = (ry: number, length: number) => {
+      ctx.strokeStyle = cBorder;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(Math.max(GUTTER, sx(0)), ry + 0.5);
+      ctx.lineTo(sx(length), ry + 0.5);
+      ctx.stroke();
+      ctx.fillStyle = cDim;
+      ctx.font = rulerFont;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      const { pos, step } = ticks(length, vLeft, vW);
+      for (const t of pos) {
+        const tx = sx(t);
+        ctx.beginPath();
+        ctx.moveTo(tx + 0.5, ry - 4);
+        ctx.lineTo(tx + 0.5, ry);
+        ctx.stroke();
+        ctx.fillText(tickLabel(t, step), tx + 2, ry - 6);
+      }
+    };
 
     // Clip tracks to the right of the gutter.
     ctx.save();
     ctx.beginPath();
-    ctx.rect(GUTTER, 0, viewW - GUTTER, viewH);
+    ctx.rect(GUTTER, 0, vW - GUTTER, vH);
     ctx.clip();
 
-    for (const fr of frame) {
-      const sYtop = fr.rulerY - viewTop;
-      const selH = fr.height - CONTIG_GAP;
+    for (const fr of frames) {
+      const sYtop = fr.yTop - vTop;
+      const selH = fr.height - contigGap;
       // selection highlight (range) or caret (collapsed) for this contig
-      if (selRange && selRange.ci === fr.ci && selRange.hi > selRange.lo) {
-        const x1 = screenX(selRange.lo);
-        const x2 = screenX(selRange.hi);
+      if (scene.interactive && selRange && selRange.ci === fr.ci && selRange.hi > selRange.lo) {
+        const x1 = sx(selRange.lo);
+        const x2 = sx(selRange.hi);
         ctx.fillStyle = "rgba(59,130,246,0.18)";
         ctx.fillRect(x1, sYtop, Math.max(1, x2 - x1), selH);
         // focus-border caret (the edge a shift-click / drag moves)
-        const fx = screenX(sel!.b);
+        const fx = sx(sel!.b);
         ctx.fillStyle = cAccent;
         ctx.fillRect(fx - 0.75, sYtop, 1.5, selH);
-      } else if (sel && sel.ci === fr.ci) {
-        const cx = screenX(sel.a);
-        if (cx >= GUTTER - 1 && cx <= viewW) {
+      } else if (scene.interactive && sel && sel.ci === fr.ci) {
+        const cx = sx(sel.a);
+        if (cx >= GUTTER - 1 && cx <= vW) {
           ctx.fillStyle = cAccent;
           ctx.fillRect(cx - 0.75, sYtop, 1.5, selH);
         }
       }
 
-      // ruler
-      const ry = fr.rulerY - viewTop + RULER_H - 1;
-      ctx.strokeStyle = cBorder;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(Math.max(GUTTER, screenX(0)), ry + 0.5);
-      ctx.lineTo(screenX(fr.c.length), ry + 0.5);
-      ctx.stroke();
-      ctx.fillStyle = cDim;
-      ctx.font = "10px ui-monospace, monospace";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      for (const t of ticks(fr.c.length)) {
-        const tx = screenX(t);
-        ctx.beginPath();
-        ctx.moveTo(tx + 0.5, ry - 4);
-        ctx.lineTo(tx + 0.5, ry);
-        ctx.stroke();
-        ctx.fillText(t.toLocaleString(), tx + 2, ry - 6);
-      }
+      // per-contig ruler (absent when a single shared ruler is pinned on top)
+      if (fr.rulerY >= 0) drawRuler(fr.rulerY - vTop + perContigRulerH - 1, fr.c.length);
 
       // sequence track
       const seq = seqCache[fr.ci];
-      const seqTop = fr.seqY - viewTop;
+      const seqTop = fr.seqY - vTop;
       if (showLetters && seq !== undefined) {
         ctx.font = letterFont;
         ctx.textAlign = "center";
@@ -783,10 +910,10 @@
         const isProt = fr.c.is_protein;
         for (let bp = lo; bp < hi; bp++) {
           const ch = seq[bp] ?? "N";
-          const cx = screenX(bp) + pxPerBp / 2;
+          const cx = sx(bp) + pxPerBp / 2;
           if (isProt) {
             ctx.fillStyle = aaBg(ch);
-            ctx.fillRect(screenX(bp), seqTop, pxPerBp, SEQ_H);
+            ctx.fillRect(sx(bp), seqTop, pxPerBp, SEQ_H);
             ctx.fillStyle = "#111";
           } else {
             ctx.fillStyle = NT_COLOR[ch] ?? "#777";
@@ -796,8 +923,8 @@
       } else {
         // collapsed sequence bar
         ctx.fillStyle = cSeqBar;
-        const x1 = Math.max(GUTTER, screenX(0));
-        const x2 = screenX(fr.c.length);
+        const x1 = Math.max(GUTTER, sx(0));
+        const x2 = sx(fr.c.length);
         ctx.globalAlpha = 0.35;
         ctx.fillRect(x1, seqTop + 1, Math.max(1, x2 - x1), SEQBAR_H - 2);
         ctx.globalAlpha = 1;
@@ -805,7 +932,7 @@
 
       // translation track (nucleotide contigs, CDS codons)
       if (fr.transY >= 0 && seq !== undefined) {
-        const ty = fr.transY - viewTop;
+        const ty = fr.transY - vTop;
         ctx.font = letterFont;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -822,10 +949,10 @@
             const hi = Math.max(g0, g2) + 1;
             if (hi < fr.winL || lo > fr.winR) continue;
             const aa = cm.pep[k];
-            const cx = screenX((lo + hi) / 2);
+            const cx = sx((lo + hi) / 2);
             const w = (hi - lo) * pxPerBp;
             ctx.fillStyle = aaBg(aa);
-            ctx.fillRect(screenX(lo), ty, w, TRANS_H);
+            ctx.fillRect(sx(lo), ty, w, TRANS_H);
             ctx.fillStyle = aa === "*" ? "#fff" : "#111";
             if (w >= 5) ctx.fillText(aa, cx, ty + TRANS_H / 2 + 0.5);
           }
@@ -835,11 +962,18 @@
       // feature lanes
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.font = "10px system-ui, sans-serif";
+      ctx.font = featFont;
+      // Rightmost x already claimed by an outside label, per lane. `placed` is in
+      // left-to-right order within a lane (the layout sorts by start), so one
+      // running value per lane is enough.
+      const labelRight = new Map<number, number>();
       for (const p of fr.lay.placed) {
         const f = p.f;
         if (f.end < fr.winL || f.start > fr.winR) continue;
-        const laneTop = fr.laneBaseY - viewTop + (fr.lay.maxLane - p.lane) * LANE_H + (LANE_H - FEAT_H) / 2;
+        // Lane 0 is drawn at the bottom; within a slot the outside-label strip sits
+        // above the feature row.
+        const laneTop =
+          fr.laneBaseY - vTop + (fr.lay.maxLane - p.lane) * laneSlotH + outsideLabelH + (laneH - FEAT_H) / 2;
         // parts + connectors
         const sp = [...f.parts].sort((a, b) => a.start - b.start);
         let term = -1;
@@ -854,14 +988,14 @@
           const gap = sp[i + 1].start - sp[i].end;
           if (gap > 0 && gap < fr.c.length * 0.5) {
             ctx.beginPath();
-            ctx.moveTo(screenX(sp[i].end), laneTop + FEAT_H / 2);
-            ctx.lineTo(screenX(sp[i + 1].start), laneTop + FEAT_H / 2);
+            ctx.moveTo(sx(sp[i].end), laneTop + FEAT_H / 2);
+            ctx.lineTo(sx(sp[i + 1].start), laneTop + FEAT_H / 2);
             ctx.stroke();
           }
         }
-        const isSel = selected?.contigIndex === fr.ci && selected?.feat.feat_index === f.feat_index;
+        const isSel = scene.interactive && selected?.contigIndex === fr.ci && selected?.feat.feat_index === f.feat_index;
         for (let i = 0; i < sp.length; i++) {
-          const x = screenX(sp[i].start);
+          const x = sx(sp[i].start);
           const w = Math.max(1.5, (sp[i].end - sp[i].start) * pxPerBp);
           const mode = i === term ? (f.strand === 1 ? "right" : "left") : "box";
           drawArrow(ctx, x, laneTop, w, FEAT_H, mode);
@@ -871,48 +1005,131 @@
           ctx.strokeStyle = isSel ? cAccent : "rgba(0,0,0,0.35)";
           ctx.stroke();
         }
-        // label if it fits
         const fw = (f.end - f.start) * pxPerBp;
-        if (fw > 34) {
-          const lx = Math.max(GUTTER + 2, screenX(f.start) + 4);
+        // inside label: clipped to the feature box, only when it has room
+        if (labelPlacement !== "outside" && fw > 34) {
+          const lx = Math.max(GUTTER + 2, sx(f.start) + 4);
           ctx.fillStyle = labelColor(f.color);
+          ctx.textAlign = "left";
           ctx.save();
           ctx.beginPath();
-          ctx.rect(screenX(f.start), laneTop, fw, FEAT_H);
+          ctx.rect(sx(f.start), laneTop, fw, FEAT_H);
           ctx.clip();
           ctx.fillText(f.label, lx, laneTop + FEAT_H / 2 + 0.5);
           ctx.restore();
         }
+        // outside label: centred over the feature in its own strip, unclipped.
+        // Neighbours in the same lane would otherwise overprint each other, so a
+        // label is skipped when it would collide with the last one drawn there.
+        if (labelPlacement !== "inside" && fw > 2) {
+          // Centre on the visible part of the feature, so a feature running off
+          // the edge still labels the part you can see.
+          const l = Math.max(sx(f.start), GUTTER);
+          const r = Math.min(sx(f.end), vW);
+          const mid = (l + r) / 2;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "alphabetic";
+          const halfW = ctx.measureText(f.label).width / 2;
+          const taken = labelRight.get(p.lane) ?? -Infinity;
+          if (mid - halfW >= taken) {
+            ctx.fillStyle = cText;
+            ctx.fillText(f.label, mid, laneTop - 2);
+            labelRight.set(p.lane, mid + halfW + 4);
+          }
+          ctx.textBaseline = "middle";
+          ctx.textAlign = "left";
+        }
+      }
+    }
+
+    // hover guide: a vertical line at the cursor's bp, so the readout has a mark
+    if (scene.interactive && cursorBp !== null && !dragging) {
+      const gx = sx(cursorBp);
+      if (gx >= GUTTER && gx <= vW) {
+        ctx.strokeStyle = cAccent;
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(gx + 0.5, 0);
+        ctx.lineTo(gx + 0.5, vH);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
       }
     }
     ctx.restore();
 
     // ── gutter (pinned left column) ──
     ctx.fillStyle = cPanel;
-    ctx.fillRect(0, 0, GUTTER, viewH);
+    ctx.fillRect(0, 0, GUTTER, vH);
     ctx.strokeStyle = cBorder;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(GUTTER + 0.5, 0);
-    ctx.lineTo(GUTTER + 0.5, viewH);
+    ctx.lineTo(GUTTER + 0.5, vH);
     ctx.stroke();
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    for (const fr of frame) {
+    for (const fr of frames) {
       // Multi-select highlight for the whole contig row in the gutter.
-      if (contigSel.has(fr.ci)) {
+      if (scene.interactive && contigSel.has(fr.ci)) {
         ctx.fillStyle = "rgba(59,130,246,0.18)";
-        ctx.fillRect(0, fr.yTop - CONTIG_PAD_TOP - viewTop, GUTTER, fr.height - CONTIG_GAP);
+        ctx.fillRect(0, fr.yTop - CONTIG_PAD_TOP - vTop, GUTTER, fr.height - contigGap);
       }
-      const yid = fr.seqY - viewTop + seqTrackH() / 2 + 3;
+      const yid = fr.seqY - vTop + seqTrackH() / 2 + 3;
       ctx.fillStyle = cText;
       ctx.font = "600 11px ui-monospace, monospace";
       ctx.fillText(clip(`${fr.ci + 1}. ${fr.c.id || fr.c.name}`, GUTTER - 8, ctx), 6, yid);
       if (fr.transY >= 0) {
         ctx.fillStyle = cDim;
         ctx.font = "10px system-ui, sans-serif";
-        ctx.fillText("Translation", 6, fr.transY - viewTop + TRANS_H / 2 + 4);
+        ctx.fillText("Translation", 6, fr.transY - vTop + TRANS_H / 2 + 4);
       }
     }
+
+    // ── shared ruler (pinned band across the top, all contigs at once) ──
+    if (sharedRuler) {
+      ctx.fillStyle = cPanel;
+      ctx.fillRect(0, 0, vW, rulerBandH);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(GUTTER, 0, vW - GUTTER, rulerBandH);
+      ctx.clip();
+      drawRuler(rulerBandH - 1, maxContigLen);
+      ctx.restore();
+      ctx.fillStyle = cDim;
+      ctx.font = "10px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(rulerUnitLabel, 6, rulerBandH - 3);
+      ctx.strokeStyle = cBorder;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, rulerBandH + 0.5);
+      ctx.lineTo(vW, rulerBandH + 0.5);
+      ctx.stroke();
+    }
+  }
+
+  function draw() {
+    const cv = canvas;
+    if (!cv || !data || !scrollEl) return;
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(viewW * dpr);
+    cv.height = Math.round(viewH * dpr);
+    cv.style.width = viewW + "px";
+    cv.style.height = viewH + "px";
+    cv.style.left = "0px"; // fills the viewport width; x is handled by viewLeft in-draw
+    cv.style.top = viewTop + "px"; // follows native vertical scroll
+    const ctx = cv.getContext("2d")!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, viewW, viewH);
+    renderScene(ctx, {
+      frames: frame,
+      vLeft: viewLeft, vTop: viewTop, vW: viewW, vH: viewH,
+      pal: palette(),
+      interactive: true,
+      opaque: false,
+    });
   }
 
   function clip(s: string, maxW: number, ctx: CanvasRenderingContext2D): string {
@@ -927,6 +1144,266 @@
     const n = parseInt(m[1], 16);
     const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
     return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#111" : "#fff";
+  }
+
+  // ── SVG backend ──────────────────────────────────────────────────────────────
+  // `renderScene` is written against the canvas API; this records the same calls
+  // as SVG elements instead. Implementing the drawing *interface* rather than
+  // writing a second renderer is what keeps the export honest — there is exactly
+  // one description of what the view looks like, so an SVG can never drift from
+  // the pixels on screen. Only the subset `renderScene` uses is implemented.
+  const xmlEsc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const n2 = (v: number) => (Math.round(v * 100) / 100).toString();
+
+  // Canvas accepts `rgba(...)`; SVG 1.1 renderers (Inkscape, Illustrator) want the
+  // alpha as a separate attribute, so split it out.
+  function splitColor(c: string): { color: string; alpha: number } {
+    const m = /^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/i.exec(c);
+    if (m) return { color: `rgb(${m[1]},${m[2]},${m[3]})`, alpha: parseFloat(m[4]) };
+    return { color: c, alpha: 1 };
+  }
+  function parseFont(f: string): { weight: string; size: number; family: string } {
+    const m = /^\s*(?:(\d+)\s+)?([\d.]+)px\s+(.+)$/.exec(f);
+    if (!m) return { weight: "", size: 10, family: "sans-serif" };
+    return { weight: m[1] ?? "", size: parseFloat(m[2]), family: m[3].trim() };
+  }
+
+  type Rect = { x: number; y: number; w: number; h: number };
+
+  class SvgContext {
+    fillStyle = "#000";
+    strokeStyle = "#000";
+    lineWidth = 1;
+    font = "10px sans-serif";
+    textAlign: CanvasTextAlign = "left";
+    textBaseline: CanvasTextBaseline = "alphabetic";
+    globalAlpha = 1;
+
+    private body: string[] = [];
+    private defs: string[] = [];
+    private path = "";
+    private rects: Rect[] = [];
+    private openGroups = 0;
+    private clipSeq = 0;
+    private stack: { style: string[]; groups: number }[] = [];
+    private meas: CanvasRenderingContext2D;
+
+    constructor(meas: CanvasRenderingContext2D) {
+      this.meas = meas;
+    }
+
+    // no-ops: the SVG is authored in CSS pixels, with no device-pixel scaling
+    setTransform() {}
+    clearRect() {}
+
+    beginPath() {
+      this.path = "";
+      this.rects = [];
+    }
+    moveTo(x: number, y: number) {
+      this.path += `M${n2(x)} ${n2(y)}`;
+    }
+    lineTo(x: number, y: number) {
+      this.path += `L${n2(x)} ${n2(y)}`;
+    }
+    closePath() {
+      this.path += "Z";
+    }
+    rect(x: number, y: number, w: number, h: number) {
+      this.rects.push({ x, y, w, h });
+      this.path += `M${n2(x)} ${n2(y)}H${n2(x + w)}V${n2(y + h)}H${n2(x)}Z`;
+    }
+
+    private paint(attrs: string) {
+      this.body.push(attrs);
+    }
+    fill() {
+      if (!this.path) return;
+      const { color, alpha } = splitColor(this.fillStyle);
+      const a = alpha * this.globalAlpha;
+      this.paint(
+        `<path d="${this.path}" fill="${xmlEsc(color)}"${a < 1 ? ` fill-opacity="${n2(a)}"` : ""}/>`,
+      );
+    }
+    stroke() {
+      if (!this.path) return;
+      const { color, alpha } = splitColor(this.strokeStyle);
+      const a = alpha * this.globalAlpha;
+      this.paint(
+        `<path d="${this.path}" fill="none" stroke="${xmlEsc(color)}" stroke-width="${n2(this.lineWidth)}"` +
+          `${a < 1 ? ` stroke-opacity="${n2(a)}"` : ""}/>`,
+      );
+    }
+    fillRect(x: number, y: number, w: number, h: number) {
+      if (w <= 0 || h <= 0) return;
+      const { color, alpha } = splitColor(this.fillStyle);
+      const a = alpha * this.globalAlpha;
+      this.paint(
+        `<rect x="${n2(x)}" y="${n2(y)}" width="${n2(w)}" height="${n2(h)}" fill="${xmlEsc(color)}"` +
+          `${a < 1 ? ` fill-opacity="${n2(a)}"` : ""}/>`,
+      );
+    }
+    clip() {
+      const id = `c${this.clipSeq++}`;
+      const rs = this.rects
+        .map((r) => `<rect x="${n2(r.x)}" y="${n2(r.y)}" width="${n2(r.w)}" height="${n2(r.h)}"/>`)
+        .join("");
+      this.defs.push(`<clipPath id="${id}">${rs}</clipPath>`);
+      this.body.push(`<g clip-path="url(#${id})">`);
+      this.openGroups++;
+    }
+    fillText(text: string, x: number, y: number) {
+      if (!text) return;
+      const { weight, size, family } = parseFont(this.font);
+      const { color, alpha } = splitColor(this.fillStyle);
+      const a = alpha * this.globalAlpha;
+      const anchor =
+        this.textAlign === "center" ? "middle" : this.textAlign === "right" || this.textAlign === "end" ? "end" : "start";
+      // Canvas "middle" is the em-box centre; SVG's nearest equivalent is `central`.
+      const base = this.textBaseline === "middle" ? ` dominant-baseline="central"` : "";
+      this.paint(
+        `<text x="${n2(x)}" y="${n2(y)}" font-family="${xmlEsc(family)}" font-size="${n2(size)}"` +
+          `${weight ? ` font-weight="${weight}"` : ""} text-anchor="${anchor}"${base}` +
+          ` fill="${xmlEsc(color)}"${a < 1 ? ` fill-opacity="${n2(a)}"` : ""}>${xmlEsc(text)}</text>`,
+      );
+    }
+    measureText(t: string): TextMetrics {
+      this.meas.font = this.font;
+      return this.meas.measureText(t);
+    }
+    save() {
+      this.stack.push({
+        style: [this.fillStyle, this.strokeStyle, String(this.lineWidth), this.font, this.textAlign, this.textBaseline, String(this.globalAlpha)],
+        groups: this.openGroups,
+      });
+    }
+    restore() {
+      const s = this.stack.pop();
+      if (!s) return;
+      while (this.openGroups > s.groups) {
+        this.body.push("</g>");
+        this.openGroups--;
+      }
+      [this.fillStyle, this.strokeStyle] = [s.style[0], s.style[1]];
+      this.lineWidth = Number(s.style[2]);
+      this.font = s.style[3];
+      this.textAlign = s.style[4] as CanvasTextAlign;
+      this.textBaseline = s.style[5] as CanvasTextBaseline;
+      this.globalAlpha = Number(s.style[6]);
+    }
+
+    toSvg(w: number, h: number): string {
+      while (this.openGroups > 0) {
+        this.body.push("</g>");
+        this.openGroups--;
+      }
+      return (
+        `<?xml version="1.0" encoding="UTF-8"?>\n` +
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${n2(w)}" height="${n2(h)}" ` +
+        `viewBox="0 0 ${n2(w)} ${n2(h)}">` +
+        (this.defs.length ? `<defs>${this.defs.join("")}</defs>` : "") +
+        this.body.join("") +
+        `</svg>\n`
+      );
+    }
+  }
+
+  // ── image export (SVG / PNG) ─────────────────────────────────────────────────
+  let exportOpen = $state(false);
+  let exportFormat = $state<"svg" | "png">("svg");
+  let exportScope = $state<"view" | "all">("view");
+  let exportBg = $state<"theme" | "white" | "none">("white");
+  let exportScale = $state(2);
+  let exporting = $state(false);
+  let exportMsg = $state<string | null>(null);
+
+  // The window to render. "view" is exactly what is on screen; "all" is every
+  // contig at the current zoom, over the full track width.
+  const exportGeom = $derived.by(() => {
+    if (exportScope === "all") {
+      return {
+        vLeft: 0,
+        vTop: 0,
+        vW: Math.max(1, Math.ceil(GUTTER + trackW)),
+        vH: Math.max(1, Math.ceil(vlayout.total)),
+      };
+    }
+    return { vLeft: viewLeft, vTop: viewTop, vW: Math.round(viewW), vH: Math.round(viewH) };
+  });
+  const exportPxW = $derived(Math.round(exportGeom.vW * (exportFormat === "png" ? exportScale : 1)));
+  const exportPxH = $derived(Math.round(exportGeom.vH * (exportFormat === "png" ? exportScale : 1)));
+  // Browsers refuse to allocate a canvas past ~16k on a side (and past a total
+  // area cap); SVG has no such limit, so only PNG is blocked.
+  const pngTooBig = $derived(
+    exportFormat === "png" && (exportPxW > 16384 || exportPxH > 16384 || exportPxW * exportPxH > 1.2e8),
+  );
+  // Letters only draw for contigs whose sequence has been fetched (they load
+  // lazily as you scroll), so a whole-file export at letter zoom may miss some.
+  const exportSeqWarning = $derived(
+    exportScope === "all" && showLetters && !!data && data.contigs.some((_, i) => seqCache[i] === undefined),
+  );
+
+  function exportPalette(): Palette {
+    if (exportBg === "theme") return palette();
+    const p = palette();
+    return { ...p, text: "#111111", dim: "#666666", border: "#cccccc", panel: "#ffffff", bg: "#ffffff" };
+  }
+  function exportScene(): Scene {
+    const g = exportGeom;
+    return {
+      frames: computeFrames(g.vTop, g.vH, g.vLeft, g.vW),
+      vLeft: g.vLeft,
+      vTop: g.vTop,
+      vW: g.vW,
+      vH: g.vH,
+      pal: exportPalette(),
+      interactive: false,
+      opaque: exportBg !== "none",
+    };
+  }
+  function exportBaseName(): string {
+    const base = (path.split(/[\\/]/).pop() ?? "contigs").replace(/\.[^.]+$/, "");
+    return `${base}_contigs`;
+  }
+
+  async function doExport() {
+    if (!data || exporting || pngTooBig) return;
+    exporting = true;
+    exportMsg = null;
+    try {
+      const g = exportGeom;
+      const scene = exportScene();
+      if (exportFormat === "svg") {
+        const meas = document.createElement("canvas").getContext("2d")!;
+        const sctx = new SvgContext(meas);
+        renderScene(sctx as unknown as Ctx2D, scene);
+        const saved = await saveTextFile(`${exportBaseName()}.svg`, "svg", "SVG image", sctx.toSvg(g.vW, g.vH));
+        exportMsg = saved ? `saved ${saved}` : null;
+      } else {
+        const cv = document.createElement("canvas");
+        cv.width = exportPxW;
+        cv.height = exportPxH;
+        const ctx = cv.getContext("2d");
+        if (!ctx) throw new Error("could not allocate a canvas that large");
+        ctx.setTransform(exportScale, 0, 0, exportScale, 0, 0);
+        renderScene(ctx, scene);
+        const url = cv.toDataURL("image/png");
+        const saved = await saveBinaryFile(
+          `${exportBaseName()}.png`, "png", "PNG image", url.slice(url.indexOf(",") + 1),
+        );
+        exportMsg = saved ? `saved ${saved}` : null;
+      }
+      if (exportMsg) {
+        exportOpen = false;
+        const done = exportMsg;
+        setTimeout(() => exportMsg === done && (exportMsg = null), 4000);
+      }
+    } catch (e) {
+      exportMsg = "export failed: " + String(e);
+    } finally {
+      exporting = false;
+    }
   }
 
   // ── redraw plumbing ───────────────────────────────────────────────────────────
@@ -959,6 +1436,15 @@
     void selRange;
     void selected;
     void contigSel;
+    // Appearance options that change only the painting, never the track heights,
+    // do not reach us through `frame` — `renderScene` runs inside a rAF callback,
+    // so its own reads are not tracked. Without these the ruler would keep
+    // showing bp after a switch to kb until something else forced a repaint.
+    void rulerUnits;
+    void labelFontSize;
+    void rulerFontSize;
+    void labelPlacement;
+    void sharedRuler;
     // Batch-fetch the visible window's sequences in one call (with overscan) so
     // scrolling doesn't fire one backend round-trip per contig.
     if (showLetters && frames.length) ensureSeqRange(frames[0].ci, frames[frames.length - 1].ci);
@@ -1140,6 +1626,120 @@
         {#if canEdit}
           <button onclick={() => (addOpen = !addOpen)}>{addOpen ? "Cancel add" : "Add annotation"}</button>
         {/if}
+        <div class="popwrap">
+          <button onclick={() => { optsOpen = !optsOpen; exportOpen = false; }} title="Appearance options">View ▾</button>
+          {#if optsOpen}
+            <div class="pop">
+              <div class="pop-head">View options<button class="pop-x" onclick={() => (optsOpen = false)} aria-label="Close">×</button></div>
+              <label class="orow">
+                Lane spacing
+                <input type="range" min="12" max="48" step="1" bind:value={laneH} />
+                <span class="onum">{laneH}px</span>
+              </label>
+              <label class="orow">
+                Contig spacing
+                <input type="range" min="0" max="64" step="1" bind:value={contigGap} />
+                <span class="onum">{contigGap}px</span>
+              </label>
+              <label class="orow">
+                Ruler font
+                <input type="range" min="7" max="18" step="1" bind:value={rulerFontSize} />
+                <span class="onum">{rulerFontSize}px</span>
+              </label>
+              <label class="orow">
+                Label font
+                <input type="range" min="7" max="18" step="1" bind:value={labelFontSize} />
+                <span class="onum">{labelFontSize}px</span>
+              </label>
+              <label class="orow">
+                Ruler units
+                <select bind:value={rulerUnits}>
+                  <option value="auto">auto</option>
+                  <option value="bp">bp</option>
+                  <option value="kb">kb</option>
+                </select>
+              </label>
+              <label class="orow">
+                Feature labels
+                <select bind:value={labelPlacement}>
+                  <option value="inside">inside</option>
+                  <option value="outside">outside</option>
+                  <option value="both">both</option>
+                </select>
+              </label>
+              <label class="orow check">
+                <input type="checkbox" bind:checked={sharedRuler} />
+                Single shared ruler
+              </label>
+              <div class="pop-foot"><button onclick={resetViewOptions}>Reset</button></div>
+            </div>
+          {/if}
+        </div>
+        <div class="popwrap">
+          <button onclick={() => { exportOpen = !exportOpen; optsOpen = false; }} title="Export the view as an image">Export ▾</button>
+          {#if exportOpen}
+            <div class="pop">
+              <div class="pop-head">Export image<button class="pop-x" onclick={() => (exportOpen = false)} aria-label="Close">×</button></div>
+              <label class="orow">
+                Format
+                <select bind:value={exportFormat}>
+                  <option value="svg">SVG (vector)</option>
+                  <option value="png">PNG (raster)</option>
+                </select>
+              </label>
+              <label class="orow">
+                Region
+                <select bind:value={exportScope}>
+                  <option value="view">Current view</option>
+                  <option value="all">All contigs, full width</option>
+                </select>
+              </label>
+              <label class="orow">
+                Background
+                <select bind:value={exportBg}>
+                  <option value="white">White</option>
+                  <option value="theme">Match theme</option>
+                  <option value="none">Transparent</option>
+                </select>
+              </label>
+              {#if exportFormat === "png"}
+                <label class="orow">
+                  Scale
+                  <select bind:value={exportScale}>
+                    <option value={1}>1×</option>
+                    <option value={2}>2×</option>
+                    <option value={3}>3×</option>
+                    <option value={4}>4×</option>
+                  </select>
+                </label>
+              {/if}
+              <div class="ohint">{exportPxW.toLocaleString()} × {exportPxH.toLocaleString()} px</div>
+              {#if pngTooBig}
+                <div class="ohint warn">Too large for a PNG — lower the scale, zoom out, or export SVG.</div>
+              {/if}
+              {#if exportSeqWarning}
+                <div class="ohint warn">Sequence letters render only for contigs already loaded; scroll through the file first, or zoom out.</div>
+              {/if}
+              <div class="pop-foot">
+                <button class="apply" onclick={doExport} disabled={exporting || pngTooBig}>
+                  {exporting ? "Exporting…" : "Save…"}
+                </button>
+              </div>
+            </div>
+          {/if}
+        </div>
+        {#if exportMsg}<span class="dim">{exportMsg}</span>{/if}
+      </div>
+
+      <div class="coords">
+        {#if selCoords && hasSel}
+          <span class="coord"><b>sel</b> {selCoords} <span class="dim">({(selRange!.hi - selRange!.lo).toLocaleString()} {selUnit})</span></span>
+        {:else if caretLabel}
+          <span class="coord"><b>caret</b> {caretLabel}</span>
+        {/if}
+        {#if cursorLabel}
+          <span class="coord"><b>pos</b> {cursorLabel}</span>
+        {/if}
       </div>
 
       <div class="filters">
@@ -1230,9 +1830,27 @@
         <b>{selected.feat.kind}</b> · {selected.feat.label}
         <button class="ep-x" onclick={() => (selected = null)} aria-label="Close">×</button>
       </div>
+      <!-- The same fields the hover tooltip shows, pinned: clicking a feature to
+           recolour it must not cost you the annotation you were reading. -->
+      <div class="ep-detail">
+        <div class="tt-row"><b>contig</b> {data?.contigs[selected.contigIndex].id || data?.contigs[selected.contigIndex].name}</div>
+        <div class="tt-row"><b>location</b> {(selected.feat.start + 1).toLocaleString()}:{selected.feat.end.toLocaleString()} ({(selected.feat.end - selected.feat.start).toLocaleString()} bp)</div>
+        <div class="tt-row"><b>strand</b> {selected.feat.strand === -1 ? "−" : selected.feat.strand === 1 ? "+" : "."}</div>
+        {#if selected.feat.parts.length > 1}
+          <div class="tt-row"><b>parts</b> {selected.feat.parts.map((p) => `${p.start + 1}:${p.end}`).join(", ")}</div>
+        {/if}
+        {#if selected.feat.database !== null}<div class="tt-row"><b>database</b> {selected.feat.database}</div>{/if}
+        {#each selected.feat.qualifiers as [k, v] (k)}
+          <div class="tt-row"><b>{k}</b> {v}</div>
+        {/each}
+      </div>
       <div class="ep-body">
-        <label>Color <input type="color" value={selected.feat.color} onchange={(e) => applyColor(e.currentTarget.value)} /></label>
-        <button class="ep-remove" onclick={removeSelected}>Remove</button>
+        {#if canEdit}
+          <label>Color <input type="color" value={selected.feat.color} onchange={(e) => applyColor(e.currentTarget.value)} /></label>
+          <button class="ep-remove" onclick={removeSelected}>Remove</button>
+        {:else}
+          <span class="dim">Read-only (GenBank files can be edited)</span>
+        {/if}
       </div>
     </div>
   {/if}
@@ -1413,6 +2031,100 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     padding: 8px 10px;
     min-width: 200px;
+    max-width: 440px;
+  }
+  .ep-detail {
+    max-height: 40vh;
+    overflow: auto;
+    font-size: 12px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .coords {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .coord b {
+    color: var(--text-dim);
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .popwrap {
+    position: relative;
+  }
+  .pop {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    z-index: 30;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    padding: 8px 10px;
+    min-width: 250px;
+  }
+  .pop-head {
+    display: flex;
+    align-items: center;
+    font-weight: 600;
+    font-size: 12.5px;
+    margin-bottom: 6px;
+  }
+  .pop-x {
+    margin-left: auto;
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    font-size: 15px;
+    padding: 0 3px;
+  }
+  .orow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    margin: 4px 0;
+  }
+  .orow input[type="range"] {
+    flex: 1;
+    min-width: 80px;
+  }
+  .orow select {
+    margin-left: auto;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 12px;
+  }
+  .orow.check {
+    gap: 6px;
+  }
+  .onum {
+    width: 40px;
+    text-align: right;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .ohint {
+    font-size: 11.5px;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+  .ohint.warn {
+    color: #d08700;
+  }
+  .pop-foot {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
   }
   .ep-head {
     display: flex;

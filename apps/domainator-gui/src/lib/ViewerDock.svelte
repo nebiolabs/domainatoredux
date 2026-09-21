@@ -3,7 +3,7 @@
   import { openFileWindow } from "./api";
   import { viewsFor } from "./viewers/registry";
   import type { OpenTab } from "./types";
-  import { openContextMenu, SEP, type CtxItem } from "./contextmenu.svelte";
+  import { openContextMenu, SEP, type CtxItem } from "./ctxmenu.svelte";
   import { copyText } from "./clipboard";
 
   // A new window takes a visible moment to appear; without this the ⧉ click

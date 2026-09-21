@@ -31,3 +31,5 @@ tar = "0.4"
 zip = "2"
 tauri-plugin-window-state = "2.4.1"
 tauri-plugin-opener = "2.5.5"
+# `save_binary_file`: the JSON IPC bridge carries the PNG payload base64-encoded.
+base64 = "0.22"

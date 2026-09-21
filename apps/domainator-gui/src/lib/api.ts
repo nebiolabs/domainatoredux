@@ -128,6 +128,18 @@ export const saveTextFile = (
 ): Promise<string | null> =>
   invoke("save_text_file", { defaultName, extension, filterName, contents });
 
+/// Native "Save As" dialog + write binary data to disk. `contentsBase64` is the
+/// payload as standard base64 (no data: prefix) — the IPC bridge is JSON, so a
+/// raw byte array would cost ~4x the bytes and a lot of parse time for a
+/// multi-megabyte PNG. Returns the saved path, or null if the user cancelled.
+export const saveBinaryFile = (
+  defaultName: string,
+  extension: string,
+  filterName: string,
+  contentsBase64: string,
+): Promise<string | null> =>
+  invoke("save_binary_file", { defaultName, extension, filterName, contentsBase64 });
+
 export type EnumRow = Record<string, string | number | null>;
 
 export const runEnumReport = (

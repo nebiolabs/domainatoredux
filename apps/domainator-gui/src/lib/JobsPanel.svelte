@@ -2,7 +2,7 @@
   import { ws } from "./state.svelte";
   import type { JobInfo } from "./types";
   import ConfirmDialog from "./ConfirmDialog.svelte";
-  import { openContextMenu, SEP, type CtxItem } from "./contextmenu.svelte";
+  import { openContextMenu, SEP, type CtxItem } from "./ctxmenu.svelte";
   import { copyText } from "./clipboard";
   import { revealInFileManager } from "./api";
   import { ui } from "./ui.svelte";
