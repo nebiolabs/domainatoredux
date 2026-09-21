@@ -1,0 +1,22 @@
+# The docs are plain markdown under `docs/`, so every page also renders on GitHub.
+# `src = "docs"` points mdbook at them in place rather than a separate `docs/src/`
+# tree, which keeps existing links (notably to docs/parity.md) working.
+[book]
+title = "Domainator (Rust)"
+description = "Protein-domain, genome-neighborhood and sequence-similarity-network analysis."
+src = "docs"
+language = "en"
+
+[build]
+# Inside target/, which .gitignore already covers.
+build-dir = "target/book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+git-repository-url = "https://github.com/nebiolabs/domainatoredux"
+edit-url-template = "https://github.com/nebiolabs/domainatoredux/edit/main/{path}"
+
+[output.html.fold]
+enable = true
+level = 1

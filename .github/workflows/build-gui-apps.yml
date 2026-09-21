@@ -73,6 +73,16 @@ jobs:
             artifact_globs: |
               target/x86_64-pc-windows-msvc/release/domainator-gui.exe
               target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          - app_id: domainator-gui
+            app_path: apps/domainator-gui
+            package_name: domainator-gui
+            platform: linux-x64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bundle_args: --bundles deb,appimage
+            artifact_globs: |
+              target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+              target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
           # Linux -> Windows GNU cross-build (experimental, unsigned; verified to
           # build + bundle an NSIS installer from Ubuntu). Cheaper than a Windows
           # runner, but ship signed MSVC builds. Uncomment to enable.
@@ -122,6 +132,17 @@ jobs:
           Pop-Location
           "LIB=$stubDir;$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      # Tauri v2 on Linux renders through WebKitGTK, and `tauri build` needs the
+      # -dev packages plus patchelf to assemble the AppImage. No appindicator
+      # packages: neither app declares a `trayIcon`.
+      - name: Install Linux GUI build dependencies
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt update
+          sudo apt install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev librsvg2-dev patchelf \
+            build-essential file
+
       - name: Install Windows GNU cross-build tools
         if: matrix.target == 'x86_64-pc-windows-gnu'
         run: |
@@ -149,3 +170,46 @@ jobs:
           name: ${{ matrix.app_id }}-${{ matrix.platform }}
           if-no-files-found: error
           path: ${{ matrix.artifact_globs }}
+
+  # The GUI installers above carry no command-line tool, but the README sends users to
+  # the Releases page for both. These are the pure-Rust crates, so this job needs none
+  # of the WebKitGTK stack the GUI build installs.
+  cli:
+    name: domainator CLI (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            os: ubuntu-latest
+            bin: target/release/domainator
+          - platform: macos-arm64
+            os: macos-14
+            bin: target/release/domainator
+          - platform: windows-x64
+            os: windows-latest
+            bin: target/release/domainator.exe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          key: cli-${{ matrix.platform }}
+
+      - name: Build CLI
+        run: cargo build --release -p domainator-cli
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: domainator-cli-${{ matrix.platform }}
+          if-no-files-found: error
+          path: ${{ matrix.bin }}

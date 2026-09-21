@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A from-scratch **pure-Rust** rewrite of `domainator`, a Python bioinformatics suite for protein-domain / genome-neighborhood analysis and building sequence similarity networks (SSNs). Goals (see `README.md`): cross-platform (incl. Windows), a single `domainator <tool> [opts]` executable, a Tauri GUI (**built** — `apps/domainator-gui/`), and easier agentic integration.
+A from-scratch **pure-Rust** rewrite of `domainator`, a Python bioinformatics suite for protein-domain / genome-neighborhood analysis and building sequence similarity networks (SSNs). Goals (see `README.md`, now a user-facing front page): cross-platform (incl. Windows), a single `domainator <tool> [opts]` executable, a Tauri GUI (**built** — `apps/domainator-gui/`), and easier agentic integration.
 
 **Hard requirement:** on-disk compatibility with files produced by the original Python tool — GenBank, HDF5 matrices, and formatted databases (shards / BGZF / `.didx` indexes). Compatibility is **semantic** (re-readable by the original, equal under the Python suite's comparators), *not* byte-identical — see the `preserve_order` note under Architecture for why JSON is compared parsed.
 
@@ -34,7 +34,8 @@ existing ones cover Tauri IPC signatures, parity-mirroring parameter lists, and 
 (`seq-dist`, `compare-contigs`, `transform-matrix`, `build-ssn`, `build-ssn-viewer`,
 `matrix-report`, `ssn-navigator`); reports (`enum-report`, `summary-report`); and the
 HMM family (`hmmer-compare`, `hmmer-report`, `hmmer-select`, `hmmer-build`,
-`hmmer-search`). `README.md`'s per-tool table is the authoritative coverage ledger.
+`hmmer-search`). `docs/porting-status.md` holds the per-tool coverage ledger (keyed by upstream Python
+filename), moved there out of `README.md` when the docs became user-facing.
 
 CLI flags use the Python suite's **underscore** names (e.g. `--max_overlap`,
 `--dense_text`, `--whole_contig`, `-Z`/`--z`), set explicitly via clap `long = "..."` —
@@ -59,6 +60,16 @@ validated post-merge so they can come from the config file).
 `matrix-report` and `summary-report` write **one JSON object** with a stable shape;
 `ssn-navigator` always writes JSON. In every case `--json` takes a path (`-` = stdout) and
 is **independent of `-o`**, so a run can produce TSV/text and JSON together.
+
+**Documentation** lives in `docs/`, which is an **mdbook** (`book.toml` at the repo root
+sets `src = "docs"`, so every page is also plain markdown that renders on GitHub).
+User-facing: `installation`, `getting-started`, `concepts`, `cli-reference`, `examples`,
+`gui`, `file-formats`, `config-and-agents`, `troubleshooting`. Developer-facing:
+`development`, `architecture`, `porting-status`, `parity`. A new page must be listed in
+`docs/SUMMARY.md` — `create-missing = false`, so an entry with no file is a build error.
+`README.md` is a short user-facing front page; keep developer detail out of it.
+`UPSTREAM.md` stays at the repo root because `.github/workflows/check.yml` greps it for
+the upstream pin.
 
 Dev/diagnostic examples live in `crates/domainator-core/examples/` (`offsets`, `didx_tool`, `shards_tool`, `matrix_probe`, ...): `cargo run -p domainator-core --example matrix_probe`.
 

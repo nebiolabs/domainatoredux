@@ -232,7 +232,7 @@ enum Command {
         #[arg(long = "print_config")]
         print_config: bool,
     },
-    /// Remove redundant sequences (hash exact-dedup, or diamond/usearch clustering).
+    /// Remove redundant sequences (hash exact-dedup, or cd-hit/diamond/usearch clustering).
     Deduplicate {
         /// Input GenBank/FASTA file(s).
         #[arg(short, long, num_args = 1..)]
@@ -685,7 +685,7 @@ enum Command {
     },
     /// Compute a similarity matrix between input and reference sequences/profiles.
     SeqDist {
-        /// Input query file (FASTA/GenBank; HMM input needs hmmer_compare, deferred).
+        /// Input query file (FASTA/GenBank/HMM; two HMM files select --algorithm hmmer_compare).
         #[arg(short, long)]
         input: Option<PathBuf>,
         /// Reference file (FASTA/GenBank/HMM). Defaults to the input (all-vs-all).
@@ -718,12 +718,13 @@ enum Command {
         /// Keep at most this many non-zero entries per input row.
         #[arg(short = 'k', long)]
         k: Option<usize>,
-        /// Prune to MST + OR-symmetric kNN edges (integer >= 1; requires reference
-        /// == input and --mode score/bool/efi_score). When set, -k is ignored.
         /// Extra options forwarded to `diamond blastp`, as a JSON dict body without the
         /// outer braces, e.g. --params '"-c":4, "-b":0.4'. A null value is a bare flag.
         #[arg(long)]
         params: Option<String>,
+        /// Prune to MST + OR-symmetric kNN edges (integer >= 0, 0 = spanning tree only;
+        /// requires reference == input and --mode score/bool/efi_score). When set, -k
+        /// is ignored.
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
         /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
@@ -772,7 +773,8 @@ enum Command {
         /// Zero out final scores <= this (default: 0).
         #[arg(long)]
         lb: Option<f64>,
-        /// Prune to MST + OR-symmetric kNN edges (integer >= 1). When set, -k is ignored.
+        /// Prune to MST + OR-symmetric kNN edges (integer >= 0, 0 = spanning tree only).
+        /// When set, -k is ignored.
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
         /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
@@ -817,7 +819,7 @@ enum Command {
         /// Zero out all values <= this after the mode transform.
         #[arg(long)]
         lb: Option<f64>,
-        /// Keep only MST + OR-symmetric kNN edges (integer >= 1).
+        /// Keep only MST + OR-symmetric kNN edges (integer >= 0, 0 = spanning tree only).
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
         /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
@@ -879,7 +881,7 @@ enum Command {
         /// Keep only maximum-spanning-tree edges.
         #[arg(long)]
         mst: bool,
-        /// Keep MST + OR-symmetric kNN edges (integer >= 1).
+        /// Keep MST + OR-symmetric kNN edges (integer >= 0, 0 = spanning tree only).
         #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
         mst_knn: Option<usize>,
         /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this

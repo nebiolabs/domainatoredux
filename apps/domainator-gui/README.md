@@ -5,9 +5,10 @@ a file table, and a tabbed viewer dock, backed by `domainator-core` library
 functions. Frontend is **Svelte 5 + Vite + TypeScript**; backend is thin
 `#[tauri::command]`s delegating to `domainator_core::app_support`.
 
-The full design + phasing lives in the approved plan
-(`~/.claude/plans/let-s-build-a-nice-peppy-valiant.md`). This file tracks
-implementation status and deferred details.
+**This is the developer README** — architecture, persistence model, platform
+validation, and deferred work. The end-user guide to the app (workspace model,
+every viewer, running tools, the panels, and current limitations) is
+[`docs/gui.md`](../../docs/gui.md).
 
 ## Run
 
@@ -475,13 +476,6 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
     concurrent runs saturate every core and starve the renderer.
   - **Per-tool progress events.** `set_job` emits exactly twice per job (start and
     terminal state); there is no progress channel, elapsed time, or output log.
-  - **A native app menu with accelerators.** `tauri.conf.json` defines no menu, so
-    there are no OS-level shortcuts; in-app keyboard handling is limited to Escape /
-    Enter in the modals and Ctrl+C in the contig view. No Ctrl+O / Ctrl+S / Ctrl+W.
-  - **Styled confirm modals.** `JobsPanel` and `FileTable` still use native
-    `window.confirm()` for their three destructive actions. `NameModal.svelte` exists
-    because `window.prompt` is unreliable in Tauri webviews; `confirm` carries the
-    same portability risk and none of the app's styling.
   - **`FileTable` / `FolderTree` virtualization.** Both render every row.
     `TableView`, `EnumReport` and `HmmReport` are virtualized.
   - **Streaming the SSN payload.** `render_ssn_html` returns the whole embedded
