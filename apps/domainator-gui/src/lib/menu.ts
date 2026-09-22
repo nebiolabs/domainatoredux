@@ -72,6 +72,9 @@ export const HANDLERS: Record<MenuId, Handler> = {
   "tools.databases": () => {
     ui.focusPanel = "databases";
   },
+  "tools.reference_dbs": () => {
+    ui.focusPanel = "refdbs";
+  },
   "tools.external": () => {
     ui.focusPanel = "external";
   },
@@ -133,6 +136,7 @@ const SHELL_ONLY = new Set<string>([
   "view.toggle_sidebar",
   "view.toggle_table",
   "tools.databases",
+  "tools.reference_dbs",
   "tools.external",
   "tools.clear_jobs",
   "window.pop_out",

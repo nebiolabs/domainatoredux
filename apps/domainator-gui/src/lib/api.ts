@@ -9,6 +9,8 @@ import type {
   HmmSummary,
   JobInfo,
   MatrixReport,
+  ReferenceDbList,
+  InstalledDb,
   RunResult,
   SourceTrace,
   SummaryStats,
@@ -342,6 +344,35 @@ export const revealInFileManager = (
 ): Promise<void> => invoke("reveal_in_file_manager", { workspaceRoot, path });
 
 export const openAppDataDir = (): Promise<void> => invoke("open_app_data_dir");
+
+// Managed reference databases (UniProt / Pfam). `listReferenceDbs` never touches
+// the network; `checkReferenceDbVersion` is the only call that does so on its own,
+// and only because the user asked.
+export const listReferenceDbs = (): Promise<ReferenceDbList> =>
+  invoke("list_reference_dbs");
+
+export const checkReferenceDbVersion = (id: string): Promise<string> =>
+  invoke("check_reference_db_version", { id });
+
+export const downloadReferenceDb = (
+  id: string,
+  workspaceRoot: string | null,
+): Promise<InstalledDb> => invoke("download_reference_db", { id, workspaceRoot });
+
+export const cancelReferenceDb = (id: string): Promise<void> =>
+  invoke("cancel_reference_db", { id });
+
+export const removeReferenceDb = (
+  id: string,
+  workspaceRoot: string | null,
+): Promise<void> => invoke("remove_reference_db", { id, workspaceRoot });
+
+/// Re-register every installed reference database into a workspace being opened:
+/// they live in the app data dir and are shared, but each workspace keeps its own
+/// registry file.
+export const syncReferenceDbsToWorkspace = (
+  workspaceRoot: string,
+): Promise<number> => invoke("sync_reference_dbs_to_workspace", { workspaceRoot });
 
 /// What the native menu needs in order to grey items out. Sent from the main
 /// window only; `app_menu.rs` ignores it from any other label.

@@ -26,7 +26,8 @@ a folder name, and protected from deletion.
 
 ## The layout
 
-- **Left sidebar** — the folder tree, plus the Jobs, Databases and External tools panels.
+- **Left sidebar** — the folder tree, plus the Jobs, Databases, Reference databases and
+  External tools panels.
 - **File table** — the recognized data files in the selected folder, with type, size and
   record count. Click a row to open it.
 - **Viewer dock** — a tab per open file. Each file type offers one or more **sub-views**,
@@ -100,7 +101,54 @@ formatted database once, and it appears in the reference dropdown of every tool 
 one, from any folder. Each entry shows its molecule type, format and shard count.
 
 The panel registers databases that are *already formatted*; to build one, use
-[`format-db`](cli-reference.md#format-db) on the command line.
+[`format-db`](cli-reference.md#format-db) on the command line — or let the app fetch and
+format one for you, below.
+
+## Reference databases
+
+The **Reference databases** panel downloads and formats the public databases most runs
+start from. Click **Download** and the app fetches the file, converts it to the form the
+tools need, and registers it in the Databases panel, ready for `domainate`,
+`domain-search` and `seq-dist`.
+
+| Database | Download | On disk | What it is |
+| --- | --- | --- | --- |
+| UniProtKB/Swiss-Prot | ≈90 MB | ≈105 MB | Manually reviewed, curated proteins. The one to start with. |
+| UniRef50 | ≈8 GB | ≈9 GB | UniProt clustered at 50% identity. |
+| UniRef90 | ≈30 GB | ≈34 GB | UniProt clustered at 90% identity. |
+| UniProtKB/TrEMBL | ≈38 GB | ≈43 GB | The full unreviewed knowledgebase. Expect hours. |
+| Pfam-A | ≈400 MB | ≈1.6 GB | The Pfam-A profile HMM library. |
+
+Everything but Swiss-Prot asks you to confirm the size first, and any download can be
+cancelled while it runs; a cancelled or failed download leaves nothing behind.
+
+**Free space is checked first.** The panel shows how much room is free on the volume the
+databases live on, and a download that cannot fit is disabled with what it would need —
+no transfer starts only to die three hours in. The "on disk" column above includes the
+`.didx` index, which is about a tenth of a sequence database again. An **update** needs
+more room than a first install: the new copy is written alongside the old one and only
+replaces it at the end, so both exist at the peak. If the platform will not report free
+space, nothing is blocked on it.
+
+**How they are stored.** Sequence databases are written as **BGZF** with a `.didx` index —
+the same formatting [`format-db`](cli-reference.md#format-db) produces, which is what lets
+`domain-search` seek into them instead of rescanning. The published files are plain gzip,
+which is not seekable, so they are recompressed on the way in; that happens in the same
+pass as the download, so a 40 GB database never needs a 250 GB uncompressed intermediate.
+Pfam-A is stored **uncompressed**, because nothing reads a compressed profile library. The
+index is built after the download, as a second pass over the file, and the panel shows it
+as a separate step.
+
+**Versions.** Each database's release (`2026_03` for UniProt, `38.2` for Pfam) is read
+from the publisher's own release file at download time and shown next to it. Nothing is
+checked automatically: press **Check** to ask whether a newer release exists, and if one
+has appeared the row offers **Update**, which re-downloads in place. The answer to the last
+check is remembered, so the panel still shows it after a restart.
+
+The files live in the app's data directory, not in the workspace, so they are downloaded
+once and shared by every workspace you open — opening a new workspace registers the ones
+you already have. Removing a database from this panel deletes the downloaded files;
+removing it from the **Databases** panel only unregisters it from that workspace.
 
 ## External tools
 

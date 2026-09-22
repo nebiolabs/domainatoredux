@@ -102,6 +102,16 @@ keep in particular:
   dialog field that is not a config property is rejected outright by `deny_unknown_fields`.
   `ToolField::role` must be one of `ROLES`, because a role `ToolDialog.svelte` cannot
   render makes the field silently disappear from the form.
+- **`storage_format_matches_what_the_readers_require`** and
+  **`a_gzipped_fasta_is_installed_as_an_indexed_bgzf_database`** (`domainator-gui`,
+  `reference_dbs.rs`) — the managed UniProt/Pfam downloads have no upstream counterpart,
+  and every way of getting their storage wrong still puts a plausible file on disk: a
+  FASTA kept as plain gzip is unseekable (so `domain_search` cannot use the `.didx`
+  written beside it), an HMM library left compressed cannot be opened at all, and an
+  index that disagrees with the BGZF blocks fails only inside a later run. The tests
+  walk the real chain — gzip in, BGZF + `.didx` out, one record read back at each
+  recorded offset. `refs_are_live` (`#[ignore]`d, hits UniProt and EBI) is the only
+  thing that notices a publisher moving a path or changing a release file's shape.
 - **`the_managed_diamond_is_new_enough_for_deduplicate`** and
   **`managed_tools_match_the_core_locator`** (`domainator-gui`) — the External tools panel
   must not install a binary older than `MIN_DIAMOND_VERSION`, or the app hands the user a

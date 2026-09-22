@@ -14,6 +14,7 @@
   import DatabasesPanel from "./lib/DatabasesPanel.svelte";
   import JobsPanel from "./lib/JobsPanel.svelte";
   import ExternalToolsPanel from "./lib/ExternalToolsPanel.svelte";
+  import ReferenceDbsPanel from "./lib/ReferenceDbsPanel.svelte";
   import ContigView from "./lib/viewers/ContigView.svelte";
   import HmmLogo from "./lib/viewers/HmmLogo.svelte";
   import FileWindow from "./lib/FileWindow.svelte";
@@ -518,6 +519,7 @@
     </div>
     <JobsPanel />
     <DatabasesPanel />
+    <ReferenceDbsPanel />
     <ExternalToolsPanel />
   </aside>
 

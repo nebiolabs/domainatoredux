@@ -84,6 +84,7 @@ pub const COMMANDS: &[MenuCommandSpec] = &[
     cmd("view.toggle_table", "Show File Table", Some("CmdOrCtrl+2"), Needs::Nothing),
     // Tools
     cmd("tools.databases", "Manage Databases…", None, Needs::Workspace),
+    cmd("tools.reference_dbs", "Reference Databases…", None, Needs::Nothing),
     cmd("tools.external", "External Tools…", None, Needs::Nothing),
     cmd("tools.clear_jobs", "Clear Job History…", None, Needs::Workspace),
     // Window
@@ -125,7 +126,10 @@ pub const LAYOUT: &[(&str, &[&str])] = &[
     ),
     ("Edit", &["edit.find", SEPARATOR, "edit.preferences"]),
     ("View", &["view.refresh", SEPARATOR, "view.toggle_sidebar", "view.toggle_table"]),
-    ("Tools", &["tools.databases", "tools.external", SEPARATOR, "tools.clear_jobs"]),
+    (
+        "Tools",
+        &["tools.databases", "tools.reference_dbs", "tools.external", SEPARATOR, "tools.clear_jobs"],
+    ),
     ("Window", &["window.pop_out"]),
     ("Help", &["help.check_updates", SEPARATOR, "help.about", SEPARATOR, "help.project", "help.issues"]),
 ];

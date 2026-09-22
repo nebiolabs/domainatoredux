@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app_support::workspace::{classify_file, dot_dir};
 use crate::io::shards::resolve_database_shards;
-use crate::io::{detect_filetype, FileType};
+use crate::io::{detect_compression, detect_filetype, Compression, FileType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseEntry {
@@ -69,16 +69,43 @@ fn looks_nucleic(seq: &[u8]) -> bool {
 }
 
 /// First HMM's alphabet: `protein` (amino) or `nucleic` (dna/rna).
+///
+/// Reads the first profile's header lines only, never the emission matrices: Pfam-A
+/// is ~30k models and 1.6 GB, and parsing all of them to learn that the first one
+/// says `ALPH amino` froze the Databases panel for minutes. HMMER's own default is
+/// amino, so a well-formed profile with no `ALPH` line is protein; a file we cannot
+/// open, or one that never presents a `HMMER3` header, stays `unknown`.
 fn hmm_molecule(path: &str) -> String {
-    use hmmer_pure_rs::alphabet::AlphabetType;
-    match crate::search::hmm_read::read_hmm_file(Path::new(path)).ok().and_then(|h| h.into_iter().next()) {
-        Some(h) => match h.abc_type {
-            AlphabetType::Dna | AlphabetType::Rna => "nucleic".into(),
-            AlphabetType::Amino => "protein".into(),
-            _ => "unknown".into(),
-        },
-        None => "unknown".into(),
+    let Ok(fh) = fs::File::open(path) else { return "unknown".into() };
+    let mut reader = std::io::BufReader::new(fh);
+    let mut line = String::new();
+    let mut saw_header = false;
+    // The header block ends at `HMM` (the match-column key line); ALPH is always
+    // above it, so there is no reason to read further.
+    while {
+        line.clear();
+        std::io::BufRead::read_line(&mut reader, &mut line).unwrap_or(0) > 0
+    } {
+        let trimmed = line.trim_end();
+        if trimmed.starts_with("HMMER3") {
+            saw_header = true;
+            continue;
+        }
+        if !saw_header {
+            return "unknown".into();
+        }
+        if let Some(val) = trimmed.strip_prefix("ALPH") {
+            return match val.trim().to_ascii_lowercase().as_str() {
+                "dna" | "rna" => "nucleic".into(),
+                "amino" => "protein".into(),
+                _ => "unknown".into(),
+            };
+        }
+        if trimmed.split_whitespace().next() == Some("HMM") {
+            break;
+        }
     }
+    if saw_header { "protein".into() } else { "unknown".into() }
 }
 
 /// Classify a database path into a [`DatabaseEntry`] (reads the first shard's
@@ -94,20 +121,45 @@ pub fn classify_database(path: &str) -> Result<DatabaseEntry, String> {
     let shards = resolve_database_shards(p).unwrap_or_else(|_| vec![p.to_path_buf()]);
     let first = shards.first().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string());
 
+    // Only ever read the FIRST record, and only through a reader that understands
+    // the file's compression. A formatted database is routinely tens of gigabytes
+    // (UniProtKB/TrEMBL is ~45 GB as BGZF), so reading it whole to look at record
+    // one is not a slow path, it is a hang; and feeding BGZF bytes to the
+    // uncompressed reader sniffs the gzip container rather than the sequence, which
+    // silently mislabels every compressed protein database as the wrong molecule.
+    //
+    // `None` is plain (non-BGZF) gzip: not seekable, so no reader here can open it
+    // at all, and `unknown` is the honest answer rather than a sniff of the
+    // compressed bytes. It is still a database -- `format` is decided by the name.
+    let compressed: Option<bool> = match detect_compression(Path::new(&first)) {
+        Compression::Bgzf => Some(true),
+        Compression::None => Some(false),
+        Compression::Gzip => None,
+    };
+
     let (format, molecule) = match format {
-        "hmm" => ("hmm".to_string(), hmm_molecule(&first)),
+        "hmm" => {
+            let mol = match compressed {
+                Some(false) => hmm_molecule(&first),
+                // No compressed-HMM reader exists anywhere in the port, BGZF
+                // included -- see `search/hmm_read.rs`.
+                _ => "unknown".into(),
+            };
+            ("hmm".to_string(), mol)
+        }
         "genbank" => {
-            let mol = detect_filetype(Path::new(&first))
-                .filter(|k| *k == FileType::Genbank)
-                .and_then(|_| crate::io::genbank::read_genbank(&first).ok())
-                .and_then(|recs| recs.into_iter().next())
+            let mol = compressed
+                .filter(|_| detect_filetype(Path::new(&first)) == Some(FileType::Genbank))
+                .and_then(|c| crate::io::genbank::GenbankReader::open(&first, 0, c, None).ok())
+                .and_then(|mut recs| recs.next())
+                .and_then(|r| r.ok())
                 .map(|r| if r.is_protein() { "protein".to_string() } else { "nucleic".to_string() })
                 .unwrap_or_else(|| "unknown".into());
             ("genbank".to_string(), mol)
         }
         "fasta" => {
-            let mol = crate::io::fasta::read_fasta(&first, None)
-                .ok()
+            let mol = compressed
+                .and_then(|c| crate::io::fasta::read_fasta_partition(&first, 0, c, 1, None).ok())
                 .and_then(|recs| recs.into_iter().next())
                 .map(|r| if looks_nucleic(&r.seq) { "nucleic".to_string() } else { "protein".to_string() })
                 .unwrap_or_else(|| "unknown".into());
@@ -168,6 +220,58 @@ mod tests {
         let prot = write(&root, "p.faa", ">a\nMKVLAWIYPQRSTHDEF\n");
         let entry = classify_database(&prot).unwrap();
         assert_eq!((entry.format.as_str(), entry.molecule.as_str()), ("fasta", "protein"));
+    }
+
+    /// A formatted database is normally BGZF, and the molecule sniff has to read it
+    /// *as* BGZF. Handing compressed bytes to the uncompressed reader does not fail
+    /// -- it "reads" the gzip container, which is mostly non-letters, and lands on
+    /// `protein` for everything. Every database the app downloads is BGZF, so this
+    /// is the common case, not the exotic one.
+    #[test]
+    fn a_bgzf_database_is_read_through_its_compression() {
+        let root = workspace("bgzf");
+        let path = root.join("d.fasta.bgz");
+        let out = fs::File::create(&path).unwrap();
+        let mut w = bgzf::Writer::new(std::io::BufWriter::new(out), bgzf::CompressionLevel::new(6).unwrap());
+        std::io::Write::write_all(&mut w, b">a desc\nACGTACGTACGTACGT\n").unwrap();
+        std::io::Write::flush(&mut w.finish().unwrap()).unwrap();
+
+        let entry = classify_database(path.to_str().unwrap()).unwrap();
+        assert_eq!((entry.format.as_str(), entry.molecule.as_str()), ("fasta", "nucleic"));
+
+        // Plain (non-BGZF) gzip is not seekable, so nothing can read record one --
+        // but it is still a fasta database by name, and must classify as one. The
+        // body here is deliberately *not* gzip: `.gz` without the BGZF subfield is
+        // exactly what `detect_compression` calls plain gzip, and the point is that
+        // the molecule is reported unknown rather than sniffed out of the bytes.
+        let gz = write(&root, "g.fasta.gz", ">a\nACGTACGTACGT\n");
+        let entry = classify_database(&gz).unwrap();
+        assert_eq!((entry.format.as_str(), entry.molecule.as_str()), ("fasta", "unknown"));
+    }
+
+    /// The alphabet comes out of the first profile's header block alone. Pfam-A is
+    /// ~30k models / 1.6 GB, and the previous full parse made registering it look
+    /// like the app had hung. The `HMM` key line is the stop: anything below it is
+    /// emission matrices.
+    #[test]
+    fn an_hmm_database_is_classified_from_the_first_header_alone() {
+        let root = workspace("hmm");
+
+        let amino = write(&root, "p.hmm", "HMMER3/f [3.4]\nNAME  x\nLENG  10\nALPH  amino\nHMM  A C D\n");
+        assert_eq!(classify_database(&amino).unwrap().molecule, "protein");
+
+        let dna = write(&root, "n.hmm", "HMMER3/f [3.4]\nNAME  x\nALPH  DNA\nHMM  A C G T\n");
+        assert_eq!(classify_database(&dna).unwrap().molecule, "nucleic");
+
+        // HMMER defaults to amino when a profile declares no ALPH.
+        let bare = write(&root, "b.hmm", "HMMER3/f [3.4]\nNAME  x\nHMM  A C D\nsomething\n");
+        assert_eq!(classify_database(&bare).unwrap().molecule, "protein");
+
+        // Not an HMM at all, and a file that does not exist: both `unknown`, never
+        // a guess and never a panic.
+        let junk = write(&root, "j.hmm", "this is not a profile\n");
+        assert_eq!(classify_database(&junk).unwrap().molecule, "unknown");
+        assert_eq!(classify_database("/nonexistent/x.hmm").unwrap().molecule, "unknown");
     }
 
     /// Two different refusals, both of which must be errors rather than a guess:

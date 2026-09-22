@@ -10,12 +10,14 @@ mod cmd_external;
 mod cmd_files;
 mod cmd_open;
 mod cmd_prefs;
+mod cmd_refdb;
 mod cmd_update;
 mod cmd_tools;
 mod cmd_windows;
 mod cmd_workspace;
 mod menu_ids;
 mod external_tools;
+mod reference_dbs;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -36,6 +38,7 @@ pub fn run() {
         )
         .manage(app_menu::MenuRegistry::default())
         .manage(cmd_tools::JobRegistry::default())
+        .manage(cmd_refdb::RefDbRegistry::default())
         .manage(cmd_windows::PendingWindows::default())
         .manage(cmd_files::SeqCacheState::default())
         .manage(cmd_files::RecordCountState::default())
@@ -105,6 +108,12 @@ pub fn run() {
             cmd_windows::standalone_params,
             cmd_external::list_external_tools,
             cmd_external::download_external_tool,
+            cmd_refdb::list_reference_dbs,
+            cmd_refdb::check_reference_db_version,
+            cmd_refdb::download_reference_db,
+            cmd_refdb::cancel_reference_db,
+            cmd_refdb::remove_reference_db,
+            cmd_refdb::sync_reference_dbs_to_workspace,
             app_menu::set_menu_state,
             cmd_about::app_diagnostics,
             cmd_open::open_external_url,

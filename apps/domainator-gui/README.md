@@ -271,6 +271,37 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   constants — a rename on either side would install a binary where nothing looks for
   it. Adding a future dependency (mmseqs2, foldseek, prodigal, …) is just another
   `ToolSpec` in `specs()`.
+- **Reference databases (auto-download).** `reference_dbs.rs` is the data
+  counterpart of `external_tools.rs`: each `DbSpec` names a public database, its
+  download URL, and the publisher's own small release file plus the parser that
+  reads a version out of it. Five entries — **Swiss-Prot**, **UniRef50**,
+  **UniRef90**, **TrEMBL** and **Pfam-A** — all under UniProt's and EBI's
+  `current_release` paths, which is why the version has to be *read* rather than
+  inferred from the URL, and why "update" is the same URL fetched again.
+  `install()` streams the download straight into the storage format in one pass:
+  FASTA sets are gunzipped and recompressed as **BGZF** (plain gzip is not
+  seekable) and then indexed by calling the core's `format_db` with `index: true`,
+  whose fast path writes the `.didx` in place; Pfam-A is **expanded**, because
+  nothing in the port reads a compressed profile library. The single pass is
+  load-bearing: decompressing TrEMBL to disk before recompressing it would need
+  ~250 GB of scratch for a 43 GB result. `check_space` is a free-space preflight
+  (`fs4::available_space`, `default-features = false`) run before any network call;
+  it counts the copy already installed as well as the new one, because an update is
+  written beside the old file and only replaces it at the closing rename, and it
+  refuses only a *certain* shortfall — an unreadable free-space figure never blocks
+  a download. `cmd_refdb.rs` adds the parts the size
+  forces — `refdb-progress` events (a TrEMBL run is hours long) and a per-id cancel
+  flag the download stream itself reads, so a cancel stops at the next read rather
+  than at the end. A finished download is registered into the workspace database
+  registry, and `sync_reference_dbs_to_workspace` re-registers them when another
+  workspace is opened, since the files are shared (`<app_data>/databases/`) but the
+  registry is per-workspace. `ReferenceDbsPanel.svelte` shows the installed release,
+  a **Check** button (nothing polls), **Update** when a check found a newer release,
+  and a size confirmation in front of everything but Swiss-Prot. Guarded by tests
+  over the whole conversion chain (gzip → BGZF → `.didx` → read a record back at
+  each offset), the BGZF-vs-plain-gzip sniff, the cancel error kind (`Interrupted`
+  would be retried away by `io::copy`), and an `#[ignore]`d `refs_are_live` that
+  checks every URL and release parser against the real servers.
 - **All non-trivial commands run off the main thread — and so does anything that
   spins a nested message loop.** Tauri v2 runs synchronous `#[tauri::command]`s on
   the **main thread**, so a slow one stalls *all* IPC (e.g. every tool dialog would

@@ -197,6 +197,56 @@ export interface ExternalToolStatus {
   platform: string;
 }
 
+// A managed reference database (UniProt / Pfam), mirroring `cmd_refdb.rs`.
+
+export interface InstalledDb {
+  id: string;
+  /// The publisher's release string as of the download (`2026_03`, `38.2`).
+  version: string;
+  path: string;
+  bytes: number;
+  installed_at_ms: string;
+}
+
+export interface ReferenceDbStatus {
+  id: string;
+  name: string;
+  description: string;
+  kind: "fasta" | "hmm";
+  file_name: string;
+  url: string;
+  download_bytes: number;
+  disk_bytes: number;
+  /// What must be free to install: `disk_bytes` plus the copy already on disk when
+  /// this is an update, since the old file survives until the closing rename.
+  required_bytes: number;
+  /// False only when the shortfall is certain — an unreadable free-space figure
+  /// reports true rather than blocking the download.
+  enough_space: boolean;
+  needs_confirmation: boolean;
+  installed: InstalledDb | null;
+  latest_version: string | null;
+  checked_at_ms: string | null;
+  update_available: boolean;
+  downloading: boolean;
+}
+
+export interface ReferenceDbList {
+  databases: ReferenceDbStatus[];
+  /// Free space on the volume holding the managed directory, or null if unknown.
+  free_bytes: number | null;
+  dir: string;
+}
+
+/// The `refdb-progress` event payload.
+export interface RefDbProgress {
+  id: string;
+  /// `downloading` | `indexing` | `registering` | `done` | `failed` | `cancelled`.
+  phase: string;
+  done_bytes: number;
+  total_bytes: number;
+}
+
 export interface ToolField {
   name: string;
   label: string;

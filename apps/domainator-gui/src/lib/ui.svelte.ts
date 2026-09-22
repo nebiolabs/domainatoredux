@@ -18,5 +18,5 @@ export const ui = $state({
   sidebarVisible: true,
   tableVisible: true,
   /// Which left-hand panel to expand and scroll to, consumed by that panel.
-  focusPanel: null as "databases" | "external" | null,
+  focusPanel: null as "databases" | "refdbs" | "external" | null,
 });

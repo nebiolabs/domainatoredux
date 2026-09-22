@@ -12,6 +12,7 @@ import {
   registerDatabase,
   renameFile as apiRenameFile,
   rescanTree,
+  syncReferenceDbsToWorkspace,
   unregisterDatabase,
 } from "./api";
 import { clearCache, invalidatePath } from "./cache";
@@ -98,6 +99,15 @@ class WorkspaceStore {
       const info = await openWorkspace(root);
       this.root = info.root;
       this.tree = info.tree;
+      // Reference databases live in the app data dir and are shared across
+      // workspaces, but the registry that tool dropdowns read is per-workspace --
+      // without this, a database already on disk is invisible in a new workspace.
+      // Best-effort: a failure here must not stop the workspace from opening.
+      try {
+        await syncReferenceDbsToWorkspace(info.root);
+      } catch (e) {
+        this.dbError = String(e);
+      }
       await this.loadDatabases();
       await this.loadJobs(); // restore persisted job history for this workspace
       // Auto-select the root folder so the file table isn't empty on open.

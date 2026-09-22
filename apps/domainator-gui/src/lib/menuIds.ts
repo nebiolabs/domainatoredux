@@ -23,6 +23,7 @@ export const MENU_IDS = [
   "view.toggle_sidebar",
   "view.toggle_table",
   "tools.databases",
+  "tools.reference_dbs",
   "tools.external",
   "tools.clear_jobs",
   "window.pop_out",
