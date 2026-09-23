@@ -3,7 +3,7 @@
 //! `*Options` a core tool expects. Keeping this here means the CLI and GUI resolve
 //! parameters identically and can't drift.
 //!
-//! Resolvers are **pure**: file-based inputs (subset lists, colour tables) are read
+//! Resolvers are **pure**: file-based inputs (subset lists, color tables) are read
 //! by the caller and passed in, so this module needs no filesystem access and the
 //! caller keeps control of I/O.
 

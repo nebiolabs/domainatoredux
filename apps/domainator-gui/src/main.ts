@@ -36,7 +36,7 @@ function allowsNativeMenu(target: EventTarget | null): boolean {
 // with no menu of its own simply gets nothing rather than the browser's.
 //
 // Applies uniformly in dev and release — "Inspect Element" is not worth a
-// behavioural difference between the build you test and the build you ship.
+// behavioral difference between the build you test and the build you ship.
 window.addEventListener("contextmenu", (e) => {
   if (e.defaultPrevented) return;
   if (allowsNativeMenu(e.target)) return;

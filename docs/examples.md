@@ -181,14 +181,14 @@ domainator enum-report -i annotated.gb --by domain \
 # dataset-level summary
 domainator summary-report -i annotated.gb -o summary.txt
 
-# colour the features, and a matching legend for the figure
+# color the features, and a matching legend for the figure
 domainator color-genbank -i annotated.gb -o colored.gb \
   --mode domains_and_cdss --color_table_out colors.tsv
 domainator color-table-to-legend -i colors.tsv --svg legend.svg --title Domains
 ```
 
-`colored.gb` opens with its colours intact in the [desktop app's contig
-viewer](gui.md#viewers), in Geneious, or in any GenBank viewer that honours the `Color`
+`colored.gb` opens with its colors intact in the [desktop app's contig
+viewer](gui.md#viewers), in Geneious, or in any GenBank viewer that honors the `Color`
 qualifier.
 
 ## 7. Driving it from a script or an agent

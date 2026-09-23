@@ -147,7 +147,7 @@ The bundles are unsigned. On macOS, open it once with right-click → Open, or:
 xattr -dr com.apple.quarantine /Applications/Domainator.app
 ```
 
-## Cancelling a job in the app doesn't stop it
+## Canceling a job in the app doesn't stop it
 
 Known limitation: cancel stops a job that hasn't started, but a tool already running will
 finish. See [the app's limitations](gui.md#current-limitations).

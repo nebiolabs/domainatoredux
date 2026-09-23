@@ -454,7 +454,7 @@ mod tests {
     ///
     /// Expected values are the output of Python's
     /// `CompoundLocation.circular_envelope(100, strand)` for the same inputs, so this
-    /// is a parity test rather than a lock on current behaviour. It covers the four
+    /// is a parity test rather than a lock on current behavior. It covers the four
     /// branches the accumulator can take: touching parts, disjoint-but-not-crossing
     /// on each strand, and the two origin-crossing pushes.
     #[test]

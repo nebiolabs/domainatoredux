@@ -386,7 +386,7 @@ pub fn is_nucleic_acid_alphabet(abc: hmmer_pure_rs::alphabet::AlphabetType) -> b
 /// on nucleotides, where it silently returns an empty result that looks exactly like
 /// "no homologs found".
 ///
-/// Exactly `1.0` for amino, so protein behaviour is bit-identical.
+/// Exactly `1.0` for amino, so protein behavior is bit-identical.
 pub fn alphabet_score_scale(abc: hmmer_pure_rs::alphabet::AlphabetType) -> f64 {
     use hmmer_pure_rs::alphabet::AlphabetType;
     let k = match abc {

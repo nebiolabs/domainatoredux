@@ -12,7 +12,7 @@
 //! [`slider_stops`] — rather than read out of the file. The viewer does the same thing
 //! in JavaScript. A caller therefore picks its own `max_merge_events` at the point of
 //! display instead of inheriting one chosen when the file was written. Pre-v6 bundles
-//! carry the derived keys as well; they are **ignored in favour of recomputing**, so a
+//! carry the derived keys as well; they are **ignored in favor of recomputing**, so a
 //! capped series written into an old file cannot silently limit what is shown now.
 //!
 //! A v4 bundle may also carry a top-level `app_state` section written by the HTML
@@ -182,7 +182,7 @@ pub fn merge_event_series(
     filter_merge_event_rows(rows, max_merge_events)
 }
 
-/// The centred moving sum of split impact, over the **uncapped** rows.
+/// The centered moving sum of split impact, over the **uncapped** rows.
 pub fn moving_sum(bundle: &Value, event_rows: Option<&[MergeEvent]>) -> MovingSum {
     let derived;
     let rows = match event_rows {
@@ -578,7 +578,7 @@ mod tests {
     #[test]
     fn a_stale_capped_series_in_a_pre_v6_bundle_is_ignored() {
         // The regression this change exists to prevent: a v5 file stored a series
-        // capped by whoever wrote it, and honouring that would silently limit what a
+        // capped by whoever wrote it, and honoring that would silently limit what a
         // caller can see now. Everything is recomputed from the merge order instead.
         let mut bundle = bundle_from_matrix(&six_node_matrix());
         let full = merge_event_rows(&bundle, None);

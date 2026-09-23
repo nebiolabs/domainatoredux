@@ -276,7 +276,7 @@ mod tests {
 
     /// Two different refusals, both of which must be errors rather than a guess:
     /// an extension nothing recognizes, and one that is recognized but is not a
-    /// sequence database (a matrix, a colour table, a notes file).
+    /// sequence database (a matrix, a color table, a notes file).
     #[test]
     fn non_databases_are_refused_rather_than_guessed() {
         let root = workspace("unknown");

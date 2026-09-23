@@ -65,7 +65,7 @@ column. Both extracted `.dmp` files and a `taxdump.tar.gz` are accepted.
 | [I/O and diagnostics](#io-and-diagnostics) | `inspect`, `convert`, `genbank-to-fasta`, `schema` |
 | [Annotation and search](#annotation-and-search) | `domainate`, `domain-search`, `filter-domains` |
 | [Selection and extraction](#selection-and-extraction) | `select-by-cds`, `select-by-contig`, `select-by-coord`, `extract-domains`, `extract-peptides`, `extract-unannotated`, `trim-contigs`, `sort-contigs`, `clean-sequences`, `deduplicate` |
-| [Colour](#colour) | `color-genbank`, `color-table-to-legend` |
+| [Color](#color) | `color-genbank`, `color-table-to-legend` |
 | [Matrices and networks](#matrices-and-networks) | `seq-dist`, `compare-contigs`, `transform-matrix`, `build-ssn`, `build-ssn-viewer` |
 | [Reports](#reports) | `enum-report`, `summary-report`, `matrix-report`, `ssn-navigator` |
 | [HMM profiles](#hmm-profiles) | `hmmer-build`, `hmmer-select`, `hmmer-search`, `hmmer-compare`, `hmmer-report` |
@@ -303,16 +303,16 @@ domainator deduplicate -i proteins.fasta -o representatives.fasta \
 
 ---
 
-## Colour
+## Color
 
 ### `color-genbank`
 
-Assign hex colours to features via the `Color` qualifier, which viewers (including
-Geneious and the [desktop app](gui.md)) honour. `--mode domains|cdss|domains_and_cdss`
-chooses what gets coloured; colours come from a `--color_table` or are assigned
+Assign hex colors to features via the `Color` qualifier, which viewers (including
+Geneious and the [desktop app](gui.md)) honor. `--mode domains|cdss|domains_and_cdss`
+chooses what gets colored; colors come from a `--color_table` or are assigned
 automatically and can be saved with `--color_table_out` so runs stay consistent.
 `--search_hit_color` highlights `Domain_Search` features; `--clear` strips existing
-colours.
+colors.
 
 ```bash
 domainator color-genbank -i annotated.gb -o colored.gb \
@@ -321,7 +321,7 @@ domainator color-genbank -i annotated.gb -o colored.gb \
 
 ### `color-table-to-legend`
 
-Render a colour table as an SVG legend to accompany a figure.
+Render a color table as an SVG legend to accompany a figure.
 
 ```bash
 domainator color-table-to-legend -i colors.tsv --svg legend.svg --title "Domains"
@@ -377,10 +377,10 @@ domainator transform-matrix -i dense.hdf5 --sparse sparse.hdf5 --lb 50
 
 Build a **Cytoscape XGMML** network from a matrix. `--lb` is the score cutoff — the single
 most important choice, so consult [`matrix-report`](#matrix-report) first. `--mst` keeps
-only maximum-spanning-tree edges and `--mst_knn` keeps MST plus k nearest neighbours,
+only maximum-spanning-tree edges and `--mst_knn` keeps MST plus k nearest neighbors,
 both of which keep a large network legible. `--cluster` assigns connected-component
 cluster ids and `--cluster_tsv` writes them out. `--metadata` joins TSV columns onto
-nodes, and `--color_by`/`--color_table`/`--color_table_out` colour by one of them.
+nodes, and `--color_by`/`--color_table`/`--color_table_out` color by one of them.
 
 ```bash
 domainator build-ssn -i dist.hdf5 --xgmml network.xgmml --lb 100 \
@@ -392,7 +392,7 @@ domainator build-ssn -i dist.hdf5 --xgmml network.xgmml --lb 100 \
 Build a `.dsnv` bundle for the **interactive viewer** — no cutoff needed, because the
 viewer lets you move the threshold instead. `--html` also writes a standalone HTML page,
 and `--embed_data` puts the data inside it so the page is self-contained and shareable.
-`--metadata` joins TSV columns, `--color_by`/`--label_by` choose which colours and labels
+`--metadata` joins TSV columns, `--color_by`/`--label_by` choose which colors and labels
 nodes, and `--categorical` marks columns that should be treated as categories rather than
 numbers.
 

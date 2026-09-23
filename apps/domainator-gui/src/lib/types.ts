@@ -241,7 +241,7 @@ export interface ReferenceDbList {
 /// The `refdb-progress` event payload.
 export interface RefDbProgress {
   id: string;
-  /// `downloading` | `indexing` | `registering` | `done` | `failed` | `cancelled`.
+  /// `downloading` | `indexing` | `registering` | `done` | `failed` | `canceled`.
   phase: string;
   done_bytes: number;
   total_bytes: number;
@@ -271,10 +271,10 @@ export interface RunResult {
 export interface JobInfo {
   job_id: string;
   tool: string;
-  /// `cancelling` is set the moment the user clicks cancel; the job stays on the
+  /// `canceling` is set the moment the user clicks cancel; the job stays on the
   /// blocking pool until the tool reaches a point where it can stop (the core
-  /// tools have no interruption points), then settles as `cancelled`.
-  status: "running" | "cancelling" | "completed" | "failed" | "cancelled";
+  /// tools have no interruption points), then settles as `canceled`.
+  status: "running" | "canceling" | "completed" | "failed" | "canceled";
   message: string;
   started_at_ms: string;
   outputs: string[];
@@ -312,7 +312,7 @@ export interface MatrixReport {
   symmetric: boolean;
 }
 
-/// Colour scheme preference. Mirrors `app_support::prefs::Theme`.
+/// Color scheme preference. Mirrors `app_support::prefs::Theme`.
 export type Theme = "system" | "light" | "dark";
 
 /// Mirrors `app_support::prefs::Prefs`.

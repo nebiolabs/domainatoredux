@@ -109,7 +109,7 @@ pub fn estimate_write_size(output_type: &str, m: &DataMatrix) -> u64 {
 mod tests {
     use super::*;
 
-    /// A 2x2 symmetric-labelled matrix `[[1,0],[0,2]]` with `data_type="score"`.
+    /// A 2x2 symmetric-labeled matrix `[[1,0],[0,2]]` with `data_type="score"`.
     fn tiny() -> DataMatrix {
         DataMatrix {
             rows: vec!["a".into(), "b".into()],

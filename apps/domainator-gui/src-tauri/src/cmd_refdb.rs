@@ -213,9 +213,9 @@ pub async fn download_reference_db(
     if outcome.is_err() && flag.load(Ordering::Relaxed) {
         let _ = app.emit(
             "refdb-progress",
-            RefDbProgress { id, phase: "cancelled".into(), done_bytes: 0, total_bytes: 0 },
+            RefDbProgress { id, phase: "canceled".into(), done_bytes: 0, total_bytes: 0 },
         );
-        return Err("cancelled".into());
+        return Err("canceled".into());
     }
     let _ = app.emit(
         "refdb-progress",
@@ -245,7 +245,7 @@ fn register_in_workspace(root: &str, path: &str) -> Result<DatabaseEntry, String
 
 /// Ask an in-flight download to stop. Best-effort in the same sense as
 /// `cancel_job`, but far more effective: the flag is read by the download stream
-/// itself, so a cancelled transfer stops at the next read rather than at the end.
+/// itself, so a canceled transfer stops at the next read rather than at the end.
 #[tauri::command]
 pub fn cancel_reference_db(registry: tauri::State<'_, RefDbRegistry>, id: String) {
     if let Some(flag) = reg_lock(&registry.downloading).get(&id) {

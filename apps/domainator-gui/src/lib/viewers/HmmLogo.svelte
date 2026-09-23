@@ -90,7 +90,7 @@
   const HEIGHT = TOP + PLOT_H + OCC_H + LABEL_H;
   const BASE_Y = TOP + PLOT_H; // y of the 0-bits baseline
 
-  // Residue colouring — matches skylign's per-residue palette exactly
+  // Residue coloring — matches skylign's per-residue palette exactly
   // (hmm_logo_js `aa_colors` / `dna_colors`).
   const AA_COLORS: Record<string, string> = {
     A: "#FF9966", C: "#009999", D: "#FF0000", E: "#CC0033", F: "#00FF00",

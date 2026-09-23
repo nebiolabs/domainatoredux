@@ -138,7 +138,7 @@ pub(crate) fn mst_knn_kept(
     }
 
     // --- OR-symmetric kNN ---
-    // `k == 0` selects no neighbours at all, which with include_mst is how
+    // `k == 0` selects no neighbors at all, which with include_mst is how
     // `--mst_knn 0` spells "MST only".
     // Each node's neighbors ranked by descending symmetric score, ties by
     // neighbor index ascending; keep the top-k that pass the lower bound.

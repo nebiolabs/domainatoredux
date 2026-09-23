@@ -1,7 +1,7 @@
 //! `build-ssn`: build a Cytoscape XGMML sequence-similarity network from a
 //! symmetric score matrix. Mirrors `domainator.build_ssn`: three edge modes
 //! (all-edges above `--lb`, `--mst`, `--mst_knn`), optional connected-component
-//! clustering (`SSN_cluster`), TSV node metadata, and node colouring.
+//! clustering (`SSN_cluster`), TSV node metadata, and node coloring.
 
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -33,12 +33,12 @@ pub struct BuildSsnOptions {
     pub metadata_files: Vec<String>,
     /// Keep only these labels (rows/cols) if set.
     pub subset_labels: Option<HashSet<String>>,
-    /// Colour nodes by this metadata column.
+    /// Color nodes by this metadata column.
     pub color_by: Option<String>,
-    /// Explicit value → hex colour map (`--color_table`).
+    /// Explicit value → hex color map (`--color_table`).
     pub color_table: Option<HashMap<String, String>>,
-    /// Give distinct colours only to this many of the largest `--color_by` groups;
-    /// the rest share the neutral grey. `None` colours every group.
+    /// Give distinct colors only to this many of the largest `--color_by` groups;
+    /// the rest share the neutral gray. `None` colors every group.
     pub max_color_groups: Option<usize>,
 }
 
@@ -53,14 +53,14 @@ pub struct BuildSsnResult {
     pub cluster_labels: Option<Vec<i64>>,
 }
 
-/// Colour for a node whose `--color_by` value is missing, or whose group fell outside
-/// `--max_color_groups`. Same neutral grey Python uses.
+/// Color for a node whose `--color_by` value is missing, or whose group fell outside
+/// `--max_color_groups`. Same neutral gray Python uses.
 use crate::palette::OTHER_COLOR as DEFAULT_COLOR;
 
 /// A parsed metadata TSV: the value column names, and per-index-string values
 /// positionally aligned to those columns (`None` = the row omitted that column).
 type MetadataTable = (Vec<String>, HashMap<String, Vec<Option<String>>>);
-/// `(per-node fill colour, the resolved value -> colour table)`; both `None`
+/// `(per-node fill color, the resolved value -> color table)`; both `None`
 /// when `--color_by` was not given.
 type ResolvedColors = (Option<Vec<Option<String>>>, Option<HashMap<String, String>>);
 
@@ -383,7 +383,7 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
 
     let table = NodeTable { names: names.clone(), columns, coltypes, cells };
 
-    // Colour resolution.
+    // Color resolution.
     let (node_fills, resolved_color_table) = resolve_colors(&table, opts);
 
     Ok(BuildSsnResult { table, edges, node_fills, resolved_color_table, cluster_labels })
@@ -412,7 +412,7 @@ fn resolve_colors(
     };
     let _ = ct;
 
-    // Resolve/extend the colour table.
+    // Resolve/extend the color table.
     let mut table_map = opts.color_table.clone().unwrap_or_default();
     if opts.color_table.is_none() {
         // Per-node values, kept with duplicates so `--max_color_groups` can rank

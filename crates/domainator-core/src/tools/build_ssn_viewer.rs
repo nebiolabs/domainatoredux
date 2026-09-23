@@ -39,7 +39,7 @@ pub const SSN_VIEWER_BUNDLE_FORMAT: &str = "domainator_ssn_viewer_bundle";
 pub const SSN_VIEWER_BUNDLE_VERSION: i64 = 6;
 /// Versions this build can read. A tuple rather than an equality check so additive
 /// revisions do not strand previously written bundles. Pre-v6 files also carry the
-/// derived keys; they are ignored in favour of recomputing, so a cap baked into an old
+/// derived keys; they are ignored in favor of recomputing, so a cap baked into an old
 /// file cannot silently limit what is shown now.
 pub const SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS: [i64; 4] = [3, 4, 5, 6];
 

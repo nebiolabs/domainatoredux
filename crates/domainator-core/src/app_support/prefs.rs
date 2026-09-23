@@ -23,7 +23,7 @@ pub const MAX_RECENT: usize = 10;
 /// Current on-disk schema. Bump when a field's meaning changes incompatibly.
 const SCHEMA_VERSION: u32 = 1;
 
-/// Which colour scheme to use. `System` follows `prefers-color-scheme`.
+/// Which color scheme to use. `System` follows `prefers-color-scheme`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
@@ -43,7 +43,7 @@ pub struct Prefs {
     /// Whether to reopen the most recent workspace on launch.
     #[serde(default = "default_true")]
     pub reopen_last_workspace: bool,
-    /// Colour scheme.
+    /// Color scheme.
     #[serde(default)]
     pub theme: Theme,
     /// Default thread count for tools that accept one. `0` means all cores.
@@ -159,7 +159,7 @@ pub fn apply_patch(p: &mut Prefs, patch: &PrefsPatch) {
 }
 
 /// Read the preferences at `path`. A missing, unreadable or malformed file yields
-/// defaults — see the module note on best-effort behaviour.
+/// defaults — see the module note on best-effort behavior.
 pub fn load_prefs(path: &Path) -> Prefs {
     fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }

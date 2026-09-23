@@ -24,7 +24,7 @@ import type {
 export const pickDirectory = (): Promise<string | null> =>
   invoke("pick_directory");
 
-/// Native multi-file picker for import (null if cancelled).
+/// Native multi-file picker for import (null if canceled).
 export const pickFiles = (): Promise<string[] | null> => invoke("pick_files");
 
 /// Copy `sources` into workspace folder `dir`; returns the imported paths.
@@ -121,7 +121,7 @@ export const renameFile = (
 ): Promise<string> => invoke("rename_file", { workspaceRoot, path, newName });
 
 /// Native "Save As" dialog + write text to disk. Returns the saved path, or null
-/// if the user cancelled.
+/// if the user canceled.
 export const saveTextFile = (
   defaultName: string,
   extension: string,
@@ -133,7 +133,7 @@ export const saveTextFile = (
 /// Native "Save As" dialog + write binary data to disk. `contentsBase64` is the
 /// payload as standard base64 (no data: prefix) — the IPC bridge is JSON, so a
 /// raw byte array would cost ~4x the bytes and a lot of parse time for a
-/// multi-megabyte PNG. Returns the saved path, or null if the user cancelled.
+/// multi-megabyte PNG. Returns the saved path, or null if the user canceled.
 export const saveBinaryFile = (
   defaultName: string,
   extension: string,
@@ -374,7 +374,7 @@ export const syncReferenceDbsToWorkspace = (
   workspaceRoot: string,
 ): Promise<number> => invoke("sync_reference_dbs_to_workspace", { workspaceRoot });
 
-/// What the native menu needs in order to grey items out. Sent from the main
+/// What the native menu needs in order to gray items out. Sent from the main
 /// window only; `app_menu.rs` ignores it from any other label.
 export interface MenuState {
   has_workspace: boolean;

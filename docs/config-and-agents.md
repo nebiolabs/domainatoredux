@@ -31,7 +31,7 @@ and is deliberately *not* compatible with the Python suite's jsonargparse config
 
 The config file is the base, and command-line flags override it:
 
-| Kind of option | Behaviour |
+| Kind of option | Behavior |
 | --- | --- |
 | scalars (`evalue`, `cpu`, `output`) | the CLI value replaces the file's |
 | lists (`references`, `domains`) | the CLI value replaces the file's, when non-empty |

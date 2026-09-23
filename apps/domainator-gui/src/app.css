@@ -1,8 +1,8 @@
 /* Both palettes are named once as --l-* / --d-*, then aliased onto the tokens the
-   app actually uses. Only the ten aliasing lines repeat; no colour is written
+   app actually uses. Only the ten aliasing lines repeat; no color is written
    twice, so there is one place to change a shade.
 
-   Order matters: the media query comes FIRST so a dark-mode OS gets dark colours
+   Order matters: the media query comes FIRST so a dark-mode OS gets dark colors
    from the stylesheet, before any JS runs -- otherwise the app flashes light on
    every launch. The explicit [data-theme] blocks then win in both directions for
    a user who has chosen a theme in Preferences. */

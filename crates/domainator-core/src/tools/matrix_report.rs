@@ -36,7 +36,7 @@ pub struct MatrixReport {
     pub merge_event_total: usize,
     /// The cap that was applied; `0` means none.
     pub max_merge_events: usize,
-    /// Centred moving sum of `merge_impact`, derived from the **uncapped** rows.
+    /// Centered moving sum of `merge_impact`, derived from the **uncapped** rows.
     pub merge_moving_sum: MovingSum,
     /// Threshold cuts the report's slider offers, ending at a reachable floor.
     pub slider_stops: Vec<SliderStop>,

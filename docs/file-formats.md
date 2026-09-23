@@ -33,7 +33,7 @@ Qualifiers worth knowing:
 - **`/domainator_<db>`** on a CDS — a rollup of that CDS's domain annotations for one
   reference database, e.g. `/domainator_Pfam="Sod_Fe_N; Sod_Fe_C"`. Regenerated whenever a
   file is written, so it always matches the features present.
-- **`/Color`** — a hex colour honoured by the [contig viewer](gui.md#viewers), Geneious
+- **`/Color`** — a hex color honored by the [contig viewer](gui.md#viewers), Geneious
   and other viewers. Written by [`color-genbank`](cli-reference.md#color-genbank).
 - **`/evalue`, `/score`, `/identity`** on a domain feature — the search statistics for
   that hit.
@@ -49,7 +49,7 @@ Two conventions that matter if you compare output between implementations:
   name.
 
 A record with no date is stamped with today's date when written, matching the Python
-suite's behaviour (ours in UTC, theirs in local time).
+suite's behavior (ours in UTC, theirs in local time).
 
 ## FASTA
 
@@ -159,7 +159,7 @@ suite's, in both directions. Two consequences:
 
 Used for report output ([`enum-report`](cli-reference.md#enum-report),
 [`hmmer-report`](cli-reference.md#hmmer-report)), for network metadata
-(`--metadata`), for colour tables (`--color_table`), and for coordinate lists
+(`--metadata`), for color tables (`--color_table`), and for coordinate lists
 ([`select-by-coord`](cli-reference.md#select-by-coord)). Plain delimited text with a header
 row; editable in the [Table viewer](gui.md#viewers) or any spreadsheet.
 

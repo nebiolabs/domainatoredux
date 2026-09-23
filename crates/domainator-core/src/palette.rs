@@ -1,15 +1,15 @@
-//! Categorical colour assignment, mirroring `domainator.utils`'s palette helpers.
+//! Categorical color assignment, mirroring `domainator.utils`'s palette helpers.
 //!
-//! Shared by every tool that colours by a metadata value (`build_ssn`,
-//! `color_genbank`, the contig viewer), so a value gets the same colour whichever
+//! Shared by every tool that colors by a metadata value (`build_ssn`,
+//! `color_genbank`, the contig viewer), so a value gets the same color whichever
 //! tool drew it.
 //!
 //! Upstream replaced seaborn's chained `tab20`/`tab20b`/`tab20c` with the hand-built
-//! [`DISTINCT_COLORS`] table (`fbd6927`), which changes the colours of existing
+//! [`DISTINCT_COLORS`] table (`fbd6927`), which changes the colors of existing
 //! outputs; the updated `ssn_FeSOD*.xgmml` fixtures encode the new assignment, so it
 //! is the parity contract rather than a preference.
 
-/// 64 distinguishable colours, greedy-maximin selected in CIELAB and seeded with
+/// 64 distinguishable colors, greedy-maximin selected in CIELAB and seeded with
 /// matplotlib's `tab10` (minimum pairwise ΔE 23.3). Regenerated upstream by
 /// `scripts/generate_distinct_palette.py`; hex is **uppercase**, which the fixtures
 /// check.
@@ -32,7 +32,7 @@ pub const DISTINCT_COLORS: [&str; 64] = [
     "#66A6FF", "#8C804D", "#CCD973", "#FF1A59",
 ];
 
-/// Neutral grey for values with no colour of their own: missing data, and the groups
+/// Neutral gray for values with no color of their own: missing data, and the groups
 /// beyond `max_groups`.
 pub const OTHER_COLOR: &str = "#BFBFBF";
 
@@ -46,12 +46,12 @@ fn as_number(value: &str) -> Option<f64> {
     n.is_finite().then_some(n)
 }
 
-/// Deterministically order values for colour assignment.
+/// Deterministically order values for color assignment.
 ///
 /// Numeric and numeric-looking values (cluster ids, or the strings read back out of a
-/// colour table) sort numerically; everything else sorts lexically by its string form.
+/// color table) sort numerically; everything else sorts lexically by its string form.
 /// Unlike sorting the raw values this is safe when a column mixes types, and it is why
-/// numerically adjacent values always get different colours.
+/// numerically adjacent values always get different colors.
 pub fn sort_palette_values(values: &[String]) -> Vec<String> {
     let mut numeric: Vec<(f64, &String)> = Vec::new();
     let mut other: Vec<&String> = Vec::new();
@@ -66,11 +66,11 @@ pub fn sort_palette_values(values: &[String]) -> Vec<String> {
     numeric.into_iter().map(|(_, v)| v).chain(other).cloned().collect()
 }
 
-/// Map values to distinct colours.
+/// Map values to distinct colors.
 ///
-/// Colours are assigned in [`sort_palette_values`] order and cycle over
+/// Colors are assigned in [`sort_palette_values`] order and cycle over
 /// [`DISTINCT_COLORS`], so numerically adjacent values always differ. Values 64 apart
-/// do reuse a colour; `max_groups` exists for when that is still too many to read.
+/// do reuse a color; `max_groups` exists for when that is still too many to read.
 ///
 /// `counts`, when given, ranks groups by frequency for `max_groups` (Python passes a
 /// pandas Series to get this); without it, groups are ranked in sort order. Groups
@@ -151,26 +151,26 @@ mod tests {
         assert_eq!(p["1"], DISTINCT_COLORS[0]);
         assert_eq!(p["2"], DISTINCT_COLORS[1]);
         assert_eq!(p["3"], DISTINCT_COLORS[2]);
-        // 65 distinct values wrap onto the first colour again.
+        // 65 distinct values wrap onto the first color again.
         let many: Vec<String> = (0..65).map(|i| format!("{i:03}")).collect();
         let p = get_palette(&many, None, None);
         assert_eq!(p["000"], p["064"]);
     }
 
     #[test]
-    fn max_groups_ranks_by_frequency_and_greys_the_rest() {
+    fn max_groups_ranks_by_frequency_and_grays_the_rest() {
         let values = s(&["a", "b", "c"]);
         let counts: HashMap<String, usize> =
             [("a".into(), 1usize), ("b".into(), 9), ("c".into(), 5)].into_iter().collect();
         let p = get_palette(&values, Some(2), Some(&counts));
-        // b and c are the two largest groups, so only `a` is greyed out.
+        // b and c are the two largest groups, so only `a` is grayed out.
         assert_eq!(p["a"], OTHER_COLOR);
         assert_ne!(p["b"], OTHER_COLOR);
         assert_ne!(p["c"], OTHER_COLOR);
-        // Colours still follow sort order among the kept groups, not frequency order.
+        // Colors still follow sort order among the kept groups, not frequency order.
         assert_eq!(p["b"], DISTINCT_COLORS[0]);
         assert_eq!(p["c"], DISTINCT_COLORS[1]);
-        // A cap at or above the group count colours everything.
+        // A cap at or above the group count colors everything.
         assert!(!get_palette(&values, Some(3), Some(&counts))
             .values()
             .any(|c| c == OTHER_COLOR));
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn palette_is_uppercase_hex() {
-        // The ssn_FeSOD fixtures check the spelling, not just the colour.
+        // The ssn_FeSOD fixtures check the spelling, not just the color.
         for c in DISTINCT_COLORS {
             assert!(c.starts_with('#') && c.len() == 7, "{c}");
             assert_eq!(c, c.to_uppercase(), "{c} should be uppercase");

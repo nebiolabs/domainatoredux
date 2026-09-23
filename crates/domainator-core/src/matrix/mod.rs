@@ -24,7 +24,7 @@ pub enum Storage {
     },
 }
 
-/// A labelled 2-D matrix of scores. Row/column labels, optional sequence lengths,
+/// A labeled 2-D matrix of scores. Row/column labels, optional sequence lengths,
 /// and a `data_type` string (`"score"`, `"bool"`, `"norm_score"`, ...).
 pub struct DataMatrix {
     pub rows: Vec<String>,

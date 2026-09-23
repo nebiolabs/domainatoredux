@@ -140,7 +140,7 @@ fn hash_dedup(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupR
 /// Upstream raised its prereq here and dropped the longest-sequence fallback that
 /// used to paper over the single-cluster crash, so anything older fails on an input
 /// that collapses into one cluster. Anything that *offers* to install diamond --
-/// the GUI's External tools panel -- has to honour this; a test in that crate
+/// the GUI's External tools panel -- has to honor this; a test in that crate
 /// checks the managed download against it.
 pub const MIN_DIAMOND_VERSION: &str = "2.2.5";
 

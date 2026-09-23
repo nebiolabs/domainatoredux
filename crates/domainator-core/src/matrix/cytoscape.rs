@@ -79,7 +79,7 @@ fn cell_value(cell: &Cell, ct: ColType) -> String {
 /// Write an XGMML network to `path`.
 ///
 /// `edges` are `(source_node_index, target_node_index, score)`. `node_fills`, if
-/// present, gives an optional hex fill colour per node (used with `--color_by`).
+/// present, gives an optional hex fill color per node (used with `--color_by`).
 pub fn write_xgmml(
     path: &str,
     name: &str,

@@ -3,7 +3,7 @@
 ## Why it exists
 
 The port's correctness contract is parity with the Python tool, and upstream's
-pytest suite is the best catalogue we have of *which invocations matter* — far
+pytest suite is the best catalog we have of *which invocations matter* — far
 more flag combinations than anyone would think to write by hand, and it grows
 with upstream. But porting their **assertions** is mostly wasted work: they
 assert on Python-side internals, and re-deriving each expectation in Rust would

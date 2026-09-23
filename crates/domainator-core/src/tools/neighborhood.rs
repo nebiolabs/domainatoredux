@@ -1280,7 +1280,7 @@ mod tests {
         let rec = test_rec(&[b'A'; 60], feats);
         let mut out = select_by_cds_hits(&rec, Range::Cds(1, 1), true, None, 1.0, None, None).unwrap();
 
-        // The first hit has no upstream neighbour, so its region starts at the focus.
+        // The first hit has no upstream neighbor, so its region starts at the focus.
         assert_eq!(
             out.iter().map(|r| (r.record.seq.len(), r.dist_to_start)).collect::<Vec<_>>(),
             vec![(29, 0), (49, 20), (29, 20)]

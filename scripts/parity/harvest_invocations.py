@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Harvest CLI invocations out of upstream domainator's pytest suite.
 
-Upstream's tests are the catalogue of flag combinations that matter -- far more
+Upstream's tests are the catalog of flag combinations that matter -- far more
 combinations than we would think to write by hand, and they grow with upstream.
 Rather than porting their *assertions* (which encode Python-side internals), we
 mine their `main([...])` calls and replay the same argument lists through both

@@ -347,11 +347,11 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
 - **Jobs run off-thread** (`spawn_blocking`), tracked in a `JobRegistry` managed
   state, and broadcast as `job-update` events. The **Jobs panel** (left sidebar,
   above Databases; `JobsPanel.svelte`) shows live status (running/completed/
-  failed/cancelled), the result message, and clickable output files (openable ones
+  failed/canceled), the result message, and clickable output files (openable ones
   open in a viewer); running jobs have a Cancel button. **Cancellation is genuinely
   best-effort and the UI says so.** `cancel_job` sets an `Arc<AtomicBool>` the
-  worker can see and flips the row to `cancelling…` immediately; `run_one` checks
-  it before dispatch (so a job cancelled while queued does no work at all) and
+  worker can see and flips the row to `canceling…` immediately; `run_one` checks
+  it before dispatch (so a job canceled while queued does no work at all) and
   again before the provenance write (so an abandoned run is not recorded). None of
   the core tools has an interruption point, so a tool already running finishes:
   whatever output file it had written stays on disk — it may have overwritten
@@ -466,9 +466,9 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   canvas**. It is **column-virtualized**: a full-width spacer div carries the
   scrollbar while the canvas is only viewport-sized and follows `scrollLeft`, so the
   browser never paints a model-wide (10k+ px) layer, and `draw()` touches only the
-  visible columns on each rAF. Each `(char, colour)` glyph is rasterized once into
+  visible columns on each rAF. Each `(char, color)` glyph is rasterized once into
   an offscreen canvas and blitted with `drawImage`; below 11 px/column it falls back
-  to coloured rects. **Export SVG** re-emits the full logo as vectors using the same
+  to colored rects. **Export SVG** re-emits the full logo as vectors using the same
   ink-box metrics. (Do NOT port GPL `Bio-HMM-Logo`; true expected-insert-length bars
   are future work.)
 - **Databases panel — DONE.** Workspace-global registry in `databases.json`

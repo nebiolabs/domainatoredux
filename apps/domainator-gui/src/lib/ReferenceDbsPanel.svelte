@@ -67,7 +67,7 @@
   $effect(() => {
     const un = listen<RefDbProgress>("refdb-progress", (e) => {
       const p = e.payload;
-      if (p.phase === "done" || p.phase === "failed" || p.phase === "cancelled") {
+      if (p.phase === "done" || p.phase === "failed" || p.phase === "canceled") {
         delete progress[p.id];
         refresh();
         // A finished download registers itself in the workspace; pick it up.
@@ -123,7 +123,7 @@
       await downloadReferenceDb(db.id, ws.root || null);
     } catch (e) {
       // A cancel comes back as an error too, and is not worth reporting as one.
-      if (!String(e).includes("cancelled")) errors[db.id] = String(e);
+      if (!String(e).includes("canceled")) errors[db.id] = String(e);
     } finally {
       delete progress[db.id];
       await refresh();
@@ -263,7 +263,7 @@
         : ""
     }.${
       freeBytes === null ? "" : `\n\nYou have ${humanBytes(freeBytes)} free on this volume.`
-    }\n\nIt can take a long time, and can be cancelled at any point.`}
+    }\n\nIt can take a long time, and can be canceled at any point.`}
     confirmLabel="Download"
     onconfirm={() => {
       const db = pending;

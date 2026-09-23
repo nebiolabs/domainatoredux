@@ -184,7 +184,7 @@ class WorkspaceStore {
   }
 
   /// Ask the backend to cancel a running job. Cancellation is best-effort (the
-  /// core tools have no interruption points), so the job flips to `cancelling`
+  /// core tools have no interruption points), so the job flips to `canceling`
   /// and settles when the tool actually stops.
   async cancelJob(id: string): Promise<void> {
     try {

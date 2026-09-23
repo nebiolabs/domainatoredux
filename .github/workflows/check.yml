@@ -75,7 +75,7 @@ jobs:
       # The guards below import upstream's `domainator` package -- the shell is
       # rendered by calling into it -- so its own pyproject is the correct dependency
       # list. A hand-picked subset was pinned here until it rotted: `ssn_viewer_html`
-      # imports `domainator.utils` for two colour constants, and that module pulls in
+      # imports `domainator.utils` for two color constants, and that module pulls in
       # pyhmmer, pyinfernal and requests at import time, none of which the guards use
       # directly. The failure presented as an unrelated ModuleNotFoundError.
       - name: Install upstream's own dependencies

@@ -16,14 +16,14 @@
   }
   const STATUS_ICON: Record<string, string> = {
     running: "◐",
-    cancelling: "◌",
+    canceling: "◌",
     completed: "✓",
     failed: "✕",
-    cancelled: "∅",
+    canceled: "∅",
   };
-  // A job is still on the blocking pool in both states; `cancelling` means the
+  // A job is still on the blocking pool in both states; `canceling` means the
   // flag is set but the tool hasn't reached a point where it can stop.
-  const isActive = (s: string) => s === "running" || s === "cancelling";
+  const isActive = (s: string) => s === "running" || s === "canceling";
 
   // Pending destructive actions, shown through ConfirmDialog. These were raw
   // window.confirm() calls -- unstyled, and unreliable in these webviews.
@@ -60,7 +60,7 @@
         submenu: job.outputs.map((out) => ({
           label: baseName(out),
           // A job can produce a file this build has no viewer for; offering to
-          // open it and doing nothing would be worse than showing it greyed.
+          // open it and doing nothing would be worse than showing it grayed.
           disabled: !ws.canOpen(out),
           action: () => ws.openOutput(out),
         })),
@@ -134,8 +134,8 @@
               <span class="ic">{STATUS_ICON[job.status] ?? "•"}</span>
               <span class="tool">{job.tool}</span>
               <button class="clone" onclick={() => ws.openTool(job.tool, job.params)} title="Clone into a new tool dialog">⎘</button>
-              {#if job.status === "cancelling"}
-                <span class="cancelling" title="The tool has no interruption point; waiting for it to finish">cancelling…</span>
+              {#if job.status === "canceling"}
+                <span class="canceling" title="The tool has no interruption point; waiting for it to finish">canceling…</span>
               {:else if job.status === "running"}
                 <button class="cancel" onclick={() => ws.cancelJob(job.job_id)} title="Cancel">×</button>
               {:else}
@@ -224,7 +224,7 @@
     margin-left: auto;
     font-size: 11px;
   }
-  .cancelling {
+  .canceling {
     color: var(--text-dim);
     font-size: 11px;
     white-space: nowrap;
@@ -260,7 +260,7 @@
   .status-running .ic {
     color: var(--accent);
   }
-  .status-cancelled .ic {
+  .status-canceled .ic {
     color: var(--text-dim);
   }
   .tool {

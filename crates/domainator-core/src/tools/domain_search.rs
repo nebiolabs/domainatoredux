@@ -104,11 +104,11 @@ fn best_hit_name(rec: &SeqRecord) -> Option<String> {
 /// `--max_hits` ranks by. `-inf` if the record carries no hit feature.
 ///
 /// Only the `Domain_Search` best-hit feature counts, never the `Domainator`
-/// annotations. An extracted region spans the focus CDS *and its neighbours*, so with
-/// `--cds_range`/`--kb_range` and `--add_annotations` it carries the neighbours' domain
+/// annotations. An extracted region spans the focus CDS *and its neighbors*, so with
+/// `--cds_range`/`--kb_range` and `--add_annotations` it carries the neighbors' domain
 /// annotations too; taking the maximum over those ranks a weak hit by whatever strong
 /// gene happens to sit next to it. On `pDONR201_multi_genemark.gb` that made all 16
-/// regions tie at the strongest neighbour's 329.9, so `--max_hits 5` returned five
+/// regions tie at the strongest neighbor's 329.9, so `--max_hits 5` returned five
 /// arbitrary regions instead of the five best.
 ///
 /// `select_by_cds_hits` attaches exactly one `Domain_Search` feature per emitted
@@ -299,22 +299,22 @@ mod tests {
     }
 
     /// `--max_hits` ranks by the focus CDS's hit score (Python's `hit_best_score`),
-    /// never by a neighbour's annotation. An extracted region spans the focus CDS and
-    /// its neighbours, so a weak hit next to a strong gene must still rank weak —
+    /// never by a neighbor's annotation. An extracted region spans the focus CDS and
+    /// its neighbors, so a weak hit next to a strong gene must still rank weak —
     /// ranking by the maximum over all features made every region on
-    /// `pDONR201_multi_genemark.gb` tie at the strongest neighbour's score.
+    /// `pDONR201_multi_genemark.gb` tie at the strongest neighbor's score.
     #[test]
-    fn max_hits_ranks_by_the_focus_hit_not_a_neighbours_annotation() {
-        let weak_focus_strong_neighbour = region(vec![
+    fn max_hits_ranks_by_the_focus_hit_not_a_neighbors_annotation() {
+        let weak_focus_strong_neighbor = region(vec![
             scored(DOMAIN_SEARCH_BEST_HIT_NAME, "50.2"),
             scored(DOMAIN_FEATURE_NAME, "329.9"),
         ]);
         let strong_focus = region(vec![scored(DOMAIN_SEARCH_BEST_HIT_NAME, "103.8")]);
 
-        assert_eq!(best_score(&weak_focus_strong_neighbour), 50.2);
+        assert_eq!(best_score(&weak_focus_strong_neighbor), 50.2);
         assert_eq!(best_score(&strong_focus), 103.8);
         assert!(
-            best_score(&strong_focus) > best_score(&weak_focus_strong_neighbour),
+            best_score(&strong_focus) > best_score(&weak_focus_strong_neighbor),
             "the region with the stronger focus hit must rank higher"
         );
     }

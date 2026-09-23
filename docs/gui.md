@@ -20,7 +20,7 @@ currently unavailable (an unplugged drive, say) is hidden rather than forgotten.
 
 App state lives in a single hidden directory at the workspace root, `.domainator/`:
 the file manifest, the database registry, job provenance records, per-file notes
-(description and colour), and any subsets the SSN viewer extracts. **Your data files are
+(description and color), and any subsets the SSN viewer extracts. **Your data files are
 never rewritten to carry app state.** `.domainator/` is hidden from the tree, refused as
 a folder name, and protected from deletion.
 
@@ -44,11 +44,11 @@ sidebar and file table, Ctrl+Shift+O pop out the current tab.
 
 | File | Sub-views | What you do there |
 | --- | --- | --- |
-| `.gb` `.gbk` `.genbank` `.gbff`, `.fasta` `.fa` `.fna` `.faa` `.pep` | **Contig View** | Scroll and zoom a gene map. Joined features and circular origin-wrapping are drawn correctly. Filter by feature kind, by database, or with an E-value slider. The toolbar shows the cursor's coordinate and the selection's `start:end` and length as you drag. Select a range and copy it as nucleotides or as a translation (Ctrl/Cmd+Shift+C); extract a selection or whole contigs to a new file. Click a feature to pin its full annotation — the same fields the hover tooltip shows — and, for GenBank, recolour or delete it from the bottom of that panel, or add an annotation. **View** adjusts lane and contig spacing, ruler and label font sizes, bp-vs-kb tick numbering, feature labels inside / outside / both, and whether each contig gets its own ruler or one shared ruler is pinned across them all. **Export** saves the current view or the whole file as SVG or PNG. Very dense contigs collapse to a density strip until you zoom in. |
+| `.gb` `.gbk` `.genbank` `.gbff`, `.fasta` `.fa` `.fna` `.faa` `.pep` | **Contig View** | Scroll and zoom a gene map. Joined features and circular origin-wrapping are drawn correctly. Filter by feature kind, by database, or with an E-value slider. The toolbar shows the cursor's coordinate and the selection's `start:end` and length as you drag. Select a range and copy it as nucleotides or as a translation (Ctrl/Cmd+Shift+C); extract a selection or whole contigs to a new file. Click a feature to pin its full annotation — the same fields the hover tooltip shows — and, for GenBank, recolor or delete it from the bottom of that panel, or add an annotation. **View** adjusts lane and contig spacing, ruler and label font sizes, bp-vs-kb tick numbering, feature labels inside / outside / both, and whether each contig gets its own ruler or one shared ruler is pinned across them all. **Export** saves the current view or the whole file as SVG or PNG. Very dense contigs collapse to a density strip until you zoom in. |
 | | **Enum Report** | The [`enum-report`](cli-reference.md#enum-report) table, live: per contig, CDS or domain, sortable, with per-column filters and a picker over ~19 analyses. |
 | | **Summary** | A dashboard of the dataset: counts, a contig-length histogram, top domains / databases / organisms, and a taxonomy icicle plot built from the records' own lineage — no taxdump needed. This one has no CLI equivalent. |
 | `.hdf5` `.hdf` `.h5` | **Matrix Report** | The score histogram and suggested clustering cutoffs. Click a threshold to select it. |
-| `.dsnv` (and legacy `.ssnv`) | **SSN Viewer** | The interactive network: drag the threshold slider to split it into clusters, switch between force-directed, grid, packed and treemap layouts, edit and chart metadata columns, colour by gradient, and save sessions. Select nodes and click **Open sequence(s)** to pull those records out of the workspace into a new sequence tab. |
+| `.dsnv` (and legacy `.ssnv`) | **SSN Viewer** | The interactive network: drag the threshold slider to split it into clusters, switch between force-directed, grid, packed and treemap layouts, edit and chart metadata columns, color by gradient, and save sessions. Select nodes and click **Open sequence(s)** to pull those records out of the workspace into a new sequence tab. |
 | `.hmm` `.hmmer` | **Profiles** | A filterable table of every profile in the file. Opens instantly even for tens of thousands of profiles, because it never computes a logo up front. Extract a subset to a new `.hmm`. |
 | | **Logo** | A sequence logo for one profile, with an occupancy strip, horizontal virtualization, and **Export SVG**. |
 | `.tsv` `.csv` `.tab` | **Table** | View and edit a delimited table. |
@@ -59,7 +59,7 @@ sidebar and file table, Ctrl+Shift+O pop out the current tab.
 ## Running tools
 
 The **Tools** menu runs 28 of the command-line tools, grouped as Annotation & search,
-Selection & extraction, Matrices & networks, Reports, HMM profiles, Colour and
+Selection & extraction, Matrices & networks, Reports, HMM profiles, Color and
 Conversion.
 
 Each dialog is generated from the same JSON Schema the CLI prints
@@ -120,7 +120,7 @@ tools need, and registers it in the Databases panel, ready for `domainate`,
 | Pfam-A | ≈400 MB | ≈1.6 GB | The Pfam-A profile HMM library. |
 
 Everything but Swiss-Prot asks you to confirm the size first, and any download can be
-cancelled while it runs; a cancelled or failed download leaves nothing behind.
+canceled while it runs; a canceled or failed download leaves nothing behind.
 
 **Free space is checked first.** The panel shows how much room is free on the volume the
 databases live on, and a download that cannot fit is disabled with what it would need —
@@ -179,7 +179,7 @@ installed external tools, with a copyable diagnostics blob — attach it when
 
 Worth knowing before you hit them:
 
-- **Cancelling a running tool doesn't stop it** (see above).
+- **Canceling a running tool doesn't stop it** (see above).
 - **No job queue and no progress bars.** Runs are not throttled, so two or three heavy
   jobs at once will saturate every core and make the window sluggish. Jobs report only
   start and finish, not progress.

@@ -18,7 +18,7 @@
   // ── editing (GenBank only) ─────────────────────────────────────────────────
   const canEdit = $derived(/\.(gb|gbk|genbank|gbff)$/i.test(path));
   // The clicked feature: drives the pinned detail panel (all file types) and, for
-  // GenBank, the colour/remove edit controls at the bottom of it.
+  // GenBank, the color/remove edit controls at the bottom of it.
   let selected = $state<{ contigIndex: number; feat: FeatureView } | null>(null);
   let addOpen = $state(false);
   let addForm = $state({ contigIndex: 0, kind: "misc_feature", start: 0, end: 100, strand: 1, note: "" });
@@ -304,7 +304,7 @@
 
   const frame = $derived.by((): Frame[] => computeFrames(viewTop, viewH, viewLeft, viewW));
 
-  // ── genetic code + colours ──────────────────────────────────────────────────
+  // ── genetic code + colors ──────────────────────────────────────────────────
   const CODON_TABLE: Record<string, string> = buildCodonTable();
   function buildCodonTable(): Record<string, string> {
     const b = "TCAG";
@@ -566,7 +566,7 @@
       ensureSeq(hit.ci); // load sequence so Copy is ready
       // The detail panel opens for every file type — it carries the same fields
       // the hover tooltip shows, so a click pins them instead of replacing them
-      // with a bare colour picker. The edit controls inside it stay GenBank-only.
+      // with a bare color picker. The edit controls inside it stay GenBank-only.
       selected = { contigIndex: hit.ci, feat: hit.f };
       scheduleDraw();
       return;
@@ -1018,11 +1018,11 @@
           ctx.fillText(f.label, lx, laneTop + FEAT_H / 2 + 0.5);
           ctx.restore();
         }
-        // outside label: centred over the feature in its own strip, unclipped.
-        // Neighbours in the same lane would otherwise overprint each other, so a
+        // outside label: centered over the feature in its own strip, unclipped.
+        // Neighbors in the same lane would otherwise overprint each other, so a
         // label is skipped when it would collide with the last one drawn there.
         if (labelPlacement !== "inside" && fw > 2) {
-          // Centre on the visible part of the feature, so a feature running off
+          // Center on the visible part of the feature, so a feature running off
           // the edge still labels the part you can see.
           const l = Math.max(sx(f.start), GUTTER);
           const r = Math.min(sx(f.end), vW);
@@ -1260,7 +1260,7 @@
       const a = alpha * this.globalAlpha;
       const anchor =
         this.textAlign === "center" ? "middle" : this.textAlign === "right" || this.textAlign === "end" ? "end" : "start";
-      // Canvas "middle" is the em-box centre; SVG's nearest equivalent is `central`.
+      // Canvas "middle" is the em-box center; SVG's nearest equivalent is `central`.
       const base = this.textBaseline === "middle" ? ` dominant-baseline="central"` : "";
       this.paint(
         `<text x="${n2(x)}" y="${n2(y)}" font-family="${xmlEsc(family)}" font-size="${n2(size)}"` +
@@ -1831,7 +1831,7 @@
         <button class="ep-x" onclick={() => (selected = null)} aria-label="Close">×</button>
       </div>
       <!-- The same fields the hover tooltip shows, pinned: clicking a feature to
-           recolour it must not cost you the annotation you were reading. -->
+           recolor it must not cost you the annotation you were reading. -->
       <div class="ep-detail">
         <div class="tt-row"><b>contig</b> {data?.contigs[selected.contigIndex].id || data?.contigs[selected.contigIndex].name}</div>
         <div class="tt-row"><b>location</b> {(selected.feat.start + 1).toLocaleString()}:{selected.feat.end.toLocaleString()} ({(selected.feat.end - selected.feat.start).toLocaleString()} bp)</div>

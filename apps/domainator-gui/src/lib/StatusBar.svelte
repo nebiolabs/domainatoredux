@@ -8,7 +8,7 @@
   import { ws } from "./state.svelte";
 
   const running = $derived(
-    ws.jobs.filter((j) => j.status === "running" || j.status === "cancelling").length,
+    ws.jobs.filter((j) => j.status === "running" || j.status === "canceling").length,
   );
   const dirty = $derived(ws.dirtyPaths.length);
 

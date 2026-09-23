@@ -106,7 +106,7 @@ export const HANDLERS: Record<MenuId, Handler> = {
   },
 };
 
-/// Handlers for parameterised ids (`<prefix>:<arg>`), keyed by prefix.
+/// Handlers for parameterized ids (`<prefix>:<arg>`), keyed by prefix.
 const PREFIX_HANDLERS: Record<(typeof MENU_PREFIXES)[number], Handler> = {
   "tools.run": (id) => {
     if (id) ws.openTool(id);

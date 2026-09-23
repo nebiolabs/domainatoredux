@@ -856,17 +856,17 @@ enum Command {
         /// Text file of labels to retain.
         #[arg(long = "subset_file")]
         subset_file: Option<String>,
-        /// Colour nodes by this metadata column.
+        /// Color nodes by this metadata column.
         #[arg(long = "color_by")]
         color_by: Option<String>,
-        /// TSV (no header) mapping metadata values to hex colours.
+        /// TSV (no header) mapping metadata values to hex colors.
         #[arg(long = "color_table")]
         color_table: Option<String>,
-        /// Write the resolved colour table here.
+        /// Write the resolved color table here.
         #[arg(long = "color_table_out")]
         color_table_out: Option<String>,
-        /// Give distinct colours only to this many of the largest --color_by groups;
-        /// every remaining group shares a neutral grey.
+        /// Give distinct colors only to this many of the largest --color_by groups;
+        /// every remaining group shares a neutral gray.
         #[arg(long = "max_color_groups")]
         max_color_groups: Option<usize>,
         /// Add an SSN_cluster column of connected-component ids.
@@ -924,13 +924,13 @@ enum Command {
         /// Text file of labels to retain.
         #[arg(long = "subset_file")]
         subset_file: Option<String>,
-        /// Default metadata field for node colouring in the viewer.
+        /// Default metadata field for node coloring in the viewer.
         #[arg(long = "color_by")]
         color_by: Option<String>,
         /// Default metadata field for node labels in the viewer.
         #[arg(long = "label_by")]
         label_by: Option<String>,
-        /// Numeric metadata columns to colour as discrete categories rather than with
+        /// Numeric metadata columns to color as discrete categories rather than with
         /// a gradient (e.g. integer cluster numbers). Sets the viewer's initial state.
         #[arg(long = "categorical", num_args = 1..)]
         categorical: Vec<String>,
@@ -1486,7 +1486,7 @@ fn paths_to_strings(paths: &[PathBuf]) -> Result<Vec<String>> {
     paths.iter().map(|p| p.to_str().map(str::to_string).context("non-UTF8 path")).collect()
 }
 
-/// Read a colour table: a TSV with no header mapping a value to a hex colour.
+/// Read a color table: a TSV with no header mapping a value to a hex color.
 fn read_color_table(path: &str) -> Result<std::collections::HashMap<String, String>> {
     let text = std::fs::read_to_string(path).with_context(|| format!("reading color table {path}"))?;
     let mut map = std::collections::HashMap::new();
@@ -2861,7 +2861,7 @@ fn main() -> Result<()> {
             }
             let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
 
-            // Resolve subset labels and the optional colour table.
+            // Resolve subset labels and the optional color table.
             let subset_labels = if cfg.subset.is_empty() && cfg.subset_file.is_none() {
                 None
             } else {

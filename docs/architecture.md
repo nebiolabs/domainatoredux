@@ -97,7 +97,7 @@ These gate parity. Grep the owning module before changing any of them.
   becomes one range rather than a spurious `join`. Merging is gated on the original
   operator, so `order` locations keep their parts apart.
 - **`--max_hits` ranks by the focus CDS's own hit score** — the `Domain_Search` feature
-  only, never the `Domainator` annotations. An extracted region spans neighbours, so
+  only, never the `Domainator` annotations. An extracted region spans neighbors, so
   ranking by the maximum over all features would score a weak hit by whatever strong gene
   sits next to it.
 - **Coordinate suffixes come from the human-readable stranded properties**, not a

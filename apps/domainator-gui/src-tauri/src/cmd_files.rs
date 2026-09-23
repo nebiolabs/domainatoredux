@@ -549,7 +549,7 @@ pub async fn list_hmm_profiles(
 
 /// Pop a native "Save As" dialog and write `contents` to the chosen path. Used by
 /// viewers to export generated text (e.g. an SVG logo). Returns the saved path, or
-/// `None` if the user cancelled. `default_name` seeds the dialog's filename;
+/// `None` if the user canceled. `default_name` seeds the dialog's filename;
 /// `extension`/`filter_name` set the type filter (e.g. `"svg"` / `"SVG image"`).
 #[tauri::command]
 pub async fn save_text_file(
@@ -582,7 +582,7 @@ pub async fn save_text_file(
 /// path. The binary twin of [`save_text_file`], used by viewers that export a
 /// raster image (PNG). The payload arrives base64-encoded because the IPC bridge
 /// is JSON: a `Vec<u8>` would serialize as a decimal array, roughly four bytes of
-/// wire per byte of image. Returns the saved path, or `None` if cancelled.
+/// wire per byte of image. Returns the saved path, or `None` if canceled.
 #[tauri::command]
 pub async fn save_binary_file(
     window: tauri::WebviewWindow,

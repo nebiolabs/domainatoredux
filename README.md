@@ -73,7 +73,7 @@ the Python suite's underscore spellings (`--max_overlap`), while subcommands use
 | **Matrices and networks** | `seq-dist` similarity by alignment · `compare-contigs` similarity by shared domain content · `transform-matrix` · `build-ssn` (Cytoscape XGMML) · `build-ssn-viewer` (interactive) |
 | **Reports** | `enum-report` per contig/CDS/domain tables · `summary-report` · `matrix-report` score distribution and suggested cutoffs · `ssn-navigator` query a network as JSON |
 | **HMM profiles** | `hmmer-build` · `hmmer-select` · `hmmer-search` · `hmmer-compare` · `hmmer-report` |
-| **Colour** | `color-genbank` · `color-table-to-legend` |
+| **Color** | `color-genbank` · `color-table-to-legend` |
 | **I/O and database prep** | `format-db` shard/compress/index for fast searching · `genbank-to-fasta` · `convert` · `inspect` · `schema` |
 
 Every tool documented with examples in the
@@ -87,7 +87,7 @@ the command line just appear, and vice versa.
 
 - **Contig viewer** — scroll and zoom gene maps, with circular origin-wrapping drawn
   correctly, e-value and database filters, sequence selection and copy, and per-feature
-  editing and recolouring.
+  editing and recoloring.
 - **SSN viewer** — the interactive network: move the threshold to split clusters, switch
   layouts, chart and edit metadata, and jump from selected nodes back to their sequences.
 - **Enum Report, Summary, Matrix Report, HMM Profiles and Logo** tabs for the other file

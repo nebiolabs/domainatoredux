@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn editing_is_genbank_only() {
-        // FASTA has nowhere to put a feature or a colour, so it is refused rather
+        // FASTA has nowhere to put a feature or a color, so it is refused rather
         // than silently dropping the edit.
         let dir = scratch("fasta");
         let path = dir.join("x.fasta");

@@ -1506,7 +1506,7 @@ fn common_help(name: &str) -> Option<&'static str> {
         "first" => "Keep only the first N contigs.",
         "include_nucleic_acids" => "Include nucleic-acid (non-CDS) regions.",
         "invert" => "Invert the selection (keep everything that does NOT match).",
-        "k" => "Number of nearest neighbours (k) for the kNN graph.",
+        "k" => "Number of nearest neighbors (k) for the kNN graph.",
         "kb_both" => "Trim this many kb from both ends.",
         "kb_left" => "Trim this many kb from the left end.",
         "kb_right" => "Trim this many kb from the right end.",

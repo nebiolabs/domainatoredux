@@ -574,7 +574,7 @@ pub fn threshold_merge_event_rows(summary: &[[f64; 6]]) -> Vec<MergeEvent> {
             row_idx += 1;
         }
         // The MST edge index of the last edge scoring strictly above this threshold, so
-        // a stop labelled `threshold_to` reproduces the `--lb threshold_to` cut exactly
+        // a stop labeled `threshold_to` reproduces the `--lb threshold_to` cut exactly
         // (that threshold's own tie group is excluded, as `--lb` excludes it). Taken
         // from the FIRST row of the group, so the first event is -1, not 0.
         let edge_index = first_summary_row_idx as i64 - 2;
@@ -643,11 +643,11 @@ pub fn merge_event_density_bin(threshold_value: f64, lo: f64, hi: f64, density_b
 /// in reveals the small events a whole-range ranking buries, while the band back-fill
 /// still runs over the whole axis and every stretch of the slider keeps a stop. `None`
 /// is the whole range — what a consumer with no viewport (`matrix_report`,
-/// `ssn_navigator`) wants, and exactly the behaviour this had before windows existed.
+/// `ssn_navigator`) wants, and exactly the behavior this had before windows existed.
 ///
 /// `pinned_threshold` is a threshold whose event must survive the cut whatever the
 /// window is. The viewer passes the cut currently in effect: were the selection allowed
-/// to drop it, the slider thumb would land on a neighbouring stop and zooming would
+/// to drop it, the slider thumb would land on a neighboring stop and zooming would
 /// silently re-cluster the network under the user.
 pub fn filter_merge_event_rows_binned(
     events: &[MergeEvent],
@@ -727,7 +727,7 @@ pub fn filter_merge_event_rows(events: &[MergeEvent], max_merge_events: usize) -
     filter_merge_event_rows_binned(events, max_merge_events, MERGE_EVENT_DENSITY_BINS, None, None)
 }
 
-/// A centred moving sum of `merge_impact` over the plotted threshold range.
+/// A centered moving sum of `merge_impact` over the plotted threshold range.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MovingSum {
     pub window: f64,
@@ -735,7 +735,7 @@ pub struct MovingSum {
     pub y: Vec<f64>,
 }
 
-/// Centred moving sum of `merge_impact` over the plotted threshold range.
+/// Centered moving sum of `merge_impact` over the plotted threshold range.
 ///
 /// **Call this with the rows straight from [`threshold_merge_event_rows`], before
 /// [`filter_merge_event_rows`] caps them.** The cap keeps the top rows by
@@ -1288,7 +1288,7 @@ mod tests {
             .collect();
         // Reference from Python threshold_slider_stops at upstream 896a0c8. Note the
         // first event stop also carries edge_index -1, colliding with the inf stop --
-        // that is upstream behaviour, reproduced deliberately.
+        // that is upstream behavior, reproduced deliberately.
         assert_eq!(
             shape,
             vec![
@@ -1433,7 +1433,7 @@ mod tests {
     #[test]
     fn a_pinned_threshold_survives_a_window_that_excludes_it() {
         // The cut currently in effect must outlive a zoom. Were it droppable, the
-        // slider thumb would land on a neighbouring stop and the displayed clustering
+        // slider thumb would land on a neighboring stop and the displayed clustering
         // would change as a side effect of zooming.
         let events = banded_events();
         let window = Some((15.0, 25.0));

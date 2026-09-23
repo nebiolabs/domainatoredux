@@ -66,7 +66,7 @@ use tauri::{AppHandle, Emitter};
 pub struct JobInfo {
     pub job_id: String,
     pub tool: String,
-    /// `running` | `completed` | `failed` | `cancelled`.
+    /// `running` | `completed` | `failed` | `canceled`.
     pub status: String,
     pub message: String,
     pub started_at_ms: String, // u128 as string (JSON-safe)
@@ -85,7 +85,7 @@ pub struct JobInfo {
 #[derive(Default)]
 pub struct JobRegistry {
     jobs: Mutex<HashMap<String, JobInfo>>,
-    cancelled: Mutex<HashMap<String, std::sync::Arc<AtomicBool>>>,
+    canceled: Mutex<HashMap<String, std::sync::Arc<AtomicBool>>>,
     /// Workspace root for persisting job history to `.domainator/jobs.json`
     /// (set when a workspace is opened via `load_jobs`).
     root: Mutex<Option<String>>,
@@ -145,7 +145,7 @@ pub const TOOL_CATEGORIES: [&str; 7] = [
     "Matrices & networks",
     "Reports",
     "HMM profiles",
-    "Colour",
+    "Color",
     "Conversion",
 ];
 
@@ -166,7 +166,7 @@ pub fn category_for(id: &str) -> Option<&'static str> {
         "hmmer-compare" | "hmmer-report" | "hmmer-select" | "hmmer-build" | "hmmer-search" => {
             "HMM profiles"
         }
-        "color-genbank" | "color-table-to-legend" => "Colour",
+        "color-genbank" | "color-table-to-legend" => "Color",
         "genbank-to-fasta" | "convert" | "format-db" => "Conversion",
         _ => return None,
     })
@@ -773,7 +773,7 @@ pub async fn run_tool(
     // deleting it behind the user's back would be worse than leaving it. The
     // terminal message below says which of the two happened.
     let flag = std::sync::Arc::new(AtomicBool::new(false));
-    reg_lock(&registry.cancelled).insert(job_id.clone(), flag.clone());
+    reg_lock(&registry.canceled).insert(job_id.clone(), flag.clone());
 
     let jid = job_id.clone();
     let tool_c = tool.clone();
@@ -786,8 +786,8 @@ pub async fn run_tool(
     .await
     .map_err(|e| format!("job failed to run: {e}"))?;
 
-    let cancelled = flag.load(Ordering::Relaxed);
-    reg_lock(&registry.cancelled).remove(&job_id);
+    let canceled = flag.load(Ordering::Relaxed);
+    reg_lock(&registry.canceled).remove(&job_id);
     let mut info = JobInfo {
         job_id: job_id.clone(),
         tool: tool.clone(),
@@ -798,19 +798,19 @@ pub async fn run_tool(
         params: params.clone(),
     };
     match outcome {
-        _ if cancelled => {
-            info.status = "cancelled".into();
+        _ if canceled => {
+            info.status = "canceled".into();
             info.message = match &outcome {
                 Ok(r) if !r.outputs.is_empty() => {
                     info.outputs = r.outputs.clone();
-                    "cancelled too late to stop the tool — its output was kept, \
+                    "canceled too late to stop the tool — its output was kept, \
                      but the run was not recorded"
                         .into()
                 }
-                _ => "cancelled".to_string(),
+                _ => "canceled".to_string(),
             };
             set_job(&registry, &app, info.clone());
-            Err("job cancelled".into())
+            Err("job canceled".into())
         }
         Ok(r) => {
             info.status = "completed".into();
@@ -924,19 +924,19 @@ pub fn clear_jobs(registry: tauri::State<'_, JobRegistry>) {
 }
 
 /// Best-effort cancel. Sets the job's flag (which `run_one` checks at its own
-/// boundaries) and flips the visible status to `cancelling` right away, so the
+/// boundaries) and flips the visible status to `canceling` right away, so the
 /// click has feedback: the core tools can't be interrupted mid-run, and without
 /// this the row sat at "running" until the tool finished on its own.
 #[tauri::command]
 pub fn cancel_job(app: AppHandle, registry: tauri::State<'_, JobRegistry>, job_id: String) {
-    if let Some(flag) = reg_lock(&registry.cancelled).get(&job_id) {
+    if let Some(flag) = reg_lock(&registry.canceled).get(&job_id) {
         flag.store(true, Ordering::Relaxed);
     }
     let pending = {
         let mut jobs = reg_lock(&registry.jobs);
         match jobs.get_mut(&job_id) {
             Some(j) if j.status == "running" => {
-                j.status = "cancelling".into();
+                j.status = "canceling".into();
                 Some(j.clone())
             }
             _ => None,
@@ -949,7 +949,7 @@ pub fn cancel_job(app: AppHandle, registry: tauri::State<'_, JobRegistry>, job_i
 
 /// The actual tool dispatch + provenance write (runs on the blocking pool).
 ///
-/// `cancelled` is checked before dispatch (so a job cancelled while it was still
+/// `canceled` is checked before dispatch (so a job canceled while it was still
 /// queued behind others does no work at all) and again before the provenance write
 /// (so an abandoned run isn't recorded in the DAG). There is no check *inside* a
 /// tool: none of the core tools expose an interruption point.
@@ -959,10 +959,10 @@ fn run_one(
     root: &str,
     started: u128,
     job_id: &str,
-    cancelled: &AtomicBool,
+    canceled: &AtomicBool,
 ) -> Result<RunResult, String> {
-    if cancelled.load(Ordering::Relaxed) {
-        return Err("job cancelled".into());
+    if canceled.load(Ordering::Relaxed) {
+        return Err("job canceled".into());
     }
     let (inputs, outputs, message) = match tool {
         "domain-search" => run_domain_search(params.clone())?,
@@ -995,8 +995,8 @@ fn run_one(
         "build-ssn-viewer" => run_build_ssn_viewer(params.clone())?,
         other => return Err(format!("tool not runnable from the GUI yet: {other}")),
     };
-    if cancelled.load(Ordering::Relaxed) {
-        // Cancelled while the tool ran: report the outputs it produced, but write
+    if canceled.load(Ordering::Relaxed) {
+        // Canceled while the tool ran: report the outputs it produced, but write
         // no provenance — the run is not part of the workspace's history.
         return Ok(RunResult {
             job_id: job_id.to_string(),
@@ -2009,7 +2009,7 @@ fn run_build_ssn(params: Value) -> Result<RunOutput, String> {
     if cfg.mst && cfg.mst_knn.is_some() {
         return Err("mst and mst_knn are mutually exclusive".into());
     }
-    // Resolve the optional colour table (name→color TSV); subset files aren't
+    // Resolve the optional color table (name→color TSV); subset files aren't
     // exposed in the GUI form yet, so pass none for those.
     let color_table = match cfg.color_table.as_deref().filter(|p| !p.trim().is_empty()) {
         Some(path) => {
@@ -2048,7 +2048,7 @@ fn run_build_ssn(params: Value) -> Result<RunOutput, String> {
     }
 
     if let Some(path) = cfg.color_table_out.as_deref().filter(|p| !p.trim().is_empty()) {
-        let ct = result.resolved_color_table.as_ref().ok_or("no colour table resolved (set color_by)")?;
+        let ct = result.resolved_color_table.as_ref().ok_or("no color table resolved (set color_by)")?;
         let mut items: Vec<(&String, &String)> = ct.iter().collect();
         items.sort_by(|a, b| a.0.cmp(b.0));
         let mut out = String::new();
@@ -2128,9 +2128,9 @@ mod tests {
             // Empty params take every runner down its "missing input" path long
             // before it touches a file, so this reaches the dispatch and nothing
             // more expensive.
-            let not_cancelled = AtomicBool::new(false);
+            let not_canceled = AtomicBool::new(false);
             if let Err(e) =
-                run_one(&tool.id, serde_json::json!({}), &root, 0, "job_test", &not_cancelled)
+                run_one(&tool.id, serde_json::json!({}), &root, 0, "job_test", &not_canceled)
             {
                 assert!(
                     !e.contains("not runnable from the GUI"),
@@ -2164,8 +2164,8 @@ mod tests {
                 tool.id
             );
 
-            let not_cancelled = AtomicBool::new(false);
-            if let Err(e) = run_one(&tool.id, params, &root, 0, "job_cpu", &not_cancelled) {
+            let not_canceled = AtomicBool::new(false);
+            if let Err(e) = run_one(&tool.id, params, &root, 0, "job_cpu", &not_canceled) {
                 assert!(
                     !e.contains("unknown field"),
                     "{}: injecting cpu made the config be rejected: {e}",
@@ -2208,39 +2208,39 @@ mod tests {
         }
     }
 
-    /// A job cancelled before dispatch must not run its tool at all. The flag used
+    /// A job canceled before dispatch must not run its tool at all. The flag used
     /// to be read only *after* `run_one` returned, so "cancel" could not stop
-    /// anything — it just relabelled a run that had already completed and written
+    /// anything — it just relabeled a run that had already completed and written
     /// its provenance. Dispatching an unknown tool would normally produce the
-    /// "not runnable" error; seeing "cancelled" instead proves the check happens
+    /// "not runnable" error; seeing "canceled" instead proves the check happens
     /// first.
     #[test]
-    fn a_job_cancelled_before_dispatch_does_no_work() {
-        let root = scratch("cancelled-early");
-        let cancelled = AtomicBool::new(true);
+    fn a_job_canceled_before_dispatch_does_no_work() {
+        let root = scratch("canceled-early");
+        let canceled = AtomicBool::new(true);
         let err = run_one(
             "not-a-tool",
             serde_json::json!({}),
             &root.to_string_lossy(),
             0,
             "j",
-            &cancelled,
+            &canceled,
         );
-        let Err(err) = err else { panic!("a cancelled job must not report success") };
-        assert!(err.contains("cancelled"), "{err}");
+        let Err(err) = err else { panic!("a canceled job must not report success") };
+        assert!(err.contains("canceled"), "{err}");
     }
 
     #[test]
     fn an_unknown_tool_is_refused_by_name() {
         let root = scratch("unknown");
-        let not_cancelled = AtomicBool::new(false);
+        let not_canceled = AtomicBool::new(false);
         let err = match run_one(
             "not-a-tool",
             serde_json::json!({}),
             &root.to_string_lossy(),
             0,
             "j",
-            &not_cancelled,
+            &not_canceled,
         ) {
             Err(e) => e,
             Ok(_) => panic!("an unknown tool must not run"),
@@ -2330,9 +2330,9 @@ mod tests {
     }
 
     /// The provenance DAG walk keys off these roles: `sequence` is a leaf source,
-    /// `reference` is ignored. Mislabelling them breaks SSN-node-to-record tracing.
+    /// `reference` is ignored. Mislabeling them breaks SSN-node-to-record tracing.
     #[test]
-    fn reference_inputs_are_labelled_for_the_provenance_walk() {
+    fn reference_inputs_are_labeled_for_the_provenance_walk() {
         let v = ref_inputs("contigs.gb", &["a.hmm".into(), "b.hmm".into()]);
         let roles: Vec<(&str, &str)> =
             v.iter().map(|i| (i.path.as_str(), i.role.as_str())).collect();

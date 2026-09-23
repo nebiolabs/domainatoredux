@@ -258,7 +258,7 @@ pub fn route(app: &AppHandle, event: tauri::menu::MenuEvent) {
     let raw = event.id().as_ref();
     let cmd = MenuCommand::parse(raw);
 
-    // A parameterised id whose prefix is not declared means the builder invented
+    // A parameterized id whose prefix is not declared means the builder invented
     // an id no frontend handler routes -- worth saying out loud rather than
     // emitting a command that silently does nothing.
     if cmd.arg.is_some() && !DYNAMIC_PREFIXES.contains(&cmd.id.as_str()) {
@@ -281,7 +281,7 @@ pub fn route(app: &AppHandle, event: tauri::menu::MenuEvent) {
     }
 }
 
-/// What the frontend reports so the menu can grey items out.
+/// What the frontend reports so the menu can gray items out.
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct MenuState {
     pub has_workspace: bool,

@@ -35,7 +35,7 @@ export const MENU_IDS = [
 
 export type MenuId = (typeof MENU_IDS)[number];
 
-/// Prefixes for parameterised ids (`<prefix>:<arg>`), mirroring DYNAMIC_PREFIXES.
+/// Prefixes for parameterized ids (`<prefix>:<arg>`), mirroring DYNAMIC_PREFIXES.
 export const MENU_PREFIXES = [
   "tools.run",
   "file.open_recent",

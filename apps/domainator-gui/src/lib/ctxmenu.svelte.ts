@@ -22,7 +22,7 @@ export interface CtxItem {
   /// May be async and may throw; a rejection is surfaced through `ws.error`.
   action?: () => void | Promise<void>;
   disabled?: boolean;
-  /// Renders in the error colour — destructive actions (Delete, Clear history).
+  /// Renders in the error color — destructive actions (Delete, Clear history).
   danger?: boolean;
   /// Renders a checkmark; makes the item a `menuitemcheckbox`.
   checked?: boolean;

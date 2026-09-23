@@ -155,7 +155,7 @@ pub fn hmmer_select<W: Write>(
     let regexes = compile_regexes(opts)?;
     // `--alphabet` on its own leaves the text criteria nothing to match, so it
     // means "every profile in the files that survive". With no criteria at all,
-    // keep the historical behaviour of selecting nothing.
+    // keep the historical behavior of selecting nothing.
     let match_all = regexes.is_empty()
         && opts.exact.is_empty()
         && opts.contains.is_empty()

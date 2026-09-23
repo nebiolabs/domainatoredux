@@ -15,7 +15,7 @@
 //!
 //! * **static** — `^[a-z]+\.[a-z0-9_]+$`, e.g. `file.open_workspace`. A closed set,
 //!   pinned to the frontend by [`tests::every_menu_id_is_known_to_the_frontend`].
-//! * **parameterised** — `<prefix>:<arg>`, e.g. `tools.run:domain-search`,
+//! * **parameterized** — `<prefix>:<arg>`, e.g. `tools.run:domain-search`,
 //!   `file.open_recent:3`, `window.focus:file7`. `:` is reserved as the separator
 //!   and therefore forbidden in a static id.
 
@@ -96,7 +96,7 @@ pub const COMMANDS: &[MenuCommandSpec] = &[
     cmd("help.issues", "Report an Issue", None, Needs::Nothing),
 ];
 
-/// Prefixes for parameterised ids. The router splits on the first `:`.
+/// Prefixes for parameterized ids. The router splits on the first `:`.
 pub const DYNAMIC_PREFIXES: &[&str] =
     &["tools.run", "file.open_recent", "window.focus", "view.col", "view.sort"];
 

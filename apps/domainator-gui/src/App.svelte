@@ -229,7 +229,7 @@
   });
 
   // Theme, applied as early as possible. `app.css` already renders the right
-  // colours for a "system" user via prefers-color-scheme, so this only matters
+  // colors for a "system" user via prefers-color-scheme, so this only matters
   // for an explicit light/dark choice -- and runs in detached windows too, which
   // load the same entry point.
   $effect(() => {
@@ -282,7 +282,7 @@
   });
 
 
-  // Publish what the menu needs to grey items out. Diffed before sending so a
+  // Publish what the menu needs to gray items out. Diffed before sending so a
   // pointer move that touches the store does not spam IPC; only the main window
   // publishes, since a detached window's "is a tab open" is not the shell's.
   let lastMenuState = "";

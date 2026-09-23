@@ -4,7 +4,7 @@
 //! list of [`DbSpec`]s, a managed directory under the app data dir, and one
 //! `download`-shaped entry point. What differs is everything the size forces —
 //! these are downloads measured in tens of gigabytes, so every step here is
-//! streamed, cancellable, and reports progress, and nothing is ever buffered whole.
+//! streamed, cancelable, and reports progress, and nothing is ever buffered whole.
 //!
 //! What "installed" means, per kind:
 //!
@@ -313,7 +313,7 @@ pub fn record_check(app: &AppHandle, id: &str, version: &str) -> Result<VersionC
 /// A reader that counts bytes, reports progress, and aborts on a cancel flag.
 ///
 /// The cancel error is deliberately *not* `ErrorKind::Interrupted`: `io::copy` and
-/// friends retry that one, so a cancelled 40 GB download would simply carry on.
+/// friends retry that one, so a canceled 40 GB download would simply carry on.
 struct ProgressReader<'a, R: Read> {
     inner: R,
     done: u64,
@@ -330,7 +330,7 @@ const PROGRESS_STEP: u64 = 8 << 20; // 8 MiB
 impl<R: Read> Read for ProgressReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.cancel.load(Ordering::Relaxed) {
-            return Err(std::io::Error::other("cancelled"));
+            return Err(std::io::Error::other("canceled"));
         }
         let n = self.inner.read(buf)?;
         self.done += n as u64;
@@ -497,7 +497,7 @@ pub fn install(
     }
     if cancel.load(Ordering::Relaxed) {
         let _ = std::fs::remove_file(&part);
-        return Err("cancelled".into());
+        return Err("canceled".into());
     }
 
     std::fs::rename(&part, &final_path)
@@ -979,10 +979,10 @@ MSDKIIHLTD
     }
 
     /// A cancel must stop the read rather than be retried away. `io::copy` loops on
-    /// `ErrorKind::Interrupted`, so using it here would make cancelling a 40 GB
+    /// `ErrorKind::Interrupted`, so using it here would make canceling a 40 GB
     /// download do nothing at all.
     #[test]
-    fn cancelling_stops_the_stream_with_a_non_retryable_error() {
+    fn canceling_stops_the_stream_with_a_non_retryable_error() {
         let cancel = AtomicBool::new(false);
         let noop = |_: &str, _: u64, _: u64| {};
         let mut r = ProgressReader {
@@ -999,7 +999,7 @@ MSDKIIHLTD
         cancel.store(true, Ordering::Relaxed);
         let err = r.read(&mut buf).unwrap_err();
         assert_ne!(err.kind(), std::io::ErrorKind::Interrupted, "io::copy would retry this");
-        assert!(err.to_string().contains("cancelled"));
+        assert!(err.to_string().contains("canceled"));
 
         // And the error is what a copy of the whole stream surfaces.
         let mut sink = Vec::new();
