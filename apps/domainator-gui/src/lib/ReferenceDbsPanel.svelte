@@ -17,15 +17,18 @@
   import type { RefDbProgress, ReferenceDbStatus } from "./types";
   import { ws } from "./state.svelte";
   import { ui } from "./ui.svelte";
+  import { flashPanel } from "./panelFlash";
   import ConfirmDialog from "./ConfirmDialog.svelte";
 
   let expanded = $state(false);
 
-  // Tools menu → expand and clear the request.
+  // Tools menu → expand, outline for a few seconds, and clear the request.
+  let panelEl = $state<HTMLDivElement>();
   $effect(() => {
     if (ui.focusPanel === "refdbs") {
       expanded = true;
       ui.focusPanel = null;
+      flashPanel(panelEl);
     }
   });
 
@@ -152,7 +155,7 @@
   const installedCount = $derived(dbs.filter((d) => d.installed).length);
 </script>
 
-<div class="refdbs">
+<div class="refdbs" bind:this={panelEl}>
   <div class="header">
     <button class="twisty" onclick={() => (expanded = !expanded)} aria-label="Toggle reference databases">
       {expanded ? "▾" : "▸"}

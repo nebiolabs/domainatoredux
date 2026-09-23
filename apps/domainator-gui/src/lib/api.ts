@@ -314,6 +314,8 @@ export interface ToolLine {
 export interface AppDiagnostics {
   product: string;
   version: string;
+  upstream_version: string;
+  upstream_commit: string;
   tauri_version: string;
   webview_version: string;
   os: string;

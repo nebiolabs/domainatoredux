@@ -2,14 +2,17 @@
   import { downloadExternalTool, listExternalTools } from "./api";
   import type { ExternalToolStatus } from "./types";
   import { ui } from "./ui.svelte";
+  import { flashPanel } from "./panelFlash";
 
   let expanded = $state(false);
 
-  // Tools menu → expand and clear the request.
+  // Tools menu → expand, outline for a few seconds, and clear the request.
+  let panelEl = $state<HTMLDivElement>();
   $effect(() => {
     if (ui.focusPanel === "external") {
       expanded = true;
       ui.focusPanel = null;
+      flashPanel(panelEl);
     }
   });
   let tools = $state<ExternalToolStatus[]>([]);
@@ -50,7 +53,7 @@
   const installedCount = $derived(tools.filter((t) => t.installed).length);
 </script>
 
-<div class="ext">
+<div class="ext" bind:this={panelEl}>
   <div class="header">
     <button class="twisty" onclick={() => (expanded = !expanded)} aria-label="Toggle external tools">
       {expanded ? "▾" : "▸"}

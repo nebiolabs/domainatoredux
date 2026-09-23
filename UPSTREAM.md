@@ -31,7 +31,10 @@ file records how far the port is caught up and how to advance it.
   the pin above). It is the deterministic, repo-local source for regeneration and drift
   checks. Refresh it with `scripts/sync_upstream.sh` (fast-forwards to a target ref).
 
-Advancing the pin is the **last** step of every sync (see the routine below).
+Advancing the pin is the **last** step of every sync (see the routine below). Update
+`upstream_commit!()` in `crates/domainator-core/src/version.rs` in the same commit. If
+upstream's `__version__` changed, update `upstream_version!()` as well. A unit test checks
+the commit against the **Caught up to** line, and `sync_upstream.sh` checks the version.
 
 ## Sync-surface taxonomy
 

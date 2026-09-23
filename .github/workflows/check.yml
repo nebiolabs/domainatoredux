@@ -1,6 +1,6 @@
 name: Check
 
-# The packaging workflow (build-gui-apps.yml) only runs on `gui-*` tags, so nothing
+# The packaging workflow (build-gui-apps.yml) only runs on `v*` release tags, so nothing
 # was verifying the library on an ordinary push. This job is the fast gate: it builds,
 # lints and tests the pure-Rust crates and enforces the zero-warning rule for both
 # rustc and clippy.

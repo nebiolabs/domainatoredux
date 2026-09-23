@@ -99,7 +99,7 @@ this first app scaffold.
 
 The repository workflow `.github/workflows/build-gui-apps.yml` builds this app
 on GitHub-hosted macOS and Windows runners. It can be started manually from the
-Actions tab with `workflow_dispatch`, or by pushing a tag matching `gui-*`.
+Actions tab with `workflow_dispatch`, or by pushing a `vX.Y.Z` release tag.
 
 The workflow uses a matrix with `app_id`, `app_path`, `package_name`, `platform`,
 and `target` fields. To add another small GUI tool later, add another set of

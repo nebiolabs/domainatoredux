@@ -1020,7 +1020,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1033,7 +1033,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-config"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "domainator-core",
@@ -1044,7 +1044,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bgzf",
  "flate2",
@@ -1061,17 +1061,18 @@ dependencies = [
 
 [[package]]
 name = "domainator-genbank-summary"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "domainator-core",
  "rfd",
+ "serde_json",
  "tauri",
  "tauri-build",
 ]
 
 [[package]]
 name = "domainator-gui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "base64 0.22.1",
  "bgzf",

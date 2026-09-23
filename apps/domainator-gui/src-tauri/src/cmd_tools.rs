@@ -1015,6 +1015,7 @@ fn run_one(
         finished_at_ms: now_ms(),
         status: "completed".into(),
         engine_version: env!("CARGO_PKG_VERSION").into(),
+        upstream_version: domainator_core::version::UPSTREAM_VERSION.into(),
     };
     write_job(Path::new(root), &record, &format!("{tool} output"))
         .map_err(|e| format!("writing provenance: {e}"))?;

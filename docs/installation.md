@@ -16,6 +16,9 @@ Grab them from the
 | Linux (x64) | `.deb` and `.AppImage` | `domainator` |
 
 Releases are cut manually, so the newest commits may be ahead of the newest release.
+Release numbers are this project's own and do not follow the Python package's. Each
+release says which Python `domainator` version it matches, and so does `domainator
+--version`, e.g. `domainator 1.0.0 (parity with Python domainator 0.11.0 @ 9c70934)`.
 Intel macOS is not built; build from source there.
 
 The command-line download is a single self-contained binary. Put it somewhere on your

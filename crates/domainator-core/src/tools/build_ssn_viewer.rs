@@ -243,7 +243,9 @@ pub fn build_ssn_viewer_bundle(matrix: &DataMatrix, opts: &BuildSsnViewerOptions
     bundle.insert("format".into(), json!(SSN_VIEWER_BUNDLE_FORMAT));
     bundle.insert("version".into(), json!(SSN_VIEWER_BUNDLE_VERSION));
     bundle.insert("name".into(), json!(opts.name));
-    bundle.insert("domainator_version".into(), json!(env!("CARGO_PKG_VERSION")));
+    // Upstream's meaning of this key is "which domainator release wrote it"; the
+    // viewer shell writes the same value into the bundles it extracts.
+    bundle.insert("domainator_version".into(), json!(crate::version::UPSTREAM_VERSION));
     bundle.insert("graph".into(), graph);
     bundle.insert("metadata".into(), metadata);
     bundle.insert(

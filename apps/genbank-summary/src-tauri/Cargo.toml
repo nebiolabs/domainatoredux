@@ -21,3 +21,6 @@ tauri-build = { version = "2.6.3", features = [] }
 domainator-core = { path = "../../../crates/domainator-core" }
 rfd = "0.17.2"
 tauri = { version = "2.11.4", features = [] }
+
+[dev-dependencies]
+serde_json.workspace = true

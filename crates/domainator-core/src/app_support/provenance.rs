@@ -31,6 +31,10 @@ pub struct JobRecord {
     pub finished_at_ms: u128,
     pub status: String,
     pub engine_version: String,
+    /// The Python `domainator` release `engine_version` was at parity with.
+    /// Absent (empty) in jobs recorded before it was stamped.
+    #[serde(default)]
+    pub upstream_version: String,
 }
 
 /// Milliseconds since the Unix epoch (monotonic enough for job ordering/ids).
@@ -178,6 +182,7 @@ mod tests {
             finished_at_ms: u128::MAX / 2,
             status: "ok".into(),
             engine_version: "test".into(),
+            upstream_version: "test".into(),
         }
     }
 

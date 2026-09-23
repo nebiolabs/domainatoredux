@@ -117,8 +117,45 @@ Tauri crates — webkit2gtk costs more to install than that gate is worth, so th
 guard tests run locally and via `sync_upstream.sh`.
 
 `.github/workflows/build-gui-apps.yml` packages the desktop apps (macOS `.dmg`, Windows
-NSIS, Linux `.deb`/AppImage) and the CLI binaries. It runs on `gui-*` tags or manual
+NSIS, Linux `.deb`/AppImage) and the CLI binaries. It runs on `v*` release tags or manual
 dispatch, and releases are cut by hand from its artifacts.
+
+## Versioning and releases
+
+The port has **its own SemVer line**, independent of the Python package's numbers. The
+Python release it reproduces is recorded separately and reported next to it.
+
+- **Our version** is `workspace.package.version` in the root `Cargo.toml` and nowhere else.
+  The CLI, both Tauri apps (their `tauri.conf.json` has no `version` key, so the bundler
+  reads Cargo's), the About box and job provenance (`engine_version`) all take it from
+  there. A test in each app fails if a `version` key comes back.
+  - **MAJOR:** a breaking change to our CLI flags, config schema or on-disk output.
+  - **MINOR:** new tools or features, including an upstream catch-up that adds features.
+  - **PATCH:** fixes only.
+- **Upstream parity** is `UPSTREAM_VERSION` (upstream's `__version__` at the pin) and
+  `UPSTREAM_COMMIT` (the pin itself) in `crates/domainator-core/src/version.rs`. They
+  appear in `domainator --version`, the About box, the diagnostics blob and every job's
+  provenance (`upstream_version`). `UPSTREAM_VERSION` is also what a `.dsnv` bundle's
+  `domainator_version` key holds, because upstream reads that key as "which domainator
+  release wrote this". Three guards keep the constants honest:
+  - a unit test that `UPSTREAM_COMMIT` equals `UPSTREAM.md`'s pin;
+  - a unit test that `UPSTREAM_VERSION` equals the version baked into the regenerated
+    viewer shell;
+  - a `sync_upstream.sh` guard comparing `UPSTREAM_VERSION` with the vendored
+    `__version__`.
+- **Tags** are `vX.Y.Z`, one per release, covering the CLI and both apps. The packaging
+  workflow refuses a tag that differs from `v` + `workspace.package.version`. (The
+  `v0.11.0` tag predates this scheme; the first release under it is `v1.0.0`.)
+
+To cut a release:
+
+1. Bump `workspace.package.version` in `Cargo.toml`.
+2. Add an entry to `CHANGELOG.md` that names the upstream version and commit it is at
+   parity with.
+3. Commit, tag `vX.Y.Z` and push the tag. `build-gui-apps.yml` builds the installers and
+   CLI binaries.
+4. Create the GitHub release from those artifacts, with the changelog entry as its notes.
+   The GUI's update check reads the latest non-prerelease release's tag.
 
 ## Staying in sync with the Python package
 
@@ -139,7 +176,8 @@ full workflow. The essentials:
 - **On-disk format changes** upstream require parallel Rust changes in the owning module.
 - **Routine:** `scripts/sync_upstream.sh` fast-forwards the vendored copy, prints the
   changelog to triage against `UPSTREAM.md`'s file→owner map, runs the guards, and reminds
-  you to advance the pin.
+  you to advance the pin (and `UPSTREAM_COMMIT` with it; see
+  [Versioning and releases](#versioning-and-releases)).
 
 ## The docs
 

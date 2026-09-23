@@ -37,6 +37,8 @@ pub fn app_diagnostics(app: AppHandle) -> Result<AppDiagnostics, String> {
     let info = Diagnostics {
         product: pkg.name.clone(),
         version: pkg.version.to_string(),
+        upstream_version: domainator_core::version::UPSTREAM_VERSION.to_string(),
+        upstream_commit: domainator_core::version::UPSTREAM_COMMIT.to_string(),
         tauri_version: tauri::VERSION.to_string(),
         // Never fail the whole command over a version probe -- an About box that
         // errors is worse than one missing a line.

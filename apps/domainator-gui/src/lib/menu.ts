@@ -70,12 +70,15 @@ export const HANDLERS: Record<MenuId, Handler> = {
   },
 
   "tools.databases": () => {
+    ui.sidebarVisible = true; // the panel lives in the sidebar
     ui.focusPanel = "databases";
   },
   "tools.reference_dbs": () => {
+    ui.sidebarVisible = true;
     ui.focusPanel = "refdbs";
   },
   "tools.external": () => {
+    ui.sidebarVisible = true;
     ui.focusPanel = "external";
   },
   "tools.clear_jobs": () => {

@@ -61,6 +61,13 @@ validated post-merge so they can come from the config file).
 `ssn-navigator` always writes JSON. In every case `--json` takes a path (`-` = stdout) and
 is **independent of `-o`**, so a run can produce TSV/text and JSON together.
 
+**Versioning** (`docs/development.md`, "Versioning and releases"): our own SemVer line is
+`workspace.package.version` and nothing else (no `version` in any `tauri.conf.json` or
+`package.json`); the Python release we are at parity with is `UPSTREAM_VERSION`/
+`UPSTREAM_COMMIT` in `crates/domainator-core/src/version.rs`, shown beside ours and written
+as a `.dsnv`'s `domainator_version`. Tags are `vX.Y.Z`; `CHANGELOG.md` names the parity
+version per release.
+
 **Documentation** lives in `docs/`, which is an **mdbook** (`book.toml` at the repo root
 sets `src = "docs"`, so every page is also plain markdown that renders on GitHub).
 User-facing: `installation`, `getting-started`, `concepts`, `cli-reference`, `examples`,
@@ -266,7 +273,7 @@ Also complete and Python-verified: `select_by_contig`, `select_by_cds` (standalo
 dense↔sparse, `--mst_knn`/`--knn`; `np.allclose` + byte-identical `dense_text`), `build_ssn`
 (XGMML parses equal — node/edge/att sets — for default/`--mst`/`--knn`/`--mst_knn`/`--cluster`/
 metadata, byte-identical `cluster_tsv`), `build_ssn_viewer` (`.dsnv` bundle field-for-field
-identical after gunzip apart from `domainator_version`, and accepted by Python's own
+identical after gunzip, and accepted by Python's own
 `ssn_bundle.load_bundle`), `matrix_report` (`--json` identical to Python's payload; text report
 line-for-line identical apart from the histogram), `ssn_navigator` (all five modes, against both
 implementations' bundles), and `summary_report` (`--json` identical incl. co-occurrence and

@@ -87,6 +87,8 @@
       </div>
 
       <dl class="facts">
+        <dt>Parity with</dt>
+        <dd>Python domainator {info.upstream_version} @ {info.upstream_commit}</dd>
         <dt>License</dt>
         <dd>{info.license}</dd>
         <dt>Tauri</dt>

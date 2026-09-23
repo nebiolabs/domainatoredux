@@ -12,6 +12,7 @@ pub mod parallel;
 pub mod search;
 pub mod seq;
 pub mod tools;
+pub mod version;
 
 /// Feature type for domain annotations added by domainate/domain_search
 /// (`DOMAIN_FEATURE_NAME` in the Python `domainator/__init__.py`).

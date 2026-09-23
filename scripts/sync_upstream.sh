@@ -74,6 +74,20 @@ echo "== guard: regen_ssn_viewer_shell.py --check =="
   || { echo "  -> viewer shell is STALE; run scripts/regen_ssn_viewer_shell.py"; FAILED=1; }
 
 echo
+echo "== guard: UPSTREAM_VERSION vs upstream __version__ =="
+# The release this port reports parity with (`--version`, About, provenance, the
+# `.dsnv` domainator_version) is a constant, not something read at build time.
+UP_VER="$(sed -nE 's/^__version__ *= *"([^"]+)".*/\1/p' "$VENDOR/src/domainator/__init__.py")"
+# First quoted string after the macro's name, so a rustfmt reflow cannot break it.
+OUR_VER="$(awk '/macro_rules! upstream_version/{f=1} f && match($0, /"[^"]+"/){print substr($0, RSTART+1, RLENGTH-2); exit}' \
+  "$REPO_ROOT/crates/domainator-core/src/version.rs")"
+echo "  upstream __version__: ${UP_VER:-?}   UPSTREAM_VERSION: ${OUR_VER:-?}"
+if [[ -z "$UP_VER" || -z "$OUR_VER" || "$UP_VER" != "$OUR_VER" ]]; then
+  echo "  -> update upstream_version!() in crates/domainator-core/src/version.rs"
+  FAILED=1
+fi
+
+echo
 echo "== guard: cargo test =="
 ( cd "$REPO_ROOT" && cargo test --workspace --quiet ) \
   || { echo "  -> cargo test failed"; FAILED=1; }
@@ -136,7 +150,8 @@ echo "== reminders =="
 echo "  * Triage the changelog against UPSTREAM.md's file->owner map; port surfaces #2-#4."
 echo "  * Run the per-tool parity gates for any tool whose Python file changed."
 echo "  * Read the scripts/parity/known_gaps.tsv diff, and triage the class column on new rows."
-echo "  * Advance the pin in UPSTREAM.md to ${TARGET:0:12} and note anything deferred."
+echo "  * Advance the pin in UPSTREAM.md to ${TARGET:0:12} and note anything deferred;"
+echo "    set upstream_commit!() in crates/domainator-core/src/version.rs to match."
 
 if [[ "$FAILED" -ne 0 ]]; then
   echo

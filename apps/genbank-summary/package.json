@@ -1,6 +1,5 @@
 {
   "name": "domainator-genbank-summary",
-  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {

@@ -126,6 +126,57 @@
   const topPad = $derived(firstIdx * ROW_H);
   const bottomPad = $derived(Math.max(0, (total - lastIdx) * ROW_H));
 
+  // Column widths. The body is virtualized, so an auto-layout table would re-fit
+  // its columns to whichever rows happen to be mounted and jump as you scroll.
+  // Widths are instead fixed per column (seeded from the header and a sample of
+  // rows, then drag-resizable), and long text is clipped with an ellipsis.
+  const MIN_COL_W = 40;
+  const MAX_AUTO_COL_W = 320;
+  const CHAR_PX = 7.2; // ≈ one 12.5px system-ui glyph
+  const WIDTH_SAMPLE = 200;
+  // Keyed by column name, and kept across re-runs so a width the user set survives
+  // toggling other columns or switching granularity.
+  let colWidths = $state<Record<string, number>>({});
+
+  $effect(() => {
+    const cols = columns;
+    const sample = rows.slice(0, WIDTH_SAMPLE);
+    untrack(() => {
+      const next = { ...colWidths };
+      let changed = false;
+      for (const c of cols) {
+        if (next[c] !== undefined) continue;
+        let chars = c.length + 2; // room for the sort arrow
+        for (const r of sample) chars = Math.max(chars, String(r[c] ?? "").length);
+        next[c] = Math.round(Math.min(MAX_AUTO_COL_W, Math.max(MIN_COL_W, chars * CHAR_PX + 26)));
+        changed = true;
+      }
+      if (changed) colWidths = next;
+    });
+  });
+  const tableW = $derived(columns.reduce((sum, c) => sum + (colWidths[c] ?? 100), 0));
+
+  // Drag a header's right edge to resize that column. The click that ends the
+  // drag lands on the header, so `resizing` stops it from also toggling the sort.
+  let resizing = false;
+  function startResize(e: PointerEvent, c: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    resizing = true;
+    const startX = e.clientX;
+    const startW = colWidths[c] ?? 100;
+    const move = (ev: PointerEvent) => {
+      colWidths[c] = Math.max(MIN_COL_W, Math.round(startW + ev.clientX - startX));
+    };
+    const up = () => {
+      setTimeout(() => (resizing = false));
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
   function toggleSort(c: string) {
     if (sortCol === c) sortDir = sortDir === 1 ? -1 : 1;
     else {
@@ -173,12 +224,19 @@
     <div class="msg">No rows.</div>
   {:else}
     <div class="scroll" bind:this={scrollEl} onscroll={onScroll}>
-      <table>
+      <table style="width: {tableW}px">
+        <colgroup>
+          {#each columns as c (c)}
+            <col style="width: {colWidths[c] ?? 100}px" />
+          {/each}
+        </colgroup>
         <thead>
           <tr>
             {#each columns as c (c)}
-              <th class:num={numericCols.has(c)} onclick={() => toggleSort(c)}>
+              <th class:num={numericCols.has(c)} onclick={() => !resizing && toggleSort(c)} title={c}>
                 {c}{#if sortCol === c}<span class="arrow">{sortDir === 1 ? " ▲" : " ▼"}</span>{/if}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <span class="resizer" onpointerdown={(e) => startResize(e, c)}></span>
               </th>
             {/each}
           </tr>
@@ -200,7 +258,7 @@
           {#each visibleRows as row, i (firstIdx + i)}
             <tr>
               {#each columns as c (c)}
-                <td class:num={numericCols.has(c)}>{row[c] ?? ""}</td>
+                <td class:num={numericCols.has(c)} title={String(row[c] ?? "")}>{row[c] ?? ""}</td>
               {/each}
             </tr>
           {/each}
@@ -273,7 +331,7 @@
   table {
     border-collapse: collapse;
     font-size: 12.5px;
-    width: 100%;
+    table-layout: fixed;
   }
   th,
   td {
@@ -281,8 +339,23 @@
     padding: 0 12px;
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     height: 24px;
     box-sizing: border-box;
+  }
+  .resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+  }
+  .resizer:hover {
+    background: var(--accent);
+    opacity: 0.5;
   }
   thead th {
     position: sticky;
@@ -301,7 +374,8 @@
   }
   thead tr.filterrow input {
     width: 100%;
-    min-width: 60px;
+    min-width: 0;
+    box-sizing: border-box;
     padding: 1px 4px;
     border: 1px solid var(--border);
     border-radius: 3px;

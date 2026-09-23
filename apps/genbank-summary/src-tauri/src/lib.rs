@@ -63,3 +63,20 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running Domainator GenBank Summary");
 }
+
+#[cfg(test)]
+mod tests {
+    /// Same guard as domainator-gui's: with no `version` key the bundler reads
+    /// `workspace.package.version`, so the installer cannot disagree with the
+    /// workspace release it was built from.
+    #[test]
+    fn the_app_version_is_not_pinned_in_the_tauri_config() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert!(
+            conf.get("version").is_none(),
+            "tauri.conf.json pins a `version` again; remove it so the bundle takes \
+             workspace.package.version from Cargo.toml"
+        );
+    }
+}

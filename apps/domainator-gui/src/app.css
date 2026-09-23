@@ -127,3 +127,11 @@ button:disabled {
 input[type="range"] {
   accent-color: var(--accent);
 }
+
+/* A sidebar panel requested from the Tools menu (see `lib/panelFlash.ts`). Global,
+   because the class is toggled from script, where Svelte's scoped CSS cannot see
+   it; inset so the sidebar's overflow clipping does not cut the outline off. */
+.panel-flash {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}

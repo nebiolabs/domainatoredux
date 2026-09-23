@@ -71,6 +71,10 @@ pub struct ToolLine {
 pub struct Diagnostics {
     pub product: String,
     pub version: String,
+    /// The Python `domainator` release this build is at parity with, and the
+    /// upstream commit behind it (`crate::version`).
+    pub upstream_version: String,
+    pub upstream_commit: String,
     pub tauri_version: String,
     pub webview_version: String,
     pub os: String,
@@ -89,6 +93,10 @@ pub struct Diagnostics {
 pub fn render_diagnostics(d: &Diagnostics) -> String {
     let mut s = String::new();
     s.push_str(&format!("{} {}\n", d.product, d.version));
+    s.push_str(&format!(
+        "parity with:  Python domainator {} @ {}\n",
+        d.upstream_version, d.upstream_commit
+    ));
     s.push_str(&format!("license:      {LICENSE}\n"));
     s.push_str(&format!("tauri:        {}\n", d.tauri_version));
     s.push_str(&format!("webview:      {}\n", d.webview_version));
@@ -115,7 +123,9 @@ mod tests {
     fn sample() -> Diagnostics {
         Diagnostics {
             product: "Domainator".into(),
-            version: "0.1.0".into(),
+            version: "1.0.0".into(),
+            upstream_version: "0.11.0".into(),
+            upstream_commit: "9c70934".into(),
             tauri_version: "2.11.4".into(),
             webview_version: "120.0".into(),
             os: "linux".into(),
@@ -175,7 +185,7 @@ mod tests {
         let d = sample();
         let out = render_diagnostics(&d);
         for needle in [
-            "Domainator", "0.1.0", "MIT", "2.11.4", "120.0", "linux", "x86_64", "release",
+            "Domainator", "1.0.0", "0.11.0", "9c70934", "MIT", "2.11.4", "120.0", "linux", "x86_64", "release",
             &d.app_data_dir, &d.prefs_path, &d.managed_tools_dir, "diamond", "2.2.5",
             "installed", PROJECT_URL,
         ] {

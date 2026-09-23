@@ -2,15 +2,18 @@
   import { pickFile } from "./api";
   import { ws } from "./state.svelte";
   import { ui } from "./ui.svelte";
+  import { flashPanel } from "./panelFlash";
   import type { DatabaseEntry } from "./types";
 
   let expanded = $state(true);
 
-  // Tools menu → expand and clear the request.
+  // Tools menu → expand, outline for a few seconds, and clear the request.
+  let panelEl = $state<HTMLDivElement>();
   $effect(() => {
     if (ui.focusPanel === "databases") {
       expanded = true;
       ui.focusPanel = null;
+      flashPanel(panelEl);
     }
   });
 
@@ -26,7 +29,7 @@
   }
 </script>
 
-<div class="dbpanel">
+<div class="dbpanel" bind:this={panelEl}>
   <div class="header">
     <button class="twisty" onclick={() => (expanded = !expanded)} aria-label="Toggle databases">
       {expanded ? "▾" : "▸"}

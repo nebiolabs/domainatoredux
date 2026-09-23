@@ -41,7 +41,7 @@ use domainator_core::tools::transform_matrix::transform_matrix;
 use domainator_core::tools::{domain_search, domainate};
 
 #[derive(Parser)]
-#[command(name = "domainator", version, about = "Domainator (Rust): protein-domain / SSN analysis")]
+#[command(name = "domainator", version, long_version = domainator_core::version::LONG_VERSION, about = "Domainator (Rust): protein-domain / SSN analysis")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

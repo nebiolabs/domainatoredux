@@ -511,6 +511,14 @@
   function onPointerDown(e: PointerEvent) {
     if (!scrollEl) return;
     const rect0 = scrollEl.getBoundingClientRect();
+    // A click that lands on no annotation deselects the current one (closing its
+    // detail panel). Only the feature-hit branch below sets it again; the panel
+    // itself sits outside this element, so clicks inside it never reach here.
+    const hit = featureAt(e.clientX, e.clientY);
+    if (!hit && selected) {
+      selected = null;
+      scheduleDraw();
+    }
     // The pinned shared ruler floats over the top of the viewport; a click on it
     // would otherwise select whatever scrolled underneath.
     if (sharedRuler && e.clientY - rect0.top < rulerBandH) return;
@@ -557,7 +565,6 @@
         return;
       }
     }
-    const hit = featureAt(e.clientX, e.clientY);
     if (hit) {
       // Select the feature's underlying sequence span (so it highlights + can be
       // copied), and — for editable files — open the edit panel.
@@ -753,16 +760,24 @@
   }
 
   // ── ruler ticks ───────────────────────────────────────────────────────────────
-  // Tick positions for the window [vLeft, vLeft + vW - GUTTER) in track px.
+  // Tick positions for the window [vLeft, vLeft + vW - GUTTER) in track px, as
+  // 1-based residue numbers (base 1, then every multiple of `step`) -- the same
+  // numbering the selection readout and the detail panel use. Base n spans
+  // [n-1, n) in the 0-based track coordinates, so its tick is drawn at n - 0.5.
   function ticks(length: number, vLeft: number, vW: number): { pos: number[]; step: number } {
     const spanBp = Math.min(length, (vW - GUTTER) / pxPerBp);
     const n = Math.max(3, Math.floor((vW - GUTTER) / 110));
     const raw = spanBp / n;
     const mag = Math.pow(10, Math.floor(Math.log10(Math.max(1, raw))));
     const step = Math.max(1, Math.round(raw / mag) * mag);
-    const first = Math.floor(Math.max(0, vLeft / pxPerBp) / step) * step;
+    const hi = Math.min(length, (vLeft + vW - GUTTER) / pxPerBp + 1);
+    let first = Math.floor(Math.max(0, vLeft / pxPerBp) / step) * step;
     const pos: number[] = [];
-    for (let x = first; x <= Math.min(length, (vLeft + vW - GUTTER) / pxPerBp); x += step) pos.push(x);
+    if (first < step) {
+      if (length >= 1 && step > 1) pos.push(1);
+      first = step;
+    }
+    for (let x = first; x <= hi; x += step) pos.push(x);
     return { pos, step };
   }
 
@@ -770,7 +785,8 @@
   // at least 1 kb, which is where raw bp counts stop being readable.
   function tickLabel(bp: number, step: number): string {
     const kb = rulerUnits === "kb" || (rulerUnits === "auto" && step >= 1000);
-    if (!kb) return bp.toLocaleString();
+    // The leading base-1 tick would round to "0 kb", which reads as 0-based.
+    if (!kb || bp === 1) return bp.toLocaleString();
     const v = bp / 1000;
     // Enough decimals to keep consecutive ticks distinct.
     const dp = step >= 1000 ? 0 : step >= 100 ? 1 : 2;
@@ -859,7 +875,7 @@
       ctx.textBaseline = "alphabetic";
       const { pos, step } = ticks(length, vLeft, vW);
       for (const t of pos) {
-        const tx = sx(t);
+        const tx = sx(t - 0.5);
         ctx.beginPath();
         ctx.moveTo(tx + 0.5, ry - 4);
         ctx.lineTo(tx + 0.5, ry);
@@ -1858,7 +1874,7 @@
   {#if tooltip}
     <div class="tooltip" style="left: {tooltip.x}px; top: {tooltip.y}px;">
       <div class="tt-title">{tooltip.feature.kind}</div>
-      <div class="tt-row"><b>start</b> {tooltip.feature.start}</div>
+      <div class="tt-row"><b>start</b> {tooltip.feature.start + 1}</div>
       <div class="tt-row"><b>end</b> {tooltip.feature.end}</div>
       <div class="tt-row"><b>strand</b> {tooltip.feature.strand === -1 ? "−" : tooltip.feature.strand === 1 ? "+" : "."}</div>
       {#each tooltip.feature.qualifiers as [k, v] (k)}

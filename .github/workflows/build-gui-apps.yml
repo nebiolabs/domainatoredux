@@ -3,12 +3,37 @@ name: Build GUI Apps
 on:
   workflow_dispatch:
   push:
+    # Releases are tagged `vX.Y.Z`, one tag for the CLI and both apps; see
+    # docs/development.md, "Versioning and releases".
     tags:
-      - "gui-*"
+      - "v*"
 
 jobs:
+  # A release tag must name the version the binaries report. It comes from
+  # `workspace.package.version` alone (CLI `--version`, the GUI About box, job
+  # provenance, the installer), so a tag that disagrees ships artifacts whose
+  # every self-description contradicts the release page.
+  version:
+    name: Tag matches workspace version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Compare the tag with Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          want=$(awk '/^\[workspace.package\]/{p=1; next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/, "", $0); sub(/^version=/, ""); print; exit}' Cargo.toml)
+          tag="${GITHUB_REF_NAME}"
+          echo "tag: ${tag}  workspace.package.version: ${want}"
+          if [ -z "${want}" ] || [ "${tag}" != "v${want}" ]; then
+            echo "::error::tag ${tag} does not match workspace.package.version ${want} (expected v${want})"
+            exit 1
+          fi
+
   build:
     name: ${{ matrix.app_id }} (${{ matrix.platform }})
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -176,6 +201,7 @@ jobs:
   # of the WebKitGTK stack the GUI build installs.
   cli:
     name: domainator CLI (${{ matrix.platform }})
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

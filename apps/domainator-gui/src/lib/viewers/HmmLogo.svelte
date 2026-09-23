@@ -145,6 +145,17 @@
     return met;
   }
 
+  // A sans-serif "I" is a bare vertical bar, so its ink box stretched to fill a
+  // column is a solid rectangle. Isoleucine is drawn as a turned "H" instead (a
+  // serifed I: full-width top and bottom bars joined by a central stem), in unit
+  // coordinates so the canvas and the SVG export share one shape.
+  const SERIF_I: [number, number, number, number][] = [
+    [0, 0, 1, 0.2], // top bar: x, y, w, h
+    [0.34, 0, 0.32, 1], // stem
+    [0, 0.8, 1, 0.2], // bottom bar
+  ];
+  const SERIF_I_PATH = SERIF_I.map(([x, y, w, h]) => `M${x} ${y}h${w}v${h}h${-w}z`).join("");
+
   type Rasterized = { canvas: HTMLCanvasElement; w: number; h: number };
   const glyphCache = new Map<string, Rasterized>();
 
@@ -152,6 +163,20 @@
     const key = ch + color;
     const hit = glyphCache.get(key);
     if (hit) return hit;
+
+    if (ch === "I") {
+      const canvas = document.createElement("canvas");
+      canvas.width = GLYPH_PX;
+      canvas.height = GLYPH_PX;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = color;
+      for (const [x, y, w, h] of SERIF_I) {
+        ctx.fillRect(x * GLYPH_PX, y * GLYPH_PX, w * GLYPH_PX, h * GLYPH_PX);
+      }
+      const r = { canvas, w: GLYPH_PX, h: GLYPH_PX };
+      glyphCache.set(key, r);
+      return r;
+    }
 
     const { left, asc, inkW, inkH } = metricsOf(ch);
     // Render into a canvas sized to the ink box (scaled up to GLYPH_PX tall for
@@ -429,6 +454,12 @@
         cum += l.height;
         if (hPx <= 0.4) continue;
         const yTop = BASE_Y - cum * yScale;
+        if (l.char === "I") {
+          parts.push(
+            `<path transform="translate(${(x + 1).toFixed(2)},${yTop.toFixed(2)}) scale(${(colW - 2).toFixed(4)},${hPx.toFixed(4)})" d="${SERIF_I_PATH}" fill="${colorOf(l.char)}"/>`,
+          );
+          continue;
+        }
         const { left, asc, inkW, inkH } = metricsOf(l.char);
         const sxf = (colW - 2) / inkW;
         const syf = hPx / inkH;
