@@ -86,7 +86,7 @@
           class:active={v.id === currentViewId}
           role="tab"
           aria-selected={v.id === currentViewId}
-          onclick={() => (ws.subActive[active.id] = v.id)}
+          onclick={() => ws.showSubView(active.id, v.id)}
         >
           {v.label}
         </button>

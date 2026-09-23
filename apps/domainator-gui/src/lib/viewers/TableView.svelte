@@ -1,6 +1,5 @@
 <script lang="ts">
   import { createTextFile, readTextFile, writeTextFile } from "../api";
-  import { ui } from "../ui.svelte";
   import { ws } from "../state.svelte";
   import { validateFilename } from "../filetypes";
   import NameModal from "../NameModal.svelte";
@@ -24,16 +23,17 @@
     return () => ws.clearDirty(path);
   });
 
-  // File → Save.
-  $effect(() => {
-    if (ui.saveRequest > 0 && dirty && truncated === 0) void save();
-  });
+  // File → Save, and the "Save" button on the unsaved-changes guard, both call
+  // this hook. See the note in TextView for why this is a direct call and not an
+  // `$effect` on a request counter.
+  $effect(() => ws.registerEditor(path, save));
   let saving = $state(false);
   let msg = $state<string | null>(null);
   let trailingNewline = true; // preserve a final newline on save
-
-  const CAP = 5000; // editable-row cap (tables here are small; guard huge files)
-  let truncated = $state(0);
+  // The file's own line terminator. Rows are split and rejoined on LF here, so
+  // without carrying this back to the save a CRLF table was rewritten as LF.
+  let eol = $state("\n");
+  const eolLabel = $derived(eol === "\r\n" ? "CRLF" : eol === "\r" ? "CR" : "LF");
 
   // Sort + row-selection state.
   let sortCol = $state(-1);
@@ -75,12 +75,18 @@
     selected = new Set();
     sortCol = -1;
     try {
-      const text = await readTextFile(path);
+      // The backend normalizes to LF and reports the file's real terminator.
+      const f = await readTextFile(path);
+      const text = f.text;
+      eol = f.eol;
       trailingNewline = text.endsWith("\n");
-      const lines = text.replace(/\r\n?/g, "\n").split("\n");
+      const lines = text.split("\n");
       if (trailingNewline && lines.length && lines[lines.length - 1] === "") lines.pop();
-      truncated = Math.max(0, lines.length - CAP);
-      const parsed = lines.slice(0, CAP).map((l) => parseLine(l, delim));
+      // Every row is loaded and editable. This used to stop at a 5000-row CAP and
+      // then refuse to save, which quietly turned any real table into a read-only
+      // view of its first pages. Rendering stays bounded by the virtualizer
+      // below, so the row count only costs memory, not frames.
+      const parsed = lines.map((l) => parseLine(l, delim));
       ncols = parsed.reduce((m, r) => Math.max(m, r.length), 1);
       rows = parsed.map((r) => {
         const c = r.slice();
@@ -170,7 +176,7 @@
     const idx = [...selected].sort((a, b) => a - b);
     const out = [rows[0], ...idx.map((i) => rows[i])];
     const body = serialize(out);
-    const p = await createTextFile(dir, name, trailingNewline ? body + "\n" : body);
+    const p = await createTextFile(dir, name, trailingNewline ? body + "\n" : body, eol);
     await ws.refreshAndOpen(p);
     selected = new Set();
     showExtract = false;
@@ -178,15 +184,12 @@
 
   // ── save ──────────────────────────────────────────────────────────────────
   async function save() {
-    if (truncated > 0) {
-      msg = "refusing to save: file was truncated for display";
-      return;
-    }
+    if (saving || !dirty) return;
     saving = true;
     msg = null;
     try {
       const body = serialize(rows);
-      await writeTextFile(path, trailingNewline ? body + "\n" : body);
+      await writeTextFile(path, trailingNewline ? body + "\n" : body, eol);
       dirty = false;
       msg = "saved";
       setTimeout(() => (msg = null), 2000);
@@ -230,15 +233,38 @@
     return () => ro.disconnect();
   });
 
+  // Browsers cap how tall a single element may be (Chrome ~33.5M px, Firefox
+  // ~17.8M). Past that the spacer rows stop growing, the scrollbar detaches from
+  // the data, and the last rows become unreachable -- at ROW_H = 24 that is only
+  // ~740k rows, which a table this app writes can exceed. So above the cap the
+  // spacer is clamped and the scrollbar is read *proportionally*: `scrollTop`
+  // maps onto the row range rather than onto a pixel offset, and the rendered
+  // window is placed at the scroll position instead of after a pad of exact
+  // height. Below the cap (every ordinary file) the exact 1:1 mapping is kept.
+  const MAX_SPACER = 10_000_000;
+  const dataRows = $derived(Math.max(0, rows.length - 1));
+  const idealH = $derived(dataRows * ROW_H);
+  const scaled = $derived(idealH > MAX_SPACER);
+  const spacerH = $derived(scaled ? MAX_SPACER : idealH);
+  const windowRows = $derived(Math.max(1, Math.ceil(clientH / ROW_H)));
+
   // Data rows are `rows[1..]`; `firstRow`/`lastRow` are indices into `rows`, so
   // `setCell`/`deleteRow`/`rowSelect` keep taking the same absolute row number.
-  const firstRow = $derived(Math.max(1, Math.floor(scrollTop / ROW_H) - OVERSCAN + 1));
+  const firstRow = $derived.by(() => {
+    if (!scaled) return Math.max(1, Math.floor(scrollTop / ROW_H) - OVERSCAN + 1);
+    const maxScroll = Math.max(1, spacerH - clientH);
+    const frac = Math.min(1, Math.max(0, scrollTop / maxScroll));
+    const maxFirst = Math.max(1, dataRows - windowRows + 1);
+    return Math.min(maxFirst, Math.max(1, Math.round(frac * (maxFirst - 1)) + 1));
+  });
   const lastRow = $derived(
-    Math.min(rows.length, firstRow + Math.ceil(clientH / ROW_H) + 2 * OVERSCAN),
+    Math.min(rows.length, firstRow + windowRows + (scaled ? 1 : 2 * OVERSCAN)),
   );
   const visibleRows = $derived(rows.slice(firstRow, lastRow));
-  const topPad = $derived((firstRow - 1) * ROW_H);
-  const bottomPad = $derived(Math.max(0, (rows.length - lastRow) * ROW_H));
+  const topPad = $derived(scaled ? scrollTop : (firstRow - 1) * ROW_H);
+  const bottomPad = $derived(
+    Math.max(0, spacerH - topPad - (lastRow - firstRow) * ROW_H),
+  );
 </script>
 
 <div class="tv">
@@ -256,10 +282,10 @@
         <button class="extract" onclick={() => (showExtract = true)}>Extract →</button>
         <button onclick={() => (selected = new Set())}>clear</button>
       {/if}
-      <span class="dim">{Math.max(0, rows.length - 1).toLocaleString()} rows · {ncols} cols · {isCsv ? "CSV" : "TSV"}</span>
+      <span class="dim">{Math.max(0, rows.length - 1).toLocaleString()} rows · {ncols} cols · {isCsv ? "CSV" : "TSV"} · {eolLabel}</span>
       {#if dirty}<span class="dot" title="Unsaved changes">●</span>{/if}
       {#if msg}<span class="dim">{msg}</span>{/if}
-      {#if truncated > 0}<span class="warn">showing first {CAP.toLocaleString()} rows ({truncated.toLocaleString()} more — read-only)</span>{/if}
+      {#if scaled}<span class="warn" title="Past the browser's maximum element height the scrollbar maps onto the row range rather than onto pixels.">proportional scrolling</span>{/if}
     </div>
     <div class="grid-scroll" bind:this={scrollEl} onscroll={onScroll}>
       <table>

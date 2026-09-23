@@ -9,6 +9,7 @@ pub mod prefs;
 pub mod provenance;
 pub mod registry;
 pub mod summary_stats;
+pub mod text_file;
 pub mod tool_params;
 pub mod version_check;
 pub mod workspace;

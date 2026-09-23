@@ -20,7 +20,7 @@
     error = null;
     raw = null;
     zoom = 1;
-    cached(`svgtext:${path}`, () => readTextFile(path))
+    cached(`svgtext:${path}`, () => readTextFile(path).then((f) => f.text))
       .then((t) => (raw = t))
       .catch((e) => (error = String(e)))
       .finally(() => (loading = false));

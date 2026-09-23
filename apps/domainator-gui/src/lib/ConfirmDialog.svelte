@@ -9,17 +9,24 @@
     title,
     body = "",
     confirmLabel = "OK",
+    altLabel,
     danger = false,
     onconfirm,
+    onalt,
     oncancel,
   }: {
     title: string;
     body?: string;
     confirmLabel?: string;
+    /// A third choice beside Confirm and Cancel, for the questions that are not
+    /// yes/no -- "Save / Discard / Cancel" on an unsaved buffer. Omitted, the
+    /// dialog stays a plain two-button confirm.
+    altLabel?: string;
     danger?: boolean;
     /// May be async and may throw; the message is shown inline and the dialog
     /// stays open so the user can read it.
     onconfirm: () => void | Promise<void>;
+    onalt?: () => void | Promise<void>;
     oncancel: () => void;
   } = $props();
 
@@ -33,17 +40,19 @@
     confirmEl?.focus();
   });
 
-  async function go() {
+  async function run(action: () => void | Promise<void>) {
     if (busy) return;
     busy = true;
     err = null;
     try {
-      await onconfirm();
+      await action();
     } catch (e) {
       err = String(e);
       busy = false;
     }
   }
+  const go = () => run(onconfirm);
+  const goAlt = () => onalt && run(onalt);
 </script>
 
 <div class="overlay" role="presentation" onclick={oncancel}>
@@ -61,6 +70,9 @@
     {#if err}<div class="err">{err}</div>{/if}
     <div class="actions">
       <button onclick={oncancel} disabled={busy}>Cancel</button>
+      {#if altLabel}
+        <button onclick={goAlt} disabled={busy}>{altLabel}</button>
+      {/if}
       <button
         bind:this={confirmEl}
         class="primary"

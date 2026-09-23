@@ -54,6 +54,10 @@ class WorkspaceStore {
   // ContigView is deliberately absent -- it writes through `cmd_edit` on every
   // action, so it is never dirty.
   dirty = $state<Record<string, true>>({});
+  // A pending "you have unsaved changes" decision, rendered by App as a
+  // Save / Discard / Cancel dialog. Set by `guardDirty` whenever something would
+  // unmount or replace the editor holding an unsaved buffer.
+  pendingDirty = $state<{ path: string; proceed: () => void } | null>(null);
   error = $state<string | null>(null);
   // Requested contig to scroll to when a viewer opens (keyed by file path);
   // consumed and cleared by the contig viewer. Used by SSN → sequence nav.
@@ -83,8 +87,10 @@ class WorkspaceStore {
 
   /// Switch the viewer dock to sibling view `viewId` for the file at `path`.
   showSubView(path: string, viewId: string): void {
-    this.subActive[path] = viewId;
-    this.activeTabId = path;
+    this.guardDirty(() => {
+      this.subActive[path] = viewId;
+      this.activeTabId = path;
+    });
   }
 
   /// Open the tool dialog for `id`, optionally pre-filled with `initial` params.
@@ -133,10 +139,13 @@ class WorkspaceStore {
 
   openFile(file: FileEntry): void {
     const id = file.path;
-    if (!this.tabs.some((t) => t.id === id)) {
-      this.tabs = [...this.tabs, { id, file }];
-    }
-    this.activeTabId = id;
+    if (id === this.activeTabId) return; // already showing; nothing to unmount
+    this.guardDirty(() => {
+      if (!this.tabs.some((t) => t.id === id)) {
+        this.tabs = [...this.tabs, { id, file }];
+      }
+      this.activeTabId = id;
+    });
   }
 
   /// Open a file by path (used by cross-view nav), optionally scrolling to a contig.
@@ -226,6 +235,47 @@ class WorkspaceStore {
     return Object.keys(this.dirty);
   }
 
+  // ── the mounted editor ─────────────────────────────────────────────────────
+  // Only one editor is mounted at a time (ViewerDock keys its viewer on the
+  // active tab + view), so this is a single slot rather than a map. Plain fields,
+  // not `$state`: they hold a function identity that is never rendered.
+  private editorPath: string | null = null;
+  private editorSave: (() => Promise<void>) | null = null;
+
+  /// Register the mounted editor's save hook; returns the unregister function,
+  /// so a viewer can use it directly as an `$effect` teardown.
+  registerEditor(path: string, save: () => Promise<void>): () => void {
+    this.editorPath = path;
+    this.editorSave = save;
+    return () => {
+      if (this.editorPath !== path) return; // a newer editor already took the slot
+      this.editorPath = null;
+      this.editorSave = null;
+    };
+  }
+
+  /// File → Save: write the mounted editor's buffer. A no-op when the active view
+  /// is not an editor, which is why the menu item is grayed out then.
+  async saveEditor(): Promise<void> {
+    await this.editorSave?.();
+  }
+
+  /// Run `proceed`, but if the mounted editor has an unsaved buffer, ask first.
+  ///
+  /// Every route that unmounts or replaces that editor goes through here —
+  /// switching tabs, opening another file, closing a tab. Without it the buffer
+  /// went with the component: `ViewerDock`'s `{#key}` destroys the viewer on a
+  /// tab switch, and the teardown that clears the dirty flag ran too, so even the
+  /// window-close guard could not see the edits that had just been thrown away.
+  guardDirty(proceed: () => void): void {
+    const p = this.editorPath;
+    if (p === null || !this.dirty[p]) {
+      proceed();
+      return;
+    }
+    this.pendingDirty = { path: p, proceed };
+  }
+
   canOpen(path: string): boolean {
     return classifyPath(path) !== null;
   }
@@ -233,25 +283,31 @@ class WorkspaceStore {
   closeTab(id: string): void {
     const idx = this.tabs.findIndex((t) => t.id === id);
     if (idx === -1) return;
-    this.rememberClosed(this.tabs[idx]);
-    this.tabs = this.tabs.filter((t) => t.id !== id);
-    if (this.activeTabId === id) {
-      const next = this.tabs[idx] ?? this.tabs[idx - 1] ?? null;
-      this.activeTabId = next ? next.id : null;
-    }
+    this.guardDirty(() => {
+      this.rememberClosed(this.tabs[idx]);
+      this.tabs = this.tabs.filter((t) => t.id !== id);
+      if (this.activeTabId === id) {
+        const next = this.tabs[idx] ?? this.tabs[idx - 1] ?? null;
+        this.activeTabId = next ? next.id : null;
+      }
+    });
   }
 
   /// Close every tab but `id`, which becomes active.
   closeOtherTabs(id: string): void {
-    for (const t of this.tabs) if (t.id !== id) this.rememberClosed(t);
-    this.tabs = this.tabs.filter((t) => t.id === id);
-    this.activeTabId = this.tabs.length ? id : null;
+    this.guardDirty(() => {
+      for (const t of this.tabs) if (t.id !== id) this.rememberClosed(t);
+      this.tabs = this.tabs.filter((t) => t.id === id);
+      this.activeTabId = this.tabs.length ? id : null;
+    });
   }
 
   closeAllTabs(): void {
-    for (const t of this.tabs) this.rememberClosed(t);
-    this.tabs = [];
-    this.activeTabId = null;
+    this.guardDirty(() => {
+      for (const t of this.tabs) this.rememberClosed(t);
+      this.tabs = [];
+      this.activeTabId = null;
+    });
   }
 
   /// Push a tab onto the reopen stack. Bounded because it holds file entries and
@@ -270,7 +326,8 @@ class WorkspaceStore {
   }
 
   setActive(id: string): void {
-    this.activeTabId = id;
+    if (id === this.activeTabId) return;
+    this.guardDirty(() => (this.activeTabId = id));
   }
 
   async refreshTree(): Promise<void> {
@@ -289,6 +346,9 @@ class WorkspaceStore {
     this.busy = true;
     try {
       await deleteFile(this.root, path);
+      // The file is gone, so "save your changes?" would only recreate it. Drop
+      // the buffer instead of prompting.
+      this.clearDirty(path);
       this.closeTab(path);
       invalidatePath(path);
       if (this.selectedFolder) await this.selectFolder(this.selectedFolder);

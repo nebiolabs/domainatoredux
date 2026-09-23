@@ -197,8 +197,9 @@ mod tests {
 
     /// The gap the id guard above cannot see: a handler that exists but whose
     /// effect nothing observes. Most handlers only bump a request counter or set
-    /// a flag on the `ui` store (`ui.saveRequest++`) for some component to react
-    /// to, so the id is known, the handler is typed, `npm run check` passes -- and
+    /// a flag on the `ui` store (`ui.newFileRequest++`) for some component to
+    /// react to, so the id is known, the handler is typed, `npm run check` passes
+    /// -- and
     /// the item still does nothing if no component reads that field. File ->
     /// Export Visible Rows and Edit -> Find both shipped exactly that way.
     ///
@@ -257,6 +258,102 @@ mod tests {
             unread.is_empty(),
             "menu.ts writes these `ui` fields but no component reads them, so their \
              menu items do nothing when clicked: {unread:?}"
+        );
+    }
+
+    /// Every route that unmounts the mounted editor must ask about an unsaved
+    /// buffer first.
+    ///
+    /// `ViewerDock` keys its viewer on the active tab, so changing tabs *destroys*
+    /// the editor component -- and the `$effect` teardown that clears the dirty
+    /// flag goes with it, so even the window-close guard could not see the edits
+    /// that had just been discarded. Switching away from a half-edited TSV lost it
+    /// silently. `Workspace.guardDirty` is the one chokepoint, and this asserts
+    /// nothing writes `this.activeTabId` / `this.tabs` outside it: a new method
+    /// (`closeTabsToTheRight`, say) reintroduces the data loss with no other
+    /// symptom, because the buffer is gone before anything can report it.
+    #[test]
+    fn every_tab_mutation_goes_through_the_unsaved_changes_guard() {
+        const STATE_TS: &str = include_str!("../../src/lib/state.svelte.ts");
+
+        // Character ranges covered by a `this.guardDirty( ... )` call, by paren
+        // matching from each call site.
+        let mut guarded: Vec<(usize, usize)> = Vec::new();
+        for (start, _) in STATE_TS.match_indices("this.guardDirty(") {
+            let open = start + "this.guardDirty".len();
+            let mut depth = 0usize;
+            let mut end = open;
+            for (off, ch) in STATE_TS[open..].char_indices() {
+                match ch {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = open + off;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            assert!(end > open, "unbalanced parens after a guardDirty call");
+            guarded.push((start, end));
+        }
+        assert!(
+            !guarded.is_empty(),
+            "no `this.guardDirty(` calls in state.svelte.ts -- has the guard been removed?"
+        );
+
+        let mut unguarded = Vec::new();
+        for needle in ["this.activeTabId =", "this.tabs ="] {
+            for (i, _) in STATE_TS.match_indices(needle) {
+                // `===` / `==` are comparisons, not assignments.
+                if STATE_TS[i + needle.len()..].starts_with('=') {
+                    continue;
+                }
+                if !guarded.iter().any(|&(lo, hi)| i > lo && i < hi) {
+                    let line = STATE_TS[..i].lines().count();
+                    unguarded.push(format!("{needle} at line {line}"));
+                }
+            }
+        }
+        assert!(
+            unguarded.is_empty(),
+            "these change the open tabs without going through `guardDirty`, so an \
+             unsaved editor buffer is discarded with no prompt: {unguarded:?}"
+        );
+    }
+
+    /// File -> Save is wired straight to the editor rather than through a `ui`
+    /// request counter, so the sibling test above cannot see it. Both ends have to
+    /// exist: a handler calling `ws.saveEditor()` with nothing registering a save
+    /// hook is a menu item that silently does nothing.
+    #[test]
+    fn file_save_reaches_a_registered_editor() {
+        const MENU_TS: &str = include_str!("../../src/lib/menu.ts");
+        const STATE_TS: &str = include_str!("../../src/lib/state.svelte.ts");
+        assert!(
+            MENU_TS.contains("ws.saveEditor()"),
+            "the file.save handler no longer calls ws.saveEditor()"
+        );
+        assert!(
+            STATE_TS.contains("async saveEditor("),
+            "Workspace.saveEditor is gone; File -> Save would be a no-op"
+        );
+
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/lib/viewers");
+        let registrars: Vec<String> = std::fs::read_dir(&src)
+            .expect("read viewers dir")
+            .filter_map(|e| {
+                let path = e.expect("dir entry").path();
+                let body = std::fs::read_to_string(&path).ok()?;
+                body.contains("ws.registerEditor(")
+                    .then(|| path.file_name()?.to_str().map(str::to_owned))?
+            })
+            .collect();
+        assert!(
+            !registrars.is_empty(),
+            "no viewer calls ws.registerEditor(), so File -> Save can never save anything"
         );
     }
 

@@ -69,11 +69,18 @@ export const getContigSequences = (
   end: number,
 ): Promise<string[]> => invoke("get_contig_sequences", { path, start, end });
 
-/// Read a text file (TSV/CSV) as a string; write it back in place (table editor).
-export const readTextFile = (path: string): Promise<string> =>
+/// Read a text file (TSV/CSV) and write it back in place (the Text / Table editors).
+/// A text file's contents, normalized to LF, plus the line terminator it used.
+/// Pass `eol` back to `writeTextFile` / `createTextFile` to round-trip the file
+/// instead of rewriting every line ending in it.
+export interface TextFile {
+  text: string;
+  eol: string;
+}
+export const readTextFile = (path: string): Promise<TextFile> =>
   invoke("read_text_file", { path });
-export const writeTextFile = (path: string, contents: string): Promise<void> =>
-  invoke("write_text_file", { path, contents });
+export const writeTextFile = (path: string, contents: string, eol?: string): Promise<void> =>
+  invoke("write_text_file", { path, contents, eol });
 
 /// Extract selected contigs / HMM profiles (0-based indices) into a new file
 /// `dir/name`; returns the new path.
@@ -105,8 +112,12 @@ export const extractRegion = (
 ): Promise<string> => invoke("extract_region", { dir, name, source, index, start, end, translate });
 
 /// Create a new text file `dir/name` with `contents`; returns the new path.
-export const createTextFile = (dir: string, name: string, contents: string): Promise<string> =>
-  invoke("create_text_file", { dir, name, contents });
+export const createTextFile = (
+  dir: string,
+  name: string,
+  contents: string,
+  eol?: string,
+): Promise<string> => invoke("create_text_file", { dir, name, contents, eol });
 
 /// Record counts for the given files (lazy; cached server-side). null = no
 /// meaningful count for that type (matrix/table) or unreadable.

@@ -11,7 +11,6 @@ export const ui = $state({
   preferencesRequest: 0,
   updateCheckRequest: 0,
   newFileRequest: 0,
-  saveRequest: 0,
   clearJobsRequest: 0,
   sidebarVisible: true,
   tableVisible: true,

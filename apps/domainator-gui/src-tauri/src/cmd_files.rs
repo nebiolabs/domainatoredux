@@ -6,6 +6,7 @@ use domainator_core::app_support::hmm_logo::{
 };
 use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::app_support::summary_stats::{summarize, SummaryStats};
+use domainator_core::app_support::text_file::{detect_eol, from_lf, to_lf, Eol};
 use domainator_core::app_support::workspace::{classify_file, find_workspace_root};
 use domainator_core::app_support::provenance::{trace_source_sequences, SourceTrace};
 use serde::{Deserialize, Serialize};
@@ -483,13 +484,28 @@ fn count_records_blocking(map: &RecordCountCache, paths: &[String]) -> Vec<Optio
 /// Read a text file (e.g. a TSV/CSV table) as a UTF-8 string. Rejects files over
 /// ~64 MB so the table editor can't accidentally slurp a giant blob into the UI.
 #[tauri::command]
-pub async fn read_text_file(path: String) -> Result<String, String> {
+pub async fn read_text_file(path: String) -> Result<TextFile, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let meta = std::fs::metadata(&path).map_err(|e| format!("stat {path}: {e}"))?;
-        if meta.len() > 64 * 1024 * 1024 {
-            return Err(format!("file too large to edit ({} MB)", meta.len() / 1024 / 1024));
+        // The editors hold the whole file as a JS string, and it crosses the IPC
+        // bridge as JSON, so there is a real ceiling. Refuse above it rather than
+        // hand the webview something that will take the window down with it — and
+        // say what the limit is, since the file is still perfectly usable as a
+        // tool input.
+        const MAX_EDIT_BYTES: u64 = 64 * 1024 * 1024;
+        if meta.len() > MAX_EDIT_BYTES {
+            return Err(format!(
+                "file is {} MB; the editor handles up to {} MB. It can still be used as                  an input to any tool.",
+                meta.len() / 1024 / 1024,
+                MAX_EDIT_BYTES / 1024 / 1024,
+            ));
         }
-        std::fs::read_to_string(&path).map_err(|e| format!("reading {path}: {e}"))
+        let raw = std::fs::read_to_string(&path).map_err(|e| format!("reading {path}: {e}"))?;
+        // The editors work in LF (a `<textarea>` normalizes its value to LF no
+        // matter what you put in it), so hand back LF plus the terminator to put
+        // back on save.
+        let eol = detect_eol(&raw);
+        Ok(TextFile { text: to_lf(&raw).into_owned(), eol: eol.as_str().to_string() })
     })
     .await
     .map_err(|e| format!("read failed: {e}"))?
@@ -497,9 +513,17 @@ pub async fn read_text_file(path: String) -> Result<String, String> {
 
 /// Overwrite a text file in place (used by the table editor's Save). Writes
 /// atomically via a temp file + rename so a crash mid-write can't truncate it.
+/// `contents` is LF-separated; `eol` (optional, default LF) is the terminator to
+/// write with — pass back the one [`read_text_file`] reported to round-trip a file
+/// unchanged.
 #[tauri::command]
-pub async fn write_text_file(path: String, contents: String) -> Result<(), String> {
+pub async fn write_text_file(
+    path: String,
+    contents: String,
+    eol: Option<String>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let contents = from_lf(&contents, eol_or_lf(eol.as_deref()));
         let p = std::path::Path::new(&path);
         let tmp = p.with_extension(format!(
             "{}.tmp",
@@ -890,16 +914,37 @@ pub async fn extract_hmms(
     Ok(out)
 }
 
+/// A text file's contents, normalized to LF, plus the line terminator it actually
+/// used — so a save can put that terminator back instead of silently rewriting a
+/// CRLF file as LF.
+#[derive(Serialize)]
+pub struct TextFile {
+    pub text: String,
+    /// The literal terminator (`"\n"`, `"\r\n"` or `"\r"`), to be passed back to
+    /// [`write_text_file`] / [`create_text_file`] unchanged.
+    pub eol: String,
+}
+
+/// Parse a wire `eol`, defaulting to LF when the caller omits it (which is what
+/// every caller that does not round-trip a file wants).
+fn eol_or_lf(eol: Option<&str>) -> Eol {
+    eol.map(Eol::from_str_lossy).unwrap_or_default()
+}
+
 /// Create a new text file `dir/name` with `contents` (New-file-from-pasted-text).
+/// `contents` is LF-separated; `eol` (optional, default LF) is the terminator to
+/// write with.
 #[tauri::command]
 pub async fn create_text_file(
     app: tauri::AppHandle,
     dir: String,
     name: String,
     contents: String,
+    eol: Option<String>,
 ) -> Result<String, String> {
     let dir_c = dir.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
+        let contents = from_lf(&contents, eol_or_lf(eol.as_deref()));
         let target = validated_target(&dir, &name)?;
         std::fs::write(&target, contents.as_bytes()).map_err(|e| format!("writing file: {e}"))?;
         Ok::<String, String>(target.to_string_lossy().into_owned())

@@ -1,12 +1,16 @@
 <script lang="ts">
   import { readTextFile, writeTextFile } from "../api";
   import { ws } from "../state.svelte";
-  import { ui } from "../ui.svelte";
 
   let { path }: { path: string } = $props();
 
   let text = $state("");
   let original = "";
+  // The file's own line terminator. The buffer here is always LF -- a `<textarea>`
+  // normalizes its value to LF whatever you put in it -- so without carrying this
+  // back to the save, opening a CRLF file and pressing Save rewrote every line
+  // ending in it.
+  let eol = "\n";
   let loading = $state(true);
   let saving = $state(false);
   let error = $state<string | null>(null);
@@ -22,18 +26,22 @@
     return () => ws.clearDirty(path);
   });
 
-  // File → Save.
-  $effect(() => {
-    if (ui.saveRequest > 0 && dirty) void save();
-  });
+  // File → Save, and the "Save" button on the unsaved-changes guard, both call
+  // this hook. It used to be a counter on the `ui` store that this component
+  // `$effect`ed on as `saveRequest > 0 && dirty` -- which short-circuited past
+  // `dirty` while the counter was 0, leaving it untracked, then picked it up as a
+  // dependency on the first real save. From then on every keystroke re-ran the
+  // effect and silently wrote the file. A direct call has no such state.
+  $effect(() => ws.registerEditor(path, save));
 
   async function load() {
     loading = true;
     error = null;
     try {
-      const t = await readTextFile(path);
-      text = t;
-      original = t;
+      const f = await readTextFile(path);
+      text = f.text;
+      original = f.text;
+      eol = f.eol;
     } catch (e) {
       error = String(e);
     } finally {
@@ -49,7 +57,7 @@
     saving = true;
     msg = null;
     try {
-      await writeTextFile(path, text);
+      await writeTextFile(path, text, eol);
       original = text;
       msg = "saved";
       setTimeout(() => (msg = null), 2000);
@@ -60,7 +68,21 @@
     }
   }
 
-  const lineCount = $derived(text ? text.split("\n").length : 0);
+  // Counted with `indexOf` rather than `split("\n").length`: splitting allocates
+  // an array of every line in the file on every keystroke, which is what made a
+  // multi-megabyte file crawl.
+  const lineCount = $derived.by(() => {
+    if (!text) return 0;
+    let n = 1;
+    for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) n++;
+    return n;
+  });
+  const eolLabel = $derived(eol === "\r\n" ? "CRLF" : eol === "\r" ? "CR" : "LF");
+  // Formatting a byte count is cheap; it tells the user why a huge file is slow.
+  const sizeLabel = $derived.by(() => {
+    const mb = text.length / (1024 * 1024);
+    return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(text.length / 1024)} kB`;
+  });
 </script>
 
 <div class="tx">
@@ -71,7 +93,7 @@
   {:else}
     <div class="toolbar">
       <button class="save" onclick={save} disabled={!dirty || saving}>{saving ? "Saving…" : "Save"}</button>
-      <span class="dim">{lineCount.toLocaleString()} lines</span>
+      <span class="dim">{lineCount.toLocaleString()} lines · {sizeLabel} · {eolLabel}</span>
       {#if dirty}<span class="dot" title="Unsaved changes">●</span>{/if}
       {#if msg}<span class="dim">{msg}</span>{/if}
     </div>

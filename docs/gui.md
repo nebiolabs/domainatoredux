@@ -35,6 +35,15 @@ a folder name, and protected from deletion.
   how you compare two contigs side by side.
 - **Status bar** — workspace path, running jobs, unsaved changes.
 
+**Saving.** A file's line endings are preserved — the editors detect CRLF / LF / CR on
+open, show which in the toolbar, and write the same back, so saving a Windows file on
+Linux does not rewrite every line in it. The Table and Text views are editors; everything else writes through as you
+act, so there is nothing to save. **File → Save** (Ctrl/Cmd+S) writes the editor you are
+looking at, and is grayed out when there is nothing unsaved. If you switch tabs, close the
+tab or close the window with unsaved edits, you are asked whether to **Save**, **Discard**
+or **Cancel** first. Files above 64 MB do not open in an editor — they can still be used as
+tool inputs.
+
 There is a native menu bar (File / Edit / View / Tools / Window / Help) with the usual
 accelerators: Ctrl+O open workspace, Ctrl+S save, Ctrl+W close tab, Ctrl+Shift+T reopen
 closed tab, Ctrl+, preferences, F5 refresh, Ctrl+1 / Ctrl+2 toggle the
@@ -51,7 +60,7 @@ sidebar and file table, Ctrl+Shift+O pop out the current tab.
 | `.dsnv` (and legacy `.ssnv`) | **SSN Viewer** | The interactive network: drag the threshold slider to split it into clusters, switch between force-directed, grid, packed and treemap layouts, edit and chart metadata columns, color by gradient, and save sessions. Select nodes and click **Open sequence(s)** to pull those records out of the workspace into a new sequence tab. |
 | `.hmm` `.hmmer` | **Profiles** | A filterable table of every profile in the file. Opens instantly even for tens of thousands of profiles, because it never computes a logo up front. Extract a subset to a new `.hmm`. |
 | | **Logo** | A sequence logo for one profile, with an occupancy strip, horizontal virtualization, and **Export SVG**. |
-| `.tsv` `.csv` `.tab` | **Table** | View and edit a delimited table. |
+| `.tsv` `.csv` `.tab` | **Table** | View and edit a delimited table. Every row is editable however long the file is — rendering is virtualized, and past the point where a browser stops growing a scrollbar the scroll position maps onto the row range instead. |
 | `.txt` `.text` `.list` | **Text** | A plain-text editor. |
 | `.svg` | **Image** | View a rendered SVG with zoom. |
 | `.sto` `.stockholm` `.sth`, `.cm` | — | Recognized so they appear in tool dropdowns; no viewer. |

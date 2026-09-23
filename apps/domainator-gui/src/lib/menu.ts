@@ -44,7 +44,7 @@ export const HANDLERS: Record<MenuId, Handler> = {
     if (files && files.length) await ws.importInto(files);
   },
   "file.save": () => {
-    ui.saveRequest++;
+    void ws.saveEditor();
   },
   "file.close_tab": () => {
     if (ws.activeTabId) ws.closeTab(ws.activeTabId);

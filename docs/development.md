@@ -211,10 +211,12 @@ WSL2-versus-Windows validation guidance — Tauri uses **WebView2 on Windows** a
 **WebKitGTK on Linux**, and Windows is a hard-requirement target, so validate there before
 shipping.
 
-Two internal design notes live alongside it:
-`apps/domainator-gui/PERSISTENT_CACHE_PLAN.md` (a deferred on-disk report cache) and
+Three internal design notes live alongside it:
+`apps/domainator-gui/PERSISTENT_CACHE_PLAN.md` (a deferred on-disk report cache),
 `apps/domainator-gui/EMBEDDED_DB_NOTES.md` (whether `.domainator/` should use an embedded
-database; conclusion: not yet).
+database; conclusion: not yet) and `apps/domainator-gui/LARGE_FILE_EDITING_PLAN.md` (how
+the Text / Table editors would lift their 64 MB cap — a windowed document model, staged so
+the read-only phase ships on its own).
 
 ## Where things live
 

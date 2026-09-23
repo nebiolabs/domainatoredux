@@ -399,14 +399,42 @@
       <ConfirmDialog
         title="Close with unsaved changes?"
         body={`These files have unsaved edits:\n\n${pendingClose.map((p) => p.split(/[\\/]/).pop()).join("\n")}`}
-        confirmLabel="Discard and close"
-        danger={true}
+        confirmLabel="Save and close"
+        altLabel="Discard and close"
         onconfirm={async () => {
+          await ws.saveEditor();
+          ws.dirty = {};
+          pendingClose = null;
+          await getCurrentWindow().destroy();
+        }}
+        onalt={async () => {
           ws.dirty = {};
           pendingClose = null;
           await getCurrentWindow().destroy();
         }}
         oncancel={() => (pendingClose = null)}
+      />
+    {/if}
+    <!-- Switching or closing a tab with an unsaved buffer. The editor is about to
+         be unmounted, so this is the last chance to keep the edits. -->
+    {#if ws.pendingDirty}
+      {@const pd = ws.pendingDirty}
+      <ConfirmDialog
+        title="Save changes to {pd.path.split(/[\\/]/).pop()}?"
+        body="This file has unsaved edits. Closing or leaving it without saving discards them."
+        confirmLabel="Save"
+        altLabel="Discard"
+        onconfirm={async () => {
+          await ws.saveEditor();
+          ws.pendingDirty = null;
+          pd.proceed();
+        }}
+        onalt={() => {
+          ws.clearDirty(pd.path);
+          ws.pendingDirty = null;
+          pd.proceed();
+        }}
+        oncancel={() => (ws.pendingDirty = null)}
       />
     {/if}
   </div>
@@ -541,14 +569,42 @@
     <ConfirmDialog
       title="Close with unsaved changes?"
       body={`These files have unsaved edits:\n\n${pendingClose.map((p) => p.split(/[\\/]/).pop()).join("\n")}`}
-      confirmLabel="Discard and close"
-      danger={true}
+      confirmLabel="Save and close"
+      altLabel="Discard and close"
       onconfirm={async () => {
+        await ws.saveEditor();
+        ws.dirty = {};
+        pendingClose = null;
+        await getCurrentWindow().destroy();
+      }}
+      onalt={async () => {
         ws.dirty = {};
         pendingClose = null;
         await getCurrentWindow().destroy();
       }}
       oncancel={() => (pendingClose = null)}
+    />
+  {/if}
+  <!-- Switching or closing a tab with an unsaved buffer. The editor is about to
+       be unmounted, so this is the last chance to keep the edits. -->
+  {#if ws.pendingDirty}
+    {@const pd = ws.pendingDirty}
+    <ConfirmDialog
+      title="Save changes to {pd.path.split(/[\\/]/).pop()}?"
+      body="This file has unsaved edits. Closing or leaving it without saving discards them."
+      confirmLabel="Save"
+      altLabel="Discard"
+      onconfirm={async () => {
+        await ws.saveEditor();
+        ws.pendingDirty = null;
+        pd.proceed();
+      }}
+      onalt={() => {
+        ws.clearDirty(pd.path);
+        ws.pendingDirty = null;
+        pd.proceed();
+      }}
+      oncancel={() => (ws.pendingDirty = null)}
     />
   {/if}
 </div>
