@@ -12,6 +12,7 @@ hdf5-pure.workspace = true
 rayon.workspace = true
 bgzf.workspace = true
 libdeflater.workspace = true
+flate2.workspace = true
 memchr.workspace = true
 thiserror.workspace = true
 regex.workspace = true

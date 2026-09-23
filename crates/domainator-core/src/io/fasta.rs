@@ -46,7 +46,24 @@ pub fn read_fasta_partition(
     max_recs: u64,
     molecule_type: Option<&str>,
 ) -> io::Result<Vec<SeqRecord>> {
-    let mut reader = BufReader::new(open_at(path, offset, compressed)?);
+    let reader = BufReader::new(open_at(path, offset, compressed)?);
+    parse_fasta(reader, max_recs, molecule_type)
+}
+
+/// Read every record of a FASTA that may be gzip- or BGZF-compressed, deciding by
+/// the file's magic bytes rather than its name (see
+/// [`super::open_decompressed`]). For whole-file reads such as reference
+/// databases, where nothing seeks, so plain gzip is as good as BGZF.
+pub fn read_fasta_decompressed(path: &str, molecule_type: Option<&str>) -> io::Result<Vec<SeqRecord>> {
+    let reader = BufReader::new(super::open_decompressed(std::path::Path::new(path))?);
+    parse_fasta(reader, u64::MAX, molecule_type)
+}
+
+fn parse_fasta<R: BufRead>(
+    mut reader: R,
+    max_recs: u64,
+    molecule_type: Option<&str>,
+) -> io::Result<Vec<SeqRecord>> {
     let mol = molecule_type.unwrap_or("protein").to_string();
     let mut out: Vec<SeqRecord> = Vec::new();
 

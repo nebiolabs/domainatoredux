@@ -124,6 +124,9 @@ pub fn list_hmms(path: &str) -> Result<Vec<HmmSummary>, String> {
 /// is the exact byte range of the profile's text (from its `HMMER3/…` line through
 /// the line after `//`), so a profile can be re-parsed or copied out by seeking
 /// instead of re-reading the whole (possibly gigabyte-scale) file.
+///
+/// For a gzipped library the offsets are into the **decompressed** text; read
+/// them back with [`read_hmm_byte_ranges`], which knows the difference.
 #[derive(Debug, Clone)]
 pub struct HmmEntry {
     pub byte_start: u64,
@@ -143,7 +146,8 @@ pub struct HmmEntry {
 /// `hmmer_pure_rs`'s reader, so DESC values containing spaces are preserved.
 pub fn index_hmm_file(path: &str) -> Result<Vec<HmmEntry>, String> {
     use std::io::{BufRead, BufReader};
-    let file = std::fs::File::open(path).map_err(|e| format!("opening {path}: {e}"))?;
+    let file = crate::io::open_decompressed(std::path::Path::new(path))
+        .map_err(|e| format!("opening {path}: {e}"))?;
     let mut reader = BufReader::new(file);
     let mut entries: Vec<HmmEntry> = Vec::new();
     let mut cur: Option<HmmEntry> = None;
@@ -196,6 +200,69 @@ pub fn index_hmm_file(path: &str) -> Result<Vec<HmmEntry>, String> {
     Ok(entries)
 }
 
+/// The bytes at each `start..end` range of an [`HmmEntry`] index, in the order given.
+///
+/// A plain file is seeked. A gzip or BGZF file cannot be (upstream writes `.hmm`
+/// output as plain gzip, and so does EBI's Pfam), so it is inflated once from
+/// the start, in a single pass that collects every requested range: the cost is
+/// the prefix up to the furthest range, not one decompression per profile.
+pub fn read_hmm_byte_ranges(path: &str, ranges: &[(u64, u64)]) -> Result<Vec<Vec<u8>>, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let p = std::path::Path::new(path);
+    if !crate::io::has_gzip_magic(p) {
+        let mut f = std::fs::File::open(p).map_err(|e| format!("opening {path}: {e}"))?;
+        return ranges
+            .iter()
+            .map(|&(start, end)| {
+                f.seek(SeekFrom::Start(start)).map_err(|e| format!("seeking {path}: {e}"))?;
+                let mut buf = vec![0u8; end.saturating_sub(start) as usize];
+                f.read_exact(&mut buf).map_err(|e| format!("reading {path}: {e}"))?;
+                Ok(buf)
+            })
+            .collect();
+    }
+    let mut order: Vec<usize> = (0..ranges.len()).collect();
+    order.sort_by_key(|&i| ranges[i]);
+    let mut out: Vec<Vec<u8>> = vec![Vec::new(); ranges.len()];
+    let mut reader = crate::io::open_decompressed(p).map_err(|e| format!("opening {path}: {e}"))?;
+    // `window` holds decompressed text from `window_start` on: the current range,
+    // kept so an overlapping or repeated range is served without rewinding.
+    let mut window: Vec<u8> = Vec::new();
+    let mut window_start: u64 = 0;
+    for i in order {
+        let (start, end) = ranges[i];
+        let end = end.max(start);
+        if start < window_start {
+            return Err(format!("reading {path}: range {start}..{end} precedes the stream"));
+        }
+        let window_end = window_start + window.len() as u64;
+        if start >= window_end {
+            // Skip to the range, dropping everything before it.
+            std::io::copy(&mut (&mut reader).take(start - window_end), &mut std::io::sink())
+                .map_err(|e| format!("reading {path}: {e}"))?;
+            window.clear();
+            window_start = start;
+        } else {
+            window.drain(..(start - window_start) as usize);
+            window_start = start;
+        }
+        let have = window_start + window.len() as u64;
+        if end > have {
+            let want = (end - have) as usize;
+            let before = window.len();
+            (&mut reader)
+                .take(want as u64)
+                .read_to_end(&mut window)
+                .map_err(|e| format!("reading {path}: {e}"))?;
+            if window.len() - before < want {
+                return Err(format!("reading {path}: range {start}..{end} runs past the end"));
+            }
+        }
+        out[i] = window[..(end - start) as usize].to_vec();
+    }
+    Ok(out)
+}
+
 /// Build a logo from the raw bytes of a SINGLE profile (as sliced out of a larger
 /// file via an [`HmmEntry`] byte range). Keeps `hmmer_pure_rs` inside core.
 pub fn logo_from_hmm_bytes(bytes: &[u8]) -> Result<HmmLogo, String> {
@@ -206,13 +273,12 @@ pub fn logo_from_hmm_bytes(bytes: &[u8]) -> Result<HmmLogo, String> {
 }
 
 /// Write the profiles at `indices` (0-based, in the given order) from `source` to a
-/// new `.hmm` file at `out_path`. Keeps the `hmmer_pure_rs` dependency inside core.
+/// new `.hmm` file at `out_path` (plain gzip when it ends in `.gz`). Keeps the
+/// `hmmer_pure_rs` dependency inside core.
 pub fn extract_hmms_to_file(source: &str, indices: &[usize], out_path: &str) -> Result<(), String> {
-    use std::io::{BufWriter, Write};
     let hmms = crate::search::hmm_read::read_hmm_file(std::path::Path::new(source))
         .map_err(|e| format!("reading HMM: {e:?}"))?;
-    let file = std::fs::File::create(out_path).map_err(|e| format!("creating {out_path}: {e}"))?;
-    let mut w = BufWriter::new(file);
+    let mut w = crate::search::hmm_write::HmmOutput::create(out_path)?;
     let mut n = 0usize;
     for &i in indices {
         if let Some(h) = hmms.get(i) {
@@ -220,7 +286,7 @@ pub fn extract_hmms_to_file(source: &str, indices: &[usize], out_path: &str) -> 
             n += 1;
         }
     }
-    w.flush().map_err(|e| format!("flushing {out_path}: {e}"))?;
+    w.finish().map_err(|e| format!("flushing {out_path}: {e}"))?;
     if n == 0 {
         return Err("no profiles selected".to_string());
     }
@@ -314,6 +380,45 @@ mod tests {
             *t = [1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0];
         }
         hmm
+    }
+
+    /// The viewer indexes a library once and then reads single profiles back by
+    /// byte range. A gzipped library (the managed Pfam download stays `.hmm.gz`)
+    /// must give the same profiles, in any request order, as its plain twin.
+    #[test]
+    fn byte_ranges_read_back_the_same_profiles_from_a_gzipped_library() {
+        let dir = std::env::temp_dir().join(format!("domainator_logo_gz_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut text = Vec::new();
+        for name in ["alpha", "beta", "gamma"] {
+            let mut h = dna(&[[0.25, 0.25, 0.25, 0.25], [0.7, 0.1, 0.1, 0.1]]);
+            h.name = name.to_string();
+            crate::search::hmm_write::write_hmm(&mut text, &h).unwrap();
+        }
+        let plain = dir.join("lib.hmm");
+        std::fs::write(&plain, &text).unwrap();
+        let packed = dir.join("lib.hmm.gz");
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut enc, &text).unwrap();
+        std::fs::write(&packed, enc.finish().unwrap()).unwrap();
+
+        let (plain, packed) = (plain.to_str().unwrap(), packed.to_str().unwrap());
+        let index = index_hmm_file(plain).unwrap();
+        let packed_index = index_hmm_file(packed).unwrap();
+        let spans = |ix: &[HmmEntry]| ix.iter().map(|e| (e.byte_start, e.byte_end)).collect::<Vec<_>>();
+        assert_eq!(spans(&index), spans(&packed_index));
+        assert_eq!(packed_index.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["alpha", "beta", "gamma"]);
+
+        // Out of order, and with a repeat: the single forward pass must still serve both.
+        let wanted = [2usize, 0, 2, 1];
+        let ranges: Vec<(u64, u64)> = wanted.iter().map(|&i| (index[i].byte_start, index[i].byte_end)).collect();
+        let from_plain = read_hmm_byte_ranges(plain, &ranges).unwrap();
+        let from_packed = read_hmm_byte_ranges(packed, &ranges).unwrap();
+        assert_eq!(from_plain, from_packed);
+        for (bytes, &i) in from_packed.iter().zip(&wanted) {
+            assert_eq!(bytes.as_slice(), &text[index[i].byte_start as usize..index[i].byte_end as usize]);
+        }
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Information content is `log2(K) - H`, so a uniform column carries none and

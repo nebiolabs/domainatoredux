@@ -113,13 +113,32 @@ metadata you joined on with `--metadata`, and `--cluster` adds a cluster id.
 
 ## HMM profiles
 
-`.hmm` `.hmmer`
+`.hmm` `.hmmer` (optionally `.gz`)
 
 HMMER3 profile files, interchangeable with HMMER and pyhmmer. Domainator writes the
 `HMMER3/f` format including the Pfam `GA`/`TC`/`NC` gathering cutoffs, so
 `hmmsearch --cut_ga` still works on a file that has been through
 [`hmmer-select`](cli-reference.md#hmmer-select) — which reproduces the profiles it keeps
 byte for byte.
+
+**Compression.** A `.hmm` input may be gzip- or BGZF-compressed anywhere a plain one is
+accepted. The decision is made from the file's **magic bytes**, not its name, so a
+compressed file under any name reads correctly, and so does an uncompressed file that
+happens to be named `.gz`. The database name annotations are labeled with ignores the
+compression suffix: `pfam.hmm` and `pfam.hmm.gz` both annotate as `pfam`, so compressing a
+reference never changes the output.
+
+Output is deliberately asymmetric with sequence files: an `-o` path ending in `.gz` is
+written as **plain gzip**, and `.bgz`/`.bgzf` is **refused** before any work is done. HMMER
+cannot open a BGZF profile file (easel rejects its header), so writing one would produce a
+file `hmmsearch` and pyhmmer could not read; and BGZF's only advantage, seekability, is
+useless in a profile file. Output to stdout is never compressed, and `--max_output_gb`
+counts the profile bytes *before* compression. This is the opposite of the advice for
+[formatted databases](#formatted-databases), which should be BGZF.
+
+`hmmpress` sidecars (`.h3f` `.h3i` `.h3m` `.h3p`) are **never read**. They are tied to the
+`.hmm` only by file name, so a profile file edited after pressing would silently yield the
+old profiles. Leftover sidecars are harmless and safe to delete.
 
 Build profiles with [`hmmer-build`](cli-reference.md#hmmer-build) from a **Stockholm**
 alignment (`.sto` `.stockholm` `.sth`), the only alignment format currently read.

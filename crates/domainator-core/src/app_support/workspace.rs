@@ -98,7 +98,8 @@ fn sys_time_ms(t: Option<std::time::SystemTime>) -> Option<u64> {
 }
 
 /// Cheap record count for a data file, by streaming lines (no full parse):
-/// GenBank `LOCUS` lines, FASTA `>` headers, HMMER `HMMER3` profile headers.
+/// GenBank `LOCUS` lines, FASTA `>` headers, HMMER `HMMER3` profile headers,
+/// through gzip or BGZF when the file is compressed.
 /// Returns None for types without a meaningful record count (matrices, tables, …)
 /// or on read error.
 pub fn count_records(path: &Path) -> Option<u64> {
@@ -109,7 +110,8 @@ pub fn count_records(path: &Path) -> Option<u64> {
         "hmm" => "HMMER3",
         _ => return None,
     };
-    let file = fs::File::open(path).ok()?;
+    // Count the text, not the container: a `.gz` is decompressed by content.
+    let file = crate::io::open_decompressed(path).ok()?;
     let mut reader = BufReader::new(file);
     let mut n: u64 = 0;
     let mut line = Vec::new();

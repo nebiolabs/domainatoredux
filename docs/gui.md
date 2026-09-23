@@ -117,9 +117,9 @@ tools need, and registers it in the Databases panel, ready for `domainate`,
 | UniRef50 | ≈8 GB | ≈9 GB | UniProt clustered at 50% identity. |
 | UniRef90 | ≈30 GB | ≈34 GB | UniProt clustered at 90% identity. |
 | UniProtKB/TrEMBL | ≈38 GB | ≈43 GB | The full unreviewed knowledgebase. Expect hours. |
-| Pfam-A | ≈400 MB | ≈1.6 GB | The Pfam-A profile HMM library. |
+| Pfam-A | ≈400 MB | ≈400 MB | The Pfam-A profile HMM library, kept gzipped. |
 
-Everything but Swiss-Prot asks you to confirm the size first, and any download can be
+Everything but Swiss-Prot and Pfam-A asks you to confirm the size first, and any download can be
 canceled while it runs; a canceled or failed download leaves nothing behind.
 
 **Free space is checked first.** The panel shows how much room is free on the volume the
@@ -135,8 +135,11 @@ the same formatting [`format-db`](cli-reference.md#format-db) produces, which is
 `domain-search` seek into them instead of rescanning. The published files are plain gzip,
 which is not seekable, so they are recompressed on the way in; that happens in the same
 pass as the download, so a 40 GB database never needs a 250 GB uncompressed intermediate.
-Pfam-A is stored **uncompressed**, because nothing reads a compressed profile library. The
-index is built after the download, as a second pass over the file, and the panel shows it
+Pfam-A is kept as the **plain gzip** file EBI publishes (`Pfam-A.hmm.gz`): every tool reads
+a gzipped profile library directly, and nothing seeks in one, so there is nothing to gain
+from expanding it to 1.6 GB. (An install made by an earlier version, stored as `Pfam-A.hmm`,
+is replaced by the gzipped file on its next update.) The sequence-database index is built
+after the download, as a second pass over the file, and the panel shows it
 as a separate step.
 
 **Versions.** Each database's release (`2026_03` for UniProt, `38.2` for Pfam) is read

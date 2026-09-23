@@ -75,8 +75,11 @@ fn looks_nucleic(seq: &[u8]) -> bool {
 /// says `ALPH amino` froze the Databases panel for minutes. HMMER's own default is
 /// amino, so a well-formed profile with no `ALPH` line is protein; a file we cannot
 /// open, or one that never presents a `HMMER3` header, stays `unknown`.
+///
+/// A gzipped library is read through the decompressor (the managed Pfam download
+/// stays `.hmm.gz`); only the header block is ever inflated.
 fn hmm_molecule(path: &str) -> String {
-    let Ok(fh) = fs::File::open(path) else { return "unknown".into() };
+    let Ok(fh) = crate::io::open_decompressed(Path::new(path)) else { return "unknown".into() };
     let mut reader = std::io::BufReader::new(fh);
     let mut line = String::new();
     let mut saw_header = false;
@@ -112,7 +115,8 @@ fn hmm_molecule(path: &str) -> String {
 /// first record to determine molecule type).
 pub fn classify_database(path: &str) -> Result<DatabaseEntry, String> {
     let p = Path::new(path);
-    let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string());
+    // The name annotations are labeled with, so `Pfam-A.hmm.gz` is `Pfam-A`.
+    let name = crate::io::db_name_from_path(path);
 
     // hmm files aren't handled by detect_filetype (which is genbank/fasta only),
     // so classify format from the extension first.
@@ -138,15 +142,9 @@ pub fn classify_database(path: &str) -> Result<DatabaseEntry, String> {
     };
 
     let (format, molecule) = match format {
-        "hmm" => {
-            let mol = match compressed {
-                Some(false) => hmm_molecule(&first),
-                // No compressed-HMM reader exists anywhere in the port, BGZF
-                // included -- see `search/hmm_read.rs`.
-                _ => "unknown".into(),
-            };
-            ("hmm".to_string(), mol)
-        }
+        // Every hmm reader decompresses gzip and BGZF alike (nothing seeks in a
+        // profile file), so compression does not matter here.
+        "hmm" => ("hmm".to_string(), hmm_molecule(&first)),
         "genbank" => {
             let mol = compressed
                 .filter(|_| detect_filetype(Path::new(&first)) == Some(FileType::Genbank))

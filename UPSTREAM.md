@@ -7,23 +7,26 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `34c4b88` — *simplify component_size_summary_by_threshold* (2026-09-17).
-  A pure simplification, ported: the largest-component tracker drops its lazy-deletion
-  max-heap for a scalar running maximum. Components only grow under union-find — a merge
-  replaces two with one strictly larger than either — so `largest = max(largest, merged)`
-  is exact, and nothing ever needs removing. The commit before it is the substantive one:
-- `d34ea4c` — *more updates to DSNV* (2026-09-17).
-  A `.dsnv` format change, **v5 → v6, and a removal**: everything derivable from the merge
-  order left the file (`cluster_count_by_threshold`, `edges_by_threshold`,
-  `merge_event_series`, `merge_event_total`, `max_merge_events`, `merge_moving_sum`,
-  `slider_stops` and its `threshold_index`), so a v6 `graph` is just `nodes` + `mst_edges` +
-  `hierarchy` + `merge_impact_metric`. The cap moved from write time to display time:
-  `build_ssn_viewer --max_merge_events` is gone, `ssn_navigator` gained it, and the viewer
-  spends it on the chart's zoom window (pinning the selected cut so zooming cannot
-  re-cluster the network). Ported in full — see `matrix/ssn.rs` (window + pin,
-  `MaxTree::from_mst_edges`, optional `threshold_index`), `tools/ssn_bundle.rs` (the four
-  derivation entry points, and the Θ(depth) `cluster_for_node` walk-up),
-  `tools/{build_ssn_viewer,ssn_navigator}.rs`, and a regenerated viewer shell.
+- **Caught up to:** `9c70934` — *Give each radial-seed ring room for the bubbles standing
+  on it* (2026-09-22; upstream's `v0.11.0` tag sits at the previous pin, `34c4b88`). The
+  nine commits since then are three kinds:
+- **SSN viewer layout** (`8d74369`, `f1f4fce`, `c3bc819`, `d29acf7`, `613cdfa`, `7bd7c74`,
+  `9c70934`): the duplicated layout source merged into one copy (shipped to the Worker as a
+  string), a more compact force layout, per-depth tree column widths, the edge-score badge
+  anchored on the drawn polyline, and concentric radial-seed rings. All client-side JS in
+  `ssn_viewer_html.py`; no bundle change. Taken by regenerating the shell (the GUI host hook
+  re-applied cleanly); the GUI picks it up through `render_html`'s `include_str!`.
+- **De-britify** (`9488aca`): comments, docstrings and viewer prose only — no on-disk key,
+  flag or JSON field changed. The port had already made the same pass.
+- **Gzipped `.hmm`, no `hmmpress`** (`eb2d524`), ported: `.hmm` inputs decompress by magic
+  bytes (gzip and BGZF), `hmmpress` sidecars are never read, `.gz` HMM output is plain gzip
+  and `.bgz` is refused before any work, `--max_output_gb` counts uncompressed bytes, and
+  database names come from `db_name_from_path` (`refs.hmm.gz` → `refs`). See
+  `search/hmm_read.rs`, `search/hmm_write.rs` (`HmmOutput`, `write_hmm_output`) and
+  `io/mod.rs` (`open_decompressed`, `db_name_from_path`); references and `seq_dist` now look
+  through a compression suffix. In the GUI the managed Pfam download stays `Pfam-A.hmm.gz`,
+  and the HMM viewer indexes and reads profiles through the gzip. `split_by_cluster`'s half
+  of the commit has no counterpart (the tool is deferred).
 - **Vendored copy:** `external/domainator/` (gitignored; a git clone of upstream, kept at
   the pin above). It is the deterministic, repo-local source for regeneration and drift
   checks. Refresh it with `scripts/sync_upstream.sh` (fast-forwards to a target ref).

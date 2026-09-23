@@ -15,10 +15,13 @@
 //!   compression happen in the same pass as the download, because materializing
 //!   TrEMBL's ~250 GB uncompressed intermediate is not an option. An asset that
 //!   *is* already BGZF is copied through untouched.
-//! * **HMM** (Pfam-A) — stored **uncompressed**. Nothing in the port reads a
-//!   compressed profile library: `search/hmm_read.rs` opens a plain file, and so
-//!   does the header scan behind the HMM logo viewer and the Databases panel. The
-//!   `.gz` is therefore expanded on the way in rather than kept.
+//! * **HMM** (Pfam-A) — stored as **plain gzip**, which is how EBI serves it, so
+//!   the download is copied through byte for byte. Every hmm reader decompresses
+//!   by content (upstream `utils.open_hmm_file`; here `search/hmm_read.rs`, the
+//!   logo viewer's index and the Databases panel's header scan), and nothing seeks
+//!   in a profile library, so seekable BGZF would buy nothing — and HMMER itself
+//!   cannot open BGZF, so an asset that arrives any other way is normalized to
+//!   plain gzip rather than kept.
 //!
 //! Versions are read from each source's own small release file rather than
 //! inferred from a URL, and recorded in `manifest.json` next to the databases.
@@ -38,7 +41,7 @@ use domainator_core::tools::format_db::{format_db, FormatDbOptions};
 pub enum DbKind {
     /// Sequence database: BGZF + `.didx`.
     Fasta,
-    /// HMM profile library: uncompressed.
+    /// HMM profile library: plain gzip.
     Hmm,
 }
 
@@ -67,6 +70,10 @@ pub struct DbSpec {
     pub kind: DbKind,
     /// Final file name under the managed directory.
     pub file_name: &'static str,
+    /// Names earlier releases of this app installed the database under. An update
+    /// removes them once the new file is in place, or the old copy would sit in the
+    /// managed directory forever (Pfam-A was once stored expanded, as `Pfam-A.hmm`).
+    pub superseded_file_names: &'static [&'static str],
     /// Indicative sizes for the pre-download warning and the free-space preflight,
     /// in bytes. These are what the panel can show *before* any network call; the
     /// real download size comes from the response's `Content-Length` once a download
@@ -85,10 +92,10 @@ impl DbSpec {
     /// Whether the panel must get an explicit confirmation before starting.
     /// Swiss-Prot (~94 MB) is a click; everything else is an evening.
     ///
-    /// Both sizes count, because they are large for different reasons: TrEMBL is a
-    /// 41 GB *transfer*, while Pfam-A is a 420 MB transfer that lands as 1.7 GB
-    /// once expanded to the uncompressed form the HMM reader needs. Gating on the
-    /// download alone would start that one silently.
+    /// Both sizes count, because a database can be large on disk without being a
+    /// large transfer (a gzipped FASTA is recompressed as BGZF plus a `.didx`, which
+    /// is bigger than what arrived). Gating on the download alone would start such
+    /// a one silently.
     pub fn needs_confirmation(&self) -> bool {
         self.download_bytes > LARGE_BYTES || self.disk_bytes > LARGE_BYTES
     }
@@ -145,6 +152,7 @@ pub fn specs() -> Vec<DbSpec> {
             parse_version: uniprot_release,
             kind: DbKind::Fasta,
             file_name: "uniprot_sprot.fasta.bgz",
+            superseded_file_names: &[],
             download_bytes: 94_000_000,
             disk_bytes: 110_000_000,
         },
@@ -158,6 +166,7 @@ pub fn specs() -> Vec<DbSpec> {
             parse_version: uniprot_release,
             kind: DbKind::Fasta,
             file_name: "uniref50.fasta.bgz",
+            superseded_file_names: &[],
             download_bytes: 8_800_000_000,
             disk_bytes: 10_000_000_000,
         },
@@ -171,6 +180,7 @@ pub fn specs() -> Vec<DbSpec> {
             parse_version: uniprot_release,
             kind: DbKind::Fasta,
             file_name: "uniref90.fasta.bgz",
+            superseded_file_names: &[],
             download_bytes: 32_000_000_000,
             disk_bytes: 36_000_000_000,
         },
@@ -184,21 +194,23 @@ pub fn specs() -> Vec<DbSpec> {
             parse_version: uniprot_release,
             kind: DbKind::Fasta,
             file_name: "uniprot_trembl.fasta.bgz",
+            superseded_file_names: &[],
             download_bytes: 41_000_000_000,
             disk_bytes: 46_000_000_000,
         },
         DbSpec {
             id: "pfam",
             name: "Pfam-A",
-            description: "The Pfam-A profile HMM library, for domainate / hmmer-search. Stored uncompressed.",
+            description: "The Pfam-A profile HMM library, for domainate / hmmer-search. Stored gzipped, as EBI serves it.",
             url: "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz",
             version_url: "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam.version.gz",
             version_gzipped: true,
             parse_version: pfam_release,
             kind: DbKind::Hmm,
-            file_name: "Pfam-A.hmm",
+            file_name: "Pfam-A.hmm.gz",
+            superseded_file_names: &["Pfam-A.hmm"],
             download_bytes: 420_000_000,
-            disk_bytes: 1_700_000_000,
+            disk_bytes: 420_000_000,
         },
     ]
 }
@@ -502,6 +514,7 @@ pub fn install(
 
     std::fs::rename(&part, &final_path)
         .map_err(|e| format!("installing {}: {e}", final_path.display()))?;
+    remove_superseded(spec, &dir);
 
     if spec.kind == DbKind::Fasta {
         report("indexing", 0, 0);
@@ -549,12 +562,13 @@ fn write_payload<R: Read>(
     let out = std::fs::File::create(dest).map_err(|e| format!("writing {}: {e}", dest.display()))?;
     let mut out = std::io::BufWriter::with_capacity(1 << 20, out);
 
-    // Decoded bytes, whatever the asset arrived as. A BGZF asset staying BGZF is the
-    // one case that skips this and is copied through verbatim.
+    // Decoded bytes, whatever the asset arrived as. Multi-member, because BGZF is a
+    // chain of gzip members and so is anything `pigz`/`cat` stitched together; a
+    // single-member decoder stops after the first and reports success.
     let decode = |stream: R| -> Box<dyn Read> {
         match compression {
             Compression::None => Box::new(stream),
-            _ => Box::new(flate2::read::GzDecoder::new(stream)),
+            _ => Box::new(flate2::read::MultiGzDecoder::new(stream)),
         }
     };
 
@@ -573,11 +587,32 @@ fn write_payload<R: Read>(
             let mut inner = writer.finish().map_err(|e| format!("finishing BGZF: {e}"))?;
             return inner.flush().map_err(|e| format!("writing: {e}"));
         }
+        // Plain gzip is the storage format, so EBI's file is kept as it arrived.
+        DbKind::Hmm if compression == Compression::Gzip => {
+            let mut stream = stream;
+            std::io::copy(&mut stream, &mut out).map_err(|e| format!("writing: {e}"))?;
+        }
+        // Anything else becomes plain gzip: never BGZF, which HMMER cannot open.
         DbKind::Hmm => {
-            std::io::copy(&mut decode(stream), &mut out).map_err(|e| format!("writing: {e}"))?;
+            let mut enc = flate2::write::GzEncoder::new(out, flate2::Compression::default());
+            std::io::copy(&mut decode(stream), &mut enc).map_err(|e| format!("writing: {e}"))?;
+            let mut inner = enc.finish().map_err(|e| format!("finishing gzip: {e}"))?;
+            return inner.flush().map_err(|e| format!("writing: {e}"));
         }
     }
     out.flush().map_err(|e| format!("writing: {e}"))
+}
+
+/// Remove the copies an earlier release stored under a name this spec no longer
+/// uses (and their `.didx`). Only ever inside the managed directory, and only once
+/// the replacement is in place, so a failed update leaves the old copy working.
+fn remove_superseded(spec: &DbSpec, dir: &Path) {
+    for name in spec.superseded_file_names {
+        let old = dir.join(name);
+        for p in [didx_path(&old), old] {
+            let _ = std::fs::remove_file(p);
+        }
+    }
 }
 
 /// Delete an installed database's files and forget it. The version check is kept:
@@ -731,8 +766,8 @@ mod tests {
     /// The stored file name *is* the storage contract, and both halves of it are
     /// load-bearing. A FASTA database that does not end `.bgz` is not seekable, so
     /// `domain_search` cannot use the `.didx` this module writes next to it; an HMM
-    /// library that ends in any compression suffix cannot be opened at all, because
-    /// `search/hmm_read.rs` only ever opens a plain file.
+    /// library is plain gzip, and a `.bgz` name would announce the one compression
+    /// HMMER cannot open (every hmm output path refuses it for that reason).
     #[test]
     fn storage_format_matches_what_the_readers_require() {
         for s in specs() {
@@ -746,7 +781,7 @@ mod tests {
                     );
                 }
                 DbKind::Hmm => {
-                    assert!(s.file_name.ends_with(".hmm"), "{} must be stored uncompressed", s.id);
+                    assert!(s.file_name.ends_with(".hmm.gz"), "{} must be stored as plain gzip", s.id);
                 }
             }
             // Whatever the name, the app's own classifier has to agree it is a
@@ -759,13 +794,14 @@ mod tests {
     }
 
     /// The confirmation gate is the only thing standing between a stray click and a
-    /// 40 GB download, and Swiss-Prot is the only set small enough to skip it.
+    /// 40 GB download. Swiss-Prot (~94 MB) and Pfam-A (~420 MB, kept gzipped) are
+    /// the sets small enough to skip it.
     #[test]
-    fn only_the_small_database_downloads_without_confirmation() {
+    fn only_the_small_databases_download_without_confirmation() {
         for s in specs() {
             assert_eq!(
                 s.needs_confirmation(),
-                s.id != "swissprot",
+                !matches!(s.id, "swissprot" | "pfam"),
                 "{} confirmation gate",
                 s.id
             );
@@ -857,6 +893,7 @@ mod tests {
             parse_version: uniprot_release,
             kind: DbKind::Fasta,
             file_name,
+            superseded_file_names: &[],
             download_bytes: 1,
             disk_bytes: 1,
         }
@@ -934,27 +971,72 @@ MSDKIIHLTD
         }
     }
 
-    /// Pfam is the other half of the storage contract: the `.gz` is expanded, not
-    /// kept, because `search/hmm_read.rs` opens a plain file and there is no
-    /// compressed-HMM reader anywhere in the port to fall back on.
+    /// Pfam is the other half of the storage contract: EBI's plain gzip is the
+    /// storage format, so it is kept byte for byte, and the result must be a usable
+    /// database -- the Databases panel's header scan and the logo viewer's index
+    /// both read through the gzip.
     #[test]
-    fn a_gzipped_hmm_library_is_installed_expanded() {
+    fn a_gzipped_hmm_library_is_stored_as_served() {
         let dir = scratch("hmm");
-        let profile = "HMMER3/f [3.4]\nNAME  PF00001\nALPH  amino\n//\n";
+        let profile = "HMMER3/f [3.4]\nNAME  PF00001\nALPH  amino\nLENG  1\nHMM  A C\n//\n";
         let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
         enc.write_all(profile.as_bytes()).unwrap();
         let gz = enc.finish().unwrap();
 
-        let spec = DbSpec { kind: DbKind::Hmm, file_name: "test.hmm", ..fasta_spec("test.hmm") };
+        let spec = DbSpec { kind: DbKind::Hmm, file_name: "test.hmm.gz", ..fasta_spec("test.hmm.gz") };
         let dest = dir.join(spec.file_name);
-        write_payload(&spec, Compression::Gzip, std::io::Cursor::new(gz), &dest).unwrap();
+        write_payload(&spec, Compression::Gzip, std::io::Cursor::new(gz.clone()), &dest).unwrap();
 
-        assert_eq!(std::fs::read_to_string(&dest).unwrap(), profile);
-        // And the app's own classifier agrees it is a usable protein HMM database.
+        assert_eq!(std::fs::read(&dest).unwrap(), gz);
         let entry =
             domainator_core::app_support::registry::classify_database(dest.to_str().unwrap())
                 .unwrap();
         assert_eq!((entry.format.as_str(), entry.molecule.as_str()), ("hmm", "protein"));
+        assert_eq!(entry.name, "test", "the name annotations get, not `test.hmm`");
+        let index = domainator_core::app_support::hmm_logo::index_hmm_file(dest.to_str().unwrap()).unwrap();
+        assert_eq!(index.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["PF00001"]);
+    }
+
+    /// An HMM asset that arrives any other way is normalized to plain gzip. Keeping
+    /// a BGZF asset verbatim, as the FASTA path does, would store the one
+    /// compression HMMER cannot open.
+    #[test]
+    fn an_hmm_asset_is_normalized_to_plain_gzip() {
+        let dir = scratch("hmm_norm");
+        let profile = b"HMMER3/f [3.4]\nNAME  PF00002\n//\n";
+        let mut bgzf_bytes = Vec::new();
+        {
+            let mut w = bgzf::Writer::new(&mut bgzf_bytes, bgzf::CompressionLevel::new(6).unwrap());
+            w.write_all(profile).unwrap();
+            w.finish().unwrap();
+        }
+        let spec = DbSpec { kind: DbKind::Hmm, file_name: "n.hmm.gz", ..fasta_spec("n.hmm.gz") };
+        for (tag, compression, bytes) in
+            [("bgzf", Compression::Bgzf, bgzf_bytes), ("plain", Compression::None, profile.to_vec())]
+        {
+            let dest = dir.join(format!("{tag}.hmm.gz"));
+            write_payload(&spec, compression, std::io::Cursor::new(bytes), &dest).unwrap();
+            let stored = std::fs::read(&dest).unwrap();
+            assert_eq!(sniff(&stored), Compression::Gzip, "{tag}");
+            let mut text = Vec::new();
+            flate2::read::GzDecoder::new(stored.as_slice()).read_to_end(&mut text).unwrap();
+            assert_eq!(text, profile, "{tag}");
+        }
+    }
+
+    /// Updating from a release that stored Pfam expanded must not leave the
+    /// 1.7 GB `Pfam-A.hmm` behind beside the new `Pfam-A.hmm.gz`.
+    #[test]
+    fn an_update_removes_the_copy_an_older_release_stored() {
+        let dir = scratch("superseded");
+        let spec = spec("pfam").unwrap();
+        assert_eq!(spec.superseded_file_names, ["Pfam-A.hmm"]);
+        let old = dir.join("Pfam-A.hmm");
+        std::fs::write(&old, b"old").unwrap();
+        std::fs::write(dir.join(spec.file_name), b"new").unwrap();
+        remove_superseded(&spec, &dir);
+        assert!(!old.exists());
+        assert!(dir.join(spec.file_name).exists());
     }
 
     /// An asset that already arrives as BGZF is the storage format, and must be

@@ -36,6 +36,7 @@ use domainator_core::tools::domain_search::{domain_search, DomainSearchOptions};
 use domainator_core::tools::domainate::{self, domainate, DomainateOptions};
 use domainator_core::tools::enum_report::{enum_report, static_analysis, By, OutputFormat};
 use domainator_core::tools::filter_domains::{filter_domains, AnnotationType, FilterDomainsOptions};
+use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::tools::hmmer_build::{hmmer_build, write_hmm_out, HmmerBuildOptions};
 use domainator_core::tools::hmmer_select::{hmmer_select, parse_alphabet, Fields, SelectOptions};
 use domainator_core::tools::{
@@ -1433,11 +1434,7 @@ fn run_hmmer_select(params: Value) -> Result<RunOutput, String> {
         case_sensitive: cfg.case_sensitive,
         alphabet: parse_alphabet(cfg.alphabet.as_deref())?,
     };
-    let mut f = std::io::BufWriter::new(
-        std::fs::File::create(&output).map_err(|e| format!("creating {output}: {e}"))?,
-    );
-    let summary = hmmer_select(&cfg.input, &opts, &mut f).map_err(|e| e.to_string())?;
-    std::io::Write::flush(&mut f).map_err(|e| format!("flushing: {e}"))?;
+    let summary = write_hmm_output(&output, |f| hmmer_select(&cfg.input, &opts, f))?;
     let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "hmm".into() }).collect();
     let skipped = if summary.skipped_files > 0 {
         format!(" ({} file(s) skipped by --alphabet)", summary.skipped_files)
@@ -1468,12 +1465,10 @@ fn run_hmmer_build(params: Value) -> Result<RunOutput, String> {
         window_length: cfg.window_length,
         window_beta: cfg.window_beta,
     };
-    let hmm = hmmer_build(Path::new(&input), &opts).map_err(|e| e.to_string())?;
-    let mut f = std::io::BufWriter::new(
-        std::fs::File::create(&output).map_err(|e| format!("creating {output}: {e}"))?,
-    );
-    write_hmm_out(&hmm, &mut f).map_err(|e| e.to_string())?;
-    std::io::Write::flush(&mut f).map_err(|e| format!("flushing: {e}"))?;
+    write_hmm_output(&output, |f| {
+        let hmm = hmmer_build(Path::new(&input), &opts)?;
+        write_hmm_out(&hmm, f)
+    })?;
     Ok((
         vec![IoRef { path: input, role: "msa".into() }],
         vec![IoRef { path: output, role: "hmm".into() }],
@@ -1878,11 +1873,7 @@ fn run_hmmer_search(params: Value) -> Result<RunOutput, String> {
         cpu: cfg.cpu.unwrap_or(0),
         max_output_gb: cfg.max_output_gb,
     };
-    let mut f = std::io::BufWriter::new(
-        std::fs::File::create(&output).map_err(|e| format!("creating {output}: {e}"))?,
-    );
-    let found = hmmer_search_m::hmmer_search(&cfg.input, &cfg.reference, &opts, &mut f).map_err(|e| e.to_string())?;
-    std::io::Write::flush(&mut f).map_err(|e| e.to_string())?;
+    let found = write_hmm_output(&output, |f| hmmer_search_m::hmmer_search(&cfg.input, &cfg.reference, &opts, f))?;
     let mut inputs: Vec<IoRef> = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "hmm".into() }).collect();
     inputs.extend(cfg.reference.iter().map(|p| IoRef { path: p.clone(), role: "reference".into() }));
     Ok((inputs, vec![IoRef { path: output, role: "hmm".into() }], format!("kept {found} query profiles")))

@@ -2,8 +2,9 @@
 
 use domainator_core::app_support::contig_view::{build_contig_file_view, ContigFileView};
 use domainator_core::app_support::hmm_logo::{
-    index_hmm_file, logo_from_hmm_bytes, HmmEntry, HmmLogo, HmmSummary,
+    index_hmm_file, logo_from_hmm_bytes, read_hmm_byte_ranges, HmmEntry, HmmLogo, HmmSummary,
 };
+use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::app_support::summary_stats::{summarize, SummaryStats};
 use domainator_core::app_support::workspace::{classify_file, find_workspace_root};
 use domainator_core::app_support::provenance::{trace_source_sequences, SourceTrace};
@@ -210,7 +211,9 @@ pub async fn load_hmm_logo(
             .get(idx)
             .ok_or_else(|| format!("no HMM at index {idx} (file has {})", entries.len()))?;
         // Parse ONLY this profile's bytes instead of the whole (possibly huge) file.
-        let bytes = read_byte_range(&path, entry.byte_start, entry.byte_end)?;
+        let bytes = read_hmm_byte_ranges(&path, &[(entry.byte_start, entry.byte_end)])?
+            .pop()
+            .unwrap_or_default();
         logo_from_hmm_bytes(&bytes)
     })
     .await
@@ -369,17 +372,6 @@ fn cached_record_ids(
         .unwrap()
         .insert(path.to_string(), RecordIdCacheEntry { size, mtime_ns, ids: ids.clone() });
     Some(ids)
-}
-
-/// Read the exact byte range `[start, end)` of `path` into a buffer.
-fn read_byte_range(path: &str, start: u64, end: u64) -> Result<Vec<u8>, String> {
-    use std::io::{Read, Seek, SeekFrom};
-    let mut f = std::fs::File::open(path).map_err(|e| format!("opening {path}: {e}"))?;
-    f.seek(SeekFrom::Start(start)).map_err(|e| format!("seeking {path}: {e}"))?;
-    let len = end.saturating_sub(start) as usize;
-    let mut buf = vec![0u8; len];
-    f.read_exact(&mut buf).map_err(|e| format!("reading {path}: {e}"))?;
-    Ok(buf)
 }
 
 fn parse_all_seqs(path: &str) -> Result<Vec<String>, String> {
@@ -876,21 +868,20 @@ pub async fn extract_hmms(
         let ts = target.to_string_lossy().into_owned();
         // Copy each selected profile's raw bytes (exact original formatting) instead
         // of re-parsing and re-serializing the whole source — instant on big libraries.
+        // One pass over the source for every selected profile: a gzipped library
+        // cannot be seeked, and inflating it once per profile would be quadratic.
         let entries = cached_hmm_index(&state, &source)?;
-        let file = std::fs::File::create(&ts).map_err(|e| format!("creating {ts}: {e}"))?;
-        let mut w = std::io::BufWriter::new(file);
-        let mut n = 0usize;
-        for &i in &indices {
-            if let Some(e) = entries.get(i) {
-                let bytes = read_byte_range(&source, e.byte_start, e.byte_end)?;
-                w.write_all(&bytes).map_err(|e| format!("writing {ts}: {e}"))?;
-                n += 1;
-            }
-        }
-        w.flush().map_err(|e| format!("flushing {ts}: {e}"))?;
-        if n == 0 {
+        let ranges: Vec<(u64, u64)> =
+            indices.iter().filter_map(|&i| entries.get(i)).map(|e| (e.byte_start, e.byte_end)).collect();
+        if ranges.is_empty() {
             return Err("no profiles selected".to_string());
         }
+        let profiles = read_hmm_byte_ranges(&source, &ranges)?;
+        // `.hmm.gz` gets plain gzip and `.hmm.bgz` is refused, as for every other
+        // hmm output (HMMER cannot read BGZF).
+        write_hmm_output(&ts, |w| {
+            profiles.iter().try_for_each(|bytes| w.write_all(bytes).map_err(|e| format!("writing {ts}: {e}")))
+        })?;
         Ok::<String, String>(ts)
     })
     .await

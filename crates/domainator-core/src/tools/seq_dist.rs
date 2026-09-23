@@ -31,10 +31,15 @@ pub enum InputKind {
     Hmm,
 }
 
-/// Detect input kind from a path (`.hmm` -> Hmm, else FASTA/GenBank by extension).
+/// Detect input kind from a path (`.hmm`, optionally gzipped, -> Hmm, else
+/// FASTA/GenBank by extension).
 pub fn detect_kind(path: &Path) -> Option<InputKind> {
     let name = path.file_name()?.to_str()?.to_ascii_lowercase();
-    if name.ends_with(".hmm") {
+    let unwrapped = crate::io::COMPRESSION_EXTENSIONS
+        .iter()
+        .find_map(|ext| name.strip_suffix(&format!(".{ext}")))
+        .unwrap_or(&name);
+    if unwrapped.ends_with(".hmm") {
         return Some(InputKind::Hmm);
     }
     match detect_filetype(path)? {

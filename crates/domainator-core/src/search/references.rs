@@ -38,7 +38,15 @@ enum RefFileType {
 }
 
 fn ref_file_type(file: &str) -> Result<RefFileType, String> {
-    let ext = Path::new(file)
+    // One compression suffix is looked through, as `get_file_type` does, so
+    // `refs.hmm.gz` is an hmm reference; the readers decompress by content.
+    let path = Path::new(file);
+    let unwrapped = if crate::io::is_compressed_path(path) {
+        path.file_stem().map(Path::new).unwrap_or(path)
+    } else {
+        path
+    };
+    let ext = unwrapped
         .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_ascii_lowercase())
@@ -57,7 +65,7 @@ fn ref_file_type(file: &str) -> Result<RefFileType, String> {
 /// guess used by `_fasta_is_nucleic_acid`): the residues are overwhelmingly
 /// A/C/G/T/U/N.
 fn fasta_is_nucleic_acid(file: &str) -> std::io::Result<bool> {
-    let recs = crate::io::fasta::read_fasta(file, Some("protein"))?;
+    let recs = crate::io::fasta::read_fasta_decompressed(file, Some("protein"))?;
     let Some(rec) = recs.first() else {
         return Ok(false);
     };
@@ -82,12 +90,9 @@ fn fasta_is_nucleic_acid(file: &str) -> std::io::Result<bool> {
 /// Whether an `.hmm` file's first profile is a DNA/RNA model.
 fn hmm_is_nucleic_acid(file: &str) -> std::io::Result<bool> {
     use hmmer_pure_rs::alphabet::AlphabetType;
-    let hmms = crate::search::hmm_read::read_hmm_file(Path::new(file))
+    let first = crate::search::hmm_read::read_first_hmm(Path::new(file))
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
-    Ok(hmms
-        .first()
-        .map(|h| matches!(h.abc_type, AlphabetType::Dna | AlphabetType::Rna))
-        .unwrap_or(false))
+    Ok(first.is_some_and(|h| matches!(h.abc_type, AlphabetType::Dna | AlphabetType::Rna)))
 }
 
 /// Load a nucleotide `.hmm` file as an nhmmer db (file stem = db name).
@@ -117,7 +122,7 @@ const NUCL_PEXTEND: f32 = 0.75;
 /// `calibrate()` call here -- a second pass would redraw the Gumbel fit.
 fn load_nucl_fasta(file: &str) -> std::io::Result<NuclDb> {
     use hmmer_pure_rs::{Alphabet, Bg};
-    let recs = crate::io::fasta::read_fasta(file, Some("nucleotide"))?;
+    let recs = crate::io::fasta::read_fasta_decompressed(file, Some("nucleotide"))?;
     let abc = Alphabet::dna();
     let bg = Bg::new(&abc);
     let mut hmms = Vec::new();
@@ -150,11 +155,7 @@ fn load_nucl_fasta(file: &str) -> std::io::Result<NuclDb> {
 }
 
 fn file_stem(f: &str) -> String {
-    Path::new(f)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("references")
-        .to_string()
+    crate::io::db_name_from_path(f)
 }
 
 /// Classify and load all reference files (port of `read_references`).
@@ -215,5 +216,10 @@ mod tests {
         assert!(matches!(ref_file_type("x.faa"), Ok(RefFileType::Fasta)));
         assert!(matches!(ref_file_type("x.cm"), Ok(RefFileType::Cm)));
         assert!(ref_file_type("x.gb").is_err());
+        // A compression suffix is looked through, never mistaken for the type.
+        assert!(matches!(ref_file_type("x.hmm.gz"), Ok(RefFileType::Hmm)));
+        assert!(matches!(ref_file_type("x.HMM.BGZ"), Ok(RefFileType::Hmm)));
+        assert!(matches!(ref_file_type("x.fasta.gz"), Ok(RefFileType::Fasta)));
+        assert!(ref_file_type("x.gz").is_err());
     }
 }

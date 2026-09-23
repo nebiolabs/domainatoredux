@@ -36,8 +36,9 @@ pub struct HmmDb {
     pub rlen: Vec<i64>,
 }
 
-/// Load HMM databases from `.hmm` files. `name` is the file stem (e.g.
-/// `FeSOD_pfam.hmm` -> `FeSOD_pfam`). All profiles are searched with `hmmsearch`.
+/// Load HMM databases from `.hmm` files (optionally gzipped). `name` is
+/// [`crate::io::db_name_from_path`] (`FeSOD_pfam.hmm` and `FeSOD_pfam.hmm.gz`
+/// both -> `FeSOD_pfam`). All profiles are searched with `hmmsearch`.
 pub fn load_hmm_dbs(files: &[String]) -> std::io::Result<Vec<HmmDb>> {
     let mut out = Vec::new();
     for f in files {
@@ -54,7 +55,7 @@ pub fn load_hmm_dbs(files: &[String]) -> std::io::Result<Vec<HmmDb>> {
 /// `pyhmmer.hmmer.phmmer`). Each profile's `name`/`desc`/`acc` come from the
 /// FASTA record, so the output `name` qualifier is the reference sequence id.
 pub fn load_phmmer_db(file: &str) -> std::io::Result<HmmDb> {
-    let recs = crate::io::fasta::read_fasta(file, Some("protein"))?;
+    let recs = crate::io::fasta::read_fasta_decompressed(file, Some("protein"))?;
     let abc = Alphabet::amino();
     let bg = Bg::new(&abc);
     let mut hmms = Vec::new();
@@ -86,11 +87,7 @@ pub fn load_phmmer_db(file: &str) -> std::io::Result<HmmDb> {
 }
 
 fn file_stem(f: &str) -> String {
-    Path::new(f)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("references")
-        .to_string()
+    crate::io::db_name_from_path(f)
 }
 
 /// Split a FASTA title into `(id, description)` the way easel/pyhmmer does: the id

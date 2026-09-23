@@ -26,7 +26,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 # External-tool auto-download (diamond, and future binaries):
 ureq = "2"
-flate2 = "1"
+flate2.workspace = true
 tar = "0.4"
 zip = "2"
 # `reference_dbs`: UniProt/UniRef ship plain gzip, which is not seekable, so a

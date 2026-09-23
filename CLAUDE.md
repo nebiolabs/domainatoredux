@@ -117,10 +117,10 @@ keep in particular:
   `reference_dbs.rs`) — the managed UniProt/Pfam downloads have no upstream counterpart,
   and every way of getting their storage wrong still puts a plausible file on disk: a
   FASTA kept as plain gzip is unseekable (so `domain_search` cannot use the `.didx`
-  written beside it), an HMM library left compressed cannot be opened at all, and an
-  index that disagrees with the BGZF blocks fails only inside a later run. The tests
-  walk the real chain — gzip in, BGZF + `.didx` out, one record read back at each
-  recorded offset. `refs_are_live` (`#[ignore]`d, hits UniProt and EBI) is the only
+  written beside it), an HMM library stored as BGZF cannot be opened by HMMER (Pfam is
+  kept as EBI's plain gzip, `Pfam-A.hmm.gz`), and an index that disagrees with the BGZF
+  blocks fails only inside a later run. The tests walk the real chain — gzip in, BGZF +
+  `.didx` out, one record read back at each recorded offset. `refs_are_live` (`#[ignore]`d, hits UniProt and EBI) is the only
   thing that notices a publisher moving a path or changing a release file's shape.
 - **`the_managed_diamond_is_new_enough_for_deduplicate`** and
   **`managed_tools_match_the_core_locator`** (`domainator-gui`) — the External tools panel
@@ -212,6 +212,14 @@ Key cross-cutting invariants (these gate parity — grep the modules for details
 - **Ordered qualifiers** (`Vec<(String, Vec<String>)>`) — insertion order is load-bearing for the writer and for `cds_id` / `domainator_<db>` rollups.
 - **GenBank writer: `/translation` is the only qualifier that wraps.** Upstream patched its vendored Biopython so `/translation` wraps at 80 columns (the 21-space indent included, so a wrapped line is exactly 80) and every other qualifier gets `MAX_WIDTH = 10000000000000` — one line however long (`Bio/SeqIO/InsdcIO.py::_write_feature_qualifier`). Wrapping the rest still *reads back* equal, which is why parity gates never saw it, and it is what made breaking a long no-space token hazardous (the reader rejoins the halves with a spurious space). Three sibling rules in the same function: a qualifier is written **unquoted only if its key is in upstream's `FTQUAL_NO_QUOTE`** list (values are always strings here, so "looks like a number" is not the rule — that strips the quotes off `/gc="49"`); the LOCUS topology column is `annotations["topology"]` and stays **blank when the record never declared one**, not `linear`; and the SOURCE consumer drops one trailing `.` that the writer does not put back, so the ubiquitous `SOURCE      .` round-trips to a bare `SOURCE` line.
 - **GenBank writer: a record with no `date` annotation is stamped with today's date**, not Biopython's `01-JAN-1980` fallback — `utils.write_genbank` sets `date.today()` before handing the record to the writer, so a record a tool just built is dated when it was made. Ours uses UTC (no timezone database, no date dependency); Python uses local time, so the two disagree only across local midnight, and every parity comparator skips `date`.
+- **Compressed `.hmm`** (upstream `utils.open_hmm_file`, `eb2d524`): every hmm read goes
+  through `search/hmm_read.rs`/`io::open_decompressed`, which decide gzip vs plain from the
+  **magic bytes**, never the name, via `MultiGzDecoder` — the crate's own opener keys on a
+  `.gz` extension with a single-member decoder, which reads only the first block of a BGZF
+  file and silently drops the rest. `hmmpress` sidecars are never read. Output goes through
+  `HmmOutput`/`write_hmm_output`: `.gz` is **plain gzip**, `.bgz`/`.bgzf` is **refused**
+  (HMMER cannot open BGZF), and a failed run removes its partial file. Database names use
+  `io::db_name_from_path`, so `refs.hmm.gz` labels annotations `refs`, not `refs.hmm`.
 - **HMM writer** (`search/hmm_write.rs`, not the `hmmer-pure-rs` one): `HMMER3/f`, a nine-column model-matrix grid, and the `GA`/`TC`/`NC` Pfam cutoffs — the crate's writer drops those, which breaks `hmmsearch --cut_ga` downstream. Its reader also mis-parses them (Pfam's trailing `;`), so read profiles through `search/hmm_read.rs`. `hmmer-select` reproducing its input byte for byte is the gate. **All five annotation columns are written on every match line**, `-` for the ones a profile lacks — MAP included, whose column is present even under `MAP no`: C's reader consumes that token unconditionally and only *stores* it when the flag is set, so omitting it shifts CONS/RF/MM/CS left and makes the file unreadable. Every fixture is `MAP yes`, so no parity gate covers this; the `hmmer_select` round-trip tests are the guard.
 - **Number formatting** (`%.1e` via a custom `py_sci`, `%.1f`, NumPy `str(float64)` for TSV) is replicated to match Python output exactly.
 - **`.didx` / shard resolution / BGZF offsets** are hard on-disk contracts (`io/didx.rs`, `io/shards.rs`, `io/bgzf.rs`): `.didx` is byte-compatible; staleness is rejected via size+mtime_ns; both unsharded + shards present is an error (refuse to guess).

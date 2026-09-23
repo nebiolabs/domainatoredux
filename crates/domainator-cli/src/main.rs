@@ -16,6 +16,7 @@ use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
 use domainator_core::io::{detect_filetype, fasta, FileType};
 use domainator_core::matrix::{hdf5_io, read_matrix, text};
+use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools::enum_report::{self, needs_taxonomy, Analysis, OutputFormat};
@@ -1281,6 +1282,8 @@ enum Command {
         #[arg(short, long, num_args = 1..)]
         input: Vec<PathBuf>,
         /// Output `.hmm` file. Writes to stdout if omitted.
+        /// Writes plain gzip if the path ends in `.gz`; `.bgz` is refused because
+        /// HMMER cannot read BGZF. Output to stdout is never compressed.
         #[arg(short, long)]
         output: Option<PathBuf>,
         /// Regex pattern(s) to match.
@@ -1316,6 +1319,8 @@ enum Command {
         #[arg(short, long)]
         input: Option<PathBuf>,
         /// Output `.hmm` file (stdout if omitted).
+        /// Writes plain gzip if the path ends in `.gz`; `.bgz` is refused because
+        /// HMMER cannot read BGZF. Output to stdout is never compressed.
         #[arg(short, long)]
         output: Option<PathBuf>,
         /// Profile NAME (required).
@@ -1354,6 +1359,8 @@ enum Command {
         #[arg(short, long, num_args = 1..)]
         reference: Vec<PathBuf>,
         /// Output `.hmm` file (stdout if omitted).
+        /// Writes plain gzip if the path ends in `.gz`; `.bgz` is refused because
+        /// HMMER cannot read BGZF. Output to stdout is never compressed.
         #[arg(short, long)]
         output: Option<PathBuf>,
         /// Keep queries whose best reference score is >= this. The default is 10.0
@@ -3550,12 +3557,8 @@ fn main() -> Result<()> {
                     .map_err(|e| anyhow::anyhow!(e))?,
             };
             let summary = match &cfg.output {
-                Some(p) => {
-                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
-                    let n = hs::hmmer_select(&cfg.input, &opts, &mut f).map_err(|e| anyhow::anyhow!(e))?;
-                    f.flush()?;
-                    n
-                }
+                Some(p) => write_hmm_output(p, |f| hs::hmmer_select(&cfg.input, &opts, f))
+                    .map_err(|e| anyhow::anyhow!(e))?,
                 None => {
                     let stdout = std::io::stdout();
                     let mut h = stdout.lock();
@@ -3606,14 +3609,14 @@ fn main() -> Result<()> {
                 window_length: cfg.window_length,
                 window_beta: cfg.window_beta,
             };
-            let hmm = hb::hmmer_build(&PathBuf::from(&input), &opts).map_err(|e| anyhow::anyhow!(e))?;
             match &cfg.output {
-                Some(p) => {
-                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
-                    hb::write_hmm_out(&hmm, &mut f).map_err(|e| anyhow::anyhow!(e))?;
-                    f.flush()?;
-                }
+                Some(p) => write_hmm_output(p, |f| {
+                    let hmm = hb::hmmer_build(&PathBuf::from(&input), &opts)?;
+                    hb::write_hmm_out(&hmm, f)
+                })
+                .map_err(|e| anyhow::anyhow!(e))?,
                 None => {
+                    let hmm = hb::hmmer_build(&PathBuf::from(&input), &opts).map_err(|e| anyhow::anyhow!(e))?;
                     let stdout = std::io::stdout();
                     let mut h = stdout.lock();
                     hb::write_hmm_out(&hmm, &mut h).map_err(|e| anyhow::anyhow!(e))?;
@@ -3672,13 +3675,8 @@ fn main() -> Result<()> {
                 max_output_gb: cfg.max_output_gb,
             };
             let found = match &cfg.output {
-                Some(p) => {
-                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
-                    let n = hsr::hmmer_search(&cfg.input, &cfg.reference, &opts, &mut f)
-                        .map_err(|e| anyhow::anyhow!(e))?;
-                    f.flush()?;
-                    n
-                }
+                Some(p) => write_hmm_output(p, |f| hsr::hmmer_search(&cfg.input, &cfg.reference, &opts, f))
+                    .map_err(|e| anyhow::anyhow!(e))?,
                 None => {
                     let stdout = std::io::stdout();
                     let mut h = stdout.lock();

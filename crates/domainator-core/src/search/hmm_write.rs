@@ -217,6 +217,96 @@ pub fn write_hmm<W: Write>(w: &mut W, hmm: &Hmm) -> io::Result<()> {
     writeln!(w, "//")
 }
 
+/// Refuse an `.hmm` output path that asks for BGZF (`.bgz`/`.bgzf`).
+///
+/// Port of `utils.check_writable_hmm_path`. easel cannot open a BGZF stream by
+/// path (it rejects the FEXTRA header), so a BGZF `.hmm` would be unreadable by
+/// `hmmsearch`, `hmmpress` and pyhmmer alike; and BGZF buys seekability, which
+/// nothing uses in a profile file. Call it before doing any work, so a bad path
+/// fails fast rather than after a long search.
+pub fn check_writable_hmm_path(path: &str) -> Result<(), String> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+    if matches!(ext.as_deref(), Some("bgz" | "bgzf")) {
+        return Err(format!(
+            "Cannot write '{path}': BGZF-compressed hmm files are not supported, because \
+             HMMER cannot read them (easel rejects the BGZF header, so hmmsearch, hmmpress \
+             and pyhmmer would all fail to open the result). Use a '.gz' extension to write \
+             plain gzip instead."
+        ));
+    }
+    Ok(())
+}
+
+/// A file being written with `.hmm` profiles: plain, or plain gzip for a `.gz`
+/// path. Port of `utils.open_writable_hmm_file`, and deliberately unlike the
+/// sequence writers, which write BGZF (see [`check_writable_hmm_path`]).
+///
+/// Call [`HmmOutput::finish`]: it writes the gzip trailer and surfaces the error
+/// a drop would swallow.
+pub enum HmmOutput {
+    Plain(io::BufWriter<std::fs::File>),
+    Gzip(flate2::write::GzEncoder<io::BufWriter<std::fs::File>>),
+}
+
+impl HmmOutput {
+    /// Create `path`, gzip-compressed when its name ends in a compression suffix.
+    /// Errors (as a message) on a BGZF path before creating anything.
+    pub fn create(path: &str) -> Result<HmmOutput, String> {
+        check_writable_hmm_path(path)?;
+        let file = std::fs::File::create(path).map_err(|e| format!("creating {path}: {e}"))?;
+        let w = io::BufWriter::new(file);
+        Ok(if crate::io::is_compressed_path(std::path::Path::new(path)) {
+            HmmOutput::Gzip(flate2::write::GzEncoder::new(w, flate2::Compression::default()))
+        } else {
+            HmmOutput::Plain(w)
+        })
+    }
+
+    /// Flush everything (and the gzip trailer) to disk.
+    pub fn finish(self) -> io::Result<()> {
+        match self {
+            HmmOutput::Plain(mut w) => w.flush(),
+            HmmOutput::Gzip(enc) => enc.finish()?.flush(),
+        }
+    }
+}
+
+/// Create `path` as an [`HmmOutput`], run `write` against it, and finish it; on
+/// any error remove the partial file, as upstream does (its staged temporary
+/// output never reaches the destination), so a failed run leaves nothing behind
+/// that looks like a result. The path is checked (BGZF refused) before `write`
+/// runs, so a bad extension fails before a long search rather than after it.
+pub fn write_hmm_output<T>(
+    path: &str,
+    write: impl FnOnce(&mut HmmOutput) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut out = HmmOutput::create(path)?;
+    let result = write(&mut out)
+        .and_then(|v| out.finish().map(|_| v).map_err(|e| format!("writing {path}: {e}")));
+    if result.is_err() {
+        let _ = std::fs::remove_file(path);
+    }
+    result
+}
+
+impl Write for HmmOutput {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            HmmOutput::Plain(w) => w.write(buf),
+            HmmOutput::Gzip(w) => w.write(buf),
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            HmmOutput::Plain(w) => w.flush(),
+            HmmOutput::Gzip(w) => w.flush(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,6 +324,118 @@ mod tests {
             hmm.t[node] = [1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0];
         }
         hmm
+    }
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("domainator_hmm_gz_{tag}_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn two_profiles() -> Vec<u8> {
+        let mut a = model();
+        a.name = "first".into();
+        let mut b = model();
+        b.name = "second".into();
+        let mut text = Vec::new();
+        write_hmm(&mut text, &a).unwrap();
+        write_hmm(&mut text, &b).unwrap();
+        text
+    }
+
+    fn gzip(bytes: &[u8]) -> Vec<u8> {
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        enc.write_all(bytes).unwrap();
+        enc.finish().unwrap()
+    }
+
+    fn names(path: &std::path::Path) -> Vec<String> {
+        crate::search::hmm_read::read_hmm_file(path).unwrap().into_iter().map(|h| h.name).collect()
+    }
+
+    /// `-o x.hmm.gz` is plain gzip (one member, no BGZF `BC` extra field), and its
+    /// payload is byte-for-byte what `-o x.hmm` writes.
+    #[test]
+    fn a_gz_output_is_plain_gzip_of_the_plain_output() {
+        let dir = scratch("out");
+        let text = two_profiles();
+        for name in ["x.hmm", "x.hmm.gz"] {
+            let path = dir.join(name);
+            let mut out = HmmOutput::create(path.to_str().unwrap()).unwrap();
+            out.write_all(&text).unwrap();
+            out.finish().unwrap();
+        }
+        let gz = std::fs::read(dir.join("x.hmm.gz")).unwrap();
+        assert_eq!(&gz[..3], &[0x1f, 0x8b, 0x08]);
+        assert_eq!(gz[3] & 0x04, 0, "FEXTRA set: that is a BGZF header, which easel rejects");
+        let mut back = Vec::new();
+        std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(gz.as_slice()), &mut back).unwrap();
+        assert_eq!(back, std::fs::read(dir.join("x.hmm")).unwrap());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_failed_write_leaves_no_output_behind() {
+        let dir = scratch("fail");
+        let path = dir.join("x.hmm.gz");
+        let err = write_hmm_output(path.to_str().unwrap(), |out| {
+            out.write_all(b"HMMER3/f partial").unwrap();
+            Err::<(), _>("limit exceeded".to_string())
+        })
+        .unwrap_err();
+        assert_eq!(err, "limit exceeded");
+        assert!(!path.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_bgzf_output_path_is_refused_before_anything_is_created() {
+        let dir = scratch("bgz");
+        for name in ["x.hmm.bgz", "x.hmm.BGZF"] {
+            let path = dir.join(name);
+            let err = HmmOutput::create(path.to_str().unwrap()).err().unwrap();
+            assert!(err.contains("BGZF"), "{err}");
+            assert!(!path.exists());
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Compression is read from the content: gzip, a multi-member stream (which is
+    /// what BGZF is, and what the crate's single-member decoder cut short after the
+    /// first member), and uncompressed text under a `.gz` name all give every profile.
+    #[test]
+    fn compressed_profiles_read_back_whatever_the_name_says() {
+        let dir = scratch("in");
+        let text = two_profiles();
+        let split = text.windows(3).position(|w| w == b"//\n").unwrap() + 3;
+        let mut multi = gzip(&text[..split]);
+        multi.extend(gzip(&text[split..]));
+        let cases: [(&str, Vec<u8>); 4] = [
+            ("plain.hmm", text.clone()),
+            ("gzip.hmm.gz", gzip(&text)),
+            ("members.hmm.bgz", multi),
+            ("mislabeled.hmm.gz", text.clone()),
+        ];
+        for (name, bytes) in cases {
+            let path = dir.join(name);
+            std::fs::write(&path, bytes).unwrap();
+            assert_eq!(names(&path), ["first", "second"], "{name}");
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `hmmpress` sidecars are keyed to the `.hmm` only by name; a stale set must
+    /// not shadow what the file now says.
+    #[test]
+    fn pressed_sidecars_are_never_consulted() {
+        let dir = scratch("pressed");
+        let path = dir.join("ref.hmm");
+        std::fs::write(&path, two_profiles()).unwrap();
+        for ext in ["h3f", "h3i", "h3m", "h3p"] {
+            std::fs::write(dir.join(format!("ref.hmm.{ext}")), b"stale binary junk").unwrap();
+        }
+        assert_eq!(names(&path), ["first", "second"]);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     fn render(hmm: &Hmm) -> Vec<String> {

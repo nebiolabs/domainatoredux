@@ -201,7 +201,15 @@ pub async fn download_reference_db(
         // Make it usable: without this the file is on disk and no tool offers it.
         if let Some(root) = workspace_root.as_deref().filter(|r| !r.is_empty()) {
             report("registering", 0, 0);
-            register_in_workspace(root, &entry.path)?;
+            // `install` deleted any copy stored under a name this release no longer
+            // uses; drop those from the registry too, or the panel lists a ghost.
+            let dir = reference_dbs::managed_dir(&app_c)?;
+            let superseded: Vec<String> = spec
+                .superseded_file_names
+                .iter()
+                .map(|n| dir.join(n).to_string_lossy().into_owned())
+                .collect();
+            register_in_workspace(root, &entry.path, &superseded)?;
         }
         Ok::<_, String>(entry)
     })
@@ -233,11 +241,12 @@ pub async fn download_reference_db(
 /// `cmd_db::register_database`, which cannot be called directly from here (it is a
 /// `#[tauri::command]` with its own `spawn_blocking`, and this is already inside
 /// one).
-fn register_in_workspace(root: &str, path: &str) -> Result<DatabaseEntry, String> {
+/// `replaces` are paths to drop from the registry at the same time.
+fn register_in_workspace(root: &str, path: &str, replaces: &[String]) -> Result<DatabaseEntry, String> {
     let entry = classify_database(path)?;
     let root = std::path::Path::new(root);
     let mut reg = load_registry(root);
-    reg.databases.retain(|d| d.path != entry.path);
+    reg.databases.retain(|d| d.path != entry.path && !replaces.contains(&d.path));
     reg.databases.push(entry.clone());
     save_registry(root, &reg).map_err(|e| format!("saving registry: {e}"))?;
     Ok(entry)
@@ -292,7 +301,7 @@ pub async fn sync_reference_dbs_to_workspace(
                 continue;
             }
             // A classification failure on one database must not block the others.
-            if register_in_workspace(&workspace_root, &entry.path).is_ok() {
+            if register_in_workspace(&workspace_root, &entry.path, &[]).is_ok() {
                 added += 1;
             }
         }

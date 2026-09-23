@@ -1047,6 +1047,7 @@ name = "domainator-core"
 version = "0.1.0"
 dependencies = [
  "bgzf",
+ "flate2",
  "hdf5-pure",
  "hmmer-pure-rs",
  "libdeflater",

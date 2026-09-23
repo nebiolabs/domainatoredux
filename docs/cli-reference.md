@@ -495,6 +495,11 @@ domainator ssn-navigator -i network.dsnv --mode node \
 Domainator treats HMM profiles as first-class data: you can build them, subset them,
 compare them to each other, and build similarity networks *of profiles*.
 
+Every tool here, and `domainate`/`seq-dist`, reads gzip- or BGZF-compressed `.hmm` files
+as-is. The three that write profiles (`hmmer-build`, `hmmer-select`, `hmmer-search`) write
+plain gzip when `-o` ends in `.gz` and refuse `.bgz`, which HMMER cannot read — see
+[HMM profiles](file-formats.md#hmm-profiles).
+
 ### `hmmer-build`
 
 Build a profile from a **Stockholm** multiple sequence alignment. `--name` is required.
@@ -514,7 +519,7 @@ DESC or ACC fields. `--regex`, `--exact` and `--contains` are the match modes, `
 restricts which field is matched, `--case_sensitive` and `--alphabet` refine further.
 
 ```bash
-domainator hmmer-select -i pfam-A.hmm -o nucleases.hmm --contains nuclease --field desc
+domainator hmmer-select -i Pfam-A.hmm.gz -o nucleases.hmm --contains nuclease --field desc
 ```
 
 ### `hmmer-search`

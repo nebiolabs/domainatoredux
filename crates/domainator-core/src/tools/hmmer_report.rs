@@ -159,15 +159,12 @@ fn json_value(v: &Value) -> serde_json::Value {
 }
 
 /// Load HMM profiles from `.hmm` files, returning `(source_name, profiles)` per
-/// file. `source_name` is the file stem (e.g. `pdonr_hmms.hmm` -> `pdonr_hmms`).
+/// file. `source_name` is [`crate::io::db_name_from_path`] (`pdonr_hmms.hmm` and
+/// `pdonr_hmms.hmm.gz` both -> `pdonr_hmms`).
 pub fn read_hmms_to_iterators(hmm_files: &[String]) -> Result<Vec<(String, Vec<Hmm>)>, String> {
     let mut out = Vec::new();
     for f in hmm_files {
-        let name = Path::new(f)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("references")
-            .to_string();
+        let name = crate::io::db_name_from_path(f);
         let hmms = crate::search::hmm_read::read_hmm_file(Path::new(f))
             .map_err(|e| format!("reading {f}: {e:?}"))?;
         out.push((name, hmms));
