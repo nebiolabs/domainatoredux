@@ -16,7 +16,7 @@
 //! * **static** — `^[a-z]+\.[a-z0-9_]+$`, e.g. `file.open_workspace`. A closed set,
 //!   pinned to the frontend by [`tests::every_menu_id_is_known_to_the_frontend`].
 //! * **parameterized** — `<prefix>:<arg>`, e.g. `tools.run:domain-search`,
-//!   `file.open_recent:3`, `window.focus:file7`. `:` is reserved as the separator
+//!   `file.open_recent:3`. `:` is reserved as the separator
 //!   and therefore forbidden in a static id.
 
 /// What must be true for a command to be enabled.
@@ -36,10 +36,6 @@ pub enum Needs {
     Tab,
     /// The active view can save (a dirty editor).
     Savable,
-    /// The active view has a filter box to focus.
-    Findable,
-    /// The active view is a table whose rows can be exported.
-    Exportable,
     /// Something has been closed this session.
     ClosedTab,
 }
@@ -72,11 +68,9 @@ pub const COMMANDS: &[MenuCommandSpec] = &[
     cmd("file.open_workspace", "Open Workspace…", Some("CmdOrCtrl+O"), Needs::Nothing),
     cmd("file.import", "Import Files…", Some("CmdOrCtrl+I"), Needs::Folder),
     cmd("file.save", "Save", Some("CmdOrCtrl+S"), Needs::Savable),
-    cmd("file.export_rows", "Export Visible Rows…", Some("CmdOrCtrl+Shift+E"), Needs::Exportable),
     cmd("file.close_tab", "Close Tab", Some("CmdOrCtrl+W"), Needs::Tab),
     cmd("file.reopen_tab", "Reopen Closed Tab", Some("CmdOrCtrl+Shift+T"), Needs::ClosedTab),
     // Edit (clipboard items are predefined and carry no id)
-    cmd("edit.find", "Find…", Some("CmdOrCtrl+F"), Needs::Findable),
     cmd("edit.preferences", "Preferences…", Some("CmdOrCtrl+Comma"), Needs::Nothing),
     // View
     cmd("view.refresh", "Refresh Folder", Some("F5"), Needs::Folder),
@@ -97,8 +91,7 @@ pub const COMMANDS: &[MenuCommandSpec] = &[
 ];
 
 /// Prefixes for parameterized ids. The router splits on the first `:`.
-pub const DYNAMIC_PREFIXES: &[&str] =
-    &["tools.run", "file.open_recent", "window.focus", "view.col", "view.sort"];
+pub const DYNAMIC_PREFIXES: &[&str] = &["tools.run", "file.open_recent"];
 
 /// `"-"` in a [`LAYOUT`] item list renders a separator.
 pub const SEPARATOR: &str = "-";
@@ -118,13 +111,12 @@ pub const LAYOUT: &[(&str, &[&str])] = &[
             "file.import",
             SEPARATOR,
             "file.save",
-            "file.export_rows",
             SEPARATOR,
             "file.close_tab",
             "file.reopen_tab",
         ],
     ),
-    ("Edit", &["edit.find", SEPARATOR, "edit.preferences"]),
+    ("Edit", &["edit.preferences"]),
     ("View", &["view.refresh", SEPARATOR, "view.toggle_sidebar", "view.toggle_table"]),
     (
         "Tools",
@@ -200,6 +192,71 @@ mod tests {
             extra.is_empty(),
             "listed in src/lib/menuIds.ts but no Rust menu item emits them (dead \
              handlers): {extra:?}"
+        );
+    }
+
+    /// The gap the id guard above cannot see: a handler that exists but whose
+    /// effect nothing observes. Most handlers only bump a request counter or set
+    /// a flag on the `ui` store (`ui.saveRequest++`) for some component to react
+    /// to, so the id is known, the handler is typed, `npm run check` passes -- and
+    /// the item still does nothing if no component reads that field. File ->
+    /// Export Visible Rows and Edit -> Find both shipped exactly that way.
+    ///
+    /// Every `ui.<field>` written in `menu.ts` must be read by some other file
+    /// under `src/` (the store's own declaration in `ui.svelte.ts` excluded).
+    #[test]
+    fn every_ui_request_a_menu_handler_writes_has_a_reader() {
+        const MENU_TS: &str = include_str!("../../src/lib/menu.ts");
+        let written: HashSet<String> = MENU_TS
+            .match_indices("ui.")
+            // `ui.` preceded by an identifier character is some other name
+            // (`gui.`), not the store.
+            .filter(|(i, _)| {
+                !MENU_TS[..*i].ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+            })
+            .map(|(i, _)| {
+                MENU_TS[i + 3..]
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect::<String>()
+            })
+            .filter(|f| !f.is_empty() && f != "svelte")
+            .collect();
+        assert!(!written.is_empty(), "found no `ui.` writes in menu.ts; has the store moved?");
+
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let mut others = String::new();
+        let mut stack = vec![src];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).expect("read frontend src dir") {
+                let path = entry.expect("dir entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let frontend = name.ends_with(".svelte") || name.ends_with(".ts");
+                if frontend && name != "menu.ts" && name != "ui.svelte.ts" {
+                    others.push_str(&std::fs::read_to_string(&path).expect("read frontend file"));
+                    others.push('\n');
+                }
+            }
+        }
+
+        let unread: Vec<_> = written
+            .iter()
+            .filter(|f| {
+                let needle = format!("ui.{f}");
+                !others.match_indices(&needle).any(|(i, _)| {
+                    !others[i + needle.len()..]
+                        .starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+                })
+            })
+            .collect();
+        assert!(
+            unread.is_empty(),
+            "menu.ts writes these `ui` fields but no component reads them, so their \
+             menu items do nothing when clicked: {unread:?}"
         );
     }
 

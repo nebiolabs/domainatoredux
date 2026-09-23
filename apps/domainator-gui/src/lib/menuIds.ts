@@ -14,10 +14,8 @@ export const MENU_IDS = [
   "file.open_workspace",
   "file.import",
   "file.save",
-  "file.export_rows",
   "file.close_tab",
   "file.reopen_tab",
-  "edit.find",
   "edit.preferences",
   "view.refresh",
   "view.toggle_sidebar",
@@ -39,9 +37,6 @@ export type MenuId = (typeof MENU_IDS)[number];
 export const MENU_PREFIXES = [
   "tools.run",
   "file.open_recent",
-  "window.focus",
-  "view.col",
-  "view.sort",
 ] as const;
 
 export type MenuPrefix = (typeof MENU_PREFIXES)[number];

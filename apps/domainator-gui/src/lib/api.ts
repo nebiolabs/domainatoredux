@@ -383,8 +383,6 @@ export interface MenuState {
   has_folder: boolean;
   has_tab: boolean;
   can_save: boolean;
-  can_find: boolean;
-  can_export: boolean;
   has_closed_tab: boolean;
 }
 

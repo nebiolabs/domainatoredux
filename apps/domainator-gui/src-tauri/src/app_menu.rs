@@ -288,8 +288,6 @@ pub struct MenuState {
     pub has_folder: bool,
     pub has_tab: bool,
     pub can_save: bool,
-    pub can_find: bool,
-    pub can_export: bool,
     pub has_closed_tab: bool,
 }
 
@@ -302,8 +300,6 @@ impl MenuState {
             Folder => self.has_folder,
             Tab => self.has_tab,
             Savable => self.can_save,
-            Findable => self.can_find,
-            Exportable => self.can_export,
             ClosedTab => self.has_closed_tab,
         }
     }

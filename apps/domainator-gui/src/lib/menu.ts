@@ -46,17 +46,11 @@ export const HANDLERS: Record<MenuId, Handler> = {
   "file.save": () => {
     ui.saveRequest++;
   },
-  "file.export_rows": () => {
-    ui.exportRequest++;
-  },
   "file.close_tab": () => {
     if (ws.activeTabId) ws.closeTab(ws.activeTabId);
   },
   "file.reopen_tab": () => ws.reopenClosedTab(),
 
-  "edit.find": () => {
-    ui.findRequest++;
-  },
   "edit.preferences": () => {
     ui.preferencesRequest++;
   },
@@ -117,11 +111,6 @@ const PREFIX_HANDLERS: Record<(typeof MENU_PREFIXES)[number], Handler> = {
   "file.open_recent": async (path) => {
     if (path) await ws.open(path);
   },
-  // Focusing a window is handled in Rust (a cheap runtime message that creates
-  // nothing); nothing to do here, but the prefix must still route.
-  "window.focus": () => {},
-  "view.col": () => {},
-  "view.sort": () => {},
 };
 
 /// Commands that only make sense with the shell's workspace state. A detached
@@ -132,7 +121,6 @@ const SHELL_ONLY = new Set<string>([
   "file.new_folder",
   "file.open_workspace",
   "file.import",
-  "file.export_rows",
   "file.close_tab",
   "file.reopen_tab",
   "view.refresh",

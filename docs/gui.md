@@ -37,7 +37,7 @@ a folder name, and protected from deletion.
 
 There is a native menu bar (File / Edit / View / Tools / Window / Help) with the usual
 accelerators: Ctrl+O open workspace, Ctrl+S save, Ctrl+W close tab, Ctrl+Shift+T reopen
-closed tab, Ctrl+F find, Ctrl+, preferences, F5 refresh, Ctrl+1 / Ctrl+2 toggle the
+closed tab, Ctrl+, preferences, F5 refresh, Ctrl+1 / Ctrl+2 toggle the
 sidebar and file table, Ctrl+Shift+O pop out the current tab.
 
 ## Viewers

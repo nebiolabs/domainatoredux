@@ -293,8 +293,6 @@
       has_folder: !!ws.selectedFolder,
       has_tab: !!ws.activeTabId,
       can_save: ws.dirtyPaths.length > 0,
-      can_find: !!ws.activeTabId,
-      can_export: !!ws.activeTabId,
       has_closed_tab: ws.closedTabs.length > 0,
     };
     const json = JSON.stringify(state);
