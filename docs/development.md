@@ -211,6 +211,14 @@ WSL2-versus-Windows validation guidance — Tauri uses **WebView2 on Windows** a
 **WebKitGTK on Linux**, and Windows is a hard-requirement target, so validate there before
 shipping.
 
+The tool dialogs are described by one spec file per tool,
+`apps/domainator-gui/tools/<id>.yml`, embedded at compile time. The spec gives the
+fields, their order, and which files each input offers. It lists every CLI option with
+its CLI default, and a GUI default can override that for the dialog alone. The format
+is in `apps/domainator-gui/tools/README.md`. The tests in `tool_specs.rs` check each spec
+against `domainator schema <id>`: every option is listed, and each `cli_default` equals
+the schema's.
+
 Three internal design notes live alongside it:
 `apps/domainator-gui/PERSISTENT_CACHE_PLAN.md` (a deferred on-disk report cache),
 `apps/domainator-gui/EMBEDDED_DB_NOTES.md` (whether `.domainator/` should use an embedded

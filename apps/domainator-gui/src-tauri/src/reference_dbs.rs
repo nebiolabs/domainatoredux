@@ -1,4 +1,5 @@
-//! Registry + downloader for managed *reference databases* (UniProt, Pfam).
+//! Registry + downloader for managed *reference databases* (UniProt, Pfam, NCBI
+//! Taxonomy).
 //!
 //! The sibling of `external_tools.rs`, and deliberately shaped like it: a static
 //! list of [`DbSpec`]s, a managed directory under the app data dir, and one
@@ -22,6 +23,10 @@
 //!   in a profile library, so seekable BGZF would buy nothing — and HMMER itself
 //!   cannot open BGZF, so an asset that arrives any other way is normalized to
 //!   plain gzip rather than kept.
+//! * **Taxonomy** (NCBI's `taxdump.tar.gz`) — stored as served, a single-member
+//!   gzip tarball, which `NCBITaxonomy::load` reads directly (it takes the
+//!   archive's path as well as a directory). Its gunzip reads one member, so an
+//!   asset in any other shape is normalized to single-member gzip.
 //!
 //! Versions are read from each source's own small release file rather than
 //! inferred from a URL, and recorded in `manifest.json` next to the databases.
@@ -43,6 +48,8 @@ pub enum DbKind {
     Fasta,
     /// HMM profile library: plain gzip.
     Hmm,
+    /// NCBI taxdump: a single-member gzip tarball.
+    Taxonomy,
 }
 
 impl DbKind {
@@ -50,6 +57,7 @@ impl DbKind {
         match self {
             DbKind::Fasta => "fasta",
             DbKind::Hmm => "hmm",
+            DbKind::Taxonomy => "taxonomy",
         }
     }
 }
@@ -134,6 +142,15 @@ macro_rules! uniprot {
     };
 }
 
+/// NCBI rebuilds the taxdump without numbering releases, so the version is the
+/// archive's own MD5 (the `.md5` sidecar, `<hash>  taxdump.tar.gz`), shortened:
+/// it changes exactly when the file does, which is what "update available" needs.
+fn ncbi_md5_version(text: &str) -> Option<String> {
+    let hash = text.split_whitespace().next()?;
+    (hash.len() == 32 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| format!("md5 {}", &hash[..8]))
+}
+
 /// UniRef sits outside the knowledgebase directory and has no `reldate.txt` of its
 /// own; it is rebuilt per UniProt release, which `relnotes.txt` names.
 const UNIPROT_KB_RELDATE: &str = uniprot!("knowledgebase/complete/reldate.txt");
@@ -211,6 +228,21 @@ pub fn specs() -> Vec<DbSpec> {
             superseded_file_names: &["Pfam-A.hmm"],
             download_bytes: 420_000_000,
             disk_bytes: 420_000_000,
+        },
+        DbSpec {
+            id: "ncbi_taxonomy",
+            name: "NCBI Taxonomy",
+            description: "The NCBI taxonomy tree (taxdump), for taxonomy filters and enum-report's taxid / taxon-name / lineage columns.",
+            url: "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz",
+            version_url: "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz.md5",
+            version_gzipped: false,
+            parse_version: ncbi_md5_version,
+            kind: DbKind::Taxonomy,
+            // `NCBITaxonomy::load` and the registry's classifier both know it by this name.
+            file_name: "taxdump.tar.gz",
+            superseded_file_names: &[],
+            download_bytes: 90_000_000,
+            disk_bytes: 90_000_000,
         },
     ]
 }
@@ -587,13 +619,15 @@ fn write_payload<R: Read>(
             let mut inner = writer.finish().map_err(|e| format!("finishing BGZF: {e}"))?;
             return inner.flush().map_err(|e| format!("writing: {e}"));
         }
-        // Plain gzip is the storage format, so EBI's file is kept as it arrived.
-        DbKind::Hmm if compression == Compression::Gzip => {
+        // Plain gzip is the storage format, so EBI's (and NCBI's) file is kept as
+        // it arrived.
+        DbKind::Hmm | DbKind::Taxonomy if compression == Compression::Gzip => {
             let mut stream = stream;
             std::io::copy(&mut stream, &mut out).map_err(|e| format!("writing: {e}"))?;
         }
-        // Anything else becomes plain gzip: never BGZF, which HMMER cannot open.
-        DbKind::Hmm => {
+        // Anything else becomes plain gzip: never BGZF, which HMMER cannot open, and
+        // one member, which is all the taxonomy loader's gunzip reads.
+        DbKind::Hmm | DbKind::Taxonomy => {
             let mut enc = flate2::write::GzEncoder::new(out, flate2::Compression::default());
             std::io::copy(&mut decode(stream), &mut enc).map_err(|e| format!("writing: {e}"))?;
             let mut inner = enc.finish().map_err(|e| format!("finishing gzip: {e}"))?;
@@ -783,25 +817,28 @@ mod tests {
                 DbKind::Hmm => {
                     assert!(s.file_name.ends_with(".hmm.gz"), "{} must be stored as plain gzip", s.id);
                 }
+                // `NCBITaxonomy::load` looks for exactly this name inside a directory.
+                DbKind::Taxonomy => assert_eq!(s.file_name, "taxdump.tar.gz", "{}", s.id),
             }
             // Whatever the name, the app's own classifier has to agree it is a
             // database of that kind -- this is what the Databases panel will run.
-            let classified = domainator_core::app_support::workspace::classify_file(Path::new(
-                s.file_name,
-            ));
-            assert_eq!(classified, Some(s.kind.as_str()), "{}", s.id);
+            let classified = domainator_core::app_support::registry::classify_database(
+                &format!("/nonexistent/{}", s.file_name),
+            )
+            .map(|e| e.format);
+            assert_eq!(classified.as_deref(), Ok(s.kind.as_str()), "{}", s.id);
         }
     }
 
     /// The confirmation gate is the only thing standing between a stray click and a
-    /// 40 GB download. Swiss-Prot (~94 MB) and Pfam-A (~420 MB, kept gzipped) are
-    /// the sets small enough to skip it.
+    /// 40 GB download. Swiss-Prot (~94 MB), Pfam-A (~420 MB, kept gzipped) and the
+    /// NCBI taxdump (~80 MB) are the sets small enough to skip it.
     #[test]
     fn only_the_small_databases_download_without_confirmation() {
         for s in specs() {
             assert_eq!(
                 s.needs_confirmation(),
-                !matches!(s.id, "swissprot" | "pfam"),
+                !matches!(s.id, "swissprot" | "pfam" | "ncbi_taxonomy"),
                 "{} confirmation gate",
                 s.id
             );
@@ -825,6 +862,11 @@ mod tests {
         // "Based on UniProtKB : 2025_03" is a different key and must not match.
         assert_eq!(pfam_release("Based on UniProtKB : 2025_03\n"), None);
         assert_eq!(pfam_release("no colon here\n"), None);
+
+        let md5 = "0123456789abcdef0123456789ABCDEF  taxdump.tar.gz\n";
+        assert_eq!(ncbi_md5_version(md5).as_deref(), Some("md5 01234567"));
+        assert_eq!(ncbi_md5_version("not-a-hash  taxdump.tar.gz\n"), None);
+        assert_eq!(ncbi_md5_version(""), None);
     }
 
     /// Which branch of `write_payload` runs is decided by these 18 bytes, and the
@@ -995,6 +1037,51 @@ MSDKIIHLTD
         assert_eq!(entry.name, "test", "the name annotations get, not `test.hmm`");
         let index = domainator_core::app_support::hmm_logo::index_hmm_file(dest.to_str().unwrap()).unwrap();
         assert_eq!(index.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["PF00001"]);
+    }
+
+    /// NCBI's taxdump is kept as served, and the stored file must be what every
+    /// taxonomy consumer loads: the registry's classifier has to call it a taxonomy
+    /// database, and `NCBITaxonomy::load` has to read it by that same path, which
+    /// is what a tool is handed as its `ncbi_taxonomy_path`.
+    #[test]
+    fn a_taxdump_is_stored_as_served_and_loads_by_its_path() {
+        let dir = scratch("taxdump");
+        let files = [
+            ("nodes.dmp", "1\t|\t1\t|\tno rank\t|\t\n562\t|\t1\t|\tspecies\t|\t\n"),
+            ("names.dmp", "1\t|\troot\t|\t\t|\tscientific name\t|\t\n562\t|\tEscherichia coli\t|\t\t|\tscientific name\t|\t\n"),
+            ("merged.dmp", ""),
+            ("delnodes.dmp", ""),
+        ];
+        let mut builder = tar::Builder::new(Vec::new());
+        for (name, body) in files {
+            let mut header = tar::Header::new_ustar();
+            header.set_size(body.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append_data(&mut header, name, body.as_bytes()).unwrap();
+        }
+        let tarball = builder.into_inner().unwrap();
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        enc.write_all(&tarball).unwrap();
+        let gz = enc.finish().unwrap();
+
+        let spec = spec("ncbi_taxonomy").unwrap();
+        let dest = dir.join(spec.file_name);
+        write_payload(&spec, Compression::Gzip, std::io::Cursor::new(gz.clone()), &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), gz, "NCBI's gzip is the storage format");
+
+        let entry =
+            domainator_core::app_support::registry::classify_database(dest.to_str().unwrap()).unwrap();
+        assert_eq!(entry.format, "taxonomy");
+        let tax = domainator_core::seq::taxonomy::NCBITaxonomy::load(Path::new(&entry.path)).unwrap();
+        assert_eq!(tax.name(562), Some("Escherichia coli"));
+
+        // An uncompressed tarball is gzipped on the way in, as one member.
+        let plain = dir.join("plain").join(spec.file_name);
+        std::fs::create_dir_all(plain.parent().unwrap()).unwrap();
+        write_payload(&spec, Compression::None, std::io::Cursor::new(tarball), &plain).unwrap();
+        let tax = domainator_core::seq::taxonomy::NCBITaxonomy::load(&plain).unwrap();
+        assert_eq!(tax.name(562), Some("Escherichia coli"));
     }
 
     /// An HMM asset that arrives any other way is normalized to plain gzip. Keeping

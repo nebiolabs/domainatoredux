@@ -1,0 +1,25 @@
+# GUI dialog for `domainator select-by-coord`. Format: see README.md in this directory.
+id: select-by-coord
+label: "Select by coordinate"
+category: "Selection & extraction"
+description: "Extract sub-regions listed in a coordinate table (contig, start, end)."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: coords
+    label: "Coordinate table"
+    role: input_file
+    file_type: table
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output (GenBank)"
+    role: output_file
+    required: true
+    output_name: "{stem}.bycoord.gb"

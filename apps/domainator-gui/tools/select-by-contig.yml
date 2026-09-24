@@ -1,0 +1,85 @@
+# GUI dialog for `domainator select-by-contig`. Format: see README.md in this directory.
+id: select-by-contig
+label: "Select by contig"
+category: "Selection & extraction"
+description: "Select whole contigs by name/regex, domain content, taxonomy, length, or CDS count."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output"
+    role: output_file
+    required: true
+    output_name: "{stem}.selected.gb"
+  - name: fasta_out
+    label: "FASTA output"
+    cli_default: false
+  - name: contigs
+    label: "Contig names"
+  - name: contigs_file
+    label: "Contigs file (.txt)"
+    role: input_file
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: contigs_regex
+    label: "Contigs regex"
+  - name: definition_regex
+    label: "Definition regex"
+  - name: sequence_regex
+    label: "Sequence regex"
+  - name: domains
+    label: "Domain names"
+  - name: domains_file
+    label: "Domain names file (.txt)"
+    role: input_file
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: domain_expr
+    label: "Domain expr"
+  - name: domain_type
+    label: "Domain type"
+    cli_default: "domain"
+  - name: databases
+    label: "Databases"
+  - name: unannotated
+    label: "Unannotated"
+    cli_default: false
+  - name: evalue
+    label: "E-value"
+    cli_default: 100000000.0
+  - name: first
+    label: "First N"
+  - name: length_lb
+    label: "Length ≥"
+  - name: length_ub
+    label: "Length ≤"
+  - name: cds_count_lb
+    label: "CDS count ≥"
+  - name: cds_count_ub
+    label: "CDS count ≤"
+  - name: search_score_lb
+    label: "Search score ≥"
+  - name: search_score_ub
+    label: "Search score ≤"
+  - name: invert
+    label: "Invert"
+    cli_default: false
+  - name: include_taxids
+    label: "Include taxids"
+  - name: exclude_taxids
+    label: "Exclude taxids"
+  - name: taxonomy_expr
+    label: "Taxonomy expr"
+  - name: ncbi_taxonomy_path
+    label: "Taxonomy database"
+    role: input_file
+    file_type: taxonomy
+    sources: databases_first
+    select: "database:ncbi_taxonomy"

@@ -1,0 +1,72 @@
+# GUI dialog for `domainator domainate`. Format: see README.md in this directory.
+id: domainate
+label: "Domainate"
+category: "Annotation & search"
+description: "Annotate sequences with domains from HMM/FASTA references (step 2)."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_file
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: references
+    label: "References (HMM/FASTA)"
+    role: input_files
+    file_type: reference
+    required: true
+    sources: databases_first
+    select: "database:pfam"
+  - name: output
+    label: "Output (GenBank)"
+    role: output_file
+    required: true
+    output_name: "{stem}.annotated.gb"
+  - name: evalue
+    label: "E-value"
+    cli_default: 0.001
+  - name: z
+    label: "Z (db size)"
+    cli_default: 1000.0
+  - name: max_domains
+    label: "Max domains"
+  - name: max_overlap
+    label: "Max overlap"
+    cli_default: 1.0
+  - name: max_mode
+    label: "Max mode"
+    cli_default: false
+  - name: hits_only
+    label: "Hits only"
+    cli_default: false
+  - name: include_taxids
+    label: "Include taxids"
+  - name: exclude_taxids
+    label: "Exclude taxids"
+  - name: taxonomy_expr
+    label: "Taxonomy expr"
+  - name: ncbi_taxonomy_path
+    label: "Taxonomy database"
+    role: input_file
+    file_type: taxonomy
+    sources: databases_first
+    select: "database:ncbi_taxonomy"
+  - name: min_evalue
+    show: false
+    label: "Min evalue"
+    cli_default: 0.0
+  - name: overlap_by_db
+    show: false
+    label: "Overlap by db"
+    cli_default: false
+  - name: no_annotations
+    show: false
+    label: "No annotations"
+    cli_default: false
+  - name: cpu
+    show: false
+    label: "Cpu"
+  - name: fasta_type
+    show: false
+    label: "Fasta type"

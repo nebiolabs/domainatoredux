@@ -11,12 +11,15 @@ import {
   openWorkspace,
   registerDatabase,
   renameFile as apiRenameFile,
+  renameDatabase as apiRenameDatabase,
+  deleteDatabase as apiDeleteDatabase,
+  buildDatabaseIndex as apiBuildDatabaseIndex,
   rescanTree,
-  syncReferenceDbsToWorkspace,
+  syncReferenceDbs,
   unregisterDatabase,
 } from "./api";
 import { clearCache, invalidatePath } from "./cache";
-import type { DatabaseEntry, FileEntry, FileType, FolderNode, JobInfo, OpenTab } from "./types";
+import type { DatabaseRow, FileEntry, FileType, FolderNode, JobInfo, OpenTab } from "./types";
 
 // Classify a path to a viewer file type by extension (for opening job outputs).
 function classifyPath(path: string): FileType | null {
@@ -74,7 +77,9 @@ class WorkspaceStore {
   importing = $state(0);
   // Set while a folder create / file delete is in flight.
   busy = $state(false);
-  databases = $state<DatabaseEntry[]>([]);
+  // The shared database registry -- the same list in every workspace, and
+  // available before any workspace is open.
+  databases = $state<DatabaseRow[]>([]);
   dbError = $state<string | null>(null);
   jobs = $state<JobInfo[]>([]);
   // A request to open the tool dialog (from the Tools menu or a job "clone"),
@@ -105,16 +110,9 @@ class WorkspaceStore {
       const info = await openWorkspace(root);
       this.root = info.root;
       this.tree = info.tree;
-      // Reference databases live in the app data dir and are shared across
-      // workspaces, but the registry that tool dropdowns read is per-workspace --
-      // without this, a database already on disk is invisible in a new workspace.
-      // Best-effort: a failure here must not stop the workspace from opening.
-      try {
-        await syncReferenceDbsToWorkspace(info.root);
-      } catch (e) {
-        this.dbError = String(e);
-      }
-      await this.loadDatabases();
+      // The database list is shared, but a workspace from before it was may
+      // still carry its own; passing the root folds that in (once).
+      await this.loadDatabases(info.root);
       await this.loadJobs(); // restore persisted job history for this workspace
       // Auto-select the root folder so the file table isn't empty on open.
       await this.selectFolder(info.tree.path);
@@ -423,30 +421,91 @@ class WorkspaceStore {
     }
   }
 
-  async loadDatabases(): Promise<void> {
-    if (!this.root) return;
+  /// Load the shared database list at startup, first making sure installed
+  /// reference downloads are on it. Best-effort: never blocks the app.
+  async initDatabases(): Promise<void> {
     try {
-      this.databases = await listDatabases(this.root);
+      await syncReferenceDbs();
+    } catch (e) {
+      this.dbError = String(e);
+    }
+    await this.loadDatabases();
+  }
+
+  /// Reload the shared database list. `migrateFrom` folds a workspace's old
+  /// per-workspace list in first (see `ws.open`).
+  async loadDatabases(migrateFrom: string | null = null): Promise<void> {
+    // Launch and workspace-open both load; only the newest request may land, or
+    // a slow pre-migration answer could overwrite the migrated list.
+    const seq = ++this.dbLoadSeq;
+    try {
+      const rows = await listDatabases(migrateFrom);
+      if (seq === this.dbLoadSeq) this.databases = rows;
     } catch (e) {
       this.dbError = String(e);
     }
   }
+  private dbLoadSeq = 0;
 
-  async addDatabase(path: string): Promise<void> {
-    if (!this.root) return;
+  /// Rename a database on disk (shards and indexes too). Throws, so the rename
+  /// modal can show the message and stay open. An open tab follows the rename,
+  /// as it does for a file.
+  async renameDatabase(path: string, newName: string): Promise<void> {
+    const entry = await apiRenameDatabase(path, newName);
+    invalidatePath(path);
+    if (this.tabs.some((t) => t.id === path)) {
+      this.closeTab(path);
+      this.openOutput(entry.path);
+    }
+    await this.loadDatabases();
+  }
+
+  /// Delete a database's files and take it off the list.
+  async deleteDatabase(path: string): Promise<void> {
     this.dbError = null;
     try {
-      await registerDatabase(this.root, path);
+      await apiDeleteDatabase(path);
+      // Gone from disk: "save your changes?" would only recreate part of it.
+      this.clearDirty(path);
+      this.closeTab(path);
+      invalidatePath(path);
+    } catch (e) {
+      this.dbError = String(e);
+    }
+    await this.loadDatabases();
+  }
+
+  /// Paths whose index is being built, for the panel's "Indexing…" state.
+  indexing = $state<Record<string, boolean>>({});
+
+  async buildDatabaseIndex(path: string): Promise<void> {
+    if (this.indexing[path]) return;
+    this.dbError = null;
+    this.indexing[path] = true;
+    try {
+      await apiBuildDatabaseIndex(path);
+    } catch (e) {
+      this.dbError = String(e);
+    } finally {
+      delete this.indexing[path];
+    }
+    await this.loadDatabases();
+  }
+
+  async addDatabase(path: string): Promise<void> {
+    this.dbError = null;
+    try {
+      await registerDatabase(path);
       await this.loadDatabases();
     } catch (e) {
       this.dbError = String(e);
     }
   }
 
+  /// Take a database off the list, leaving its files on disk.
   async removeDatabase(path: string): Promise<void> {
-    if (!this.root) return;
     try {
-      await unregisterDatabase(this.root, path);
+      await unregisterDatabase(path);
       await this.loadDatabases();
     } catch (e) {
       this.dbError = String(e);

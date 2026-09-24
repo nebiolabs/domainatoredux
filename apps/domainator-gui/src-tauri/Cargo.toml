@@ -16,6 +16,10 @@ path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
+# `build.rs` parses the tool spec files (`../tools/*.yml`) before embedding them.
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 
 [dependencies]
 domainator-core = { path = "../../../crates/domainator-core" }
@@ -24,6 +28,8 @@ rfd = "0.17.2"
 tauri = { version = "2.11.4", features = [] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# The embedded tool spec files (`tool_specs.rs`).
+serde_yaml = { workspace = true }
 # External-tool auto-download (diamond, and future binaries):
 ureq = "2"
 flate2.workspace = true

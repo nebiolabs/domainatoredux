@@ -1,0 +1,29 @@
+# GUI dialog for `domainator matrix-report`. Format: see README.md in this directory.
+id: matrix-report
+label: "Matrix report (export)"
+category: "Matrices & networks"
+description: "Export a text summary + suggested cutoffs from a similarity matrix."
+fields:
+  - name: input
+    label: "Input matrix"
+    role: input_file
+    file_type: hdf5
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output (text)"
+    role: output_file
+    required: true
+    output_name: "{stem}.report.txt"
+  - name: json
+    show: false
+    label: "Json"
+  - name: merge_impact_metric
+    show: false
+    label: "Merge impact metric"
+    cli_default: "min_child"
+  - name: max_merge_events
+    show: false
+    label: "Max merge events"
+    cli_default: 500

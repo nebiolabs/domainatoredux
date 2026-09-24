@@ -1,0 +1,24 @@
+# GUI dialog for `domainator sort-contigs`. Format: see README.md in this directory.
+id: sort-contigs
+label: "Sort contigs"
+category: "Selection & extraction"
+description: "Sort contigs by best search/domain score; optionally keep only the top N."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output (GenBank)"
+    role: output_file
+    required: true
+    output_name: "{stem}.sorted.gb"
+  - name: max_hits
+    label: "Keep top N"
+  - name: domains
+    label: "Sort by domains"
+  - name: databases
+    label: "Databases"

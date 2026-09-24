@@ -89,8 +89,10 @@ Linux) and use Windows only to *validate the GUI*:
     `WebviewWindow::on_menu_event` to scope per window — Tauri's dispatch loop
     calls *every* registered window listener for *every* event, so two of them run
     each command twice.
-  - The **Tools** menu is built from `cmd_tools::list_tools()` and grouped by
-    `TOOL_CATEGORIES`, so it cannot drift from what `run_tool` can dispatch.
+  - The **Tools** menu is built from `cmd_tools::list_tools()`, which serves the
+    tool spec files in `tools/`, and grouped by `TOOL_CATEGORIES`.
+    `every_offered_tool_is_dispatched_and_has_a_schema` checks the menu against what
+    `run_tool` can dispatch.
   - Detached viewer windows get a reduced menu via `WebviewWindowBuilder::menu()`
     on non-macOS; on macOS they share the app menu (`Window::set_menu` is
     unsupported there) and `menu.ts`'s `SHELL_ONLY` set is the backstop.
@@ -155,14 +157,17 @@ deletes the file (and its metadata) via `delete_file` (with a confirm).
 
 **Reserved `.domainator/` directory.** Data files are never rewritten; instead *all*
 app machinery lives under a single hidden directory, `<root>/.domainator/`: the
-`workspace.json` manifest, the `databases.json` registry, job provenance
+`workspace.json` manifest, job provenance
 (`.domainator/jobs/<id>/`), per-file metadata sidecars mirrored under
 `.domainator/meta/<rel>.dom.json`, and combined SSN subsets (`.domainator/subsets/`).
 `.domainator` is the ONLY name the app reserves (so no clashes with user files); it
 is hidden from the tree and rejected as a user folder name, and `delete_file`
 refuses to touch anything inside it. Opening a workspace created before this change
 migrates the old top-level `workspace.json`/`databases.json`/`jobs/` into it
-automatically. Everything else stays Python/CLI-readable.
+automatically. (The database registry has since moved out of the workspace
+entirely, to `<app data>/databases.json`, shared by every workspace; a workspace's
+old `.domainator/databases.json` is merged into it on open and renamed to
+`databases.json.migrated`.) Everything else stays Python/CLI-readable.
 
 ## Phase status
 
@@ -194,12 +199,20 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   `compare-contigs`) → `transform-matrix` → `build-ssn` → `build-ssn-viewer`**.
   Matrix-producing tools write `.hdf5` so their output is a recognized type that
   chains into the SSN tools' input dropdowns (e.g. seq-dist → `.hdf5` →
-  build-ssn-viewer → `.ssnv` → SSN tab). Each tool declares a **field spec** in
-  `list_tools`: `input_file`/`input_files` → a dropdown of current-folder files of
-  the type **plus matching registered databases** (so HMM references come from the
-  Databases panel or a local `.hmm`); `output_file` → a filename the app prepends
-  the current directory to; `param` → rendered from the tool's JSON schema. Adding
-  a tool = a `list_tools` entry (fields) + a `run_*` arm.
+  build-ssn-viewer → `.ssnv` → SSN tab). Each tool's dialog is described by a
+  **spec file**, `tools/<id>.yml`, embedded at compile time (format:
+  [`tools/README.md`](tools/README.md)). The spec lists every CLI option with its
+  CLI default and an optional `gui_default` override.
+  - `input_file`/`input_files` become a dropdown with two groups, registered
+    databases and current-folder files of the type. A bar separates the groups.
+    The spec's `sources` decides which group comes first, and `select` decides the
+    starting entry: the active file, a managed database such as Pfam, the first
+    entry, or none.
+  - `output_file` becomes a filename, seeded from `output_name`; the app prepends
+    the current directory.
+  - `param` is rendered from the tool's JSON schema.
+
+  Adding a tool takes a spec file plus a `run_*` arm.
   `domain-search` exposes **neighborhood extraction** — `whole_contig`,
   `cds_range`/`cds_up`/`cds_down`, `kb_range`/`kb_up`/`kb_down`, `strand` (f/r),
   `keep_direction`, `translate` — so the neighborhood-based SSN path works
@@ -244,13 +257,9 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   Two more GUI-only `classify_file` types support these: **`table`** (`.tsv`/`.csv`/
   `.tab`) so coordinate/color tables show in dropdowns, alongside **`stockholm`**.
 - **`hmmer-report` with a column builder.** "HMM report (export)" writes a per-profile
-  TSV/JSON report from `.hmm` file(s). Its `columns` field uses a bespoke
-  **`hmm_columns`** role in `ToolDialog`: an ordered, add/remove list where each row
-  is a static column (`source`/`acc`/`desc`/`length`/`consensus`) or an `append`
-  constant column (name + value_type + value). `collectParams` serializes it to the
-  tagged `Vec<HmmerReportColumn>` the config expects (static → `{type}`, append →
-  `{type,name,value_type,value}`; static rows must omit the extras or
-  `deny_unknown_fields` rejects them). A leading `name` column is always emitted.
+  TSV/JSON report from `.hmm` file(s). Its `columns` field uses the shared
+  **`columns`** role (below, under the enum report export). A leading `name` column
+  is always emitted.
   With this, **every finished CLI tool is reachable from the GUI.**
 - **External tools (auto-download).** `external_tools.rs` is a flexible registry:
   each `ToolSpec` describes a binary (per-platform download URL + archive kind +
@@ -377,10 +386,21 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   `App.svelte`'s `?view=contig` standalone branch remain for a future detached-window
   option but are no longer used by the SSN bar.) `resolve_record` scans files (fine
   for modest workspaces); a `.didx`/provenance-indexed fast path can replace it.
-- **Enum report export has a column picker.** The Tools-menu "Enum report (export)"
-  now offers a `columns` checklist (a bespoke `enum_columns` `ToolDialog` role) of
-  the taxonomy-free static analyses, in addition to `by`; `run_export_enum_report`
-  honors the selection (falling back to the per-`by` default set).
+- **Report column builder (`columns` role).** Both report exports edit their `columns`
+  with `ColumnBuilder.svelte`: an ordered list where each row is a column type plus
+  that type's parameters. The types and parameters are not hand-listed anywhere in the
+  GUI. They are the schema's `columns.items.oneOf`, which `domainator-config`
+  generates next to the `ColumnSpec` / `HmmerReportColumn` enums, and
+  `column_schemas_match_their_enums` checks the two agree. The spec's `column_types`
+  (`tools/<id>.yml`) only relabels, hides and seeds them, e.g. enum-report's rank
+  chips. `columns.ts` holds the model and the row ↔ column-object conversion.
+  `run_export_enum_report` goes through `EnumConfig` exactly as the CLI's arm does:
+  parameterized columns, `databases`, `contigs`, `column_names` and `json`, and the
+  taxonomy, loaded only when a column needs it, from the `ncbi_taxonomy_path` input.
+  That input starts on the managed NCBI Taxonomy download (`reference_dbs.rs`,
+  `DbKind::Taxonomy`, registry format `taxonomy`). The GUI-only `taxid_self` /
+  `taxname_self` columns were dropped from the export; `taxid`/`taxname` with rank
+  `self` report the record's own taxon from the taxonomy instead.
 - **Every tool option has help text.** `ToolDialog` renders each option's schema
   `description` as a hint. A shared dictionary (`common_help` in `domainator-config`,
   applied by `fill_common_descriptions` in `schema()`) fills a one-line description
@@ -454,9 +474,13 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   each record's embedded ORGANISM lineage (`annotations.taxonomy` + organism — no
   external taxdump needed). Pure data + client-side charts — sidesteps the
   matplotlib dependency that keeps the CLI `summary_report` deferred.
-  The Enum Report column picker also offers `taxid_self` / `taxname_self` (the
-  record's own taxid + organism, from the source `db_xref` / ORGANISM — no taxdump
-  needed) alongside the `*_lineage` options.
+  The Enum Report tab's **Columns** popover is the export's `ColumnBuilder`, over the
+  same schema types and `tools/enum-report.yml` `column_types`, applied with an
+  explicit Apply (each change reruns the whole report). `run_enum_report` takes
+  column objects and an `ncbi_taxonomy_path`, chosen in the tab's Taxonomy dropdown
+  from the registered `taxonomy` databases. The parsed taxonomy (~9 s and ~2 GB peak
+  for the full NCBI taxdump) is kept in `taxonomy_cache.rs`'s single slot, which every
+  GUI taxonomy load shares.
 - **HMM logo viewer** (`.hmm` → Logo tab): multi-profile files show a filterable
   profile list (scales to tens of thousands; list capped at 500 shown, refine by
   filter) and lazily render the selected profile's logo (`list_hmm_profiles` +
@@ -471,8 +495,9 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   to colored rects. **Export SVG** re-emits the full logo as vectors using the same
   ink-box metrics. (Do NOT port GPL `Bio-HMM-Logo`; true expected-insert-length bars
   are future work.)
-- **Databases panel — DONE.** Workspace-global registry in `databases.json`
-  (`app_support/registry.rs`); the left sidebar's Databases section lists entries
+- **Databases panel — DONE.** One registry shared by every workspace, in
+  `<app data>/databases.json` (`cmd_db.rs` over `app_support/registry.rs`);
+  the left sidebar's Databases section lists entries
   with a molecule dot + `<molecule> <format>` label and shard count. Add via file
   picker → `classify_database` (format from extension; molecule from the first
   HMM's alphabet / first GenBank record's `molecule_type` / a FASTA residue sniff);

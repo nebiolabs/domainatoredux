@@ -1573,35 +1573,122 @@ fn enum_schema() -> serde_json::Value {
             "column_names": {"type": ["array", "null"], "items": {"type": "string"}, "description": "Override output column names"},
             "ncbi_taxonomy_path": {"type": ["string", "null"]},
             "json": {"type": ["string", "null"], "description": "Write streaming NDJSON (one compact object per row) here; '-' for stdout. Independent of `output`, which stays TSV"},
-            "columns": {
-                "type": "array",
-                "description": "Ordered output columns; each has a `type` tag",
-                "items": {
-                    "type": "object",
-                    "required": ["type"],
-                    "properties": {
-                        "type": {"enum": [
-                            "domains","domain_descriptions","sequence","start","end","strand","length",
-                            "topology","architecture","architecture_detailed","score","identity","definition",
-                            "filename","cds_count","domain_count","domain_search","taxid_lineage","taxname_lineage",
-                            "rank_lineage","isoelectric_point","starts_with","molecular_weight",
-                            "taxid","taxname","qualifier","feature_count","append","motif_count","net_charge",
-                            "repeat_count","named_domain_count"
-                        ]},
-                        "ranks": {"type": "array", "items": {"type": "string"}, "description": "for taxid/taxname"},
-                        "feature": {"type": "string", "description": "for qualifier/feature_count"},
-                        "qualifier": {"type": "string", "description": "for qualifier"},
-                        "name": {"type": "string", "description": "for append/named_domain_count"},
-                        "value_type": {"enum": ["int", "float", "str"], "description": "for append"},
-                        "value": {"type": "string", "description": "for append"},
-                        "pattern": {"type": "string", "description": "for motif_count (PROSITE)"},
-                        "ph": {"type": "string", "description": "for net_charge"},
-                        "min_length": {"type": "string", "description": "for repeat_count"}
-                    }
-                }
-            }
+            "columns": enum_columns_schema()
         }
     })
+}
+
+/// One `oneOf` entry of a report's `columns` items: the column `type` and the
+/// parameters that type takes. Every parameter is required -- the `ColumnSpec` /
+/// `HmmerReportColumn` variant fields have no defaults -- and nothing else is
+/// allowed, since both enums are `deny_unknown_fields`. The GUI's column builder
+/// renders from these entries (`title` as the choice, `description` as its hint).
+fn column_variant(
+    ty: &str,
+    title: &str,
+    description: &str,
+    params: serde_json::Value,
+) -> serde_json::Value {
+    use serde_json::json;
+    let mut properties = serde_json::Map::new();
+    properties.insert("type".into(), json!({ "const": ty }));
+    let mut required = vec![json!("type")];
+    for (name, prop) in params.as_object().cloned().unwrap_or_default() {
+        required.push(json!(name));
+        properties.insert(name, prop);
+    }
+    json!({
+        "title": title,
+        "description": description,
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": false
+    })
+}
+
+/// A column type that takes no parameters.
+fn static_column(ty: &str, title: &str, description: &str) -> serde_json::Value {
+    column_variant(ty, title, description, serde_json::json!({}))
+}
+
+/// `enum_report`'s `columns`: one [`column_variant`] per [`ColumnSpec`] variant,
+/// in the order the GUI offers them. `column_schemas_match_their_enums` checks the
+/// two agree.
+fn enum_columns_schema() -> serde_json::Value {
+    use serde_json::json;
+    const TAX: &str = "Needs an NCBI taxonomy database (`ncbi_taxonomy_path`).";
+    let ranks = |what: &str| {
+        json!({
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "description": format!("Ranks to report the {what} at, one column each, e.g. domain, phylum, genus, species; `self` is the record's own taxon")
+        })
+    };
+    json!({
+        "type": "array",
+        "description": "Ordered output columns; each is an object with a `type` tag and that type's parameters",
+        "items": {"oneOf": [
+            static_column("domains", "Domains", "Domain names, alphabetical and semicolon-separated, each listed once."),
+            static_column("domain_descriptions", "Domain descriptions", "Domain descriptions, alphabetical and semicolon-separated, each listed once."),
+            static_column("architecture", "Architecture", "Domains in order of their start position, semicolon-separated."),
+            static_column("architecture_detailed", "Architecture (detailed)", "Domain architecture per CDS: domains within a CDS separated by '/', CDSs by ';', and a CDS with no domains shown as 'no_domains'."),
+            static_column("domain_count", "Domain count", "The total number of domains."),
+            column_variant("named_domain_count", "Named domain count", "The number of Domainator domain features with this name, in a column named named_domain_count_<name>.",
+                json!({"name": {"type": "string", "description": "Domain name"}})),
+            static_column("score", "Score (sum)", "The sum of domain scores."),
+            static_column("identity", "Identity (sum)", "The sum of domain identities."),
+            static_column("domain_search", "Domain search hit", "Several columns describing the domain-search hit: best_query, query_description, query_start, query_end, query_length, match_start, match_end, match_strand, match_score, match_identity."),
+            static_column("length", "Length", "The contig, CDS or domain length."),
+            static_column("start", "Start", "The start coordinate of the feature."),
+            static_column("end", "End", "The end coordinate of the feature."),
+            static_column("strand", "Strand", "The strand of the feature."),
+            static_column("topology", "Topology", "The contig topology (mostly useful with `by: contig`)."),
+            static_column("sequence", "Sequence", "The contig, CDS or domain sequence."),
+            static_column("starts_with", "First residue", "The first character of the contig sequence."),
+            static_column("definition", "Definition", "The record's DEFINITION line."),
+            static_column("filename", "File name", "The input file the record came from."),
+            static_column("cds_count", "CDS count", "The number of CDSs."),
+            column_variant("feature_count", "Feature count", "The number of features of this type.",
+                json!({"feature": {"type": "string", "description": "Feature type, e.g. CDS"}})),
+            column_variant("qualifier", "Qualifier value", "Every value of this qualifier on features of this type, ';'-separated, in a column named qualifier_<feature>_<qualifier>.",
+                json!({
+                    "feature": {"type": "string", "description": "Feature type, e.g. CDS"},
+                    "qualifier": {"type": "string", "description": "Qualifier name, e.g. product"}
+                })),
+            column_variant("taxid", "Taxid at rank", &format!("The taxid at each given rank, in columns named taxid_<rank>. {TAX}"),
+                json!({"ranks": ranks("taxid")})),
+            column_variant("taxname", "Taxon name at rank", &format!("The taxon name at each given rank, in columns named taxname_<rank>. {TAX}"),
+                json!({"ranks": ranks("taxon name")})),
+            static_column("taxid_lineage", "Taxid lineage", &format!("Semicolon-separated taxids from the root to the record's taxon. {TAX}")),
+            static_column("taxname_lineage", "Taxon-name lineage", &format!("Semicolon-separated taxon names from the root to the record's taxon. {TAX}")),
+            static_column("rank_lineage", "Rank lineage", &format!("Semicolon-separated ranks from the root to the record's taxon. {TAX}")),
+            static_column("molecular_weight", "Molecular weight", "The molecular weight in daltons, computed for protein, DNA or RNA from the molecule_type annotation."),
+            static_column("isoelectric_point", "Isoelectric point", "The protein's isoelectric point. Only defined for a contig with exactly one protein sequence."),
+            column_variant("net_charge", "Net charge", "The protein's net charge at the given pH. Only defined for a contig with exactly one protein sequence.",
+                json!({"ph": {"type": "string", "description": "pH, e.g. 7.0"}})),
+            column_variant("motif_count", "PROSITE motif count", "Occurrences of a PROSITE motif: protein motifs in proteins, nucleotide motifs in nucleic acids.",
+                json!({"pattern": {"type": "string", "description": "PROSITE pattern, e.g. C-x(2,4)-C"}})),
+            column_variant("repeat_count", "Repeat count", "The number of single-residue repeats at least this long; e.g. AGGKKK has repeat_count_1 = 3, repeat_count_2 = 2 and repeat_count_3 = 1.",
+                json!({"min_length": {"type": "string", "description": "Minimum repeat length, e.g. 2"}})),
+            append_column()
+        ]}
+    })
+}
+
+/// The `append` column type, shared by both reports.
+fn append_column() -> serde_json::Value {
+    column_variant(
+        "append",
+        "Constant column",
+        "A column with the same value on every row.",
+        serde_json::json!({
+            "name": {"type": "string", "description": "Column name"},
+            "value_type": {"enum": ["str", "int", "float"], "description": "Value type"},
+            "value": {"type": "string", "description": "Value"}
+        }),
+    )
 }
 
 fn select_by_contig_schema() -> serde_json::Value {
@@ -1730,7 +1817,7 @@ fn deduplicate_schema() -> serde_json::Value {
             "output": {"type": ["string", "null"], "description": "Output path (stdout if omitted)"},
             "log": {"type": ["string", "null"]},
             "fasta_type": {"enum": ["protein", "nucleotide", null]},
-            "algorithm": {"enum": ["hash", "cd-hit", "cd-hit-est", "diamond", "usearch", null], "description": "Clustering algorithm (default cd-hit; cd-hit switches to cd-hit-est for non-protein input)"},
+            "algorithm": {"enum": ["hash", "cd-hit", "cd-hit-est", "diamond", "usearch", null], "default": "cd-hit", "description": "Clustering algorithm (default cd-hit; cd-hit switches to cd-hit-est for non-protein input)"},
             "bin_path": {"type": ["string", "null"], "description": "Path to the external clusterer binary (else $DOMAINATOR_CDHIT / $DOMAINATOR_DIAMOND / $DOMAINATOR_USEARCH, then PATH)"},
             "id": {"type": ["number", "null"], "description": "Identity threshold 0-1 (must be 1 for hash)"},
             "prefix_count": {"type": "boolean", "default": false},
@@ -2208,17 +2295,16 @@ fn hmmer_report_schema() -> serde_json::Value {
             "json": {"type": ["string", "null"], "description": "Write streaming NDJSON (one compact object per row) here; '-' for stdout. Independent of `output`, which stays TSV"},
             "columns": {
                 "type": "array",
-                "description": "Ordered output columns (after the leading `name`); each has a `type` tag",
-                "items": {
-                    "type": "object",
-                    "required": ["type"],
-                    "properties": {
-                        "type": {"enum": ["source", "acc", "desc", "length", "consensus", "alphabet", "append"]},
-                        "name": {"type": "string", "description": "for append"},
-                        "value_type": {"enum": ["int", "float", "str"], "description": "for append"},
-                        "value": {"type": "string", "description": "for append"}
-                    }
-                }
+                "description": "Ordered output columns (after the leading `name`); each is an object with a `type` tag and that type's parameters",
+                "items": {"oneOf": [
+                    static_column("source", "Source file", "The name of the HMM file the profile was read from."),
+                    static_column("acc", "Accession", "The profile's ACC line."),
+                    static_column("desc", "Description", "The profile's DESC line."),
+                    static_column("length", "Length", "The length of the profile (its number of nodes)."),
+                    static_column("consensus", "Consensus", "The profile's consensus residue line, if it has one."),
+                    static_column("alphabet", "Alphabet", "The profile's alphabet (amino, DNA or RNA)."),
+                    append_column()
+                ]}
             }
         }
     })
@@ -2276,7 +2362,7 @@ fn hmmer_select_schema() -> serde_json::Value {
             "regex": {"type": "array", "items": {"type": "string"}, "description": "Regex pattern(s) to match"},
             "exact": {"type": "array", "items": {"type": "string"}, "description": "Exact string(s) to match"},
             "contains": {"type": "array", "items": {"type": "string"}, "description": "Substring(s) to match"},
-            "field": {"enum": ["name", "desc", "acc", "all", null], "description": "Which field(s) to search (default all)"},
+            "field": {"enum": ["name", "desc", "acc", "all", null], "default": "all", "description": "Which field(s) to search (default all)"},
             "case_sensitive": {"type": "boolean", "default": false},
             "alphabet": {"enum": ["amino", "dna", "rna", null], "description": "Only read input files whose profiles use this alphabet"}
         }
@@ -2467,5 +2553,104 @@ mod tests {
                 assert_eq!(schema(tool).unwrap(), alt, "{tool} vs {under}");
             }
         }
+    }
+
+    /// One of every `ColumnSpec` variant. The `match` has no wildcard, so a new
+    /// variant does not compile until it is listed here -- and then
+    /// `column_schemas_match_their_enums` makes the schema describe it.
+    fn every_enum_column() -> Vec<ColumnSpec> {
+        use ColumnSpec::*;
+        let s = || "x".to_string();
+        let all = vec![
+            Domains, DomainDescriptions, Sequence, Start, End, Strand, Length, Topology,
+            Architecture, ArchitectureDetailed, Score, Identity, Definition, Filename, CdsCount,
+            DomainCount, DomainSearch, TaxidLineage, TaxnameLineage, RankLineage,
+            IsoelectricPoint, StartsWith, MolecularWeight,
+            Taxid { ranks: vec![s()] },
+            Taxname { ranks: vec![s()] },
+            Qualifier { feature: s(), qualifier: s() },
+            FeatureCount { feature: s() },
+            Append { name: s(), value_type: "str".into(), value: s() },
+            MotifCount { pattern: s() },
+            NetCharge { ph: "7".into() },
+            RepeatCount { min_length: "2".into() },
+            NamedDomainCount { name: s() },
+        ];
+        for c in &all {
+            match c {
+                Domains | DomainDescriptions | Sequence | Start | End | Strand | Length
+                | Topology | Architecture | ArchitectureDetailed | Score | Identity | Definition
+                | Filename | CdsCount | DomainCount | DomainSearch | TaxidLineage
+                | TaxnameLineage | RankLineage | IsoelectricPoint | StartsWith | MolecularWeight
+                | Taxid { .. } | Taxname { .. } | Qualifier { .. } | FeatureCount { .. }
+                | Append { .. } | MotifCount { .. } | NetCharge { .. } | RepeatCount { .. }
+                | NamedDomainCount { .. } => {}
+            }
+        }
+        all
+    }
+
+    fn every_hmmer_column() -> Vec<HmmerReportColumn> {
+        use HmmerReportColumn::*;
+        let all = vec![
+            Source, Acc, Desc, Length, Consensus, Alphabet,
+            Append { name: "x".into(), value_type: "str".into(), value: "x".into() },
+        ];
+        for c in &all {
+            match c {
+                Source | Acc | Desc | Length | Consensus | Alphabet | Append { .. } => {}
+            }
+        }
+        all
+    }
+
+    /// Checks one report's `columns` schema against its column enum, both ways.
+    /// The GUI's column builder draws its choices and their parameter boxes from
+    /// the `oneOf` entries, and the enum is what deserializes the result, so a
+    /// variant the schema lacks can never be chosen, and an entry the enum lacks
+    /// builds a column the run rejects.
+    fn check_columns_schema<T: serde::Serialize + serde::de::DeserializeOwned>(tool: &str, all: &[T]) {
+        let schema: serde_json::Value = serde_json::from_str(&schema(tool).unwrap()).unwrap();
+        let variants = schema["properties"]["columns"]["items"]["oneOf"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{tool}: columns.items has no oneOf"))
+            .clone();
+        let type_of = |v: &serde_json::Value| v["properties"]["type"]["const"].as_str().unwrap().to_string();
+        let keys = |v: &serde_json::Value| -> Vec<String> {
+            let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
+            k.sort();
+            k
+        };
+        let mut types: Vec<String> = variants.iter().map(type_of).collect();
+        let n = types.len();
+        types.sort();
+        types.dedup();
+        assert_eq!(n, types.len(), "{tool}: a column type is described twice");
+        assert_eq!(n, all.len(), "{tool}: the schema describes {n} column types, the enum has {}", all.len());
+
+        for column in all {
+            let value = serde_json::to_value(column).unwrap();
+            let ty = value["type"].as_str().unwrap().to_string();
+            let variant = variants
+                .iter()
+                .find(|v| type_of(v) == ty)
+                .unwrap_or_else(|| panic!("{tool}: column type {ty:?} is missing from the schema"));
+            let mut required: Vec<String> =
+                variant["required"].as_array().unwrap().iter().map(|r| r.as_str().unwrap().to_string()).collect();
+            required.sort();
+            assert_eq!(keys(&variant["properties"]), keys(&value), "{tool}.{ty}: schema parameters differ from the enum's fields");
+            assert_eq!(required, keys(&value), "{tool}.{ty}: every field is required, since none has a default");
+            assert_eq!(variant["additionalProperties"], false, "{tool}.{ty}: the enum is deny_unknown_fields");
+            assert!(variant["title"].is_string() && variant["description"].is_string(), "{tool}.{ty}: the GUI needs a title and description");
+            // And what the schema describes, the enum reads back.
+            let _: T = serde_json::from_value(value.clone())
+                .unwrap_or_else(|e| panic!("{tool}.{ty}: {value} does not deserialize: {e}"));
+        }
+    }
+
+    #[test]
+    fn column_schemas_match_their_enums() {
+        check_columns_schema("enum-report", &every_enum_column());
+        check_columns_schema("hmmer-report", &every_hmmer_column());
     }
 }

@@ -54,9 +54,12 @@ network output would exceed that size, before it writes. On `domain-search`, `se
 and `hmmer-search`.
 
 **Taxonomy flags** (`--include_taxids`, `--exclude_taxids`, `--taxonomy_expr`) need an
-NCBI taxdump directory, given by `--ncbi_taxonomy_path`; it defaults to
+NCBI taxdump, given by `--ncbi_taxonomy_path`; it defaults to
 `/tmp/ncbi_taxonomy_$USER` and is only loaded if you actually use a taxonomy filter or
-column. Both extracted `.dmp` files and a `taxdump.tar.gz` are accepted.
+column. It can be a directory of extracted `.dmp` files, a directory holding
+`taxdump.tar.gz`, or the path of a taxdump archive itself (such as the desktop app's NCBI
+Taxonomy download). enum-report's `--rank_lineage` loads it too; the Python tool does not,
+and crashes on that column alone.
 
 ## The tools at a glance
 

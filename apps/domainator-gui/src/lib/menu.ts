@@ -16,10 +16,10 @@ import { ws } from "./state.svelte";
 import { ui } from "./ui.svelte";
 import {
   openExternalUrl,
-  openFileWindow,
   pickDirectory,
   pickFiles,
   appDiagnostics,
+  quitApp,
 } from "./api";
 import { MENU_PREFIXES, type MenuCommand, type MenuId } from "./menuIds";
 
@@ -50,6 +50,8 @@ export const HANDLERS: Record<MenuId, Handler> = {
     if (ws.activeTabId) ws.closeTab(ws.activeTabId);
   },
   "file.reopen_tab": () => ws.reopenClosedTab(),
+  // Closes every window through its own unsaved-changes guard; see `quit_app`.
+  "file.quit": quitApp,
 
   "edit.preferences": () => {
     ui.preferencesRequest++;
@@ -77,11 +79,6 @@ export const HANDLERS: Record<MenuId, Handler> = {
   },
   "tools.clear_jobs": () => {
     ui.clearJobsRequest++;
-  },
-
-  "window.pop_out": async () => {
-    const tab = ws.tabs.find((t) => t.id === ws.activeTabId);
-    if (tab) await openFileWindow(tab.file.path, tab.file.name);
   },
 
   "help.check_updates": () => {
@@ -130,7 +127,6 @@ const SHELL_ONLY = new Set<string>([
   "tools.reference_dbs",
   "tools.external",
   "tools.clear_jobs",
-  "window.pop_out",
   "tools.run",
   "file.open_recent",
 ]);

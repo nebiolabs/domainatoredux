@@ -32,7 +32,8 @@ fn split_dmp(line: &str) -> Vec<&str> {
 
 impl NCBITaxonomy {
     /// Load from a directory containing either extracted `.dmp` files or
-    /// `taxdump.tar.gz`.
+    /// `taxdump.tar.gz`, or from the path of a taxdump archive itself (how the GUI
+    /// registers its managed NCBI Taxonomy download, as one file).
     pub fn load(dir: &Path) -> std::io::Result<NCBITaxonomy> {
         let nodes_p = dir.join("nodes.dmp");
         let names_p = dir.join("names.dmp");
@@ -45,7 +46,7 @@ impl NCBITaxonomy {
             let delnodes = std::fs::read_to_string(&delnodes_p)?;
             return Ok(Self::from_texts(&nodes, &names, &merged, &delnodes));
         }
-        let tar = dir.join("taxdump.tar.gz");
+        let tar = if dir.is_file() { dir.to_path_buf() } else { dir.join("taxdump.tar.gz") };
         if tar.exists() {
             let members = read_targz_members(&tar)?;
             let get = |name: &str| -> std::io::Result<String> {
@@ -55,7 +56,7 @@ impl NCBITaxonomy {
                     .ok_or_else(|| {
                         std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
-                            format!("taxdump.tar.gz missing {name}"),
+                            format!("{} is missing {name}", tar.display()),
                         )
                     })
             };
@@ -443,6 +444,12 @@ mod tests {
     // (1224) -> {class 1236, genus Escherichia(561) -> species E. coli(562)}.
     // 999000 is merged into 562; 888 is deleted.
     fn tax() -> NCBITaxonomy {
+        let [nodes, names, merged, delnodes] = dmp_texts();
+        NCBITaxonomy::from_texts(nodes, names, merged, delnodes)
+    }
+
+    /// `nodes.dmp`, `names.dmp`, `merged.dmp`, `delnodes.dmp` for [`tax`].
+    fn dmp_texts() -> [&'static str; 4] {
         let nodes = "\
 1\t|\t1\t|\tno rank\t|\t
 131567\t|\t1\t|\tno rank\t|\t
@@ -460,7 +467,58 @@ mod tests {
 562\t|\tEscherichia coli\t|\t\t|\tscientific name\t|\t";
         let merged = "999000\t|\t562\t|\t";
         let delnodes = "888\t|\t";
-        NCBITaxonomy::from_texts(nodes, names, merged, delnodes)
+        [nodes, names, merged, delnodes]
+    }
+
+    /// A gzipped ustar archive of `files`, laid out as NCBI's taxdump is.
+    fn targz(files: &[(&str, &str)]) -> Vec<u8> {
+        let mut tar = Vec::new();
+        for (name, body) in files {
+            let mut h = [0u8; 512];
+            h[..name.len()].copy_from_slice(name.as_bytes());
+            h[100..107].copy_from_slice(b"0000644");
+            h[124..135].copy_from_slice(format!("{:011o}", body.len()).as_bytes());
+            h[156] = b'0';
+            h[257..262].copy_from_slice(b"ustar");
+            // The checksum is summed with its own field read as spaces.
+            h[148..156].copy_from_slice(b"        ");
+            let sum: u32 = h.iter().map(|&b| b as u32).sum();
+            h[148..155].copy_from_slice(format!("{sum:06o}\0").as_bytes());
+            tar.extend_from_slice(&h);
+            tar.extend_from_slice(body.as_bytes());
+            tar.resize(tar.len().div_ceil(512) * 512, 0);
+        }
+        tar.resize(tar.len() + 1024, 0);
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut gz, &tar).unwrap();
+        gz.finish().unwrap()
+    }
+
+    /// The GUI registers its managed download as the archive's own path, while the
+    /// CLI (and Python) pass the directory holding it; both must load.
+    #[test]
+    fn loads_a_taxdump_archive_by_its_directory_or_its_own_path() {
+        let dir = std::env::temp_dir().join(format!("domainator-taxdump-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let [nodes, names, merged, delnodes] = dmp_texts();
+        let archive = dir.join("taxdump.tar.gz");
+        std::fs::write(
+            &archive,
+            targz(&[
+                ("nodes.dmp", nodes),
+                ("names.dmp", names),
+                ("merged.dmp", merged),
+                ("delnodes.dmp", delnodes),
+            ]),
+        )
+        .unwrap();
+        for path in [dir.as_path(), archive.as_path()] {
+            let t = NCBITaxonomy::load(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            assert_eq!(t.name(562), Some("Escherichia coli"), "{}", path.display());
+            assert_eq!(t.normalized_taxid(999000), 562);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

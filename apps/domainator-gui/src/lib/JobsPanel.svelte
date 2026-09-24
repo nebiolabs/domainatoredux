@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ResizableBody from "./ResizableBody.svelte";
   import { ws } from "./state.svelte";
   import type { JobInfo } from "./types";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -120,6 +121,7 @@
     {/if}
   </div>
   {#if expanded}
+    <ResizableBody key="jobs" defaultMax={260}>
     {#if ws.jobs.length === 0}
       <div class="empty">Tool runs and report exports appear here.</div>
     {:else}
@@ -154,6 +156,7 @@
         {/each}
       </div>
     {/if}
+    </ResizableBody>
   {/if}
 </div>
 
@@ -189,10 +192,7 @@
   .jobs {
     border-top: 1px solid var(--border);
     font-size: 12.5px;
-    max-height: 40%;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
+    flex: none;
   }
   .header {
     display: flex;
@@ -233,10 +233,6 @@
     padding: 6px 12px;
     color: var(--text-dim);
     line-height: 1.4;
-  }
-  .list {
-    overflow: auto;
-    min-height: 0;
   }
   .job {
     padding: 4px 8px 4px 12px;

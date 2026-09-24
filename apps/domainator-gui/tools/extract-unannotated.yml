@@ -1,0 +1,46 @@
+# GUI dialog for `domainator extract-unannotated`. Format: see README.md in this directory.
+id: extract-unannotated
+label: "Extract unannotated"
+category: "Selection & extraction"
+description: "Extract the regions of each CDS/contig with no domain annotation."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output"
+    role: output_file
+    required: true
+    output_name: "{stem}.unannotated.gb"
+  - name: fasta_out
+    label: "FASTA output"
+    cli_default: false
+  - name: databases
+    label: "Databases"
+  - name: search_hits
+    label: "Search hits"
+    cli_default: false
+  - name: largest
+    label: "Largest only"
+    cli_default: false
+  - name: lb
+    label: "Min length"
+  - name: keep_direction
+    label: "Keep direction"
+    cli_default: false
+  - name: keep_name
+    label: "Keep name"
+    cli_default: false
+  - name: evalue
+    label: "Max E-value"
+  - name: score
+    label: "Min score"
+  - name: contigs
+    label: "Restrict to contigs"
+  - name: contigs_file
+    show: false
+    label: "Contigs file"

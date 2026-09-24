@@ -57,17 +57,22 @@
   }
 </script>
 
-<div class="overlay" role="presentation" onclick={oncancel}>
+<!-- No click-outside-to-close: a stray click on the backdrop used to throw away
+     a pasted body along with the dialog. Closing takes the × or Cancel (or
+     Escape, on a name-only prompt where there is nothing to lose). -->
+<div class="overlay" role="presentation">
   <div
     class="modal"
     role="dialog"
     aria-modal="true"
     aria-label={title}
     tabindex="-1"
-    onclick={(e) => e.stopPropagation()}
-    onkeydown={(e) => e.key === "Escape" && oncancel()}
+    onkeydown={(e) => e.key === "Escape" && !withBody && !busy && oncancel()}
   >
-    <h3>{title}</h3>
+    <div class="head">
+      <h3>{title}</h3>
+      <button class="close" onclick={oncancel} disabled={busy} title="Close" aria-label="Close">×</button>
+    </div>
     <input
       bind:this={nameEl}
       bind:value={name}
@@ -110,9 +115,26 @@
     flex-direction: column;
     gap: 10px;
   }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
   h3 {
     margin: 0;
     font-size: 14px;
+    flex: 1;
+  }
+  .close {
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 4px;
+  }
+  .close:hover:not(:disabled) {
+    color: var(--text);
   }
   .name,
   .body {

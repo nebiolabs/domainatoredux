@@ -6,9 +6,9 @@
 //! the user stop one — the cancel flags live in [`RefDbRegistry`] so the blocking
 //! worker can read them mid-stream rather than only after it finishes.
 //!
-//! On success a database is registered into the *workspace* registry too, so it
-//! appears in the Databases panel and in every tool dialog's reference dropdown.
-//! That is the whole point of downloading it.
+//! On success a database is registered into the shared database registry too
+//! (`cmd_db`), so it appears in the Databases panel and in every workspace's tool
+//! dialogs. That is the whole point of downloading it.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,10 +16,6 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
-
-use domainator_core::app_support::registry::{
-    classify_database, load_registry, save_registry, DatabaseEntry,
-};
 
 use crate::reference_dbs::{self, InstalledDb};
 
@@ -158,8 +154,8 @@ pub async fn check_reference_db_version(app: AppHandle, id: String) -> Result<St
     .map_err(|e| format!("version check failed: {e}"))?
 }
 
-/// Download + install a reference database, then register it in `workspace_root`'s
-/// database registry (when a workspace is open).
+/// Download + install a reference database, then register it in the shared
+/// database registry.
 ///
 /// Used for a first install and for an update alike — an update is the same
 /// download over the same file name, which is why the release is read from the
@@ -169,7 +165,6 @@ pub async fn download_reference_db(
     app: AppHandle,
     registry: tauri::State<'_, RefDbRegistry>,
     id: String,
-    workspace_root: Option<String>,
 ) -> Result<InstalledDb, String> {
     let flag = Arc::new(AtomicBool::new(false));
     {
@@ -199,18 +194,16 @@ pub async fn download_reference_db(
         let entry = reference_dbs::install(&app_c, &spec, &flag_c, &report)?;
 
         // Make it usable: without this the file is on disk and no tool offers it.
-        if let Some(root) = workspace_root.as_deref().filter(|r| !r.is_empty()) {
-            report("registering", 0, 0);
-            // `install` deleted any copy stored under a name this release no longer
-            // uses; drop those from the registry too, or the panel lists a ghost.
-            let dir = reference_dbs::managed_dir(&app_c)?;
-            let superseded: Vec<String> = spec
-                .superseded_file_names
-                .iter()
-                .map(|n| dir.join(n).to_string_lossy().into_owned())
-                .collect();
-            register_in_workspace(root, &entry.path, &superseded)?;
-        }
+        report("registering", 0, 0);
+        // `install` deleted any copy stored under a name this release no longer
+        // uses; drop those from the registry too, or the panel lists a ghost.
+        let dir = reference_dbs::managed_dir(&app_c)?;
+        let superseded: Vec<String> = spec
+            .superseded_file_names
+            .iter()
+            .map(|n| dir.join(n).to_string_lossy().into_owned())
+            .collect();
+        crate::cmd_db::register(&app_c, &entry.path, &superseded)?;
         Ok::<_, String>(entry)
     })
     .await
@@ -237,21 +230,6 @@ pub async fn download_reference_db(
     outcome
 }
 
-/// Classify `path` and add/replace it in the workspace database registry. Mirrors
-/// `cmd_db::register_database`, which cannot be called directly from here (it is a
-/// `#[tauri::command]` with its own `spawn_blocking`, and this is already inside
-/// one).
-/// `replaces` are paths to drop from the registry at the same time.
-fn register_in_workspace(root: &str, path: &str, replaces: &[String]) -> Result<DatabaseEntry, String> {
-    let entry = classify_database(path)?;
-    let root = std::path::Path::new(root);
-    let mut reg = load_registry(root);
-    reg.databases.retain(|d| d.path != entry.path && !replaces.contains(&d.path));
-    reg.databases.push(entry.clone());
-    save_registry(root, &reg).map_err(|e| format!("saving registry: {e}"))?;
-    Ok(entry)
-}
-
 /// Ask an in-flight download to stop. Best-effort in the same sense as
 /// `cancel_job`, but far more effective: the flag is read by the download stream
 /// itself, so a canceled transfer stops at the next read rather than at the end.
@@ -262,22 +240,12 @@ pub fn cancel_reference_db(registry: tauri::State<'_, RefDbRegistry>, id: String
     }
 }
 
-/// Delete an installed database and unregister it from the workspace.
+/// Delete an installed database and unregister it.
 #[tauri::command]
-pub async fn remove_reference_db(
-    app: AppHandle,
-    id: String,
-    workspace_root: Option<String>,
-) -> Result<(), String> {
+pub async fn remove_reference_db(app: AppHandle, id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let removed = reference_dbs::uninstall(&app, &id)?;
-        if let (Some(path), Some(root)) =
-            (removed, workspace_root.as_deref().filter(|r| !r.is_empty()))
-        {
-            let root = std::path::Path::new(root);
-            let mut reg = load_registry(root);
-            reg.databases.retain(|d| d.path != path);
-            save_registry(root, &reg).map_err(|e| format!("saving registry: {e}"))?;
+        if let Some(path) = reference_dbs::uninstall(&app, &id)? {
+            crate::cmd_db::update_registry(&app, |reg| reg.remove(&path))?;
         }
         Ok(())
     })
@@ -285,23 +253,29 @@ pub async fn remove_reference_db(
     .map_err(|e| format!("removing database failed: {e}"))?
 }
 
-/// Re-register every installed reference database into a workspace that is being
-/// opened. The databases live in the app data dir and are shared across
-/// workspaces, but each workspace has its own registry file, so a fresh one would
-/// otherwise show nothing until the user downloaded them again.
+/// Make sure every installed reference database is in the shared registry.
+///
+/// Downloads register themselves, so this only matters for copies installed
+/// before the registry was shared (they were registered per workspace, and a
+/// workspace that was never reopened would not bring them over). Called once at
+/// startup. Entries already present are not reclassified.
 #[tauri::command]
-pub async fn sync_reference_dbs_to_workspace(
-    app: AppHandle,
-    workspace_root: String,
-) -> Result<usize, String> {
+pub async fn sync_reference_dbs(app: AppHandle) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let path = crate::cmd_db::central_registry_path(&app)?;
+        let known: Vec<String> =
+            domainator_core::app_support::registry::load_registry_file(&path)
+                .databases
+                .into_iter()
+                .map(|d| d.path)
+                .collect();
         let mut added = 0usize;
         for entry in reference_dbs::load_manifest(&app).databases {
-            if !std::path::Path::new(&entry.path).is_file() {
+            if known.contains(&entry.path) || !std::path::Path::new(&entry.path).is_file() {
                 continue;
             }
             // A classification failure on one database must not block the others.
-            if register_in_workspace(&workspace_root, &entry.path, &[]).is_ok() {
+            if crate::cmd_db::register(&app, &entry.path, &[]).is_ok() {
                 added += 1;
             }
         }

@@ -1,26 +1,78 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { runEnumReport, type EnumRow } from "../api";
+  import { listTools, runEnumReport, toolSchemaCached, type EnumRow } from "../api";
   import { cached } from "../cache";
+  import ColumnBuilder from "../ColumnBuilder.svelte";
+  import { columnTypes, toColumns, toRows, type ColumnRow, type ColumnType } from "../columns";
+  import { ws } from "../state.svelte";
+  import type { JsonSchema, ToolField } from "../types";
 
   let { path }: { path: string } = $props();
 
-  // All selectable analyses (valid static analyses in enum_report).
-  const ALL_COLUMNS = [
-    "domains", "domain_descriptions", "architecture", "architecture_detailed",
-    "length", "start", "end", "strand", "topology", "score", "identity",
-    "definition", "cds_count", "domain_count", "sequence",
-    "taxid_self", "taxname_self", "taxid_lineage", "taxname_lineage",
-  ];
-  function defaultColumns(b: string): string[] {
-    if (b === "contig") return ["length", "cds_count", "domains"];
-    if (b === "domain") return ["start", "end", "strand", "score", "identity"];
-    return ["domains", "architecture", "length"];
+  type Column = Record<string, unknown>;
+  function defaultColumns(b: string): Column[] {
+    const names =
+      b === "contig" ? ["length", "cds_count", "domains"]
+      : b === "domain" ? ["start", "end", "strand", "score", "identity"]
+      : ["domains", "architecture", "length"];
+    return names.map((type) => ({ type }));
   }
+  // Only for the "loading" hint: the backend decides what needs a taxonomy.
+  const TAXONOMY_TYPES = new Set(["taxid", "taxname", "taxid_lineage", "taxname_lineage", "rank_lineage"]);
 
   let by = $state("cds");
-  let selectedColumns = $state<string[]>(defaultColumns("cds"));
+  /// The columns the grid shows. The builder edits `draft`, and Apply copies it
+  /// here: every change reruns the whole report, so it isn't done per keystroke.
+  let applied = $state<Column[]>(defaultColumns("cds"));
+  let draft = $state<ColumnRow[]>([]);
+  let draftError = $state<string | null>(null);
   let colsOpen = $state(false);
+
+  // The column types come from the enum-report schema and its spec's
+  // `column_types` (`tools/enum-report.yml`), exactly as in the export dialog.
+  let types = $state<ColumnType[]>([]);
+  $effect(() => {
+    Promise.all([toolSchemaCached("enum-report"), cached("tools", listTools)])
+      .then(([schemaText, tools]) => {
+        const schema = JSON.parse(schemaText) as JsonSchema;
+        const field: ToolField | undefined = tools
+          .find((t) => t.id === "enum-report")
+          ?.fields.find((f) => f.role === "columns");
+        types = columnTypes(
+          field ?? ({ column_types: {} } as unknown as ToolField),
+          schema.properties?.columns,
+        );
+        draft = toRows(untrack(() => applied), types);
+      })
+      .catch((e) => (error = String(e)));
+  });
+
+  // Registered taxonomy databases; the NCBI Taxonomy download first.
+  const taxonomies = $derived(ws.databases.filter((d) => d.format === "taxonomy" && d.on_disk));
+  let taxPath = $state<string>("");
+  $effect(() => {
+    if (taxPath && taxonomies.some((d) => d.path === taxPath)) return;
+    taxPath = (taxonomies.find((d) => d.managed_id === "ncbi_taxonomy") ?? taxonomies[0])?.path ?? "";
+  });
+  const needsTaxonomy = $derived(applied.some((c) => TAXONOMY_TYPES.has(String(c.type))));
+  // The taxonomy a run uses: none unless a column needs one, so switching it while
+  // no taxonomy column is shown doesn't rerun the report (and reset the grid).
+  const runTax = $derived(needsTaxonomy ? taxPath || null : null);
+
+  function setColumns(cols: Column[]) {
+    applied = cols;
+    draft = toRows(cols, types);
+    draftError = null;
+  }
+  function apply() {
+    try {
+      applied = toColumns(draft, types);
+      draftError = null;
+      colsOpen = false;
+    } catch (e) {
+      draftError = e instanceof Error ? e.message : String(e);
+    }
+  }
   let rows = $state<EnumRow[]>([]);
   let error = $state<string | null>(null);
   let loading = $state(true);
@@ -29,12 +81,7 @@
   let filters = $state<Record<string, string>>({});
 
   function onByChange() {
-    selectedColumns = defaultColumns(by);
-  }
-  function toggleColumn(c: string) {
-    selectedColumns = selectedColumns.includes(c)
-      ? selectedColumns.filter((x) => x !== c)
-      : [...selectedColumns, c];
+    setColumns(defaultColumns(by));
   }
 
   // Virtualization: only rows in the scroll viewport are in the DOM; spacer rows
@@ -61,20 +108,21 @@
   // Reset columns to the granularity defaults when the file changes.
   $effect(() => {
     void path;
-    selectedColumns = defaultColumns(untrack(() => by));
+    untrack(() => setColumns(defaultColumns(by)));
   });
 
   $effect(() => {
     void path;
     void by;
-    void selectedColumns;
+    void applied;
     loading = true;
     error = null;
     sortCol = null;
     filters = {};
     scrollTop = 0;
-    const cols = selectedColumns;
-    cached(`enum:${by}:${cols.join(",")}:${path}`, () => runEnumReport(path, by, cols))
+    const cols = applied;
+    const tax = runTax;
+    cached(`enum:${by}:${JSON.stringify(cols)}:${tax ?? ""}:${path}`, () => runEnumReport(path, by, cols, tax))
       .then((r) => (rows = r))
       .catch((e) => (error = String(e)))
       .finally(() => (loading = false));
@@ -198,18 +246,32 @@
       </select>
     </label>
     <div class="colpick">
-      <button onclick={() => (colsOpen = !colsOpen)}>Columns ({selectedColumns.length}) ▾</button>
+      <button onclick={() => (colsOpen = !colsOpen)}>Columns ({applied.length}) ▾</button>
       {#if colsOpen}
-        <div class="colmenu" role="menu">
-          {#each ALL_COLUMNS as c (c)}
-            <label class="colitem">
-              <input type="checkbox" checked={selectedColumns.includes(c)} onchange={() => toggleColumn(c)} />
-              {c}
-            </label>
-          {/each}
+        <div class="colmenu" role="dialog" aria-label="Columns">
+          {#if types.length === 0}
+            <div class="dim">Loading column types…</div>
+          {:else}
+            <ColumnBuilder {types} bind:rows={draft} />
+          {/if}
+          {#if draftError}<div class="colerr">{draftError}</div>{/if}
+          <div class="colactions">
+            <button onclick={() => setColumns(defaultColumns(by))}>Defaults</button>
+            <span class="spacer"></span>
+            <button onclick={() => { draft = toRows(applied, types); draftError = null; colsOpen = false; }}>Cancel</button>
+            <button class="primary" onclick={apply} disabled={types.length === 0}>Apply</button>
+          </div>
         </div>
       {/if}
     </div>
+    {#if taxonomies.length > 0}
+      <label title="The taxonomy the taxid, taxon-name and lineage columns use">
+        Taxonomy
+        <select bind:value={taxPath}>
+          {#each taxonomies as d (d.path)}<option value={d.path}>{d.name}</option>{/each}
+        </select>
+      </label>
+    {/if}
     <span class="dim">
       {#if hasFilters}{total.toLocaleString()} of {rows.length.toLocaleString()}{:else}{rows.length.toLocaleString()}{/if}
       row{total === 1 ? "" : "s"}
@@ -217,7 +279,9 @@
   </div>
 
   {#if loading}
-    <div class="msg">Computing…</div>
+    <div class="msg">
+      Computing…{#if needsTaxonomy} The first run with a taxonomy column also loads the taxonomy, which takes several seconds.{/if}
+    </div>
   {:else if error}
     <div class="msg err">{error}</div>
   {:else if rows.length === 0}
@@ -308,21 +372,28 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-    padding: 6px;
-    max-height: 320px;
+    padding: 8px;
+    max-height: min(520px, 70vh);
     overflow: auto;
-    min-width: 180px;
+    width: min(480px, 90vw);
   }
-  .colitem {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 6px;
+  .colerr {
+    color: #e5484d;
     font-size: 12px;
-    white-space: nowrap;
+    margin-top: 6px;
   }
-  .colitem:hover {
-    background: var(--row-hover);
+  .colactions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .colactions .spacer {
+    flex: 1;
+  }
+  .colactions .primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
   }
   .scroll {
     flex: 1;

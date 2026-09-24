@@ -118,7 +118,18 @@ keep in particular:
   three files. A menu entry with no dispatch arm fails only when the user presses Run; a
   dialog field that is not a config property is rejected outright by `deny_unknown_fields`.
   `ToolField::role` must be one of `ROLES`, because a role `ToolDialog.svelte` cannot
-  render makes the field silently disappear from the form.
+  render makes the field silently disappear from the form. The registry is the tool
+  spec files, `apps/domainator-gui/tools/<id>.yml`, one per tool and embedded by
+  `build.rs`, which fails the build on a malformed file. Each spec lists **every**
+  schema property, with the CLI default and an optional `gui_default`. A spec also sets
+  each input's `sources` (databases or workspace first) and `select` (its starting
+  entry). `tool_specs.rs`'s tests (`every_schema_property_is_listed_once`,
+  `cli_defaults_match_the_schema`, `gui_defaults_fit_their_property`) catch a new CLI
+  option the GUI never decided about and a copied default that went stale. When you
+  add a tool, write its spec file too. The report column builders (`columns` role)
+  render from the schema's `columns.items.oneOf`, generated beside `ColumnSpec` /
+  `HmmerReportColumn`; `column_schemas_match_their_enums` (`domainator-config`) keeps
+  those entries and the enums in step, so a new column variant must get a schema entry.
 - **`storage_format_matches_what_the_readers_require`** and
   **`a_gzipped_fasta_is_installed_as_an_indexed_bgzf_database`** (`domainator-gui`,
   `reference_dbs.rs`) — the managed UniProt/Pfam downloads have no upstream counterpart,

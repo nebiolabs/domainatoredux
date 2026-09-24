@@ -1,0 +1,36 @@
+# GUI dialog for `domainator hmmer-search`. Format: see README.md in this directory.
+id: hmmer-search
+label: "HMM search"
+category: "HMM profiles"
+description: "Keep query profiles that score against a reference HMM set (writes an HMM file)."
+fields:
+  - name: input
+    label: "Query HMM(s)"
+    role: input_files
+    file_type: hmm
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: reference
+    label: "Reference HMM(s)"
+    role: input_files
+    file_type: hmm
+    required: true
+    sources: databases_first
+    select: "database:pfam"
+  - name: output
+    label: "Output (HMM)"
+    role: output_file
+    required: true
+    output_name: "{stem}.searched.hmm"
+  - name: score_cutoff
+    label: "Score cutoff"
+    cli_default: 10.0
+  - name: max_hits
+    label: "Max hits"
+  - name: cpu
+    show: false
+    label: "Cpu"
+  - name: max_output_gb
+    show: false
+    label: "Max output gb"

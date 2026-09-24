@@ -157,3 +157,26 @@ pub fn standalone_params(
 ) -> Option<(String, usize)> {
     lock_pending(&pending).get(&label).cloned()
 }
+
+/// File → Quit: ask every window to close, detached viewers first and the main
+/// window last.
+///
+/// `Window::close` raises the same close request as the title-bar ×, so each
+/// window's `onCloseRequested` guard still gets to ask about unsaved edits, and a
+/// window whose user picks Cancel simply stays open. `AppHandle::exit` (or the
+/// predefined Quit item, which is `PostQuitMessage` on Windows) would end the
+/// process without any window being asked. Once the last window is gone Tauri
+/// exits on its own.
+///
+/// `async` so the closes are posted from off the main thread (see
+/// [`spawn_window`]'s note on WebView2 re-entrancy).
+#[tauri::command]
+pub async fn quit_app(app: AppHandle) {
+    let mut windows: Vec<_> = app.webview_windows().into_values().collect();
+    windows.sort_by_key(|w| w.label() == "main");
+    for w in windows {
+        if let Err(e) = w.close() {
+            eprintln!("could not close window {}: {e}", w.label());
+        }
+    }
+}

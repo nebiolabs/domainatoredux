@@ -1,0 +1,90 @@
+# GUI dialog for `domainator select-by-cds`. Format: see README.md in this directory.
+id: select-by-cds
+label: "Select by CDS"
+category: "Selection & extraction"
+description: "Extract CDSs (and optionally their genomic neighborhoods) by name, domain content, or search hit."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output (GenBank)"
+    role: output_file
+    required: true
+    output_name: "{stem}.selected_cds.gb"
+  - name: cds
+    label: "CDS names"
+  - name: cds_file
+    label: "CDS names file (.txt)"
+    role: input_file
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: domains
+    label: "Domain names"
+  - name: domains_file
+    label: "Domain names file (.txt)"
+    role: input_file
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: domain_expr
+    label: "Domain expr"
+  - name: databases
+    label: "Databases"
+  - name: search_hits
+    label: "Search hits"
+    cli_default: false
+  - name: unannotated
+    label: "Unannotated"
+    cli_default: false
+  - name: invert
+    label: "Invert"
+    cli_default: false
+  - name: evalue
+    label: "E-value"
+    cli_default: 100000000.0
+  - name: contigs
+    label: "Restrict to contigs"
+  - name: contigs_file
+    label: "Contigs file (.txt)"
+    role: input_file
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: whole_contig
+    label: "Whole contig"
+    cli_default: false
+  - name: cds_range
+    label: "CDS range (±)"
+  - name: cds_up
+    label: "CDS upstream"
+  - name: cds_down
+    label: "CDS downstream"
+  - name: kb_range
+    label: "kb range (±)"
+  - name: kb_up
+    label: "kb upstream"
+  - name: kb_down
+    label: "kb downstream"
+  - name: strand
+    label: "Strand (f/r)"
+  - name: keep_direction
+    label: "Keep direction"
+    cli_default: false
+  - name: pad
+    label: "Pad to equal length"
+    cli_default: false
+  - name: skip_deduplicate
+    label: "Skip dedup"
+    cli_default: false
+  - name: max_region_overlap
+    label: "Max region overlap"
+    cli_default: 1.0
+  - name: include_nucleic_acids
+    label: "Include nucleic acids"
+    cli_default: false

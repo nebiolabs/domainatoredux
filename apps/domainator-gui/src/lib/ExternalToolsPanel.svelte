@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ResizableBody from "./ResizableBody.svelte";
   import { downloadExternalTool, listExternalTools } from "./api";
   import type { ExternalToolStatus } from "./types";
   import { ui } from "./ui.svelte";
@@ -62,6 +63,7 @@
     <span class="count">{installedCount}/{tools.length}</span>
   </div>
   {#if expanded}
+    <ResizableBody key="external" defaultMax={220}>
     {#if loading}
       <div class="empty">Checking…</div>
     {:else if listError}
@@ -87,6 +89,7 @@
     {#if tools.length === 0 && !loading && !listError}
       <div class="empty">No managed external tools.</div>
     {/if}
+    </ResizableBody>
   {/if}
 </div>
 

@@ -1,0 +1,33 @@
+# GUI dialog for `domainator hmmer-select`. Format: see README.md in this directory.
+id: hmmer-select
+label: "HMM select"
+category: "HMM profiles"
+description: "Extract a subset of profiles from HMM file(s) by name/description/accession (regex, exact, or substring match)."
+fields:
+  - name: input
+    label: "Input HMM(s)"
+    role: input_files
+    file_type: hmm
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output (HMM)"
+    role: output_file
+    required: true
+    output_name: "{stem}.selected.hmm"
+  - name: regex
+    label: "Regex match"
+  - name: exact
+    label: "Exact match"
+  - name: contains
+    label: "Substring match"
+  - name: field
+    label: "Match field"
+    cli_default: "all"
+  - name: case_sensitive
+    label: "Case sensitive"
+    cli_default: false
+  - name: alphabet
+    show: false
+    label: "Alphabet"

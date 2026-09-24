@@ -1,0 +1,41 @@
+# GUI dialog for `domainator hmmer-compare`. Format: see README.md in this directory.
+id: hmmer-compare
+label: "HMM compare"
+category: "HMM profiles"
+description: "Profile-vs-profile Viterbi comparison; writes a scores/alignments table."
+fields:
+  - name: input
+    label: "Query HMM(s)"
+    role: input_files
+    file_type: hmm
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: reference
+    label: "Reference HMM(s)"
+    role: input_files
+    file_type: hmm
+    required: true
+    sources: databases_first
+    select: "database:pfam"
+  - name: output
+    label: "Output (table)"
+    role: output_file
+    required: true
+    output_name: "{stem}.compare.tsv"
+  - name: score_cutoff
+    label: "Score cutoff"
+    cli_default: 0.0
+  - name: k
+    label: "Top-k per query"
+  - name: alignments
+    label: "Include alignments"
+    cli_default: false
+  - name: cpu
+    show: false
+    label: "Cpu"
+    cli_default: 0
+  - name: max_output_gb
+    show: false
+    label: "Max output gb"
+    cli_default: 25.0

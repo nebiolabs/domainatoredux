@@ -1,0 +1,45 @@
+# GUI dialog for `domainator trim-contigs`. Format: see README.md in this directory.
+id: trim-contigs
+label: "Trim contigs"
+category: "Selection & extraction"
+description: "Trim the ends of contigs by kb, CDS count, or up to a domain boundary."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output (GenBank)"
+    role: output_file
+    required: true
+    output_name: "{stem}.trimmed.gb"
+  - name: kb_both
+    label: "kb both ends"
+  - name: kb_left
+    label: "kb left"
+  - name: kb_right
+    label: "kb right"
+  - name: cds_both
+    label: "CDS both ends"
+  - name: cds_left
+    label: "CDS left"
+  - name: cds_right
+    label: "CDS right"
+  - name: domains
+    label: "Trim to domains"
+  - name: domain_expr
+    label: "Domain expr"
+  - name: no_domain
+    label: "Drop domain-less"
+    cli_default: false
+  - name: contigs
+    label: "Restrict to contigs"
+  - name: domains_file
+    show: false
+    label: "Domains file"
+  - name: contigs_file
+    show: false
+    label: "Contigs file"

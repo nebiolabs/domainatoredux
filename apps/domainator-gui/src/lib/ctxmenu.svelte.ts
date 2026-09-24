@@ -42,6 +42,10 @@ export const ctx = $state({
   /// Focus is returned here on close, so right-clicking a row and pressing Escape
   /// leaves the keyboard where it was.
   returnFocus: null as HTMLElement | null,
+  /// The button a dropdown hangs from (`toggleMenuBelow`). A press on it is left to
+  /// the button, which toggles, rather than dismissing the menu only for the
+  /// same click to reopen it.
+  anchor: null as HTMLElement | null,
 });
 
 /// Open a context menu at the event's position.
@@ -56,6 +60,24 @@ export function openContextMenu(e: MouseEvent, items: CtxItem[]): void {
   ctx.x = e.clientX;
   ctx.y = e.clientY;
   ctx.items = items;
+  ctx.anchor = null;
+  ctx.open = true;
+}
+
+/// Open a menu as a dropdown under `anchor` (a toolbar button), or close it if
+/// that same button's menu is already open.
+export function toggleMenuBelow(anchor: HTMLElement, items: CtxItem[]): void {
+  if (ctx.open && ctx.anchor === anchor) {
+    closeContextMenu();
+    return;
+  }
+  if (items.length === 0) return;
+  const r = anchor.getBoundingClientRect();
+  ctx.returnFocus = anchor;
+  ctx.x = r.left;
+  ctx.y = r.bottom + 2;
+  ctx.items = items;
+  ctx.anchor = anchor;
   ctx.open = true;
 }
 
@@ -63,6 +85,7 @@ export function closeContextMenu(): void {
   if (!ctx.open) return;
   ctx.open = false;
   ctx.items = [];
+  ctx.anchor = null;
   const back = ctx.returnFocus;
   ctx.returnFocus = null;
   back?.focus?.();

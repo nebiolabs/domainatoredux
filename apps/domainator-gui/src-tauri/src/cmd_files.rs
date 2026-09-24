@@ -16,7 +16,8 @@ use domainator_core::io::fasta::{read_fasta, scan_fasta_ids};
 use domainator_core::seq::SeqRecord;
 use domainator_core::matrix::read_matrix;
 use domainator_core::tools::build_ssn_viewer::render_html;
-use domainator_core::tools::enum_report::{enum_report, static_analysis, By, OutputFormat};
+use domainator_config::ColumnSpec;
+use domainator_core::tools::enum_report::{enum_report, needs_taxonomy, By, OutputFormat};
 use domainator_core::tools::matrix_report::{
     matrix_report, to_viewer_json, DEFAULT_MAX_MERGE, DEFAULT_MERGE_IMPACT_METRIC,
 };
@@ -114,55 +115,79 @@ pub async fn run_summary_stats(path: String) -> Result<SummaryStats, String> {
 }
 
 /// Run `enum_report` on a sequence file and return a JSON array of typed row
-/// objects for a data grid. `by` is `contig` | `cds` | `domain` (default `cds`);
-/// a sensible default column set is used per granularity. Column order is
-/// preserved (serde_json `preserve_order`); the grid infers numeric vs text
-/// columns from the JSON value kinds.
+/// objects for the Enum Report tab's grid. `by` is `contig` | `cds` | `domain`
+/// (default `cds`). `columns` are column objects, `{type, ...parameters}`, as the
+/// config's `ColumnSpec` reads them -- the same shape the export's column builder
+/// sends -- and a per-granularity default set when empty. `ncbi_taxonomy_path` is
+/// needed only by the taxonomy columns, and is served from `taxonomy_cache`.
+/// Column order is preserved (serde_json `preserve_order`); the grid infers numeric
+/// vs text columns from the JSON value kinds.
 #[tauri::command]
 pub async fn run_enum_report(
     path: String,
     by: Option<String>,
-    columns: Option<Vec<String>>,
+    columns: Option<Vec<Value>>,
+    ncbi_taxonomy_path: Option<String>,
 ) -> Result<Value, String> {
-    // Off the UI thread: an 11 MB GenBank has thousands of CDS and takes a while.
-    tauri::async_runtime::spawn_blocking(move || run_enum_report_blocking(path, by, columns))
-        .await
-        .map_err(|e| format!("enum report failed: {e}"))?
+    // Off the UI thread: an 11 MB GenBank has thousands of CDS and takes a while,
+    // and a first taxonomy load several seconds more.
+    tauri::async_runtime::spawn_blocking(move || {
+        run_enum_report_blocking(path, by, columns.unwrap_or_default(), ncbi_taxonomy_path)
+    })
+    .await
+    .map_err(|e| format!("enum report failed: {e}"))?
 }
 
-/// Default columns per granularity (all valid static analyses).
-pub(crate) fn default_columns(by: &str) -> Vec<String> {
+/// Default columns per granularity.
+pub(crate) fn default_columns(by: &str) -> Vec<ColumnSpec> {
     let names: &[&str] = match by {
         "contig" => &["length", "cds_count", "domains"],
         "domain" => &["start", "end", "strand", "score", "identity"],
         _ => &["domains", "architecture", "length"],
     };
-    names.iter().map(|s| s.to_string()).collect()
+    names.iter().filter_map(|n| ColumnSpec::from_static_flag(n)).collect()
 }
 
 fn run_enum_report_blocking(
     path: String,
     by: Option<String>,
-    columns: Option<Vec<String>>,
+    columns: Vec<Value>,
+    ncbi_taxonomy_path: Option<String>,
 ) -> Result<Value, String> {
-    let kind = detect_filetype(std::path::Path::new(&path))
-        .ok_or_else(|| format!("not a sequence file: {path}"))?;
-    let records = match kind {
-        FileType::Genbank => read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?,
-        FileType::Fasta => read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?,
-    };
     let by_str = by.as_deref().unwrap_or("cds");
     let by = match by_str {
         "contig" => By::Contig,
         "domain" => By::Domain,
         _ => By::Cds,
     };
-    let names = match columns {
-        Some(c) if !c.is_empty() => c,
-        _ => default_columns(by_str),
+    let specs: Vec<ColumnSpec> = if columns.is_empty() {
+        default_columns(by_str)
+    } else {
+        columns
+            .into_iter()
+            .map(|c| serde_json::from_value(c).map_err(|e| format!("bad column: {e}")))
+            .collect::<Result<_, _>>()?
     };
-    let analyses: Vec<_> = names.iter().filter_map(|n| static_analysis(n)).collect();
+    let analyses = specs
+        .iter()
+        .map(|c| c.to_analysis().map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+    // Before reading the file, so a missing taxonomy is reported at once.
+    let tax = if needs_taxonomy(&analyses) {
+        let tax_path = ncbi_taxonomy_path.as_deref().filter(|p| !p.trim().is_empty()).ok_or(
+            "the taxonomy columns need a taxonomy database: install NCBI Taxonomy from Reference Databases, then choose it here",
+        )?;
+        Some(crate::taxonomy_cache::load(tax_path)?)
+    } else {
+        None
+    };
 
+    let kind = detect_filetype(std::path::Path::new(&path))
+        .ok_or_else(|| format!("not a sequence file: {path}"))?;
+    let records = match kind {
+        FileType::Genbank => read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?,
+        FileType::Fasta => read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?,
+    };
     let filename = std::path::Path::new(&path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -170,7 +195,7 @@ fn run_enum_report_blocking(
     let recs: Vec<_> = records.into_iter().map(|r| (r, filename.clone())).collect();
 
     let mut buf: Vec<u8> = Vec::new();
-    enum_report(recs, by, &analyses, None, None, None, OutputFormat::Json, &mut buf)?;
+    enum_report(recs, by, &analyses, None, tax.as_deref(), None, OutputFormat::Json, &mut buf)?;
     ndjson_to_array(&buf)
 }
 
@@ -1173,6 +1198,42 @@ mod tests {
         assert_eq!(rows[1][0].as_f64().unwrap(), -2.0);
         let total: i64 = rows.iter().map(|r| r[1].as_i64().unwrap()).sum();
         assert_eq!(total, scores.len() as i64, "the maximum must not fall off the end");
+    }
+
+    /// The Enum Report tab takes the same column objects as the export's builder,
+    /// taxonomy columns included; it used to take bare names of the static columns
+    /// and load no taxonomy.
+    #[test]
+    fn enum_report_tab_runs_column_objects_with_a_taxonomy() {
+        let (gb, tax) = crate::cmd_tools::tests::enum_report_fixture("enum-tab");
+        let columns = vec![
+            json!({"type": "length"}),
+            json!({"type": "taxname", "ranks": ["genus", "species"]}),
+            json!({"type": "taxid_lineage"}),
+        ];
+        let rows = run_enum_report_blocking(
+            gb.to_string_lossy().into_owned(),
+            Some("contig".into()),
+            columns.clone(),
+            Some(tax.to_string_lossy().into_owned()),
+        )
+        .unwrap();
+        assert_eq!(
+            rows,
+            json!([{
+                "contig": "rec1", "length": 12, "taxname_genus": "Escherichia",
+                "taxname_species": "Escherichia coli", "taxid_lineage": "2; 561; 562"
+            }])
+        );
+
+        // No taxonomy chosen: refused with what to do, before the file is read.
+        let err = run_enum_report_blocking(gb.to_string_lossy().into_owned(), None, columns, None).unwrap_err();
+        assert!(err.contains("taxonomy database"), "{err}");
+
+        // No columns: the per-granularity default set.
+        let rows = run_enum_report_blocking(gb.to_string_lossy().into_owned(), Some("contig".into()), vec![], None).unwrap();
+        let keys: Vec<&String> = rows[0].as_object().unwrap().keys().collect();
+        assert_eq!(keys, ["contig", "length", "cds_count", "domains"]);
     }
 
     /// `enum_report`'s `OutputFormat::Json` writes NDJSON, so the grid must parse

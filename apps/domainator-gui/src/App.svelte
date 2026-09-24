@@ -23,6 +23,7 @@
   import ConfirmDialog from "./lib/ConfirmDialog.svelte";
   import ContextMenu from "./lib/ContextMenu.svelte";
   import StatusBar from "./lib/StatusBar.svelte";
+  import ToolsButton from "./lib/ToolsButton.svelte";
   import { ui } from "./lib/ui.svelte";
   import { installMenuListener } from "./lib/menu";
   import { setMenuState, getPrefs, checkForUpdates } from "./lib/api";
@@ -79,6 +80,13 @@
       // Without this the Tools menu just renders empty and the rejection only
       // reaches the console.
       .catch((e) => (ws.error = `Could not load the tool list: ${e}`));
+  });
+
+  // The shared database list: independent of any workspace, so it is loaded
+  // once at launch rather than on open (which only folds in a legacy list).
+  $effect(() => {
+    if (isStandalone) return;
+    void ws.initDatabases();
   });
 
   // Recent workspaces, and the one reopened at launch. The app used to start cold
@@ -444,12 +452,17 @@
   style="--left-width: {ui.sidebarVisible ? leftWidth : 0}px; --table-height: {ui.tableVisible ? tableHeight : 0}px;"
 >
   <header class="toolbar">
-    <span class="brand">Domainator</span>
-    <button onclick={chooseWorkspace} disabled={opening}>
-      {opening ? "Opening…" : "Open workspace…"}
-    </button>
-    <span class="root-path" title={ws.root ?? ""}>{ws.root ?? "No workspace open"}</span>
-    <button class="about" title="Version and diagnostics" onclick={() => (aboutOpen = true)}>About</button>
+    <div class="tb-left">
+      <span class="brand">Domainator</span>
+      <button onclick={chooseWorkspace} disabled={opening}>
+        {opening ? "Opening…" : "Open workspace…"}
+      </button>
+      <span class="root-path" title={ws.root ?? ""}>{ws.root ?? "No workspace open"}</span>
+    </div>
+    <ToolsButton {tools} />
+    <div class="tb-right">
+      <button class="about" title="Version and diagnostics" onclick={() => (aboutOpen = true)}>About</button>
+    </div>
   </header>
 
   {#if updateBanner}
@@ -636,14 +649,30 @@
       "status  status  status";
     height: 100%;
   }
+  /* Three columns with equal outer tracks, so the Tools button sits at the true
+     center of the bar however long the workspace path is (that ellipsizes). */
   .toolbar {
     grid-area: toolbar;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
     gap: 12px;
     padding: 0 12px;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
+  }
+  .tb-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .tb-left > :not(.root-path) {
+    flex: none;
+  }
+  .tb-right {
+    display: flex;
+    justify-content: flex-end;
   }
   .brand {
     font-weight: 700;
@@ -770,10 +799,14 @@
     color: #e5484d;
     opacity: 1;
   }
+  /* The panels under the folder tree size themselves (each has a drag grip);
+     the tree takes what is left, down to a floor, and past that the sidebar
+     scrolls as a whole rather than clipping a panel. */
   .left {
     grid-area: left;
     background: var(--bg-panel);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
   }
@@ -820,7 +853,7 @@
     flex: 1;
     overflow: auto;
     padding: 6px 0;
-    min-height: 0;
+    min-height: 80px;
   }
   .empty {
     color: var(--text-dim);

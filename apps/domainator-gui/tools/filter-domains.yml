@@ -1,0 +1,47 @@
+# GUI dialog for `domainator filter-domains`. Format: see README.md in this directory.
+id: filter-domains
+label: "Filter domains"
+category: "Annotation & search"
+description: "Remove domain annotations from records by e-value, overlap, name, or database (keeps the sequences)."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output (GenBank)"
+    role: output_file
+    required: true
+    output_name: "{stem}.filtered.gb"
+  - name: evalue
+    label: "Max E-value"
+    cli_default: 100000000.0
+  - name: max_overlap
+    label: "Max overlap"
+    cli_default: 1.0
+  - name: domains
+    label: "Keep domains"
+  - name: domains_file
+    label: "Keep domains file (.txt)"
+    role: input_file
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: databases_keep
+    label: "Keep databases"
+  - name: databases_filter
+    label: "Remove databases"
+  - name: annotation_type
+    label: "Annotation type"
+    cli_default: "all"
+  - name: contigs
+    label: "Restrict to contigs"
+  - name: contigs_file
+    label: "Contigs file (.txt)"
+    role: input_file
+    file_type: text
+    sources: workspace_first
+    select: none

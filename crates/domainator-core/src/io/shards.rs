@@ -11,7 +11,7 @@ const COMPRESSION_EXTS: [&str; 3] = ["gz", "bgz", "bgzf"];
 
 /// `(dir, stem, fmt_ext, comp_ext)` split of a database path. `fmt_ext` is the
 /// sequence-format extension; `comp_ext` is a trailing compression suffix or "".
-fn split_db_name(db_path: &Path) -> (PathBuf, String, String, String) {
+pub(crate) fn split_db_name(db_path: &Path) -> (PathBuf, String, String, String) {
     let directory = db_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
     let base = db_path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
     let mut parts: Vec<&str> = base.split('.').collect();

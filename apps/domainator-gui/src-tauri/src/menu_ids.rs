@@ -70,6 +70,10 @@ pub const COMMANDS: &[MenuCommandSpec] = &[
     cmd("file.save", "Save", Some("CmdOrCtrl+S"), Needs::Savable),
     cmd("file.close_tab", "Close Tab", Some("CmdOrCtrl+W"), Needs::Tab),
     cmd("file.reopen_tab", "Reopen Closed Tab", Some("CmdOrCtrl+Shift+T"), Needs::ClosedTab),
+    // Our own item rather than `PredefinedMenuItem::quit`: on Windows that one is
+    // a bare `PostQuitMessage`, which ends the event loop without any window
+    // seeing a close request -- so it skipped the unsaved-changes prompt.
+    cmd("file.quit", "Quit", Some("CmdOrCtrl+Q"), Needs::Nothing),
     // Edit (clipboard items are predefined and carry no id)
     cmd("edit.preferences", "Preferences…", Some("CmdOrCtrl+Comma"), Needs::Nothing),
     // View
@@ -81,8 +85,6 @@ pub const COMMANDS: &[MenuCommandSpec] = &[
     cmd("tools.reference_dbs", "Reference Databases…", None, Needs::Nothing),
     cmd("tools.external", "External Tools…", None, Needs::Nothing),
     cmd("tools.clear_jobs", "Clear Job History…", None, Needs::Workspace),
-    // Window
-    cmd("window.pop_out", "Pop Out Current Tab", Some("CmdOrCtrl+Shift+O"), Needs::Tab),
     // Help
     cmd("help.check_updates", "Check for Updates…", None, Needs::Nothing),
     cmd("help.about", "About Domainator", None, Needs::Nothing),
@@ -98,8 +100,12 @@ pub const SEPARATOR: &str = "-";
 
 /// Submenu title → its items, in order. `app_menu.rs` renders exactly this.
 ///
-/// Dynamic sections (Open Recent, the tool list, the window list) are appended by
-/// the builder and so do not appear here.
+/// Dynamic sections (Open Recent, the tool list) are inserted by the builder and
+/// so do not appear here.
+///
+/// There is deliberately no Window menu: minimize/maximize are on the title bar,
+/// popping a tab out is the ⧉ button on the tab itself, and muda's predefined
+/// Fullscreen item is a silent no-op on Windows and Linux.
 pub const LAYOUT: &[(&str, &[&str])] = &[
     (
         "File",
@@ -114,6 +120,8 @@ pub const LAYOUT: &[(&str, &[&str])] = &[
             SEPARATOR,
             "file.close_tab",
             "file.reopen_tab",
+            SEPARATOR,
+            "file.quit",
         ],
     ),
     ("Edit", &["edit.preferences"]),
@@ -122,9 +130,28 @@ pub const LAYOUT: &[(&str, &[&str])] = &[
         "Tools",
         &["tools.databases", "tools.reference_dbs", "tools.external", SEPARATOR, "tools.clear_jobs"],
     ),
-    ("Window", &["window.pop_out"]),
     ("Help", &["help.check_updates", SEPARATOR, "help.about", SEPARATOR, "help.project", "help.issues"]),
 ];
+
+/// Ids left out of the menu on macOS, where the app submenu already carries the
+/// platform's own Quit.
+pub const MACOS_HIDDEN: &[&str] = &["file.quit"];
+
+/// `items` without the ids in `hidden`, and without the separators that hiding
+/// them would leave dangling (leading, trailing or doubled).
+pub fn visible_items<'a>(items: &[&'a str], hidden: &[&str]) -> Vec<&'a str> {
+    let mut out: Vec<&'a str> = Vec::new();
+    for it in items.iter().copied().filter(|it| !hidden.contains(it)) {
+        if it == SEPARATOR && out.last().is_none_or(|l| *l == SEPARATOR) {
+            continue;
+        }
+        out.push(it);
+    }
+    if out.last() == Some(&SEPARATOR) {
+        out.pop();
+    }
+    out
+}
 
 /// What the menu sends to the frontend. `arg` is the part after the `:`.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -405,9 +432,7 @@ mod tests {
     /// one of the two commands silently never fires.
     ///
     /// The webview's own clipboard bindings are included because the predefined
-    /// Edit items use them, and `CmdOrCtrl+Shift+W` because that is what
-    /// `PredefinedMenuItem::close_window` is given explicitly (its default is
-    /// `CmdOrCtrl+W`, which would collide with Close Tab).
+    /// Edit items use them.
     #[test]
     fn menu_accelerators_are_unique() {
         const RESERVED: &[&str] = &[
@@ -415,9 +440,6 @@ mod tests {
             "CmdOrCtrl+V",
             "CmdOrCtrl+X",
             "CmdOrCtrl+A",
-            "CmdOrCtrl+Q",
-            "CmdOrCtrl+M",
-            "CmdOrCtrl+Shift+W",
             // The contig viewer's "copy the selected bases" shortcut
             // (`ContigView.svelte`). It moved here off a plain Cmd/Ctrl+C once
             // Edit -> Copy claimed that: a menu accelerator is dispatched before
@@ -425,7 +447,6 @@ mod tests {
             // dead rather than merely double-copying. Reserved so no menu command
             // can take it back.
             "CmdOrCtrl+Shift+C",
-            "F11",
         ];
         let norm = |a: &str| a.to_ascii_lowercase();
         let mut seen: HashSet<String> = RESERVED.iter().map(|a| norm(a)).collect();
@@ -503,6 +524,25 @@ mod tests {
                     "{title:?} has two separators in a row"
                 );
             }
+        }
+    }
+
+    /// Hiding an item on one platform must not leave a separator hanging where
+    /// it used to be -- the same symptom the test above guards on the full table.
+    #[test]
+    fn hiding_platform_items_leaves_no_dangling_separator() {
+        for (title, items) in LAYOUT {
+            let shown = visible_items(items, MACOS_HIDDEN);
+            assert!(!shown.is_empty(), "{title:?} is empty on macOS");
+            assert_ne!(shown.first(), Some(&SEPARATOR), "{title:?} starts with a separator on macOS");
+            assert_ne!(shown.last(), Some(&SEPARATOR), "{title:?} ends with a separator on macOS");
+            assert!(shown.windows(2).all(|w| !(w[0] == SEPARATOR && w[1] == SEPARATOR)));
+            assert!(shown.iter().all(|it| !MACOS_HIDDEN.contains(it)));
+        }
+        assert_eq!(visible_items(&["a", SEPARATOR, "b"], &["b"]), vec!["a"]);
+        assert_eq!(visible_items(&["a", SEPARATOR, "b", SEPARATOR, "c"], &["b"]), vec!["a", SEPARATOR, "c"]);
+        for id in MACOS_HIDDEN {
+            assert!(COMMANDS.iter().any(|c| c.id == *id), "MACOS_HIDDEN names unknown id {id:?}");
         }
     }
 

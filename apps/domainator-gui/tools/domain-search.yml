@@ -1,0 +1,117 @@
+# GUI dialog for `domainator domain-search`. Format: see README.md in this directory.
+id: domain-search
+label: "Domain search"
+category: "Annotation & search"
+description: "Search sequences with HMM/FASTA references and extract hit CDSs or their genomic neighborhoods (step 1)."
+fields:
+  - name: input
+    label: "Input database"
+    role: input_file
+    file_type: sequence
+    required: true
+    sources: databases_first
+    select: "first"
+  - name: references
+    label: "References (HMM/FASTA)"
+    role: input_files
+    file_type: reference
+    required: true
+    sources: workspace_first
+    select: active_file_or_none
+  - name: output
+    label: "Output (GenBank)"
+    role: output_file
+    required: true
+    output_name: "{stem}.search.gb"
+  - name: evalue
+    label: "E-value"
+    cli_default: 0.001
+  - name: max_hits
+    label: "Max hits"
+    gui_default: 10000000
+  - name: z
+    label: "Z (db size)"
+    cli_default: 1000.0
+  - name: add_annotations
+    label: "Add annotations"
+    cli_default: false
+  - name: max_mode
+    label: "Max mode"
+    cli_default: false
+  - name: whole_contig
+    label: "Whole contig"
+    cli_default: false
+  - name: cds_range
+    label: "CDS range (±)"
+  - name: cds_up
+    label: "CDS upstream"
+  - name: cds_down
+    label: "CDS downstream"
+  - name: kb_range
+    label: "kb range (±)"
+  - name: kb_up
+    label: "kb upstream"
+  - name: kb_down
+    label: "kb downstream"
+  - name: strand
+    label: "Strand (f/r)"
+  - name: keep_direction
+    label: "Keep direction"
+    cli_default: false
+  - name: translate
+    label: "Translate"
+    cli_default: false
+  - name: decoys
+    label: "Decoy refs"
+  - name: decoys_file
+    label: "Decoys file (.txt)"
+    role: input_file
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: include_taxids
+    label: "Include taxids"
+  - name: exclude_taxids
+    label: "Exclude taxids"
+  - name: taxonomy_expr
+    label: "Taxonomy expr"
+  - name: ncbi_taxonomy_path
+    label: "Taxonomy database"
+    role: input_file
+    file_type: taxonomy
+    sources: databases_first
+    select: "database:ncbi_taxonomy"
+  - name: min_evalue
+    show: false
+    label: "Min evalue"
+    cli_default: 0.0
+  - name: max_hits_per_contig
+    show: false
+    label: "Max hits per contig"
+  - name: max_overlap
+    show: false
+    label: "Max overlap"
+    cli_default: 1.0
+  - name: batch_size
+    show: false
+    label: "Batch size"
+    cli_default: 10000
+  - name: cpu
+    show: false
+    label: "Cpu"
+    cli_default: 0
+  - name: fasta_type
+    show: false
+    label: "Fasta type"
+  - name: pad
+    show: false
+    label: "Pad"
+    cli_default: false
+  - name: max_region_overlap
+    show: false
+    label: "Max region overlap"
+    cli_default: 1.0
+  - name: max_output_gb
+    show: false
+    label: "Max output gb"
+    cli_default: 25.0

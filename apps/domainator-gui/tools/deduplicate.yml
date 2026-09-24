@@ -1,0 +1,54 @@
+# GUI dialog for `domainator deduplicate`. Format: see README.md in this directory.
+id: deduplicate
+label: "Deduplicate"
+category: "Selection & extraction"
+description: "Collapse near-identical sequences to representatives (hash, or diamond/cd-hit/usearch backends)."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output"
+    role: output_file
+    required: true
+    output_name: "{stem}.dedup.gb"
+  - name: algorithm
+    label: "Algorithm"
+    cli_default: "cd-hit"
+  - name: id
+    label: "Identity threshold"
+    required: true
+  - name: fasta_out
+    label: "FASTA output"
+    cli_default: false
+  - name: fasta_type
+    label: "FASTA type"
+  - name: both_strands
+    label: "Both strands"
+    cli_default: false
+  - name: prefix_count
+    label: "Prefix count"
+    cli_default: false
+  - name: suffix_count
+    label: "Suffix count"
+    cli_default: false
+  - name: cluster_table
+    label: "Cluster table (out)"
+    role: output_file
+  - name: cluster_sep
+    label: "Cluster separator"
+  - name: bin_path
+    label: "Binary path"
+  - name: log
+    show: false
+    label: "Log"
+  - name: cpu
+    show: false
+    label: "Cpu"
+  - name: params
+    show: false
+    label: "Params"

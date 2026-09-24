@@ -17,7 +17,7 @@ use std::sync::Mutex;
 use domainator_config::resolve::{resolve_build_ssn, resolve_build_ssn_viewer, resolve_transform_matrix};
 use domainator_config::{
     schema, BuildSsnConfig, BuildSsnViewerConfig, CleanSequencesConfig, ColorGenbankConfig,
-    ColorTableToLegendConfig, CompareContigsConfig, DeduplicateConfig, DomainSearchConfig,
+    ColorTableToLegendConfig, CompareContigsConfig, DeduplicateConfig, DomainSearchConfig, EnumConfig,
     DomainateConfig, ExtractDomainsConfig, ExtractPeptidesConfig, ExtractUnannotatedConfig,
     FilterDomainsConfig, GenbankToFastaConfig, HmmerBuildConfig, HmmerCompareConfig,
     HmmerReportConfig, HmmerSearchConfig, HmmerSelectConfig, SelectByCdsConfig, SelectByCoordConfig,
@@ -34,7 +34,7 @@ use domainator_core::tools::build_ssn_viewer::{build_ssn_viewer_bundle, gzip, se
 use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
 use domainator_core::tools::domain_search::{domain_search, DomainSearchOptions};
 use domainator_core::tools::domainate::{self, domainate, DomainateOptions};
-use domainator_core::tools::enum_report::{enum_report, static_analysis, By, OutputFormat};
+use domainator_core::tools::enum_report::{enum_report, needs_taxonomy, OutputFormat};
 use domainator_core::tools::filter_domains::{filter_domains, AnnotationType, FilterDomainsOptions};
 use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::tools::hmmer_build::{hmmer_build, write_hmm_out, HmmerBuildOptions};
@@ -54,7 +54,6 @@ use domainator_core::tools::matrix_report::{
 use domainator_core::tools::neighborhood::{validate_range, Range};
 use domainator_core::tools::select_common::parse_name_list;
 use domainator_core::tools::seq_dist::{detect_kind, seq_dist, SeqDistOptions};
-use domainator_core::seq::taxonomy::NCBITaxonomy;
 use domainator_core::tools::transform_matrix::transform_matrix;
 use domainator_core::app_support::workspace::dot_dir;
 use serde::{Deserialize, Serialize};
@@ -101,25 +100,44 @@ fn ms_str(ms: u128) -> String {
     ms.to_string()
 }
 
-/// One form field.
+/// One form field, built from a `tools/<id>.yml` field (see [`crate::tool_specs`]).
 ///
 /// `role` tells `ToolDialog.svelte` how to render it, so it must be one of the
 /// six the dialog knows — a role it does not handle renders as nothing at all:
 ///
-/// * `input_file` / `input_files` — dropdown(s) of current-dir files of `file_type`
-/// * `output_file` — a filename; the app prepends the current directory
+/// * `input_file` / `input_files` — a dropdown of registered databases and
+///   current-dir files of any of `file_types`, grouped in `sources` order, starting on `select`
+/// * `output_file` — a filename (seeded from `output_name`); the app prepends the
+///   current directory
 /// * `param` — rendered from the tool's JSON schema by type
-/// * `hmm_columns` / `enum_columns` — the two report column builders, where the
-///   *order* of the chosen columns is the output column order
+/// * `columns` — a report's column builder: an ordered list of column objects,
+///   whose types and parameters come from the schema's `columns.items.oneOf`
+///   (adjusted by the spec's `column_types`); the order is the output column order
 ///
 /// `ROLES` below is the list, and a test checks every field against it.
 #[derive(Serialize)]
 pub struct ToolField {
     pub name: String,
     pub label: String,
+    /// The spec's `help`, which replaces the schema's `description` as the hint.
+    pub help: Option<String>,
     pub role: String,
-    pub file_type: Option<String>,
+    /// Inputs: the file types the dropdown offers (the spec's `file_type`). Empty
+    /// for every other role.
+    pub file_types: Vec<String>,
     pub required: bool,
+    /// The value the dialog seeds: the spec's `gui_default`, else its `cli_default`.
+    pub default: Option<Value>,
+    /// The CLI's default, so the dialog can say so when `default` differs.
+    pub cli_default: Option<Value>,
+    /// Inputs: `databases_first` | `workspace_first`.
+    pub sources: Option<String>,
+    /// Inputs: `active_file` | `active_file_or_none` | `first` | `none` | `database:<managed id>`.
+    pub select: Option<String>,
+    /// Outputs: the seeded file name, with `{stem}` for the primary input's stem.
+    pub output_name: Option<String>,
+    /// `columns`: the spec's per-type overrides for the column builder.
+    pub column_types: std::collections::BTreeMap<String, crate::tool_spec_types::ColumnTypeSpec>,
 }
 
 #[derive(Serialize)]
@@ -127,16 +145,14 @@ pub struct ToolMeta {
     pub id: String,
     pub label: String,
     pub description: String,
+    /// The fields the dialog shows, in order (a spec's `show: false` fields are left out).
     pub fields: Vec<ToolField>,
-    /// Which menu group this tool belongs to. Filled in by [`list_tools`] from
-    /// [`category_for`] rather than repeated in all 28 literals below.
-    #[serde(default)]
+    /// Which menu group this tool belongs to, one of [`TOOL_CATEGORIES`].
     pub category: String,
 }
 
 /// Every `role` [`ToolDialog.svelte`] can render. See [`ToolField`].
-pub const ROLES: [&str; 6] =
-    ["input_file", "input_files", "output_file", "param", "hmm_columns", "enum_columns"];
+pub const ROLES: [&str; 5] = ["input_file", "input_files", "output_file", "param", "columns"];
 
 /// The Tools menu's groups, in the order they appear. Mirrors the grouping in the
 /// repository's CLAUDE.md so the menu and the docs agree.
@@ -150,40 +166,6 @@ pub const TOOL_CATEGORIES: [&str; 7] = [
     "Conversion",
 ];
 
-/// The group a tool belongs to, or `None` if it has not been assigned one.
-///
-/// Deliberately not defaulting to an "Other" bucket: a tool with no category
-/// would quietly land in a junk submenu instead of failing the guard test, which
-/// is the same failure mode `ToolField::role` already protects against.
-pub fn category_for(id: &str) -> Option<&'static str> {
-    Some(match id {
-        "domainate" | "domain-search" | "filter-domains" => "Annotation & search",
-        "select-by-cds" | "select-by-contig" | "select-by-coord" | "extract-domains"
-        | "extract-peptides" | "extract-unannotated" | "trim-contigs" | "sort-contigs"
-        | "clean-sequences" | "deduplicate" => "Selection & extraction",
-        "seq-dist" | "compare-contigs" | "transform-matrix" | "build-ssn" | "build-ssn-viewer"
-        | "matrix-report" => "Matrices & networks",
-        "enum-report" | "summary-report" => "Reports",
-        "hmmer-compare" | "hmmer-report" | "hmmer-select" | "hmmer-build" | "hmmer-search" => {
-            "HMM profiles"
-        }
-        "color-genbank" | "color-table-to-legend" => "Color",
-        "genbank-to-fasta" | "convert" | "format-db" => "Conversion",
-        _ => return None,
-    })
-}
-
-fn f(name: &str, label: &str, role: &str, file_type: Option<&str>, required: bool) -> ToolField {
-    debug_assert!(ROLES.contains(&role), "field {name:?}: ToolDialog cannot render role {role:?}");
-    ToolField {
-        name: name.into(),
-        label: label.into(),
-        role: role.into(),
-        file_type: file_type.map(str::to_string),
-        required,
-    }
-}
-
 /// Tools currently runnable from the GUI, each with its form field spec.
 ///
 /// `async` so it runs on the async runtime, not Tauri's main thread — a
@@ -191,518 +173,52 @@ fn f(name: &str, label: &str, role: &str, file_type: Option<&str>, required: boo
 /// running, a big viewer painting), which would leave a tool dialog at "Loading…".
 #[tauri::command]
 pub async fn list_tools() -> Vec<ToolMeta> {
-    let mut tools = tool_registry();
-    for t in &mut tools {
-        // `category_for` returning None is a programming error the guard test
-        // catches; in a release build an unassigned tool still shows, grouped
-        // under its own id, rather than vanishing from the menu.
-        t.category = category_for(&t.id).unwrap_or("Other").to_string();
-    }
+    let mut tools: Vec<ToolMeta> = crate::tool_specs::specs().iter().map(tool_meta).collect();
+    // In menu order, so the toolbar's Tools button can group by first appearance
+    // and come out shaped like the native menu. Stable: file order within a
+    // category is kept. A category outside TOOL_CATEGORIES is a test failure; in a
+    // release build the tool still shows, last, rather than vanishing.
+    tools.sort_by_key(|t| {
+        TOOL_CATEGORIES.iter().position(|c| *c == t.category).unwrap_or(usize::MAX)
+    });
     tools
 }
 
-/// The tools the GUI offers, before categories are applied.
-fn tool_registry() -> Vec<ToolMeta> {
-    vec![
-        ToolMeta {
-            id: "domain-search".into(),
-            label: "Domain search".into(),
-            description: "Search sequences with HMM/FASTA references and extract hit CDSs or their genomic neighborhoods (step 1).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_file", Some("sequence"), true),
-                f("references", "References (HMM/FASTA)", "input_files", Some("reference"), true),
-                f("output", "Output (GenBank)", "output_file", None, true),
-                f("evalue", "E-value", "param", None, false),
-                f("z", "Z (db size)", "param", None, false),
-                f("add_annotations", "Add annotations", "param", None, false),
-                f("max_hits", "Max hits", "param", None, false),
-                f("max_mode", "Max mode", "param", None, false),
-                // Neighborhood extraction around each hit CDS:
-                f("whole_contig", "Whole contig", "param", None, false),
-                f("cds_range", "CDS range (±)", "param", None, false),
-                f("cds_up", "CDS upstream", "param", None, false),
-                f("cds_down", "CDS downstream", "param", None, false),
-                f("kb_range", "kb range (±)", "param", None, false),
-                f("kb_up", "kb upstream", "param", None, false),
-                f("kb_down", "kb downstream", "param", None, false),
-                f("strand", "Strand (f/r)", "param", None, false),
-                f("keep_direction", "Keep direction", "param", None, false),
-                f("translate", "Translate", "param", None, false),
-                // Decoy references + taxonomy filters:
-                f("decoys", "Decoy refs", "param", None, false),
-                f("decoys_file", "Decoys file (.txt)", "input_file", Some("text"), false),
-                f("include_taxids", "Include taxids", "param", None, false),
-                f("exclude_taxids", "Exclude taxids", "param", None, false),
-                f("taxonomy_expr", "Taxonomy expr", "param", None, false),
-                f("ncbi_taxonomy_path", "Taxdump dir", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "domainate".into(),
-            label: "Domainate".into(),
-            description: "Annotate sequences with domains from HMM/FASTA references (step 2).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_file", Some("sequence"), true),
-                f("references", "References (HMM/FASTA)", "input_files", Some("reference"), true),
-                f("output", "Output (GenBank)", "output_file", None, true),
-                f("evalue", "E-value", "param", None, false),
-                f("z", "Z (db size)", "param", None, false),
-                f("max_domains", "Max domains", "param", None, false),
-                f("max_overlap", "Max overlap", "param", None, false),
-                f("max_mode", "Max mode", "param", None, false),
-                f("hits_only", "Hits only", "param", None, false),
-                f("include_taxids", "Include taxids", "param", None, false),
-                f("exclude_taxids", "Exclude taxids", "param", None, false),
-                f("taxonomy_expr", "Taxonomy expr", "param", None, false),
-                f("ncbi_taxonomy_path", "Taxdump dir", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "seq-dist".into(),
-            label: "Sequence distance".into(),
-            description: "All-vs-all sequence similarity matrix (step 3; default 'hmmer' is pure-Rust — diamond algorithms need the diamond binary).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_file", Some("sequence"), true),
-                f("reference", "Reference (optional)", "input_file", Some("sequence"), false),
-                f("sparse", "Output (matrix)", "output_file", None, true),
-                f("algorithm", "Algorithm", "param", None, false),
-                f("mode", "Mode", "param", None, false),
-                f("lb", "Lower bound", "param", None, false),
-                f("mst_knn", "MST-kNN k", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "compare-contigs".into(),
-            label: "Compare contigs".into(),
-            description: "Neighborhood-similarity matrix from domain content (step 3 alternative; pure-Rust).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input GenBank", "input_files", Some("genbank"), true),
-                f("sparse", "Output (matrix)", "output_file", None, true),
-                f("ji", "Jaccard weight", "param", None, false),
-                f("ai", "Adjacency weight", "param", None, false),
-                f("k", "kNN k", "param", None, false),
-                f("lb", "Lower bound", "param", None, false),
-                f("mst_knn", "MST-kNN k", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "select-by-cds".into(),
-            label: "Select by CDS".into(),
-            description: "Extract CDSs (and optionally their genomic neighborhoods) by name, domain content, or search hit.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output (GenBank)", "output_file", None, true),
-                // Which CDSs to select:
-                f("cds", "CDS names", "param", None, false),
-                f("cds_file", "CDS names file (.txt)", "input_file", Some("text"), false),
-                f("domains", "Domain names", "param", None, false),
-                f("domains_file", "Domain names file (.txt)", "input_file", Some("text"), false),
-                f("domain_expr", "Domain expr", "param", None, false),
-                f("databases", "Databases", "param", None, false),
-                f("search_hits", "Search hits", "param", None, false),
-                f("unannotated", "Unannotated", "param", None, false),
-                f("invert", "Invert", "param", None, false),
-                f("evalue", "E-value", "param", None, false),
-                f("contigs", "Restrict to contigs", "param", None, false),
-                f("contigs_file", "Contigs file (.txt)", "input_file", Some("text"), false),
-                // Neighborhood extraction around each selected CDS:
-                f("whole_contig", "Whole contig", "param", None, false),
-                f("cds_range", "CDS range (±)", "param", None, false),
-                f("cds_up", "CDS upstream", "param", None, false),
-                f("cds_down", "CDS downstream", "param", None, false),
-                f("kb_range", "kb range (±)", "param", None, false),
-                f("kb_up", "kb upstream", "param", None, false),
-                f("kb_down", "kb downstream", "param", None, false),
-                f("strand", "Strand (f/r)", "param", None, false),
-                f("keep_direction", "Keep direction", "param", None, false),
-                f("pad", "Pad to equal length", "param", None, false),
-                f("skip_deduplicate", "Skip dedup", "param", None, false),
-                f("max_region_overlap", "Max region overlap", "param", None, false),
-                f("include_nucleic_acids", "Include nucleic acids", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "select-by-contig".into(),
-            label: "Select by contig".into(),
-            description: "Select whole contigs by name/regex, domain content, taxonomy, length, or CDS count.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output", "output_file", None, true),
-                f("fasta_out", "FASTA output", "param", None, false),
-                // Name / regex selection:
-                f("contigs", "Contig names", "param", None, false),
-                f("contigs_file", "Contigs file (.txt)", "input_file", Some("text"), false),
-                f("contigs_regex", "Contigs regex", "param", None, false),
-                f("definition_regex", "Definition regex", "param", None, false),
-                f("sequence_regex", "Sequence regex", "param", None, false),
-                // Domain-content selection:
-                f("domains", "Domain names", "param", None, false),
-                f("domains_file", "Domain names file (.txt)", "input_file", Some("text"), false),
-                f("domain_expr", "Domain expr", "param", None, false),
-                f("domain_type", "Domain type", "param", None, false),
-                f("databases", "Databases", "param", None, false),
-                f("unannotated", "Unannotated", "param", None, false),
-                f("evalue", "E-value", "param", None, false),
-                // Numeric filters:
-                f("first", "First N", "param", None, false),
-                f("length_lb", "Length ≥", "param", None, false),
-                f("length_ub", "Length ≤", "param", None, false),
-                f("cds_count_lb", "CDS count ≥", "param", None, false),
-                f("cds_count_ub", "CDS count ≤", "param", None, false),
-                f("search_score_lb", "Search score ≥", "param", None, false),
-                f("search_score_ub", "Search score ≤", "param", None, false),
-                f("invert", "Invert", "param", None, false),
-                // Taxonomy filters:
-                f("include_taxids", "Include taxids", "param", None, false),
-                f("exclude_taxids", "Exclude taxids", "param", None, false),
-                f("taxonomy_expr", "Taxonomy expr", "param", None, false),
-                f("ncbi_taxonomy_path", "Taxdump dir", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "filter-domains".into(),
-            label: "Filter domains".into(),
-            description: "Remove domain annotations from records by e-value, overlap, name, or database (keeps the sequences).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output (GenBank)", "output_file", None, true),
-                f("evalue", "Max E-value", "param", None, false),
-                f("max_overlap", "Max overlap", "param", None, false),
-                f("domains", "Keep domains", "param", None, false),
-                f("domains_file", "Keep domains file (.txt)", "input_file", Some("text"), false),
-                f("databases_keep", "Keep databases", "param", None, false),
-                f("databases_filter", "Remove databases", "param", None, false),
-                f("annotation_type", "Annotation type", "param", None, false),
-                f("contigs", "Restrict to contigs", "param", None, false),
-                f("contigs_file", "Contigs file (.txt)", "input_file", Some("text"), false),
-            ],
-        },
-        ToolMeta {
-            id: "hmmer-select".into(),
-            label: "HMM select".into(),
-            description: "Extract a subset of profiles from HMM file(s) by name/description/accession (regex, exact, or substring match).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input HMM(s)", "input_files", Some("hmm"), true),
-                f("output", "Output (HMM)", "output_file", None, true),
-                f("regex", "Regex match", "param", None, false),
-                f("exact", "Exact match", "param", None, false),
-                f("contains", "Substring match", "param", None, false),
-                f("field", "Match field", "param", None, false),
-                f("case_sensitive", "Case sensitive", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "hmmer-build".into(),
-            label: "HMM build".into(),
-            description: "Build an HMM profile from a Stockholm multiple-sequence alignment.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input MSA (Stockholm)", "input_file", Some("stockholm"), true),
-                f("output", "Output (HMM)", "output_file", None, true),
-                f("name", "Profile name", "param", None, true),
-                f("acc", "Accession", "param", None, false),
-                f("desc", "Description", "param", None, false),
-                f("alphabet", "Alphabet", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "genbank-to-fasta".into(),
-            label: "GenBank → FASTA".into(),
-            description: "Convert sequence records to FASTA.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output (FASTA)", "output_file", None, true),
-            ],
-        },
-        ToolMeta {
-            id: "clean-sequences".into(),
-            label: "Clean sequences".into(),
-            description: "Normalize sequences: clean/deduplicate names, strip gaps, filter non-canonical residues.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output", "output_file", None, true),
-                f("fasta_out", "FASTA output", "param", None, false),
-                f("fasta_type", "FASTA type", "param", None, false),
-                f("clean_name", "Clean names", "param", None, false),
-                f("deduplicate_names", "Deduplicate names", "param", None, false),
-                f("strip", "Strip gaps", "param", None, false),
-                f("filter_by_aa", "Filter non-canonical", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "sort-contigs".into(),
-            label: "Sort contigs".into(),
-            description: "Sort contigs by best search/domain score; optionally keep only the top N.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output (GenBank)", "output_file", None, true),
-                f("max_hits", "Keep top N", "param", None, false),
-                f("domains", "Sort by domains", "param", None, false),
-                f("databases", "Databases", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "select-by-coord".into(),
-            label: "Select by coordinate".into(),
-            description: "Extract sub-regions listed in a coordinate table (contig, start, end).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("coords", "Coordinate table", "input_file", Some("table"), true),
-                f("output", "Output (GenBank)", "output_file", None, true),
-            ],
-        },
-        ToolMeta {
-            id: "trim-contigs".into(),
-            label: "Trim contigs".into(),
-            description: "Trim the ends of contigs by kb, CDS count, or up to a domain boundary.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output (GenBank)", "output_file", None, true),
-                f("kb_both", "kb both ends", "param", None, false),
-                f("kb_left", "kb left", "param", None, false),
-                f("kb_right", "kb right", "param", None, false),
-                f("cds_both", "CDS both ends", "param", None, false),
-                f("cds_left", "CDS left", "param", None, false),
-                f("cds_right", "CDS right", "param", None, false),
-                f("domains", "Trim to domains", "param", None, false),
-                f("domain_expr", "Domain expr", "param", None, false),
-                f("no_domain", "Drop domain-less", "param", None, false),
-                f("contigs", "Restrict to contigs", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "extract-domains".into(),
-            label: "Extract domains".into(),
-            description: "Extract annotated domain regions as their own records (GenBank or FASTA).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output", "output_file", None, true),
-                f("fasta_out", "FASTA output", "param", None, false),
-                f("domains", "Domain names", "param", None, false),
-                f("databases", "Databases", "param", None, false),
-                f("search_hits", "Search hits", "param", None, false),
-                f("evalue", "Max E-value", "param", None, false),
-                f("score", "Min score", "param", None, false),
-                f("pad_up", "Pad upstream", "param", None, false),
-                f("pad_down", "Pad downstream", "param", None, false),
-                f("combine", "Combine adjacent", "param", None, false),
-                f("splice", "Splice", "param", None, false),
-                f("keep_direction", "Keep direction", "param", None, false),
-                f("keep_name", "Keep name", "param", None, false),
-                f("contigs", "Restrict to contigs", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "extract-peptides".into(),
-            label: "Extract peptides".into(),
-            description: "Extract CDS translations (peptides) by domain/CDS name, search hit, or all.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output", "output_file", None, true),
-                f("fasta_out", "FASTA output", "param", None, false),
-                f("domains", "Domain names", "param", None, false),
-                f("cdss", "CDS names", "param", None, false),
-                f("databases", "Databases", "param", None, false),
-                f("unannotated", "Unannotated", "param", None, false),
-                f("search_hits", "Search hits", "param", None, false),
-                f("strand", "Strand (f/r)", "param", None, false),
-                f("invert", "Invert", "param", None, false),
-                f("keep_name", "Keep name", "param", None, false),
-                f("name_field", "Name field", "param", None, false),
-                f("evalue", "Max E-value", "param", None, false),
-                f("contigs", "Restrict to contigs", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "extract-unannotated".into(),
-            label: "Extract unannotated".into(),
-            description: "Extract the regions of each CDS/contig with no domain annotation.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output", "output_file", None, true),
-                f("fasta_out", "FASTA output", "param", None, false),
-                f("databases", "Databases", "param", None, false),
-                f("search_hits", "Search hits", "param", None, false),
-                f("largest", "Largest only", "param", None, false),
-                f("lb", "Min length", "param", None, false),
-                f("keep_direction", "Keep direction", "param", None, false),
-                f("keep_name", "Keep name", "param", None, false),
-                f("evalue", "Max E-value", "param", None, false),
-                f("score", "Min score", "param", None, false),
-                f("contigs", "Restrict to contigs", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "color-genbank".into(),
-            label: "Color GenBank".into(),
-            description: "Batch-assign feature colors by name/database (color table or auto palette).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output (GenBank)", "output_file", None, true),
-                f("mode", "Color targets", "param", None, false),
-                f("domain_database", "Color by database", "param", None, false),
-                f("color_table", "Color table (in)", "input_file", Some("table"), false),
-                f("color_table_out", "Color table (out)", "output_file", None, false),
-                f("search_hit_color", "Search-hit color", "param", None, false),
-                f("clear", "Clear existing", "param", None, false),
-                f("databases", "Databases", "param", None, false),
-                f("contigs", "Restrict to contigs", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "color-table-to-legend".into(),
-            label: "Color table → legend".into(),
-            description: "Render a color table as an SVG legend.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Color table(s)", "input_files", Some("table"), true),
-                f("svg", "Output (SVG)", "output_file", None, true),
-                f("title", "Title", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "deduplicate".into(),
-            label: "Deduplicate".into(),
-            description: "Collapse near-identical sequences to representatives (hash, or diamond/cd-hit/usearch backends).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_files", Some("sequence"), true),
-                f("output", "Output", "output_file", None, true),
-                f("algorithm", "Algorithm", "param", None, false),
-                f("id", "Identity threshold", "param", None, true),
-                f("fasta_out", "FASTA output", "param", None, false),
-                f("fasta_type", "FASTA type", "param", None, false),
-                f("both_strands", "Both strands", "param", None, false),
-                f("prefix_count", "Prefix count", "param", None, false),
-                f("suffix_count", "Suffix count", "param", None, false),
-                f("cluster_table", "Cluster table (out)", "output_file", None, false),
-                f("cluster_sep", "Cluster separator", "param", None, false),
-                f("bin_path", "Binary path", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "hmmer-compare".into(),
-            label: "HMM compare".into(),
-            description: "Profile-vs-profile Viterbi comparison; writes a scores/alignments table.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Query HMM(s)", "input_files", Some("hmm"), true),
-                f("reference", "Reference HMM(s)", "input_files", Some("hmm"), true),
-                f("output", "Output (table)", "output_file", None, true),
-                f("score_cutoff", "Score cutoff", "param", None, false),
-                f("k", "Top-k per query", "param", None, false),
-                f("alignments", "Include alignments", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "hmmer-search".into(),
-            label: "HMM search".into(),
-            description: "Keep query profiles that score against a reference HMM set (writes an HMM file).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Query HMM(s)", "input_files", Some("hmm"), true),
-                f("reference", "Reference HMM(s)", "input_files", Some("hmm"), true),
-                f("output", "Output (HMM)", "output_file", None, true),
-                f("score_cutoff", "Score cutoff", "param", None, false),
-                f("max_hits", "Max hits", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "hmmer-report".into(),
-            label: "HMM report (export)".into(),
-            description: "Export a per-profile TSV/JSON report from HMM file(s) with a custom column set.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input HMM(s)", "input_files", Some("hmm"), true),
-                f("output", "Output", "output_file", None, true),
-                f("columns", "Columns", "hmm_columns", None, false),
-                f("json", "JSON output", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "enum-report".into(),
-            label: "Enum report (export)".into(),
-            description: "Export a per-contig/cds/domain TSV report from a sequence file with a chosen column set.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input sequences", "input_file", Some("sequence"), true),
-                f("output", "Output (TSV)", "output_file", None, true),
-                f("by", "By", "param", None, false),
-                f("columns", "Columns", "enum_columns", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "matrix-report".into(),
-            label: "Matrix report (export)".into(),
-            description: "Export a text summary + suggested cutoffs from a similarity matrix.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input matrix", "input_file", Some("hdf5"), true),
-                f("output", "Output (text)", "output_file", None, true),
-            ],
-        },
-        ToolMeta {
-            id: "transform-matrix".into(),
-            label: "Transform matrix".into(),
-            description: "Rescale or prune a similarity matrix (mode, lower bound, MST-kNN).".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input matrix", "input_file", Some("hdf5"), true),
-                f("sparse", "Output (matrix)", "output_file", None, true),
-                f("mode", "Mode", "param", None, false),
-                f("lb", "Lower bound", "param", None, false),
-                f("mst_knn", "MST-kNN k", "param", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "build-ssn".into(),
-            label: "Build SSN (XGMML)".into(),
-            description: "Build a Cytoscape XGMML network from a similarity matrix.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input matrix", "input_file", Some("hdf5"), true),
-                f("xgmml", "Output (XGMML)", "output_file", None, true),
-                f("metadata", "Metadata (TSV)", "input_files", Some("table"), false),
-                f("cluster", "Cluster", "param", None, false),
-                f("cluster_tsv", "Cluster TSV", "output_file", None, false),
-                f("lb", "Lower bound", "param", None, false),
-                f("mst", "MST only", "param", None, false),
-                f("mst_knn", "MST-kNN k", "param", None, false),
-                f("color_by", "Color by", "param", None, false),
-                f("color_table", "Color table (in)", "input_file", Some("table"), false),
-                f("color_table_out", "Color table (out)", "output_file", None, false),
-            ],
-        },
-        ToolMeta {
-            id: "build-ssn-viewer".into(),
-            label: "Build SSN viewer".into(),
-            description: "Build a .dsnv bundle for the interactive network viewer.".into(),
-            category: String::new(),
-            fields: vec![
-                f("input", "Input matrix", "input_file", Some("hdf5"), true),
-                f("output", "Output (.dsnv)", "output_file", None, true),
-                f("metadata", "Metadata (TSV)", "input_files", Some("table"), false),
-                f("merge_impact_metric", "Merge metric", "param", None, false),
-            ],
-        },
-    ]
+fn tool_meta(spec: &crate::tool_specs::ToolSpec) -> ToolMeta {
+    ToolMeta {
+        id: spec.id.clone(),
+        label: spec.label.clone(),
+        description: spec.description.clone(),
+        category: spec.category.clone(),
+        fields: spec
+            .fields
+            .iter()
+            .filter(|f| f.show)
+            .map(|f| {
+                debug_assert!(
+                    ROLES.contains(&f.role.as_str()),
+                    "{}.{}: ToolDialog cannot render role {:?}",
+                    spec.id,
+                    f.name,
+                    f.role
+                );
+                ToolField {
+                    name: f.name.clone(),
+                    label: f.label.clone(),
+                    help: f.help.clone(),
+                    role: f.role.clone(),
+                    file_types: f.file_type.clone(),
+                    required: f.required,
+                    default: f.effective_default().cloned(),
+                    cli_default: f.cli_default.clone(),
+                    sources: f.sources.map(|s| s.as_str().to_string()),
+                    select: f.select.as_ref().map(|s| s.to_string()),
+                    output_name: f.output_name.clone(),
+                    column_types: f.column_types.clone(),
+                }
+            })
+            .collect(),
+    }
 }
 
 /// The draft-07 JSON Schema for a tool's parameters (drives the form).
@@ -781,11 +297,15 @@ pub async fn run_tool(
     let root_c = workspace_root.clone();
     let params_c = params.clone();
     let flag_c = flag.clone();
+    // A panicking tool surfaces here as a `JoinError`. It must still reach a
+    // terminal state below: returning early (as this used to, via `?`) left the
+    // row at `running` -- or `canceling`, if the user had pressed Cancel --
+    // for the rest of the session, and persisted that way.
     let outcome = tauri::async_runtime::spawn_blocking(move || {
         run_one(&tool_c, params_c, &root_c, started, &jid, &flag_c)
     })
     .await
-    .map_err(|e| format!("job failed to run: {e}"))?;
+    .unwrap_or_else(|e| Err(format!("the tool crashed: {e}")));
 
     let canceled = flag.load(Ordering::Relaxed);
     reg_lock(&registry.canceled).remove(&job_id);
@@ -892,13 +412,17 @@ pub fn load_jobs(registry: tauri::State<'_, JobRegistry>, workspace_root: String
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
         .unwrap_or_default();
+    // Jobs this process is still running (reopening the workspace mid-run, say):
+    // their in-memory row is the truth, and the file may be behind it. Everything
+    // else non-terminal in the file belongs to a process that is gone.
+    let live: HashSet<String> = reg_lock(&registry.canceled).keys().cloned().collect();
     let list = {
         let mut map = reg_lock(&registry.jobs);
-        map.clear();
+        let previous = std::mem::take(&mut *map);
         for mut j in loaded {
-            if j.status == "running" {
-                j.status = "failed".into();
-                j.message = "interrupted (app closed)".into();
+            match previous.get(&j.job_id) {
+                Some(current) if live.contains(&j.job_id) => j = current.clone(),
+                _ => settle_orphaned_job(&mut j),
             }
             map.insert(j.job_id.clone(), j);
         }
@@ -906,6 +430,27 @@ pub fn load_jobs(registry: tauri::State<'_, JobRegistry>, workspace_root: String
     };
     persist_jobs(&registry); // save the corrected (no-longer-running) statuses
     list
+}
+
+/// Give a job that no live process owns a terminal status.
+///
+/// Both non-terminal states need it. `canceling` used to be missed: it reaches
+/// `jobs.json` whenever anything persists while a canceled tool is still running,
+/// and a job that never finished stayed "canceling…" across every relaunch.
+fn settle_orphaned_job(j: &mut JobInfo) {
+    match j.status.as_str() {
+        "running" => {
+            j.status = "failed".into();
+            j.message = "interrupted (app closed)".into();
+        }
+        "canceling" => {
+            j.status = "canceled".into();
+            j.message = "canceled (the app closed before the tool stopped; any \
+                         output it had written was kept)"
+                .into();
+        }
+        _ => {}
+    }
 }
 
 /// Delete one job from the history.
@@ -928,7 +473,9 @@ pub fn clear_jobs(registry: tauri::State<'_, JobRegistry>) {
 /// boundaries) and flips the visible status to `canceling` right away, so the
 /// click has feedback: the core tools can't be interrupted mid-run, and without
 /// this the row sat at "running" until the tool finished on its own.
-#[tauri::command]
+///
+/// `(async)`: it now persists the history (see [`load_jobs`]).
+#[tauri::command(async)]
 pub fn cancel_job(app: AppHandle, registry: tauri::State<'_, JobRegistry>, job_id: String) {
     if let Some(flag) = reg_lock(&registry.canceled).get(&job_id) {
         flag.store(true, Ordering::Relaxed);
@@ -945,6 +492,7 @@ pub fn cancel_job(app: AppHandle, registry: tauri::State<'_, JobRegistry>, job_i
     };
     if let Some(info) = pending {
         let _ = app.emit("job-update", &info);
+        persist_jobs(&registry);
     }
 }
 
@@ -1052,7 +600,7 @@ fn compile_allowed_taxids(
     let path = path
         .filter(|p| !p.trim().is_empty())
         .ok_or("taxonomy filters require ncbi_taxonomy_path (a taxdump directory)")?;
-    let tax = NCBITaxonomy::load(Path::new(path)).map_err(|e| format!("loading taxonomy: {e}"))?;
+    let tax = crate::taxonomy_cache::load(path)?;
     let allowed = if has_expr {
         tax.compile_taxonomy_expression(expr.unwrap())
     } else {
@@ -1195,7 +743,8 @@ fn run_seq_dist(params: Value) -> Result<RunOutput, String> {
         None => None,
     };
     let opts = SeqDistOptions {
-        algorithm: cfg.algorithm.clone().unwrap_or_else(|| "hmmer".into()),
+        // The CLI default; the dialog seeds the GUI's own (`tools/seq-dist.yml`).
+        algorithm: cfg.algorithm.clone().unwrap_or_else(|| "diamond_us".into()),
         mode: cfg.mode.clone().unwrap_or_else(|| "score".into()),
         lb: cfg.lb.unwrap_or(0.0),
         k: cfg.k,
@@ -1348,7 +897,7 @@ fn run_select_by_contig(params: Value) -> Result<RunOutput, String> {
             .as_deref()
             .filter(|p| !p.trim().is_empty())
             .ok_or("taxonomy filters require ncbi_taxonomy_path (a taxdump directory)")?;
-        Some(NCBITaxonomy::load(Path::new(path)).map_err(|e| format!("loading taxonomy: {e}"))?)
+        Some(crate::taxonomy_cache::load(path)?)
     } else {
         None
     };
@@ -1375,7 +924,7 @@ fn run_select_by_contig(params: Value) -> Result<RunOutput, String> {
         search_score_ub: cfg.search_score_ub,
         domain_type: cfg.domain_type.unwrap_or_else(|| "domain".into()),
     };
-    let selected = select_by_contig(records, tax.as_ref(), &opts).map_err(|e| e.to_string())?;
+    let selected = select_by_contig(records, tax.as_deref(), &opts).map_err(|e| e.to_string())?;
     let role = if cfg.fasta_out { "fasta" } else { "genbank" };
     if cfg.fasta_out {
         write_fasta(&output, &selected).map_err(|e| format!("writing FASTA: {e}"))?;
@@ -1868,8 +1417,13 @@ fn run_hmmer_search(params: Value) -> Result<RunOutput, String> {
         return Err("select query and reference HMM file(s)".into());
     }
     let output = cfg.output.clone().ok_or("missing output (.hmm)")?;
+    // As the CLI does: a blank cutoff means the default for the reference alphabet.
+    let score_cutoff = match cfg.score_cutoff {
+        Some(v) => v,
+        None => hmmer_search_m::default_score_cutoff_for(&cfg.reference)?.0,
+    };
     let opts = hmmer_search_m::HmmerSearchOptions {
-        score_cutoff: cfg.score_cutoff.unwrap_or(10.0),
+        score_cutoff,
         max_hits: cfg.max_hits,
         cpu: cfg.cpu.unwrap_or(0),
         max_output_gb: cfg.max_output_gb,
@@ -1917,39 +1471,68 @@ fn basename(path: &str) -> String {
 }
 
 fn run_export_enum_report(params: Value) -> Result<RunOutput, String> {
-    let input = str_param(&params, "input")?.to_string();
-    let output = str_param(&params, "output")?.to_string();
-    let (by, default_names): (By, &[&str]) = match params.get("by").and_then(|v| v.as_str()) {
-        Some("contig") => (By::Contig, &["length", "cds_count", "domains"]),
-        Some("domain") => (By::Domain, &["start", "end", "strand", "score", "identity"]),
-        _ => (By::Cds, &["domains", "architecture", "length"]),
-    };
-    // Honor an explicit `columns` selection from the form; else the per-`by` default.
-    let chosen: Vec<String> = params
-        .get("columns")
-        .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
-        .unwrap_or_default();
-    let names: Vec<String> = if chosen.is_empty() {
-        default_names.iter().map(|s| s.to_string()).collect()
-    } else {
-        chosen
-    };
-    let analyses: Vec<_> = names.iter().filter_map(|n| static_analysis(n)).collect();
-    if analyses.is_empty() {
-        return Err("no valid columns selected".into());
+    // Resolved exactly as the CLI's arm does: the columns are `ColumnSpec`s, the
+    // taxonomy is loaded only when a column needs it.
+    let cfg: EnumConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
+    if cfg.input.is_empty() {
+        return Err("select an input sequence file".into());
     }
-    let records = load_sequence(&input, "protein")?;
-    let fname = basename(&input);
-    let recs: Vec<_> = records.into_iter().map(|r| (r, fname.clone())).collect();
-    let mut buf: Vec<u8> = Vec::new();
-    enum_report(recs, by, &analyses, None, None, None, OutputFormat::Tsv, &mut buf)?;
-    std::fs::write(&output, &buf).map_err(|e| format!("writing report: {e}"))?;
-    Ok((
-        vec![IoRef { path: input, role: "sequence".into() }],
-        vec![IoRef { path: output, role: "report".into() }],
-        format!("wrote enum report ({} bytes)", buf.len()),
-    ))
+    let output = cfg.output.clone().ok_or("missing output (TSV)")?;
+    if cfg.columns.is_empty() {
+        return Err("add at least one column".into());
+    }
+    let by = cfg.by_enum().map_err(|e| e.to_string())?;
+    let analyses = cfg
+        .columns
+        .iter()
+        .map(|c| c.to_analysis().map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, String>>()?;
+    let tax = if needs_taxonomy(&analyses) {
+        let path = cfg.ncbi_taxonomy_path.as_deref().ok_or(
+            "the taxonomy columns need a taxonomy database: install NCBI Taxonomy from Reference Databases, or choose one",
+        )?;
+        Some(crate::taxonomy_cache::load(path)?)
+    } else {
+        None
+    };
+    let targets = parse_name_list(&cfg.contigs, cfg.contigs_file.as_deref())
+        .map_err(|e| format!("reading contigs: {e}"))?;
+    let mut records = Vec::new();
+    for path in &cfg.input {
+        // The file name, not the full path, is what the `filename` column shows.
+        let fname = basename(path);
+        records.extend(load_sequence(path, "protein")?.into_iter().map(|r| (r, fname.clone())));
+    }
+    if let Some(set) = &targets {
+        records.retain(|(r, _)| set.contains(&r.name));
+    }
+    let databases: Option<HashSet<String>> = set_of(&cfg.databases);
+    // TSV to `output`, and NDJSON to `json` as well when it is set, as the CLI does.
+    let mut outputs = vec![IoRef { path: output.clone(), role: "report".into() }];
+    let mut targets_out = vec![(output, OutputFormat::Tsv)];
+    if let Some(json) = cfg.json.clone() {
+        outputs.push(IoRef { path: json.clone(), role: "report".into() });
+        targets_out.push((json, OutputFormat::Json));
+    }
+    let n_records = records.len();
+    for (path, format) in targets_out {
+        let mut f = std::io::BufWriter::new(
+            std::fs::File::create(&path).map_err(|e| format!("creating {path}: {e}"))?,
+        );
+        enum_report(
+            records.clone(),
+            by,
+            &analyses,
+            cfg.column_names.as_deref(),
+            tax.as_deref(),
+            databases.as_ref(),
+            format,
+            &mut f,
+        )?;
+        std::io::Write::flush(&mut f).map_err(|e| format!("writing {path}: {e}"))?;
+    }
+    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
+    Ok((inputs, outputs, format!("reported {n_records} records × {} column groups", analyses.len())))
 }
 
 fn run_export_matrix_report(params: Value) -> Result<RunOutput, String> {
@@ -2080,7 +1663,7 @@ fn run_build_ssn_viewer(params: Value) -> Result<RunOutput, String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn tools() -> Vec<ToolMeta> {
@@ -2167,26 +1750,20 @@ mod tests {
         }
     }
 
-    /// Every tool must land in a known group. An unassigned one falls into an
-    /// "Other" bucket at runtime rather than disappearing, but that is a bug --
-    /// the same class as `ToolField::role` naming a role `ToolDialog` cannot
-    /// render, and guarded the same way.
+    /// Every tool must land in a known group. One outside `TOOL_CATEGORIES` is
+    /// sorted last and grouped under its own name in the native menu rather than
+    /// disappearing, but that is a bug -- the same class as `ToolField::role`
+    /// naming a role `ToolDialog` cannot render, and guarded the same way.
     #[test]
     fn every_tool_has_a_known_category() {
         for tool in tools() {
-            let cat = category_for(&tool.id).unwrap_or_else(|| {
-                panic!(
-                    "{} is offered in the Tools menu but `category_for` has no arm for it, \
-                     so it would be grouped under \"Other\"",
-                    tool.id
-                )
-            });
             assert!(
-                TOOL_CATEGORIES.contains(&cat),
-                "{} has category {cat:?}, which is not in TOOL_CATEGORIES",
+                TOOL_CATEGORIES.contains(&tool.category.as_str()),
+                "{} has category {:?} (tools/{}.yml), which is not in TOOL_CATEGORIES",
+                tool.id,
+                tool.category,
                 tool.id
             );
-            assert_eq!(tool.category, cat, "{}: list_tools did not apply the category", tool.id);
         }
     }
 
@@ -2198,6 +1775,47 @@ mod tests {
         for cat in TOOL_CATEGORIES {
             assert!(used.contains(cat), "no tool uses category {cat:?}; its submenu would be empty");
         }
+    }
+
+    /// A job left non-terminal by a process that has gone must not stay that way.
+    /// `canceling` used to be missed, so a job canceled before a quit showed
+    /// "canceling…" on every later launch; terminal rows must be left alone.
+    #[test]
+    fn orphaned_jobs_settle_to_a_terminal_status() {
+        let job = |status: &str| JobInfo {
+            job_id: "j".into(),
+            tool: "t".into(),
+            status: status.into(),
+            message: "kept".into(),
+            started_at_ms: "0".into(),
+            outputs: Vec::new(),
+            params: serde_json::json!({}),
+        };
+        for (before, after) in [
+            ("running", "failed"),
+            ("canceling", "canceled"),
+            ("completed", "completed"),
+            ("failed", "failed"),
+            ("canceled", "canceled"),
+        ] {
+            let mut j = job(before);
+            settle_orphaned_job(&mut j);
+            assert_eq!(j.status, after, "{before} should settle to {after}");
+            if before == after {
+                assert_eq!(j.message, "kept", "a terminal row's message was rewritten");
+            }
+        }
+    }
+
+    /// The frontend's Tools button groups by first appearance; the native menu
+    /// groups by `TOOL_CATEGORIES`. They agree only if `list_tools` is sorted.
+    #[test]
+    fn list_tools_is_in_category_order() {
+        let order: Vec<usize> = tools()
+            .iter()
+            .map(|t| TOOL_CATEGORIES.iter().position(|c| *c == t.category).unwrap_or(usize::MAX))
+            .collect();
+        assert!(order.windows(2).all(|w| w[0] <= w[1]), "list_tools is not grouped: {order:?}");
     }
 
     /// A job canceled before dispatch must not run its tool at all. The flag used
@@ -2240,6 +1858,95 @@ mod tests {
         assert!(err.contains("not runnable from the GUI"), "{err}");
     }
 
+    /// A one-record GenBank file for taxon 562, and a taxdump directory for it.
+    /// Shared with `cmd_files`' Enum Report tab tests.
+    pub(crate) fn enum_report_fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = scratch(name);
+        let gb = dir.join("one.gb");
+        std::fs::write(
+            &gb,
+            "LOCUS       rec1                      12 bp    DNA     linear   UNK 01-JAN-2026
+DEFINITION  test record.
+FEATURES             Location/Qualifiers
+     source          1..12
+                     /db_xref=\"taxon:562\"
+     CDS             1..12
+                     /locus_tag=\"c1\"
+                     /product=\"widget\"
+ORIGIN
+        1 atgaaacccg gg
+//
+",
+        )
+        .unwrap();
+        let tax = dir.join("taxdmp");
+        std::fs::create_dir_all(&tax).unwrap();
+        for (file, body) in [
+            ("nodes.dmp", "1\t|\t1\t|\tno rank\t|\t\n2\t|\t1\t|\tsuperkingdom\t|\t\n561\t|\t2\t|\tgenus\t|\t\n562\t|\t561\t|\tspecies\t|\t\n"),
+            ("names.dmp", "1\t|\troot\t|\t\t|\tscientific name\t|\t\n2\t|\tBacteria\t|\t\t|\tscientific name\t|\t\n561\t|\tEscherichia\t|\t\t|\tscientific name\t|\t\n562\t|\tEscherichia coli\t|\t\t|\tscientific name\t|\t\n"),
+            ("merged.dmp", ""),
+            ("delnodes.dmp", ""),
+        ] {
+            std::fs::write(tax.join(file), body).unwrap();
+        }
+        (gb, tax)
+    }
+
+    /// The enum-report runner reads the dialog's column objects through
+    /// `EnumConfig`, as the CLI does -- parameterized columns and the taxonomy
+    /// ones included. It used to take bare names of the static columns only and
+    /// pass no taxonomy, so none of these could be run from the GUI.
+    #[test]
+    fn enum_report_runs_parameterized_and_taxonomy_columns() {
+        let (gb, tax) = enum_report_fixture("enum-report");
+        let out = gb.with_file_name("out.tsv");
+        let params = serde_json::json!({
+            "input": [gb.to_string_lossy()],
+            "output": out.to_string_lossy(),
+            "by": "cds",
+            "ncbi_taxonomy_path": tax.to_string_lossy(),
+            "columns": [
+                {"type": "length"},
+                {"type": "qualifier", "feature": "CDS", "qualifier": "product"},
+                {"type": "taxname", "ranks": ["species", "genus"]},
+                {"type": "taxid", "ranks": ["superkingdom"]},
+                {"type": "rank_lineage"},
+                {"type": "append", "name": "batch", "value_type": "int", "value": "7"}
+            ]
+        });
+        let root = gb.parent().unwrap().to_string_lossy().into_owned();
+        let not_canceled = AtomicBool::new(false);
+        run_one("enum-report", params, &root, 0, "job_enum", &not_canceled).unwrap();
+        let text = std::fs::read_to_string(&out).unwrap();
+        let mut lines = text.lines();
+        assert_eq!(
+            lines.next().unwrap(),
+            "contig\tcds\tlength\tqualifier_CDS_product\ttaxname_species\ttaxname_genus\ttaxid_superkingdom\trank_lineage\tbatch"
+        );
+        assert_eq!(
+            lines.next().unwrap(),
+            "rec1\tc1\t12\twidget\tEscherichia coli\tEscherichia\t2\tsuperkingdom; genus; species\t7"
+        );
+    }
+
+    /// Asking for a taxonomy column with no taxonomy database is refused up front
+    /// with what to do about it, not run to an empty column or a raw I/O error.
+    #[test]
+    fn enum_report_taxonomy_columns_need_a_taxonomy_database() {
+        let (gb, _tax) = enum_report_fixture("enum-report-notax");
+        let params = serde_json::json!({
+            "input": [gb.to_string_lossy()],
+            "output": gb.with_file_name("out.tsv").to_string_lossy(),
+            "columns": [{"type": "taxname_lineage"}]
+        });
+        let root = gb.parent().unwrap().to_string_lossy().into_owned();
+        let not_canceled = AtomicBool::new(false);
+        let Err(err) = run_one("enum-report", params, &root, 0, "job_enum", &not_canceled) else {
+            panic!("a taxonomy column with no taxonomy database must be refused");
+        };
+        assert!(err.contains("taxonomy database"), "{err}");
+    }
+
     /// Required fields are what the dialog gates its Run button on, so every tool
     /// must declare at least one input and one output; a tool with none would
     /// present an empty form that silently does nothing.
@@ -2257,11 +1964,7 @@ mod tests {
             // The two report tools build their output columns in the dialog, so
             // that field is the tool -- losing it leaves an empty report.
             if matches!(tool.id.as_str(), "hmmer-report" | "enum-report") {
-                assert!(
-                    roles.contains(&"hmm_columns") || roles.contains(&"enum_columns"),
-                    "{} lost its column builder",
-                    tool.id
-                );
+                assert!(roles.contains(&"columns"), "{} lost its column builder", tool.id);
             }
             for f in &tool.fields {
                 // A role ToolDialog.svelte does not handle renders as nothing, so

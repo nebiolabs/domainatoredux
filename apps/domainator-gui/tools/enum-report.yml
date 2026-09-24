@@ -1,0 +1,83 @@
+# GUI dialog for `domainator enum-report`. Format: see README.md in this directory.
+id: enum-report
+label: "Enum report (export)"
+category: "Reports"
+description: "Export a per-contig/cds/domain TSV report from a sequence file with a chosen column set."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output (TSV)"
+    role: output_file
+    required: true
+    output_name: "{stem}.enum.tsv"
+  - name: by
+    label: "By"
+    cli_default: "contig"
+  - name: columns
+    label: "Columns"
+    role: columns
+    gui_default: [{type: domains}, {type: architecture}, {type: length}]
+    # Types and parameters come from `domainator schema enum-report`; this only
+    # relabels and seeds them (see README.md, "Column builder").
+    column_types:
+      taxid:
+        params:
+          ranks:
+            default: [species]
+            choices: [self, domain, realm, kingdom, phylum, class, order, family, genus, species]
+      taxname:
+        params:
+          ranks:
+            default: [species]
+            choices: [self, domain, realm, kingdom, phylum, class, order, family, genus, species]
+      qualifier:
+        params:
+          feature:
+            default: "CDS"
+            choices: [CDS, gene, source, misc_feature]
+          qualifier:
+            choices: [product, gene, locus_tag, protein_id, note]
+      feature_count:
+        params:
+          feature:
+            default: "CDS"
+            choices: [CDS, gene, source, misc_feature]
+      net_charge:
+        params:
+          ph:
+            default: "7.0"
+      repeat_count:
+        params:
+          min_length:
+            default: "2"
+      append:
+        params:
+          value_type:
+            default: "str"
+  - name: databases
+    show: false
+    label: "Databases"
+  - name: contigs
+    show: false
+    label: "Contigs"
+  - name: contigs_file
+    show: false
+    label: "Contigs file"
+  - name: column_names
+    show: false
+    label: "Column names"
+  - name: ncbi_taxonomy_path
+    label: "Taxonomy database"
+    role: input_file
+    file_type: taxonomy
+    sources: databases_first
+    select: "database:ncbi_taxonomy"
+  - name: json
+    show: false
+    label: "Json"

@@ -18,6 +18,9 @@ mod cmd_workspace;
 mod menu_ids;
 mod external_tools;
 mod reference_dbs;
+mod taxonomy_cache;
+mod tool_spec_types;
+mod tool_specs;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -98,6 +101,11 @@ pub fn run() {
             cmd_db::list_databases,
             cmd_db::register_database,
             cmd_db::unregister_database,
+            cmd_db::list_database_files,
+            cmd_db::rename_database,
+            cmd_db::delete_database,
+            cmd_db::build_database_index,
+            cmd_db::reveal_database,
             cmd_edit::set_feature_color,
             cmd_edit::set_color_by_name,
             cmd_edit::remove_feature,
@@ -106,6 +114,7 @@ pub fn run() {
             cmd_windows::open_file_window,
             cmd_windows::open_hmm_logo_window,
             cmd_windows::standalone_params,
+            cmd_windows::quit_app,
             cmd_external::list_external_tools,
             cmd_external::download_external_tool,
             cmd_refdb::list_reference_dbs,
@@ -113,7 +122,7 @@ pub fn run() {
             cmd_refdb::download_reference_db,
             cmd_refdb::cancel_reference_db,
             cmd_refdb::remove_reference_db,
-            cmd_refdb::sync_reference_dbs_to_workspace,
+            cmd_refdb::sync_reference_dbs,
             app_menu::set_menu_state,
             cmd_about::app_diagnostics,
             cmd_open::open_external_url,

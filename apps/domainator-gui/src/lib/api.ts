@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ContigFileView,
   DatabaseEntry,
+  DatabaseRow,
   ExternalToolStatus,
   FileEntry,
   FolderNode,
@@ -155,11 +156,14 @@ export const saveBinaryFile = (
 
 export type EnumRow = Record<string, string | number | null>;
 
+/// `columns` are column objects, `{type, ...parameters}` (`columns.ts`'s
+/// `toColumns`); `ncbiTaxonomyPath` is needed only by the taxonomy columns.
 export const runEnumReport = (
   path: string,
   by: string,
-  columns: string[],
-): Promise<EnumRow[]> => invoke("run_enum_report", { path, by, columns });
+  columns: Record<string, unknown>[],
+  ncbiTaxonomyPath: string | null,
+): Promise<EnumRow[]> => invoke("run_enum_report", { path, by, columns, ncbiTaxonomyPath });
 
 export const runSummaryStats = (path: string): Promise<SummaryStats> =>
   invoke("run_summary_stats", { path });
@@ -197,6 +201,9 @@ export const openSequenceWindow = (
 export const standaloneParams = (label: string): Promise<[string, number] | null> =>
   invoke("standalone_params", { label });
 
+/// File -> Quit: ask every window to close (each still guards its unsaved edits).
+export const quitApp = (): Promise<void> => invoke("quit_app");
+
 // Pop a whole file (its full viewer + sub-tabs) out into a detached window.
 export const openFileWindow = (path: string, title: string): Promise<void> =>
   invoke("open_file_window", { path, title });
@@ -218,12 +225,25 @@ export const extractRecords = (
 
 // --- databases ---
 export const pickFile = (): Promise<string | null> => invoke("pick_file");
-export const listDatabases = (workspaceRoot: string): Promise<DatabaseEntry[]> =>
+// One registry shared by every workspace (`cmd_db`). `workspaceRoot`, when given,
+// folds that workspace's old per-workspace list in first.
+export const listDatabases = (workspaceRoot: string | null): Promise<DatabaseRow[]> =>
   invoke("list_databases", { workspaceRoot });
-export const registerDatabase = (workspaceRoot: string, path: string): Promise<DatabaseEntry> =>
-  invoke("register_database", { workspaceRoot, path });
-export const unregisterDatabase = (workspaceRoot: string, path: string): Promise<void> =>
-  invoke("unregister_database", { workspaceRoot, path });
+export const registerDatabase = (path: string): Promise<DatabaseEntry> =>
+  invoke("register_database", { path });
+/// Take a database off the list; its files are untouched.
+export const unregisterDatabase = (path: string): Promise<void> =>
+  invoke("unregister_database", { path });
+/// The data files, shards and indexes a database consists of.
+export const listDatabaseFiles = (path: string): Promise<string[]> =>
+  invoke("list_database_files", { path });
+export const renameDatabase = (path: string, newName: string): Promise<DatabaseEntry> =>
+  invoke("rename_database", { path, newName });
+/// Delete a database's files from disk and take it off the list.
+export const deleteDatabase = (path: string): Promise<void> => invoke("delete_database", { path });
+export const buildDatabaseIndex = (path: string): Promise<number> =>
+  invoke("build_database_index", { path });
+export const revealDatabase = (path: string): Promise<void> => invoke("reveal_database", { path });
 
 // --- contig annotation editing (GenBank write-back) ---
 export const setFeatureColor = (
@@ -367,25 +387,18 @@ export const listReferenceDbs = (): Promise<ReferenceDbList> =>
 export const checkReferenceDbVersion = (id: string): Promise<string> =>
   invoke("check_reference_db_version", { id });
 
-export const downloadReferenceDb = (
-  id: string,
-  workspaceRoot: string | null,
-): Promise<InstalledDb> => invoke("download_reference_db", { id, workspaceRoot });
+export const downloadReferenceDb = (id: string): Promise<InstalledDb> =>
+  invoke("download_reference_db", { id });
 
 export const cancelReferenceDb = (id: string): Promise<void> =>
   invoke("cancel_reference_db", { id });
 
-export const removeReferenceDb = (
-  id: string,
-  workspaceRoot: string | null,
-): Promise<void> => invoke("remove_reference_db", { id, workspaceRoot });
+export const removeReferenceDb = (id: string): Promise<void> =>
+  invoke("remove_reference_db", { id });
 
-/// Re-register every installed reference database into a workspace being opened:
-/// they live in the app data dir and are shared, but each workspace keeps its own
-/// registry file.
-export const syncReferenceDbsToWorkspace = (
-  workspaceRoot: string,
-): Promise<number> => invoke("sync_reference_dbs_to_workspace", { workspaceRoot });
+/// Make sure every installed reference database is in the shared registry
+/// (copies installed before it was shared were registered per workspace).
+export const syncReferenceDbs = (): Promise<number> => invoke("sync_reference_dbs");
 
 /// What the native menu needs in order to gray items out. Sent from the main
 /// window only; `app_menu.rs` ignores it from any other label.

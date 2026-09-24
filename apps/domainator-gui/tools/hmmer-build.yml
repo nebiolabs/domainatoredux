@@ -1,0 +1,33 @@
+# GUI dialog for `domainator hmmer-build`. Format: see README.md in this directory.
+id: hmmer-build
+label: "HMM build"
+category: "HMM profiles"
+description: "Build an HMM profile from a Stockholm multiple-sequence alignment."
+fields:
+  - name: input
+    label: "Input MSA (Stockholm)"
+    role: input_file
+    file_type: stockholm
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output (HMM)"
+    role: output_file
+    required: true
+    output_name: "{stem}.hmm"
+  - name: name
+    label: "Profile name"
+    required: true
+  - name: acc
+    label: "Accession"
+  - name: desc
+    label: "Description"
+  - name: alphabet
+    label: "Alphabet"
+  - name: window_length
+    show: false
+    label: "Window length"
+  - name: window_beta
+    show: false
+    label: "Window beta"

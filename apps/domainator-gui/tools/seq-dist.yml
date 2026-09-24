@@ -1,0 +1,59 @@
+# GUI dialog for `domainator seq-dist`. Format: see README.md in this directory.
+id: seq-dist
+label: "Sequence distance"
+category: "Matrices & networks"
+description: "All-vs-all sequence similarity matrix (step 3; default 'hmmer' is pure-Rust — diamond algorithms need the diamond binary)."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_file
+    file_type: [sequence, hmm]
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: reference
+    label: "Reference (optional)"
+    role: input_file
+    file_type: [sequence, hmm]
+    sources: workspace_first
+    select: none
+  - name: sparse
+    label: "Output (matrix)"
+    role: output_file
+    required: true
+    output_name: "{stem}.dist.hdf5"
+  - name: algorithm
+    label: "Algorithm"
+    cli_default: "diamond_us"
+    gui_default: "diamond_us"
+  - name: mode
+    label: "Mode"
+    cli_default: "score"
+  - name: lb
+    label: "Lower bound"
+    cli_default: 0.0
+  - name: mst_knn
+    label: "MST-kNN k"
+  - name: dense
+    show: false
+    label: "Dense"
+  - name: dense_text
+    show: false
+    label: "Dense text"
+  - name: k
+    show: false
+    label: "K"
+  - name: params
+    show: false
+    label: "Params"
+  - name: knn
+    show: false
+    label: "Knn"
+  - name: cpu
+    show: false
+    label: "Cpu"
+    cli_default: 0
+  - name: max_output_gb
+    show: false
+    label: "Max output gb"
+    cli_default: 25.0

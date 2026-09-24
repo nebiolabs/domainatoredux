@@ -1,0 +1,45 @@
+# GUI dialog for `domainator color-genbank`. Format: see README.md in this directory.
+id: color-genbank
+label: "Color GenBank"
+category: "Color"
+description: "Batch-assign feature colors by name/database (color table or auto palette)."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output (GenBank)"
+    role: output_file
+    required: true
+    output_name: "{stem}.colored.gb"
+  - name: mode
+    label: "Color targets"
+    cli_default: "cdss"
+  - name: domain_database
+    label: "Color by database"
+    cli_default: false
+  - name: color_table
+    label: "Color table (in)"
+    role: input_file
+    file_type: table
+    sources: workspace_first
+    select: none
+  - name: color_table_out
+    label: "Color table (out)"
+    role: output_file
+  - name: search_hit_color
+    label: "Search-hit color"
+  - name: clear
+    label: "Clear existing"
+    cli_default: false
+  - name: databases
+    label: "Databases"
+  - name: contigs
+    label: "Restrict to contigs"
+  - name: contigs_file
+    show: false
+    label: "Contigs file"

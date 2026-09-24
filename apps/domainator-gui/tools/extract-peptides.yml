@@ -1,0 +1,57 @@
+# GUI dialog for `domainator extract-peptides`. Format: see README.md in this directory.
+id: extract-peptides
+label: "Extract peptides"
+category: "Selection & extraction"
+description: "Extract CDS translations (peptides) by domain/CDS name, search hit, or all."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: output
+    label: "Output"
+    role: output_file
+    required: true
+    output_name: "{stem}.peptides.gb"
+  - name: fasta_out
+    label: "FASTA output"
+    cli_default: false
+  - name: domains
+    label: "Domain names"
+  - name: cdss
+    label: "CDS names"
+  - name: databases
+    label: "Databases"
+  - name: unannotated
+    label: "Unannotated"
+    cli_default: false
+  - name: search_hits
+    label: "Search hits"
+    cli_default: false
+  - name: strand
+    label: "Strand (f/r)"
+  - name: invert
+    label: "Invert"
+    cli_default: false
+  - name: keep_name
+    label: "Keep name"
+    cli_default: false
+  - name: name_field
+    label: "Name field"
+  - name: evalue
+    label: "Max E-value"
+    cli_default: 100000000.0
+  - name: contigs
+    label: "Restrict to contigs"
+  - name: domains_file
+    show: false
+    label: "Domains file"
+  - name: cdss_file
+    show: false
+    label: "Cdss file"
+  - name: contigs_file
+    show: false
+    label: "Contigs file"

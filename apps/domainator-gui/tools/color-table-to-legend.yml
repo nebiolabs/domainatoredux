@@ -1,0 +1,21 @@
+# GUI dialog for `domainator color-table-to-legend`. Format: see README.md in this directory.
+id: color-table-to-legend
+label: "Color table → legend"
+category: "Color"
+description: "Render a color table as an SVG legend."
+fields:
+  - name: input
+    label: "Color table(s)"
+    role: input_files
+    file_type: table
+    required: true
+    sources: workspace_first
+    select: active_file
+  - name: svg
+    label: "Output (SVG)"
+    role: output_file
+    required: true
+    output_name: "{stem}.legend.svg"
+  - name: title
+    label: "Title"
+    cli_default: "Legend"

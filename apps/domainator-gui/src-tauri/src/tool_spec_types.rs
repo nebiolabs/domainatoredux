@@ -1,0 +1,190 @@
+//! The shape of a GUI tool spec file (`apps/domainator-gui/tools/<id>.yml`).
+//!
+//! Shared with `build.rs` through `#[path]`, which parses every spec file before
+//! embedding it, so a misspelled key or a malformed file fails the build rather
+//! than the dialog. That is also why this module depends on nothing but serde.
+//! The checks that need the tool's schema (every CLI option listed, `cli_default`
+//! equal to the schema's `default`, ...) are tests in `tool_specs.rs`.
+
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolSpec {
+    pub id: String,
+    pub label: String,
+    /// One of `cmd_tools::TOOL_CATEGORIES`.
+    pub category: String,
+    pub description: String,
+    /// Every property of the tool's schema, in dialog order.
+    pub fields: Vec<FieldSpec>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldSpec {
+    pub name: String,
+    pub label: String,
+    /// The hint under the field. Unset, the dialog shows the schema property's
+    /// `description` -- the same text `domainator schema <id>` gives agents.
+    #[serde(default)]
+    pub help: Option<String>,
+    /// One of `cmd_tools::ROLES`.
+    #[serde(default = "param_role")]
+    pub role: String,
+    /// Inputs only: the file types the dropdown offers. Written as one value
+    /// (`file_type: hmm`) or a list (`file_type: [sequence, hmm]`).
+    #[serde(default, deserialize_with = "one_or_many")]
+    pub file_type: Vec<String>,
+    #[serde(default)]
+    pub required: bool,
+    /// `false` for a CLI option the dialog does not offer; it is never sent, so
+    /// the CLI default applies.
+    #[serde(default = "shown")]
+    pub show: bool,
+    /// The schema's `default`, copied here so the file shows it; test-checked.
+    #[serde(default)]
+    pub cli_default: Option<Value>,
+    /// What the dialog seeds instead of `cli_default`.
+    #[serde(default)]
+    pub gui_default: Option<Value>,
+    /// Input roles only: which group of the dropdown comes first.
+    #[serde(default)]
+    pub sources: Option<Sources>,
+    /// Input roles only: what the dropdown starts on.
+    #[serde(default)]
+    pub select: Option<Select>,
+    /// Output roles only: the seeded file name, `{stem}` being the primary
+    /// input's name up to its first `.`.
+    #[serde(default)]
+    pub output_name: Option<String>,
+    /// `columns` role only: GUI overrides for the column builder, keyed by column
+    /// `type`. The types and their parameters come from the schema's
+    /// `columns.items.oneOf`; this only relabels, hides, and seeds them.
+    #[serde(default)]
+    pub column_types: BTreeMap<String, ColumnTypeSpec>,
+}
+
+/// The builder's view of one column type (a schema `oneOf` entry).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ColumnTypeSpec {
+    /// Replaces the entry's `title` in the type dropdown.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Replaces the entry's `description` as the row's hint.
+    #[serde(default)]
+    pub help: Option<String>,
+    /// `false` leaves the type out of the dropdown.
+    #[serde(default = "shown")]
+    pub show: bool,
+    #[serde(default)]
+    pub params: BTreeMap<String, ColumnParamSpec>,
+}
+
+/// The builder's view of one parameter of a column type.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ColumnParamSpec {
+    /// The text beside the box (default: the parameter name).
+    #[serde(default)]
+    pub label: Option<String>,
+    /// The box's tooltip and placeholder (default: the schema's description).
+    #[serde(default)]
+    pub help: Option<String>,
+    /// What a newly added column of this type starts with.
+    #[serde(default)]
+    pub default: Option<Value>,
+    /// Suggested values: one-click chips for a list parameter, a suggestion list
+    /// for a text one. Values outside them can still be typed.
+    #[serde(default)]
+    pub choices: Vec<Value>,
+}
+
+fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match OneOrMany::deserialize(d)? {
+        OneOrMany::One(s) => vec![s],
+        OneOrMany::Many(v) => v,
+    })
+}
+
+fn param_role() -> String {
+    "param".into()
+}
+
+fn shown() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Sources {
+    DatabasesFirst,
+    WorkspaceFirst,
+}
+
+impl Sources {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Sources::DatabasesFirst => "databases_first",
+            Sources::WorkspaceFirst => "workspace_first",
+        }
+    }
+}
+
+/// An input dropdown's initial choice. Whatever it names, when that is not on
+/// offer the dropdown falls back to its first entry — except `None` and
+/// `ActiveFileOrNone`, which leave it blank.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
+pub enum Select {
+    /// The active tab's file, when it fits the field.
+    ActiveFile,
+    /// The active tab's file when it fits the field, else blank.
+    ActiveFileOrNone,
+    First,
+    None,
+    /// The managed reference database with this id (`reference_dbs`).
+    Database(String),
+}
+
+impl TryFrom<String> for Select {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, String> {
+        Ok(match s.as_str() {
+            "active_file" => Select::ActiveFile,
+            "active_file_or_none" => Select::ActiveFileOrNone,
+            "first" => Select::First,
+            "none" => Select::None,
+            _ => match s.strip_prefix("database:") {
+                Some(id) if !id.is_empty() => Select::Database(id.to_string()),
+                _ => {
+                    return Err(format!(
+                        "select {s:?}: expected active_file, active_file_or_none, first, none or database:<id>"
+                    ))
+                }
+            },
+        })
+    }
+}
+
+impl std::fmt::Display for Select {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Select::ActiveFile => f.write_str("active_file"),
+            Select::ActiveFileOrNone => f.write_str("active_file_or_none"),
+            Select::First => f.write_str("first"),
+            Select::None => f.write_str("none"),
+            Select::Database(id) => write!(f, "database:{id}"),
+        }
+    }
+}

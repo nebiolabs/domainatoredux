@@ -6,6 +6,7 @@
   // in front of every download but Swiss-Prot, and a live progress row fed by the
   // backend's `refdb-progress` event. A TrEMBL install runs for hours, so a panel
   // that only said "downloading…" would be indistinguishable from one that had hung.
+  import ResizableBody from "./ResizableBody.svelte";
   import { listen } from "@tauri-apps/api/event";
   import {
     cancelReferenceDb,
@@ -123,7 +124,7 @@
     // after the release file and the first megabytes have been fetched.
     progress[db.id] = { id: db.id, phase: "downloading", done_bytes: 0, total_bytes: 0 };
     try {
-      await downloadReferenceDb(db.id, ws.root || null);
+      await downloadReferenceDb(db.id);
     } catch (e) {
       // A cancel comes back as an error too, and is not worth reporting as one.
       if (!String(e).includes("canceled")) errors[db.id] = String(e);
@@ -169,6 +170,7 @@
   {/if}
 
   {#if expanded}
+    <ResizableBody key="refdbs" defaultMax={320}>
     {#if loading}
       <div class="empty">Checking…</div>
     {:else if listError}
@@ -246,12 +248,7 @@
         {#if errors[db.id]}<div class="err">{errors[db.id]}</div>{/if}
       </div>
     {/each}
-
-    {#if !ws.root && !loading}
-      <div class="empty">
-        Open a workspace to have downloads registered as usable databases.
-      </div>
-    {/if}
+    </ResizableBody>
   {/if}
 </div>
 
@@ -290,7 +287,7 @@
       pendingRemove = null;
       if (!db) return;
       try {
-        await removeReferenceDb(db.id, ws.root || null);
+        await removeReferenceDb(db.id);
       } catch (e) {
         errors[db.id] = String(e);
       }

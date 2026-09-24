@@ -146,6 +146,7 @@
     const onPointerDown = (e: PointerEvent) => {
       const t = e.target as Node | null;
       if (t && (menuEl?.contains(t) || subEl?.contains(t))) return;
+      if (t && ctx.anchor?.contains(t)) return; // the anchor's own click toggles
       closeContextMenu();
     };
     const onScroll = () => closeContextMenu();

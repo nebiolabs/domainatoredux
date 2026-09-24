@@ -1,7 +1,10 @@
 <script lang="ts">
   import { runTool, toolSchemaCached } from "./api";
   import { ws } from "./state.svelte";
-  import type { JsonSchema, JsonSchemaProp, ToolMeta } from "./types";
+  import { fieldAccepts, isInputRole } from "./toolInputs";
+  import ColumnBuilder from "./ColumnBuilder.svelte";
+  import { columnTypes, toColumns, toRows } from "./columns";
+  import type { JsonSchema, JsonSchemaProp, ToolField, ToolMeta } from "./types";
 
   let {
     tool,
@@ -29,140 +32,59 @@
   const folderName = $derived(folder.split(/[\\/]/).pop() ?? folder);
 
   const DB_TYPE: Record<string, string> = { hmm: "hmm", genbank: "genbank", fasta: "fasta" };
-  function typeMatches(fileType: string, ft: string): boolean {
-    if (ft === "sequence") return fileType === "genbank" || fileType === "fasta";
-    // domainate/domain_search accept HMM or FASTA references (protein or nucleotide).
-    if (ft === "reference") return fileType === "hmm" || fileType === "fasta";
-    return fileType === ft;
-  }
-  // Options for an input field: current-folder files of the type, plus registered
-  // databases of the matching format (so HMM references can come from the DB panel).
-  function fileChoices(ft: string | null): { value: string; label: string }[] {
-    if (!ft) return [];
-    const files = ws.files
-      .filter((f) => typeMatches(f.file_type, ft))
-      .map((f) => ({ value: f.path, label: f.name }));
-    const dbs = ws.databases
-      .filter((d) => typeMatches(DB_TYPE[d.format] ?? d.format, ft))
-      .map((d) => ({ value: d.path, label: `${d.name} (db)` }));
-    // Dedupe by path: a file can be both in the current folder AND registered as a
-    // database, which would otherwise put the same value twice in the dropdown — a
-    // duplicate `{#each}` key that crashes the render (dialog stuck at "Loading…").
+  type Choice = { value: string; label: string };
+  type ChoiceGroup = { label: string; items: Choice[] };
+  // An input field's dropdown: registered databases of a matching format and
+  // current-folder files of the type, as two groups in the order the tool's spec
+  // (`tools/<id>.yml`, `sources`) puts them. Empty groups are dropped.
+  function fileGroups(field: ToolField): ChoiceGroup[] {
+    if (field.file_types.length === 0) return [];
+    const workspace: ChoiceGroup = {
+      label: `Workspace: ${folderName}`,
+      items: ws.files.filter((f) => fieldAccepts(field, f.file_type)).map((f) => ({ value: f.path, label: f.name })),
+    };
+    const databases: ChoiceGroup = {
+      label: "Databases",
+      items: ws.databases
+        .filter((d) => fieldAccepts(field, DB_TYPE[d.format] ?? d.format))
+        .map((d) => ({ value: d.path, label: d.name })),
+    };
+    const ordered = field.sources === "databases_first" ? [databases, workspace] : [workspace, databases];
+    // Dedupe by path, the first group keeping it: a file can be both in the
+    // current folder AND registered as a database, which would otherwise put the
+    // same value twice in the dropdown — a duplicate `{#each}` key that crashes
+    // the render (dialog stuck at "Loading…").
     const seen = new Set<string>();
-    const out: { value: string; label: string }[] = [];
-    for (const c of [...files, ...dbs]) {
-      if (seen.has(c.value)) continue;
-      seen.add(c.value);
-      out.push(c);
+    return ordered
+      .map((g) => ({
+        label: g.label,
+        items: g.items.filter((c) => (seen.has(c.value) ? false : (seen.add(c.value), true))),
+      }))
+      .filter((g) => g.items.length > 0);
+  }
+  // The dropdown's starting value, per the spec's `select`. Whatever it names,
+  // when that is not on offer the first entry is used, except for `none` and
+  // `active_file_or_none`, which leave it blank.
+  function initialChoice(field: ToolField, groups: ChoiceGroup[], activePath: string | null): string {
+    const select = field.select ?? (field.required ? "active_file" : "none");
+    if (select === "none") return "";
+    const offered = (p: string | null | undefined) => !!p && groups.some((g) => g.items.some((c) => c.value === p));
+    if ((select === "active_file" || select === "active_file_or_none") && offered(activePath)) return activePath!;
+    if (select === "active_file_or_none") return "";
+    if (select.startsWith("database:")) {
+      const id = select.slice("database:".length);
+      const db = ws.databases.find((d) => d.managed_id === id);
+      if (offered(db?.path)) return db!.path;
     }
-    return out;
+    return groups[0]?.items[0]?.value ?? "";
   }
   function stemOf(p: string): string {
     const base = p.slice(Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")) + 1);
     const dot = base.indexOf(".");
     return dot > 0 ? base.slice(0, dot) : base;
   }
-  // Default output filename for a field, derived from the primary input's stem.
-  function defaultOutput(toolId: string, fieldName: string, inputPath: string): string {
-    const stem = inputPath ? stemOf(inputPath) : "output";
-    switch (`${toolId}:${fieldName}`) {
-      case "transform-matrix:sparse":
-        return `${stem}.transformed.hdf5`;
-      case "build-ssn:xgmml":
-        return `${stem}.xgmml`;
-      case "build-ssn:cluster_tsv":
-        return `${stem}.clusters.tsv`;
-      case "build-ssn-viewer:output":
-        return `${stem}.dsnv`;
-      case "domain-search:output":
-        return `${stem}.search.gb`;
-      case "domainate:output":
-        return `${stem}.annotated.gb`;
-      case "select-by-cds:output":
-        return `${stem}.selected_cds.gb`;
-      case "select-by-contig:output":
-        return `${stem}.selected.gb`;
-      case "filter-domains:output":
-        return `${stem}.filtered.gb`;
-      case "hmmer-select:output":
-        return `${stem}.selected.hmm`;
-      case "hmmer-build:output":
-        return `${stem}.hmm`;
-      case "genbank-to-fasta:output":
-        return `${stem}.fasta`;
-      case "clean-sequences:output":
-        return `${stem}.cleaned.gb`;
-      case "sort-contigs:output":
-        return `${stem}.sorted.gb`;
-      case "select-by-coord:output":
-        return `${stem}.bycoord.gb`;
-      case "trim-contigs:output":
-        return `${stem}.trimmed.gb`;
-      case "extract-domains:output":
-        return `${stem}.domains.gb`;
-      case "extract-peptides:output":
-        return `${stem}.peptides.gb`;
-      case "extract-unannotated:output":
-        return `${stem}.unannotated.gb`;
-      case "color-genbank:output":
-        return `${stem}.colored.gb`;
-      case "color-table-to-legend:svg":
-        return `${stem}.legend.svg`;
-      case "deduplicate:output":
-        return `${stem}.dedup.gb`;
-      case "hmmer-compare:output":
-        return `${stem}.compare.tsv`;
-      case "hmmer-search:output":
-        return `${stem}.searched.hmm`;
-      case "hmmer-report:output":
-        return `${stem}.hmm_report.tsv`;
-      case "seq-dist:sparse":
-        return `${stem}.dist.hdf5`;
-      case "compare-contigs:sparse":
-        return `${stem}.compare.hdf5`;
-      case "enum-report:output":
-        return `${stem}.enum.tsv`;
-      case "matrix-report:output":
-        return `${stem}.report.txt`;
-      default:
-        return "";
-    }
-  }
-  const isInputRole = (role: string) => role === "input_file" || role === "input_files";
-
-  // --- hmmer-report column builder (role "hmm_columns") ---
-  // Each column is a tagged object: {type:"source"|"acc"|"desc"|"length"|"consensus"}
-  // or {type:"append", name, value_type, value} for a constant column.
-  type HmmCol = { type: string; name?: string; value_type?: string; value?: string };
-  const HMM_COLUMN_TYPES = ["source", "acc", "desc", "length", "consensus", "append"];
-  const HMM_VALUE_TYPES = ["str", "int", "float"];
-  // Ensure an "append" column has its extra fields (so binds/serialization work).
-  function normalizeCol(col: HmmCol) {
-    if (col.type === "append") {
-      if (col.name === undefined) col.name = "";
-      if (col.value_type === undefined) col.value_type = "str";
-      if (col.value === undefined) col.value = "";
-    }
-  }
-  function addCol(name: string) {
-    (values[name] ??= []).push({ type: "source" });
-  }
-  function removeCol(name: string, i: number) {
-    (values[name] as HmmCol[]).splice(i, 1);
-  }
-
-  // --- enum-report column picker (role "enum_columns") ---
-  // Static analyses that need no taxonomy DB (the *_lineage columns are omitted —
-  // they require a taxdump that this export doesn't take).
-  const ENUM_COLUMNS = [
-    "domains", "domain_descriptions", "architecture", "architecture_detailed",
-    "length", "start", "end", "strand", "topology", "score", "identity",
-    "definition", "cds_count", "domain_count", "sequence", "taxid_self", "taxname_self",
-  ];
-  function toggleEnumCol(name: string, c: string) {
-    const cur = (values[name] ?? []) as string[];
-    values[name] = cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c];
-  }
+  const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const showValue = (v: unknown) => (v === null || v === undefined ? "unset" : Array.isArray(v) ? v.join(",") || "empty" : String(v));
   function propType(p: JsonSchemaProp | undefined): string {
     if (!p) return "string";
     return Array.isArray(p.type) ? (p.type.find((t) => t !== "null") ?? "string") : (p.type ?? "string");
@@ -182,39 +104,35 @@
       .then((schemaText) => {
         schema = JSON.parse(schemaText) as JsonSchema;
         const v: Record<string, any> = {};
-        // Seed param defaults from the schema (arrays shown as comma-separated text).
-        for (const [k, p] of Object.entries(schema.properties ?? {})) {
-          if (p.default !== undefined && p.default !== null) {
-            v[k] = Array.isArray(p.default) ? p.default.join(",") : p.default;
-          } else if (enumHasNull(p)) {
-            v[k] = ""; // optional enum → blank, matching the CLI's unset default
+        // Seed params from the field's default (the spec's GUI override, else the
+        // CLI's). Arrays are shown as comma-separated text, except in the column
+        // builder, which edits the list itself.
+        for (const field of meta?.fields ?? []) {
+          const d = field.default;
+          if (field.role === "columns") {
+            v[field.name] = toRows(d, columnTypes(field, schemaProp(field.name)));
+          } else if (d !== undefined && d !== null) {
+            v[field.name] = Array.isArray(d) ? d.join(",") : d;
+          } else if (enumHasNull(schemaProp(field.name))) {
+            v[field.name] = ""; // optional enum → blank, matching the CLI's unset default
           }
         }
-        // Seed input dropdowns (prefer the active file, else the first match).
+        // Seed input dropdowns per the spec's `select`.
         const active = ws.tabs.find((t) => t.id === ws.activeTabId)?.file ?? null;
         let primaryInput = "";
         for (const field of meta?.fields ?? []) {
           if (isInputRole(field.role)) {
-            const choices = fileChoices(field.file_type);
-            const pick = choices.find((c) => c.value === active?.path)?.value ?? choices[0]?.value ?? "";
+            const pick = initialChoice(field, fileGroups(field), active?.path ?? null);
             v[field.name] = pick;
-            if (field.name === "input" || (!primaryInput && pick)) primaryInput = pick;
+            // `input` names the output when it has a value; else the first input that does.
+            if (pick && (field.name === "input" || !primaryInput)) primaryInput = pick;
           }
         }
         // Seed output filenames from the primary input's stem.
+        const stem = primaryInput ? stemOf(primaryInput) : "output";
         for (const field of meta?.fields ?? []) {
-          if (field.role === "output_file" && field.required) {
-            v[field.name] = defaultOutput(tool, field.name, primaryInput);
-          }
-        }
-        // Seed the column builder with a sensible default (overrides the schema's
-        // empty-array default, which the generic seeding turns into "").
-        for (const field of meta?.fields ?? []) {
-          if (field.role === "hmm_columns") {
-            v[field.name] = [{ type: "source" }, { type: "length" }];
-          }
-          if (field.role === "enum_columns") {
-            v[field.name] = ["domains", "architecture", "length"];
+          if (field.role === "output_file" && field.output_name) {
+            v[field.name] = field.output_name.replaceAll("{stem}", stem);
           }
         }
         // Clone: overlay a prior job's params (which are in the *collected* shape —
@@ -227,8 +145,8 @@
               v[field.name] = String(raw).split(/[\\/]/).pop() ?? "";
             } else if (field.role === "input_files") {
               v[field.name] = Array.isArray(raw) ? (raw[0] ?? "") : raw;
-            } else if (field.role === "hmm_columns" || field.role === "enum_columns") {
-              v[field.name] = raw;
+            } else if (field.role === "columns") {
+              v[field.name] = toRows(raw, columnTypes(field, schemaProp(field.name)));
             } else if (Array.isArray(raw)) {
               v[field.name] = raw.join(",");
             } else {
@@ -257,16 +175,8 @@
       } else if (field.role === "output_file") {
         const name = String(val ?? "").trim();
         if (name) out[field.name] = join(folder, name);
-      } else if (field.role === "hmm_columns") {
-        // Only "append" columns carry name/value_type/value; static columns must
-        // send just {type} (the config's deny_unknown_fields rejects extras).
-        out[field.name] = (Array.isArray(val) ? (val as HmmCol[]) : []).map((c) =>
-          c.type === "append"
-            ? { type: "append", name: c.name ?? "", value_type: c.value_type ?? "str", value: c.value ?? "" }
-            : { type: c.type },
-        );
-      } else if (field.role === "enum_columns") {
-        out[field.name] = Array.isArray(val) ? val : [];
+      } else if (field.role === "columns") {
+        out[field.name] = toColumns(Array.isArray(val) ? val : [], columnTypes(field, schemaProp(field.name)));
       } else {
         const prop = schemaProp(field.name);
         const t = propType(prop);
@@ -301,7 +211,8 @@
       running = false;
       onclose(); // success → close the dialog (errors keep it open below)
     } catch (e) {
-      error = String(e);
+      // `toColumns` throws an Error naming the column; the backend rejects with a string.
+      error = e instanceof Error ? e.message : String(e);
       running = false;
     }
   }
@@ -344,44 +255,11 @@
     {:else}
       <div class="fields">
         {#each meta.fields as field (field.name)}
-          {#if field.role === "hmm_columns"}
+          {#if field.role === "columns"}
             <div class="field builder-field">
               <span class="flabel">{field.label}</span>
-              <div class="colbuilder">
-                {#each (values[field.name] ?? []) as col, i (i)}
-                  <div class="colrow">
-                    <select bind:value={col.type} onchange={() => normalizeCol(col)}>
-                      {#each HMM_COLUMN_TYPES as t (t)}<option value={t}>{t}</option>{/each}
-                    </select>
-                    {#if col.type === "append"}
-                      <input class="cname" type="text" placeholder="column name" bind:value={col.name} />
-                      <select class="cvt" bind:value={col.value_type}>
-                        {#each HMM_VALUE_TYPES as t (t)}<option value={t}>{t}</option>{/each}
-                      </select>
-                      <input class="cval" type="text" placeholder="value" bind:value={col.value} />
-                    {/if}
-                    <button type="button" class="colx" title="Remove column" onclick={() => removeCol(field.name, i)}>×</button>
-                  </div>
-                {/each}
-                <button type="button" class="addcol" onclick={() => addCol(field.name)}>+ Add column</button>
-                <span class="hint">A leading <code>name</code> column is always included. <code>append</code> adds a constant column.</span>
-              </div>
-            </div>
-          {:else if field.role === "enum_columns"}
-            <div class="field builder-field">
-              <span class="flabel">{field.label}</span>
-              <div class="checklist">
-                {#each ENUM_COLUMNS as c (c)}
-                  <label class="checkitem">
-                    <input
-                      type="checkbox"
-                      checked={(values[field.name] ?? []).includes(c)}
-                      onchange={() => toggleEnumCol(field.name, c)}
-                    />
-                    {c}
-                  </label>
-                {/each}
-              </div>
+              <ColumnBuilder types={columnTypes(field, schemaProp(field.name))} bind:rows={values[field.name]} />
+              {#if field.help}<span class="hint">{field.help}</span>{/if}
             </div>
           {:else}
           {@const prop = schemaProp(field.name)}
@@ -389,20 +267,28 @@
             <span class="flabel">{field.label}{#if field.required}<span class="req">*</span>{/if}</span>
 
             {#if isInputRole(field.role)}
-              {@const choices = fileChoices(field.file_type)}
-              {#if choices.length === 0}
-                <span class="nofiles">No {field.file_type} files/databases available</span>
+              {@const groups = fileGroups(field)}
+              {#if groups.length === 0}
+                <span class="nofiles">No {field.file_types.join(" / ")} files/databases available</span>
               {:else}
                 <select bind:value={values[field.name]}>
                   {#if !field.required}<option value="">(none)</option>{/if}
-                  {#each choices as c (c.value)}<option value={c.value}>{c.label}</option>{/each}
+                  {#each groups as g, gi (g.label)}
+                    <!-- The bar between the two groups; `<hr>` in a `<select>` is not reliable in WebKitGTK. -->
+                    {#if gi > 0}<option class="sep" disabled value="__separator__">────────────────</option>{/if}
+                    <optgroup label={g.label}>
+                      {#each g.items as c (c.value)}<option value={c.value}>{c.label}</option>{/each}
+                    </optgroup>
+                  {/each}
                 </select>
               {/if}
             {:else if field.role === "output_file"}
               <input type="text" bind:value={values[field.name]} placeholder="filename" />
             {:else if prop?.enum}
               <select bind:value={values[field.name]}>
-                {#if enumHasNull(prop) || !field.required}<option value="">(default)</option>{/if}
+                {#if enumHasNull(prop) || !field.required}
+                  <option value="">{field.cli_default != null ? `(default: ${showValue(field.cli_default)})` : "(default)"}</option>
+                {/if}
                 {#each prop.enum.filter((o) => o !== null) as opt (opt)}<option value={opt}>{opt}</option>{/each}
               </select>
             {:else if propType(prop) === "boolean"}
@@ -415,7 +301,10 @@
               <input type="text" bind:value={values[field.name]} />
             {/if}
 
-            {#if prop?.description}<span class="hint">{prop.description}</span>{/if}
+            {#if field.help ?? prop?.description}<span class="hint">{field.help ?? prop?.description}</span>{/if}
+            {#if field.role === "param" && !sameValue(field.default, field.cli_default)}
+              <span class="hint">GUI default; the command line's is {showValue(field.cli_default)}.</span>
+            {/if}
           </label>
           {/if}
         {/each}
@@ -517,6 +406,9 @@
   .field input[type="checkbox"] {
     justify-self: start;
   }
+  .field option.sep {
+    color: var(--text-dim);
+  }
   .nofiles {
     color: #e5484d;
     font-size: 12px;
@@ -557,69 +449,5 @@
   }
   .builder-field {
     align-items: start;
-  }
-  .colbuilder {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
-  }
-  .colrow {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-  }
-  .colrow select,
-  .colrow input {
-    padding: 3px 6px;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    background: var(--bg-elevated);
-    color: var(--text);
-    font-family: inherit;
-    font-size: 12.5px;
-  }
-  .colrow .cname,
-  .colrow .cval {
-    flex: 1;
-    min-width: 60px;
-  }
-  .colx {
-    border: none;
-    background: none;
-    color: var(--text-dim);
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 4px;
-  }
-  .colx:hover {
-    color: #e5484d;
-  }
-  .addcol {
-    align-self: start;
-    background: var(--bg-elevated);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 3px 10px;
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .addcol:hover {
-    border-color: var(--accent);
-  }
-  .checklist {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 2px 10px;
-    min-width: 0;
-  }
-  .checkitem {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 12px;
-    white-space: nowrap;
   }
 </style>

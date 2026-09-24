@@ -768,11 +768,20 @@ pub fn enum_report<W: Write>(
 }
 
 /// Whether any requested analysis needs the NCBI taxonomy database.
+///
+/// `rank_lineage` is included although upstream's list leaves it out: without a
+/// loaded taxonomy Python's lambda dereferences `None` and the run crashes, and
+/// here it silently came out as an empty column, so no working invocation relies
+/// on the omission.
 pub fn needs_taxonomy(analyses: &[Analysis]) -> bool {
     analyses.iter().any(|a| {
         matches!(
             a.kind,
-            Kind::TaxidLineage | Kind::TaxnameLineage | Kind::Taxid(_) | Kind::Taxname(_)
+            Kind::TaxidLineage
+                | Kind::TaxnameLineage
+                | Kind::RankLineage
+                | Kind::Taxid(_)
+                | Kind::Taxname(_)
         )
     })
 }

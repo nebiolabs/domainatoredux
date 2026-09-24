@@ -181,9 +181,23 @@ export interface SuggestedThreshold {
 export interface DatabaseEntry {
   path: string;
   name: string;
-  format: "fasta" | "genbank" | "hmm";
+  format: "fasta" | "genbank" | "hmm" | "taxonomy";
   molecule: "protein" | "nucleic" | "unknown";
   shards: number;
+}
+
+/// `registry::IndexStatus`: whether a database has its `.didx` offset index.
+export type IndexStatus = "indexed" | "stale" | "missing" | "unindexable" | "not_applicable";
+
+/// One row of the Databases panel (`cmd_db::DatabaseRow`): the registry entry
+/// plus what is true of it on disk right now.
+export interface DatabaseRow extends DatabaseEntry {
+  index: IndexStatus;
+  /// A managed reference download (Reference Databases panel), not user-added.
+  managed: boolean;
+  /// That download's id (`reference_dbs.rs`), named by a spec's `select: database:<id>`.
+  managed_id: string | null;
+  on_disk: boolean;
 }
 
 export interface ExternalToolStatus {
@@ -212,7 +226,7 @@ export interface ReferenceDbStatus {
   id: string;
   name: string;
   description: string;
-  kind: "fasta" | "hmm";
+  kind: "fasta" | "hmm" | "taxonomy";
   file_name: string;
   url: string;
   download_bytes: number;
@@ -250,9 +264,39 @@ export interface RefDbProgress {
 export interface ToolField {
   name: string;
   label: string;
-  role: "input_file" | "input_files" | "output_file" | "param" | "hmm_columns" | "enum_columns";
-  file_type: string | null;
+  /// The spec's `help`; when null the dialog shows the schema's `description`.
+  help: string | null;
+  role: "input_file" | "input_files" | "output_file" | "param" | "columns";
+  /// Inputs: the file types the dropdown offers (the spec's `file_type`); empty otherwise.
+  file_types: string[];
   required: boolean;
+  /// What the dialog seeds: `tools/<id>.yml`'s `gui_default`, else `cli_default`.
+  default: unknown;
+  /// The CLI's default, shown as a hint when `default` differs from it.
+  cli_default: unknown;
+  /// Inputs: which group of the dropdown comes first.
+  sources: "databases_first" | "workspace_first" | null;
+  /// Inputs: `active_file` | `active_file_or_none` | `first` | `none` | `database:<managed id>`.
+  select: string | null;
+  /// Outputs: the seeded file name, `{stem}` being the primary input's stem.
+  output_name: string | null;
+  /// `columns`: the spec's per-type overrides for the column builder.
+  column_types: Record<string, ColumnTypeSpec>;
+}
+
+/// `tool_spec_types::ColumnTypeSpec`: how the builder shows one column type.
+export interface ColumnTypeSpec {
+  label: string | null;
+  help: string | null;
+  show: boolean;
+  params: Record<string, ColumnParamSpec>;
+}
+
+export interface ColumnParamSpec {
+  label: string | null;
+  help: string | null;
+  default: unknown;
+  choices: unknown[];
 }
 
 export interface ToolMeta {
@@ -260,6 +304,9 @@ export interface ToolMeta {
   label: string;
   description: string;
   fields: ToolField[];
+  /// Menu group, one of `cmd_tools::TOOL_CATEGORIES`; `list_tools` returns the
+  /// tools sorted by it.
+  category: string;
 }
 
 export interface RunResult {
@@ -292,10 +339,15 @@ export interface JsonSchema {
 
 export interface JsonSchemaProp {
   type?: string | string[];
+  title?: string;
   description?: string;
   default?: unknown;
+  const?: string;
   enum?: (string | null)[];
-  items?: { type?: string };
+  /// A report's `columns` items carry one `oneOf` entry per column type.
+  items?: { type?: string; oneOf?: JsonSchemaProp[] };
+  properties?: Record<string, JsonSchemaProp>;
+  required?: string[];
 }
 
 export interface MatrixReport {

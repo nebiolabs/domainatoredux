@@ -12,12 +12,14 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use tauri::menu::{
-    Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
-    HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
+    Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, Submenu, SubmenuBuilder,
+    HELP_SUBMENU_ID,
 };
 use tauri::{AppHandle, Emitter, EventTarget, Manager, Wry};
 
-use crate::menu_ids::{MenuCommand, COMMANDS, DYNAMIC_PREFIXES, LAYOUT, SEPARATOR};
+use crate::menu_ids::{
+    visible_items, MenuCommand, COMMANDS, DYNAMIC_PREFIXES, LAYOUT, MACOS_HIDDEN, SEPARATOR,
+};
 
 /// Items we need to reach again to enable/disable or check.
 #[derive(Default)]
@@ -54,6 +56,25 @@ fn short_name(path: &str) -> String {
     path.rsplit(['/', '\\']).find(|s| !s.is_empty()).unwrap_or(path).to_string()
 }
 
+/// File → Open Recent, from the same prefs list the welcome screen shows.
+fn open_recent_submenu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
+    let recent = recent_workspaces(app);
+    let mut rs = SubmenuBuilder::new(app, "Open Recent");
+    if recent.is_empty() {
+        rs = rs.item(
+            &MenuItemBuilder::with_id("file.open_recent:", "(none)").enabled(false).build(app)?,
+        );
+    } else {
+        for path in &recent {
+            rs = rs.item(
+                &MenuItemBuilder::with_id(format!("file.open_recent:{path}"), short_name(path))
+                    .build(app)?,
+            );
+        }
+    }
+    rs.build()
+}
+
 /// Build the main window's menu from [`LAYOUT`].
 ///
 /// Panics on a bad accelerator rather than dropping the item: a typo like
@@ -84,11 +105,14 @@ pub fn build_main(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         menu = menu.item(&sub);
     }
 
+    // macOS keeps Quit in the app submenu above; elsewhere it is ours, in File.
+    let hidden: &[&str] = if cfg!(target_os = "macos") { MACOS_HIDDEN } else { &[] };
+
     for (title, items) in LAYOUT {
         let mut sub = SubmenuBuilder::new(app, *title);
 
-        for item in *items {
-            if *item == SEPARATOR {
+        for item in visible_items(items, hidden) {
+            if item == SEPARATOR {
                 sub = sub.separator();
                 continue;
             }
@@ -100,43 +124,14 @@ pub fn build_main(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             let built = b.build(app)?;
             lock(&reg).items.insert(s.id.to_string(), built.clone());
             sub = sub.item(&built);
+            // Open Recent sits beside Open Workspace, where users look for it.
+            if s.id == "file.open_workspace" {
+                sub = sub.item(&open_recent_submenu(app)?);
+            }
         }
 
         // Per-submenu extras that are dynamic or predefined.
         match *title {
-            "File" => {
-                // Open Recent, from the same prefs list the welcome screen shows.
-                let recent = recent_workspaces(app);
-                let mut rs = SubmenuBuilder::new(app, "Open Recent");
-                if recent.is_empty() {
-                    rs = rs.item(
-                        &MenuItemBuilder::with_id("file.open_recent:", "(none)")
-                            .enabled(false)
-                            .build(app)?,
-                    );
-                } else {
-                    for path in &recent {
-                        rs = rs.item(
-                            &MenuItemBuilder::with_id(
-                                format!("file.open_recent:{path}"),
-                                short_name(path),
-                            )
-                            .build(app)?,
-                        );
-                    }
-                }
-                sub = sub.item(&rs.build()?);
-                sub = sub.separator();
-                // Its default accelerator is CmdOrCtrl+W, which Close Tab owns.
-                sub = sub.item(&PredefinedMenuItem::close_window(
-                    app,
-                    Some("Close Window"),
-                )?);
-                #[cfg(not(target_os = "macos"))]
-                {
-                    sub = sub.item(&PredefinedMenuItem::quit(app, Some("Quit"))?);
-                }
-            }
             "Tools" => {
                 // Built straight from the GUI tool registry, so the menu can never
                 // drift from what `run_tool` can actually dispatch. 34 flat entries
@@ -191,21 +186,11 @@ pub fn build_main(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                     .item(&PredefinedMenuItem::paste(app, None)?)
                     .item(&PredefinedMenuItem::select_all(app, None)?);
             }
-            "View" => {
-                sub = sub.separator().item(&PredefinedMenuItem::fullscreen(app, None)?);
-            }
-            "Window" => {
-                sub = sub
-                    .separator()
-                    .item(&PredefinedMenuItem::minimize(app, None)?)
-                    .item(&PredefinedMenuItem::maximize(app, None)?);
-            }
             _ => {}
         }
 
-        // AppKit wires its automatic window list / help search onto these ids.
+        // AppKit wires its automatic help search onto this id.
         let built = match *title {
-            "Window" => sub.id(WINDOW_SUBMENU_ID).build()?,
             "Help" => sub.id(HELP_SUBMENU_ID).build()?,
             _ => sub.build()?,
         };
@@ -216,7 +201,9 @@ pub fn build_main(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 }
 
 /// A reduced menu for detached viewer windows: no workspace or tool commands,
-/// which belong to the main window's state.
+/// which belong to the main window's state. Just the clipboard items, which only
+/// work in a webview as predefined menu items; the window itself is managed from
+/// its title bar.
 ///
 /// Only used off macOS — `Window::set_menu` is unsupported there, so detached
 /// windows share the app menu, which is the platform norm. The frontend
@@ -229,17 +216,7 @@ pub fn build_detached(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&PredefinedMenuItem::paste(app, None)?)
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .build()?;
-    let view = SubmenuBuilder::new(app, "View")
-        .item(&PredefinedMenuItem::fullscreen(app, None)?)
-        .build()?;
-    let window = SubmenuBuilder::new(app, "Window")
-        .id(WINDOW_SUBMENU_ID)
-        .item(&PredefinedMenuItem::minimize(app, None)?)
-        .item(&PredefinedMenuItem::maximize(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::close_window(app, Some("Close Window"))?)
-        .build()?;
-    MenuBuilder::new(app).item(&edit).item(&view).item(&window).build()
+    MenuBuilder::new(app).item(&edit).build()
 }
 
 /// Route a menu click to the focused window's frontend.
