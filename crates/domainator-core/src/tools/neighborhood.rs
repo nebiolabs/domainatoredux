@@ -817,20 +817,19 @@ pub fn select_by_cds_hits(
         // Coordinate renaming and reverse-complement handling.
         let (start, end) = (slice.name_start, slice.name_end);
         let strand = slice.overall_strand;
-        // The coordinate suffix and `rc` marker go on the LOCUS name (Python's
-        // `record.id`, which the GenBank writer puts on the LOCUS line); the
-        // accession.version (`region.id`) is left unchanged.
+        // The coordinate suffix and `rc` marker belong to the LOCUS identifier;
+        // ACCESSION/VERSION remain unchanged.
         let whole_fwd = start == 0 && end == rec_len && strand != -1;
         let whole_rev = end == 0 && start == rec_len && strand == -1;
         if !whole_fwd && !whole_rev {
             let (ls, le) = slice.name_label();
-            region.name = format!("{}_{}:{}", region.name, ls, le);
+            region.id = format!("{}_{}:{}", region.id, ls, le);
         }
         if !normalize_direction && strand == -1 {
             // Flip back to the original orientation.
             region = reverse_complement_record(&region);
         } else if strand == -1 {
-            region.name.push_str("rc");
+            region.id.push_str("rc");
         }
 
         // `dist_to_start` travels with the region so `--pad` can align the focus CDSs
@@ -928,9 +927,8 @@ pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<Se
 
         let mut cds_feat = f.clone();
         cds_feat.qualifiers.retain(|(k, _)| k != "translation");
-        // `source_contig` is the contig's LOCUS name (Python's `contig.id` under the
-        // GenBank parser's LOCUS<->VERSION swap = our `name`).
-        cds_feat.set("source_contig", rec.name.clone());
+        // `source_contig` identifies the original LOCUS.
+        cds_feat.set("source_contig", rec.id.clone());
         let mut keep: Vec<SeqFeature> = sources.iter().map(|x| (*x).clone()).collect();
         keep.push((*search).clone());
         if let Some(ds) = dom_by.get(&cid) {

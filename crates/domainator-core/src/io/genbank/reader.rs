@@ -3,8 +3,8 @@
 //! inputs gb-io diverges on (adversarial qualifiers, `*` stop codons, protein
 //! `aa` LOCUS layouts).
 //!
-//! Field mapping (no Biopython swap — see `seq/mod.rs`): `name` = LOCUS name,
-//! `id` = VERSION (accession.version). Sequences are upper-cased (GenBank).
+//! Field mapping: `id` = LOCUS, `name` = VERSION (or ACCESSION) for round-tripping.
+//! Sequences are upper-cased (GenBank).
 
 use std::io::{BufRead, BufReader, Read};
 

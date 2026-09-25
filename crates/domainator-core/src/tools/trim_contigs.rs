@@ -178,7 +178,7 @@ fn trim_contig(
                 Err(_) => {
                     eprintln!(
                         "WARNING: All CDSs in contig {} are composed of domains to be stripped. Skipping contig.",
-                        record.name
+                        record.id
                     );
                     return None;
                 }
@@ -197,7 +197,7 @@ fn trim_contig(
             {
                 eprintln!(
                     "WARNING: CDSs in contig {} overlap after trimming. Skipping contig.",
-                    record.name
+                    record.id
                 );
                 return None;
             }
@@ -218,10 +218,8 @@ fn trim_contig(
 
     if left > 0 || right < rec_len {
         let mut sliced = slice_forward(record, left, right);
-        // Python appends the coordinate suffix to `record.id`, which the GenBank
-        // writer puts on the LOCUS line = our `name`. ACCESSION/VERSION (our
-        // `id`/accessions) are left unchanged.
-        sliced.name = format!("{}_{}:{}", sliced.name, left + 1, right);
+        // Keep ACCESSION/VERSION unchanged when suffixing the LOCUS identifier.
+        sliced.id = format!("{}_{}:{}", sliced.id, left + 1, right);
         Some(sliced)
     } else {
         Some(record.clone())
@@ -325,7 +323,7 @@ mod tests {
         let out = trim_contigs(vec![r], &opts).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].seq.len(), 3000);
-        assert_eq!(out[0].name, "c_1001:4000");
+        assert_eq!(out[0].id, "c_1001:4000");
     }
 
     #[test]
@@ -343,6 +341,6 @@ mod tests {
         assert_eq!(out.len(), 1);
         // left becomes start of cds b (300), right becomes end of cds b (400).
         assert_eq!(out[0].seq.len(), 100);
-        assert_eq!(out[0].name, "c_301:400");
+        assert_eq!(out[0].id, "c_301:400");
     }
 }

@@ -133,11 +133,11 @@ pub fn fasta_title(id: &str, description: &str) -> String {
 }
 
 /// Write records as FASTA with Biopython's header convention, taking the record
-/// **name** (LOCUS for GenBank, header for FASTA — i.e. Python's `record.id`) as
+/// **id** (LOCUS for GenBank, header for FASTA) as
 /// the sequence identifier. Wraps sequence at 60 columns.
 pub fn write_fasta_bp<W: io::Write>(w: &mut W, records: &[SeqRecord]) -> io::Result<()> {
     for rec in records {
-        writeln!(w, ">{}", fasta_title(&rec.name, &rec.description))?;
+        writeln!(w, ">{}", fasta_title(&rec.id, &rec.description))?;
         for chunk in rec.seq.chunks(60) {
             writeln!(w, "{}", String::from_utf8_lossy(chunk))?;
         }

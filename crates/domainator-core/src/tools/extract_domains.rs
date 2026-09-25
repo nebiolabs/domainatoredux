@@ -101,7 +101,7 @@ pub fn extract_domains(
             if rec.topology == Topology::Circular {
                 return Err(format!(
                     "Cannot combine domains on circular contigs because the direction to join on is ambiguous (you could go either way around the circle). Contig {} is circular.",
-                    rec.name
+                    rec.id
                 ));
             }
             // Domain with the lowest start / highest end.
@@ -122,9 +122,9 @@ pub fn extract_domains(
             }
             let loc = Loc::single(start, end, new_strand);
             let mut slice = slice_from_location(rec, &loc, &rec.features, false);
-            let mut new_name = rec.name.clone();
+            let mut new_name = rec.id.clone();
             if slice.seq.len() as i64 != rec_len {
-                new_name = format!("{}_{}:{}", rec.name, loc.stranded_start_hr(), loc.stranded_end_hr());
+                new_name = format!("{}_{}:{}", rec.id, loc.stranded_start_hr(), loc.stranded_end_hr());
             }
             if !protein && new_strand == -1 {
                 new_name.push_str("rc");
@@ -132,7 +132,7 @@ pub fn extract_domains(
             // The name/rc marker goes on the LOCUS name (Python's record.id, which
             // the writer puts on LOCUS); ACCESSION/VERSION are left unchanged.
             if !opts.keep_name {
-                slice.name = new_name;
+                slice.id = new_name;
             }
             out.push(slice);
         } else if opts.splice {
@@ -159,7 +159,7 @@ pub fn extract_domains(
                 slice.topology = Topology::Circular;
             }
             if !opts.keep_name {
-                let mut new_name = rec.name.clone();
+                let mut new_name = rec.id.clone();
                 if slice.seq.len() as i64 != rec_len {
                     let min_start = merged.iter().map(|p| p.0).min().unwrap();
                     let max_end = merged.iter().map(|p| p.1).max().unwrap();
@@ -168,12 +168,12 @@ pub fn extract_domains(
                     } else {
                         (min_start + 1, max_end)
                     };
-                    new_name = format!("{}_{}:{}", rec.name, start_label, end_label);
+                    new_name = format!("{}_{}:{}", rec.id, start_label, end_label);
                     if !protein && strand == -1 && !opts.keep_direction {
                         new_name.push_str("rc");
                     }
                 }
-                slice.name = new_name;
+                slice.id = new_name;
             }
             out.push(slice);
         } else {
@@ -182,15 +182,15 @@ pub fn extract_domains(
                 let strand = domain.location.parts.first().map(|p| p.2).unwrap_or(1);
                 let loc = pad_location(rec, &feature_loc(domain), opts.pad_up, opts.pad_down);
                 let mut slice = slice_from_location(rec, &loc, &rec.features, false);
-                let mut new_name = rec.name.clone();
+                let mut new_name = rec.id.clone();
                 if slice.seq.len() as i64 != rec_len {
-                    new_name = format!("{}_{}:{}", rec.name, loc.stranded_start_hr(), loc.stranded_end_hr());
+                    new_name = format!("{}_{}:{}", rec.id, loc.stranded_start_hr(), loc.stranded_end_hr());
                 }
                 if !protein && opts.keep_direction && strand == -1 {
                     // slice already flipped to forward; flip back to original.
                     slice = revcomp_record(&slice);
                     if !opts.keep_name {
-                        slice.name = new_name;
+                        slice.id = new_name;
                     }
                     out.push(slice);
                     continue;
@@ -198,7 +198,7 @@ pub fn extract_domains(
                     new_name.push_str("rc");
                 }
                 if !opts.keep_name {
-                    slice.name = new_name;
+                    slice.id = new_name;
                 }
                 out.push(slice);
             }
@@ -260,7 +260,7 @@ mod tests {
         let out = extract_domains(&[r], &opts).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].seq, b"GHIKL"); // indices 5..10
-        assert_eq!(out[0].name, "c_6:10");
+        assert_eq!(out[0].id, "c_6:10");
     }
 
     #[test]
@@ -271,7 +271,7 @@ mod tests {
         let out = extract_domains(&[r], &opts).unwrap();
         // seq[0:6]="AAACCC"; revcomp -> "GGGTTT"
         assert_eq!(out[0].seq, b"GGGTTT");
-        assert_eq!(out[0].name, "c_6:1rc"); // stranded_start_hr = end = 6, stranded_end_hr = start+1 = 1
+        assert_eq!(out[0].id, "c_6:1rc"); // stranded_start_hr = end = 6, stranded_end_hr = start+1 = 1
     }
 
     #[test]
@@ -285,7 +285,7 @@ mod tests {
         let out = extract_domains(&[r], &opts).unwrap();
         // keep_direction flips back to forward orientation "AAACCC"
         assert_eq!(out[0].seq, b"AAACCC");
-        assert_eq!(out[0].name, "c_6:1"); // no rc suffix
+        assert_eq!(out[0].id, "c_6:1"); // no rc suffix
     }
 
     #[test]
@@ -299,7 +299,7 @@ mod tests {
         let out = extract_domains(&[r], &opts).unwrap();
         // envelope [2,15)
         assert_eq!(out[0].seq, b"DEFGHIKLMNPQR");
-        assert_eq!(out[0].name, "c_3:15");
+        assert_eq!(out[0].id, "c_3:15");
     }
 
     #[test]

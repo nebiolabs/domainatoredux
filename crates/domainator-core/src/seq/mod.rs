@@ -5,12 +5,10 @@
 //! The "lean fast-path" is just borrowing iterators over `SeqRecord` (see
 //! [`SeqRecord::cds_peptides`]); no separate type and no materialize step.
 //!
-//! Field naming note: we do NOT replicate Biopython's id/name swap. The original
-//! swapped LOCUS name and VERSION into the "wrong" in-memory fields and stayed
-//! bug-compatible forever; we are not bound by that. Here `name` = LOCUS name and
-//! `id` = accession.version (the natural mapping). The GenBank writer emits the
-//! locus name on the LOCUS line and accession.version on ACCESSION/VERSION, so the
-//! on-disk file stays standard and re-readable by the original tool.
+//! `id` is the visible sequence identifier: LOCUS for GenBank, first header word
+//! for FASTA. `name` retains GenBank's VERSION (or ACCESSION) for writing the
+//! original header back out; FASTA does not depend on it. Neither the parser nor
+//! the tools depend on Biopython's in-memory id/name mapping.
 
 pub mod location;
 pub mod translate;
@@ -142,9 +140,9 @@ impl SeqFeature {
 /// One sequence record (a "contig" in Domainator terms).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SeqRecord {
-    /// accession.version (or best available identifier).
+    /// LOCUS for GenBank or first header word for FASTA.
     pub id: String,
-    /// LOCUS name.
+    /// VERSION (or ACCESSION) for GenBank round-tripping; unused for FASTA.
     pub name: String,
     /// DEFINITION.
     pub description: String,

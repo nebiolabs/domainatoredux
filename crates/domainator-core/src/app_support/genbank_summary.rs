@@ -64,7 +64,7 @@ fn summarize_taxids(
             groups
                 .entry(record_taxid(rec))
                 .or_default()
-                .push(rec.name.clone());
+                .push(rec.id.clone());
         }
     }
     groups
@@ -88,7 +88,7 @@ fn summarize_definitions(
             groups
                 .entry(rec.description.clone())
                 .or_default()
-                .push(rec.name.clone());
+                .push(rec.id.clone());
         }
     }
     groups

@@ -145,7 +145,7 @@ pub fn extract_coordinate_region(
     if selection.start > contig_length || selection.end > contig_length {
         return Err(format!(
             "Coordinates out of bounds for contig '{}': {}-{} on length {}",
-            contig.name, selection.start, selection.end, contig_length
+            contig.id, selection.start, selection.end, contig_length
         ));
     }
     let start = selection.start - 1; // 0-based
@@ -161,7 +161,7 @@ pub fn extract_coordinate_region(
         if contig.topology != Topology::Circular {
             return Err(format!(
                 "end < start is only valid for circular contigs. Contig '{}' is not circular.",
-                contig.name
+                contig.id
             ));
         }
         // Origin-crossing. Python `_build_location` orders parts by strand:
@@ -189,13 +189,11 @@ pub fn extract_coordinate_region(
     let mut record = slice_record(contig, &slice, &features);
 
     // Rename to the original coordinates (from the table, not the slice).
-    let mut new_name = format!("{}_{}:{}", record.name, selection.start, selection.end);
+    let mut new_name = format!("{}_{}:{}", record.id, selection.start, selection.end);
     if strand == -1 {
         new_name.push_str("rc");
     }
-    // Python sets both `record.id` and `record.name` to the suffixed value; the
-    // writer puts `record.id` on VERSION (our accession) and `record.name` on
-    // LOCUS. Mirror that by overriding both the name and the accession identity.
+    // This tool sets both LOCUS and ACCESSION/VERSION to the suffixed value.
     record.name = new_name.clone();
     record.id = new_name.clone();
     record.annotations.accessions = vec![new_name];
@@ -216,7 +214,7 @@ pub fn select_by_coord(
     }
     let mut out = Vec::new();
     for (basename, contig) in records {
-        if let Some(sels) = by_contig.get(contig.name.as_str()) {
+        if let Some(sels) = by_contig.get(contig.id.as_str()) {
             for sel in sels {
                 if let Some(f) = &sel.file {
                     if f != basename {

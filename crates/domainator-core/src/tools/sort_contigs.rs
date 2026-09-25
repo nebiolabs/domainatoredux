@@ -35,11 +35,11 @@ fn best_score(rec: &SeqRecord, opts: &SortContigsOptions) -> Result<f64, String>
                 if f.kind != DOMAIN_SEARCH_BEST_HIT_NAME {
                     continue;
                 }
-                let s = feature_score(f, &rec.name)?;
+                let s = feature_score(f, &rec.id)?;
                 best = Some(best.map_or(s, |b| b.max(s)));
             }
             best.ok_or_else(|| {
-                format!("Record {} has no {DOMAIN_SEARCH_BEST_HIT_NAME} features to sort by.", rec.name)
+                format!("Record {} has no {DOMAIN_SEARCH_BEST_HIT_NAME} features to sort by.", rec.id)
             })
         }
         Some(domains) => {
@@ -54,7 +54,7 @@ fn best_score(rec: &SeqRecord, opts: &SortContigsOptions) -> Result<f64, String>
                     _ => {
                         return Err(format!(
                             "Record {} has a {DOMAIN_FEATURE_NAME} feature missing name or database.",
-                            rec.name
+                            rec.id
                         ))
                     }
                 };
@@ -66,11 +66,11 @@ fn best_score(rec: &SeqRecord, opts: &SortContigsOptions) -> Result<f64, String>
                         continue;
                     }
                 }
-                let s = feature_score(f, &rec.name)?;
+                let s = feature_score(f, &rec.id)?;
                 best = Some(best.map_or(s, |b| b.max(s)));
             }
             best.ok_or_else(|| {
-                format!("Record {} has no matching {DOMAIN_FEATURE_NAME} features.", rec.name)
+                format!("Record {} has no matching {DOMAIN_FEATURE_NAME} features.", rec.id)
             })
         }
     }

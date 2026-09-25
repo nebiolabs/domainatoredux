@@ -153,9 +153,9 @@ pub fn extract_unannotated(
         for (s, e, st) in regions {
             let loc = Loc::single(s, e, st);
             let mut slice = slice_from_location(rec, &loc, &rec.features, false);
-            let mut new_name = rec.name.clone();
+            let mut new_name = rec.id.clone();
             if slice.seq.len() as i64 != rec_len {
-                new_name = format!("{}_{}:{}", rec.name, loc.stranded_start_hr(), loc.stranded_end_hr());
+                new_name = format!("{}_{}:{}", rec.id, loc.stranded_start_hr(), loc.stranded_end_hr());
             }
             // Protein: never reverse-complement (molecule_type == protein).
             let protein = rec.molecule_type.as_deref() == Some("protein");
@@ -227,9 +227,9 @@ mod tests {
         let out = extract_unannotated(&[r], &ExtractUnannotatedOptions::default()).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].seq, b"ACDEF");
-        assert_eq!(out[0].name, "c_1:5");
+        assert_eq!(out[0].id, "c_1:5");
         assert_eq!(out[1].seq, b"MNPQRSTVWY");
-        assert_eq!(out[1].name, "c_11:20");
+        assert_eq!(out[1].id, "c_11:20");
     }
 
     #[test]

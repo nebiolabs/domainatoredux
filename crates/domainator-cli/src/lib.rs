@@ -1481,7 +1481,7 @@ fn load_inputs(inputs: &[PathBuf]) -> Result<Vec<SeqRecord>> {
 fn filter_contigs(records: &mut Vec<SeqRecord>, contigs: &[String], contigs_file: Option<&str>) -> Result<()> {
     let set = parse_name_list(contigs, contigs_file)?;
     if let Some(set) = set {
-        records.retain(|r| set.contains(&r.name));
+        records.retain(|r| set.contains(&r.id));
     }
     Ok(())
 }
@@ -2121,7 +2121,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let mut out_records: Vec<SeqRecord> = Vec::new();
             for &i in &result.representatives {
                 let mut rec = records[i].clone();
-                let base = rec.name.clone();
+                let base = rec.id.clone();
                 let count = count_by_rep.get(&i).copied().unwrap_or(1);
                 let newname = if cfg.prefix_count {
                     format!("{count}-{base}")
@@ -2130,10 +2130,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 } else {
                     base
                 };
-                rec.name = newname.clone();
-                if cfg.fasta_out {
-                    rec.id = newname.clone();
-                }
+                rec.id = newname.clone();
                 final_name.insert(i, newname);
                 out_records.push(rec);
             }
@@ -2149,7 +2146,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 let mut t = String::from("representative\tcontigs\n");
                 for (rep, members) in &result.clusters {
                     let rep_name = final_name.get(rep).cloned().unwrap_or_default();
-                    let names: Vec<String> = members.iter().map(|&m| records[m].name.clone()).collect();
+                    let names: Vec<String> = members.iter().map(|&m| records[m].id.clone()).collect();
                     t.push_str(&format!("{rep_name}\t{}\n", names.join(&sep)));
                 }
                 std::fs::write(table_path, t).context("writing cluster table")?;
@@ -3244,7 +3241,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             }
             if let Some(set) = &target_contigs {
-                records.retain(|(r, _)| set.contains(&r.name));
+                records.retain(|(r, _)| set.contains(&r.id));
             }
             let tax = if needs_taxonomy(&analyses) { Some(load_taxonomy(&ncbi_path)?) } else { None };
             let databases: Option<std::collections::HashSet<String>> =
@@ -3329,7 +3326,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let mut records = load_inputs_str(&cfg.input)?;
             let target_contigs = parse_name_list(&cfg.contigs, cfg.contigs_file.as_deref())?;
             if let Some(set) = &target_contigs {
-                records.retain(|r| set.contains(&r.name));
+                records.retain(|r| set.contains(&r.id));
             }
             let target_cdss = parse_name_list(&cfg.cds, cfg.cds_file.as_deref())?;
             let target_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
@@ -3362,7 +3359,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             // Deduplicate by record name (LOCUS), keeping the first occurrence.
             if !cfg.skip_deduplicate {
                 let mut seen = std::collections::HashSet::new();
-                regions.retain(|r| seen.insert(r.record.name.clone()));
+                regions.retain(|r| seen.insert(r.record.id.clone()));
             }
             if cfg.pad {
                 pad_records(&mut regions);

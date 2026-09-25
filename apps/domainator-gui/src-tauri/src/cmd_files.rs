@@ -859,7 +859,7 @@ pub async fn extract_region(
             return Err("empty region".into());
         }
         let sel = CoordinateSelection {
-            contig: contig.name.clone(),
+            contig: contig.id.clone(),
             start: start as i64 + 1, // 1-based inclusive
             end: end as i64,
             strand: 1,

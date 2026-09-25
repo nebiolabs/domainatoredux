@@ -158,14 +158,14 @@ fn select_one(rec: &SeqRecord, opts: &SelectByCdsOptions, expr: Option<&BooleanE
         let whole_rev = end == 0 && start == rec_len && strand == -1;
         if !whole_fwd && !whole_rev {
             let (ls, le) = slice.name_label();
-            region.name = format!("{}_{}:{}", region.name, ls, le);
+            region.id = format!("{}_{}:{}", region.id, ls, le);
         }
         let mut dist_to_start = slice.dist_to_start;
         if !opts.normalize_direction && strand == -1 {
             region = reverse_complement_record(&region);
             dist_to_start = slice.dist_to_end;
         } else if strand == -1 {
-            region.name.push_str("rc");
+            region.id.push_str("rc");
         }
 
         if opts.max_region_overlap < 1.0 {

@@ -139,8 +139,8 @@ pub fn record_identity(header_lines: &[String]) -> (String, String) {
             _ => {}
         }
     }
-    let id = version_token.or(first_accession).unwrap_or_else(|| name.clone());
-    (id, name)
+    let accession = version_token.or(first_accession).unwrap_or_else(|| name.clone());
+    (name, accession)
 }
 
 /// Parse one record from its raw header lines (LOCUS..before ORIGIN) plus the
@@ -178,7 +178,7 @@ pub fn parse_record(
         match sec.keyword.as_str() {
             "LOCUS" => {
                 let locus = parse_locus(&sec.lines[0]);
-                rec.name = locus.name.clone();
+                rec.id = locus.name.clone();
                 rec.molecule_type = locus
                     .molecule_type
                     .or_else(|| default_molecule_type.map(str::to_string))
@@ -246,17 +246,17 @@ pub fn parse_record(
         }
     }
 
-    // VERSION → id + sequence_version.
+    // VERSION is retained for round-tripping; LOCUS is the record identifier.
     if let Some(ver) = version_token {
-        rec.id = ver.clone();
+        rec.name = ver.clone();
         if let Some((_, n)) = ver.rsplit_once('.') {
             if let Ok(v) = n.parse::<i64>() {
                 rec.annotations.sequence_version = Some(v);
             }
         }
     }
-    if rec.id.is_empty() {
-        rec.id = rec.annotations.accessions.first().cloned().unwrap_or_else(|| rec.name.clone());
+    if rec.name.is_empty() {
+        rec.name = rec.annotations.accessions.first().cloned().unwrap_or_else(|| rec.id.clone());
     }
     rec
 }
@@ -531,23 +531,23 @@ mod tests {
 
     #[test]
     fn record_identity_matches_parse_record_derivation() {
-        // VERSION wins the id; LOCUS name is the name.
+        // LOCUS is the id; VERSION is retained in name for round-tripping.
         let (id, name) = record_identity(&lines(
             "LOCUS       ABC12345             1000 bp    DNA     linear   BCT 01-JAN-2020\n\
              ACCESSION   ABC12345\n\
              VERSION     ABC12345.2  GI:999\n\
              DEFINITION  Something.",
         ));
-        assert_eq!(name, "ABC12345");
-        assert_eq!(id, "ABC12345.2"); // GI: token skipped, .version kept
+        assert_eq!(id, "ABC12345");
+        assert_eq!(name, "ABC12345.2"); // GI: token skipped, .version kept
 
-        // No VERSION → first ACCESSION becomes the id.
+        // No VERSION → first ACCESSION becomes the retained name.
         let (id, name) = record_identity(&lines(
             "LOCUS       myLocus              500 bp    DNA     linear   01-JAN-2020\n\
              ACCESSION   ACC001 ACC002",
         ));
-        assert_eq!(name, "myLocus");
-        assert_eq!(id, "ACC001");
+        assert_eq!(id, "myLocus");
+        assert_eq!(name, "ACC001");
 
         // Neither VERSION nor ACCESSION → id falls back to the LOCUS name.
         let (id, name) = record_identity(&lines(

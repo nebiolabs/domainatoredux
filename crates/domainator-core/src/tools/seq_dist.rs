@@ -145,8 +145,9 @@ fn load_seqs(path: &str, kind: InputKind) -> std::io::Result<Seqs> {
     let mut index = NameIndex::new();
     let mut records = Vec::new();
     for r in recs {
-        index.push(r.id.clone(), r.seq.len() as i64);
-        records.push((r.id, r.seq));
+        let name = r.id;
+        index.push(name.clone(), r.seq.len() as i64);
+        records.push((name, r.seq));
     }
     Ok(Seqs { records, index })
 }
@@ -670,3 +671,47 @@ use super::external::TempDir;
 /// A DIAMOND pass result: `(row, col) -> best score` keyed by matrix index,
 /// plus the query and reference name indexes those coordinates refer to.
 type DiamondCells = (HashMap<(i64, i64), f64>, NameIndex, NameIndex);
+
+#[cfg(test)]
+mod tests {
+    use super::{load_seqs, InputKind};
+    use crate::matrix::{DataMatrix, Storage};
+    use crate::tools::build_ssn_viewer::{build_ssn_viewer_bundle, BuildSsnViewerOptions};
+
+    #[test]
+    fn genbank_matrix_labels_use_locus_not_version() {
+        let path = std::env::temp_dir().join(format!("seq_dist_locus_{}.gb", std::process::id()));
+        let record = "LOCUS       protein_3:9 6 aa                     UNK 01-JAN-2000\n\
+DEFINITION  Example protein.\n\
+ACCESSION   protein\n\
+VERSION     protein\n\
+FEATURES             Location/Qualifiers\n\
+ORIGIN\n\
+        1 acdefg\n\
+//\n";
+        std::fs::write(&path, record).unwrap();
+        let result = load_seqs(path.to_str().unwrap(), InputKind::Genbank);
+        std::fs::remove_file(&path).unwrap();
+        let seqs = result.unwrap();
+        assert_eq!(seqs.index.names, ["protein_3:9"]);
+        assert_eq!(seqs.records[0].0, "protein_3:9");
+
+        let metadata_path = path.with_extension("tsv");
+        std::fs::write(&metadata_path, "contig\tdomains\nprotein_3:9\tDUF262\n").unwrap();
+        let matrix = DataMatrix {
+            rows: seqs.index.names.clone(),
+            cols: seqs.index.names,
+            row_lengths: None,
+            col_lengths: None,
+            data_type: "score".to_string(),
+            storage: Storage::Dense(vec![0.0]),
+        };
+        let opts = BuildSsnViewerOptions {
+            metadata_files: vec![metadata_path.to_str().unwrap().to_string()],
+            ..BuildSsnViewerOptions::default()
+        };
+        let bundle = build_ssn_viewer_bundle(&matrix, &opts);
+        std::fs::remove_file(&metadata_path).unwrap();
+        assert_eq!(bundle.unwrap()["metadata"]["rows"][0][0], "DUF262");
+    }
+}

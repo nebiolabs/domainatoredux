@@ -94,7 +94,7 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
             let mut cds_feature = cds.feature.clone();
             cds_feature.qualifiers.retain(|(k, _)| k != "translation");
             // `source_contig` is the contig LOCUS name (Python's contig.id).
-            cds_feature.set("source_contig", contig.name.clone());
+            cds_feature.set("source_contig", contig.id.clone());
 
             let mut keep_features: Vec<SeqFeature> =
                 source_features.iter().map(|f| (*f).clone()).collect();
@@ -134,7 +134,7 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
 
             // Name: the CDS name (or the contig name with --keep_name). Peptide has
             // no carried accession identity.
-            let new_name = if opts.keep_name { contig.name.clone() } else { cds.name.clone() };
+            let new_name = if opts.keep_name { contig.id.clone() } else { cds.name.clone() };
             region.id = new_name.clone();
             region.name = new_name;
             region.description = contig.description.clone();
@@ -175,8 +175,8 @@ mod tests {
 
     fn contig(seq: &[u8], features: Vec<SeqFeature>) -> SeqRecord {
         SeqRecord {
-            id: "acc.1".into(),
-            name: "ctg".into(),
+            id: "ctg".into(),
+            name: "acc.1".into(),
             description: "a contig".into(),
             seq: seq.to_vec(),
             molecule_type: Some("DNA".into()),
@@ -245,6 +245,6 @@ mod tests {
         let r = contig(b"ATGGCT", vec![cds("C1", "geneA", 0, 6, 1)]);
         let opts = ExtractPeptidesOptions { evalue: 1e8, extract_all: true, keep_name: true, ..Default::default() };
         let out = extract_peptides(&[r], &opts);
-        assert_eq!(out[0].name, "ctg");
+        assert_eq!(out[0].id, "ctg");
     }
 }

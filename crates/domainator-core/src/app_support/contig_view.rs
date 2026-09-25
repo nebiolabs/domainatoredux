@@ -173,7 +173,7 @@ fn contig_view(index: usize, rec: &SeqRecord) -> ContigView {
     ContigView {
         index,
         id: rec.id.clone(),
-        name: rec.name.clone(),
+        name: rec.id.clone(),
         description: rec.description.clone(),
         length: rec.len(),
         topology: match rec.topology {

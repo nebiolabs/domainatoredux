@@ -563,7 +563,7 @@ fn process_record(
     filename: &str,
     rows: &mut Vec<Vec<Value>>,
 ) {
-    let contig_name = rec.name.clone();
+    let contig_name = rec.id.clone();
     let mut sub_recs: Vec<SeqRecord> = Vec::new();
     let mut locs: Vec<Location> = Vec::new();
     let mut cds_names: Vec<String> = Vec::new();

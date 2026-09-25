@@ -337,10 +337,10 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
     // `_write_the_first_line`): protein records have empty molecule type and `aa`
     // units; the 28-char name+length field has the name left-justified and the
     // length right-justified.
-    let locus = if !rec.name.is_empty() {
-        rec.name.clone()
-    } else if !rec.id.is_empty() {
+    let locus = if !rec.id.is_empty() {
         rec.id.clone()
+    } else if !rec.name.is_empty() {
+        rec.name.clone()
     } else {
         rec.annotations.accessions.first().cloned().unwrap_or_default()
     };
@@ -405,16 +405,16 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
         if rec.description.is_empty() { ".".to_string() } else { format!("{}.", rec.description) };
     write_wrapped(w, "DEFINITION", &definition)?;
     let ann = &rec.annotations;
-    // ACCESSION / VERSION, replicating Biopython's GenBankWriter: derive a
-    // default accession from `id` (stripping a trailing `.<version>`), prefer the
+    // ACCESSION / VERSION: derive a default accession from the retained version
+    // token (stripping a trailing `.<version>`), prefer the
     // `accessions` annotation, and always emit both lines.
-    let id = &rec.id;
-    let default_acc = match id.split_once('.') {
+    let version = if rec.name.is_empty() { &rec.id } else { &rec.name };
+    let default_acc = match version.split_once('.') {
         Some((base, ver)) if !ver.is_empty() && ver.chars().all(|c| c.is_ascii_digit()) => base,
-        _ => id.as_str(),
+        _ => version.as_str(),
     };
     let accession = ann.accessions.first().map(String::as_str).unwrap_or(default_acc);
-    let acc_with_version = if let Some(rest) = id.strip_prefix(&format!("{accession}.")) {
+    let acc_with_version = if let Some(rest) = version.strip_prefix(&format!("{accession}.")) {
         match rest.parse::<i64>() {
             Ok(v) => format!("{accession}.{v}"),
             Err(_) => accession.to_string(),
@@ -643,6 +643,10 @@ mod tests {
         cds.set("cds_id", "C1");
         cds.set("gene_id", "geneA");
         let mut original = rec(vec![cds, dom("Adom", 150, 200, "DB")], "A sample definition");
+        original.id = "locus_101:700".into();
+        original.name = "ACC001.2".into();
+        original.annotations.accessions = vec!["ACC001".into()];
+        original.annotations.sequence_version = Some(2);
         original.molecule_type = Some("DNA".into());
         original.seq = b"ACGTACGTACGT".repeat(50); // 600 bp, valid bases
         let dir = std::env::temp_dir();
@@ -653,7 +657,9 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         assert_eq!(back.len(), 1);
         let b = &back[0];
+        assert_eq!(b.id, original.id);
         assert_eq!(b.name, original.name);
+        assert_eq!(b.annotations.accessions, original.annotations.accessions);
         assert_eq!(b.description, original.description); // period stripped on read
         assert_eq!(b.seq, original.seq);
         // CDS + Domainator features survive the round trip.

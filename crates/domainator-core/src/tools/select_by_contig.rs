@@ -8,8 +8,7 @@
 //!         OR has-target-domain OR domain-expr OR unannotated OR search-score )
 //! AND (count <= first)
 //! ```
-//! `contig.id` in the original is the GenBank LOCUS name (Biopython's
-//! parser swap) — i.e. our [`SeqRecord::name`].
+//! Contig names are [`SeqRecord::id`] (GenBank LOCUS or FASTA header word).
 
 use std::collections::HashSet;
 
@@ -142,13 +141,13 @@ pub fn select_by_contig(
 
         if let Some(set) = &opts.target_contigs {
             at_least_one_test = true;
-            if set.contains(&contig.name) {
+            if set.contains(&contig.id) {
                 selected = true;
             }
         }
         if let Some(re) = &name_re {
             at_least_one_test = true;
-            if re.is_match(&contig.name) {
+            if re.is_match(&contig.id) {
                 selected = true;
             }
         }

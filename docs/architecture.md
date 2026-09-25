@@ -62,10 +62,11 @@ vendor either.**
 
 These gate parity. Grep the owning module before changing any of them.
 
-- **No Biopython id/name swap in memory:** `name` is the LOCUS name, `id` is
-  accession.version. But the Python *parser* swaps them, so when a gate re-reads our
-  output, LOCUS becomes `id`. Consequence: a coordinate suffix the Python tool appends to
-  `record.id` must be written to our **`name`**.
+- **Sequence identifiers:** `id` is the LOCUS name for GenBank and the first header
+  word for FASTA. `name` retains GenBank's VERSION (or ACCESSION) only for round-tripping;
+  user-facing labels, coordinate suffixes, matrix axes, and metadata keys use `id`.
+  This matches the Python tool's LOCUS-based identifiers without depending on its
+  Biopython id/name swap.
 - **Ordered qualifiers** (`Vec<(String, Vec<String>)>`) — insertion order is load-bearing
   for the writer and for the `cds_id` / `domainator_<db>` rollups.
 - **`/translation` is the only qualifier that wraps.** Upstream patched its vendored

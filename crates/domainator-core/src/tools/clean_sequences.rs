@@ -127,7 +127,7 @@ pub fn clean_sequences(
 
     for mut contig in records {
         stats.input_count += 1;
-        let original_name = contig.name.clone();
+        let original_name = contig.id.clone();
         let original_seq = contig.seq.clone();
 
         if opts.strip {
@@ -153,16 +153,14 @@ pub fn clean_sequences(
         }
 
         if opts.deduplicate_names {
-            // Python dedups on `record.id` (= LOCUS = our `name`) and mirrors the
-            // result into both fields.
-            let new_name = deduplicate_name(&contig.name, &mut seen);
-            if new_name != contig.name {
+            let new_name = deduplicate_name(&contig.id, &mut seen);
+            if new_name != contig.id {
                 contig.name = new_name.clone();
                 contig.id = new_name;
             }
         }
 
-        if contig.name != original_name {
+        if contig.id != original_name {
             stats.names_changed_count += 1;
         }
         if contig.seq != original_seq {
