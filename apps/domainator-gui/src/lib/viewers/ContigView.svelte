@@ -1846,7 +1846,7 @@
       role="application"
       aria-label="Contig annotation viewer"
     >
-      <button type="button" class="gutter-resize" style="left:{GUTTER - 3}px; height:{viewH}px; margin-bottom:-{viewH}px;" aria-label="Resize contig names" onpointerdown={resizeGutter} onkeydown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { GUTTER = Math.max(80, Math.min(viewW - 80, GUTTER + (e.key === "ArrowRight" ? 10 : -10))); scheduleDraw(); } }}></button>
+      <button type="button" class="gutter-resize" style="left:{GUTTER - 3}px; top:{viewTop}px; height:{viewH}px;" aria-label="Resize contig names" onpointerdown={resizeGutter} onkeydown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { GUTTER = Math.max(80, Math.min(viewW - 80, GUTTER + (e.key === "ArrowRight" ? 10 : -10))); scheduleDraw(); } }}></button>
       <!-- Spacer is only as tall as the stacked contigs (vertical native scroll);
            the x axis is JS-managed (viewLeft) so it isn't bound by DOM width limits. -->
       <div class="spacer" style="height:{vlayout.total}px;">
@@ -2041,8 +2041,7 @@
     min-height: 0;
   }
   .gutter-resize {
-    position: sticky;
-    top: 0;
+    position: absolute;
     width: 6px;
     z-index: 3;
     cursor: col-resize;
