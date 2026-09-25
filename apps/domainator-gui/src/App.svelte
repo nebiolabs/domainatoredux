@@ -369,9 +369,13 @@
   const dragLeft = startDrag((e) => {
     leftWidth = Math.min(Math.max(160, e.clientX), 560);
   });
+  let mainEl = $state<HTMLElement>();
   const dragTable = startDrag((e) => {
-    // 44px accounts for the toolbar height.
-    tableHeight = Math.min(Math.max(120, e.clientY - 44), window.innerHeight - 160);
+    // Measured from the pane itself, so a toolbar or error banner above it is
+    // accounted for; the 124px left over matches the CSS cap on the row.
+    const r = mainEl?.getBoundingClientRect();
+    if (!r) return;
+    tableHeight = Math.min(Math.max(120, e.clientY - r.top), r.height - 124);
   });
 </script>
 
@@ -564,7 +568,7 @@
 
   <div class="left-resizer" onpointerdown={dragLeft} role="separator" aria-label="Resize sidebar" tabindex="-1"></div>
 
-  <section class="main">
+  <section class="main" bind:this={mainEl}>
     <div class="table-pane">
       <FileTable />
     </div>
@@ -871,7 +875,11 @@
   .main {
     grid-area: main;
     display: grid;
-    grid-template-rows: var(--table-height) 4px 1fr;
+    /* The stored table height is capped by the space there is now, so the viewer
+       always keeps at least 120px. Without the cap a height dragged in a taller
+       window (another monitor, or before an error banner appeared) left the viewer
+       a zero-height row, and opening a file seemed to do nothing. */
+    grid-template-rows: min(var(--table-height), max(0px, calc(100% - 124px))) 4px 1fr;
     min-width: 0;
     min-height: 0;
   }

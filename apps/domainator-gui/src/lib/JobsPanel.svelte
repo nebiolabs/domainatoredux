@@ -1,5 +1,6 @@
 <script lang="ts">
   import ResizableBody from "./ResizableBody.svelte";
+  import PanelSeam from "./PanelSeam.svelte";
   import { ws } from "./state.svelte";
   import type { JobInfo } from "./types";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -116,6 +117,7 @@
 </script>
 
 <div class="jobs">
+  <PanelSeam key="jobs" active={expanded} />
   <div class="header">
     <button class="twisty" onclick={() => (expanded = !expanded)} aria-label="Toggle jobs">
       {expanded ? "▾" : "▸"}

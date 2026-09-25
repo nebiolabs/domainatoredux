@@ -7,6 +7,7 @@
   // backend's `refdb-progress` event. A TrEMBL install runs for hours, so a panel
   // that only said "downloading…" would be indistinguishable from one that had hung.
   import ResizableBody from "./ResizableBody.svelte";
+  import PanelSeam from "./PanelSeam.svelte";
   import { listen } from "@tauri-apps/api/event";
   import {
     cancelReferenceDb,
@@ -157,6 +158,7 @@
 </script>
 
 <div class="refdbs" bind:this={panelEl}>
+  <PanelSeam key="refdbs" active={expanded} />
   <div class="header">
     <button class="twisty" onclick={() => (expanded = !expanded)} aria-label="Toggle reference databases">
       {expanded ? "▾" : "▸"}

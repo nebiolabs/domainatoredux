@@ -1,5 +1,6 @@
 <script lang="ts">
   import ResizableBody from "./ResizableBody.svelte";
+  import PanelSeam from "./PanelSeam.svelte";
   import { downloadExternalTool, listExternalTools } from "./api";
   import type { ExternalToolStatus } from "./types";
   import { ui } from "./ui.svelte";
@@ -55,6 +56,7 @@
 </script>
 
 <div class="ext" bind:this={panelEl}>
+  <PanelSeam key="external" active={expanded} />
   <div class="header">
     <button class="twisty" onclick={() => (expanded = !expanded)} aria-label="Toggle external tools">
       {expanded ? "▾" : "▸"}

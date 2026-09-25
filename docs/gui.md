@@ -157,8 +157,9 @@ but have to scan the whole file first; the index lets `domain-search` seek, and 
 plain-gzip database is tagged `gzip`: it cannot be indexed until it is recompressed as BGZF
 with [`format-db`](cli-reference.md#format-db) (`--compress`). HMM libraries need no index.
 
-Each panel in the sidebar can be resized by dragging the grip under it; double-click the
-grip to fit the panel to its contents again.
+Each panel in the sidebar is resized by dragging the border above it: up grows the panel
+and shrinks the one above (or the folder tree). Double-click the border to fit the panel
+to its contents again.
 
 The panel registers databases that are *already formatted*; to build one, use
 [`format-db`](cli-reference.md#format-db) on the command line — or let the app fetch and

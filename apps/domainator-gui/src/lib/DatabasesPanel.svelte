@@ -8,6 +8,7 @@
   import NameModal from "./NameModal.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import ResizableBody from "./ResizableBody.svelte";
+  import PanelSeam from "./PanelSeam.svelte";
   import type { DatabaseRow, FileEntry, FileType } from "./types";
 
   let expanded = $state(true);
@@ -120,6 +121,7 @@
 </script>
 
 <div class="dbpanel" bind:this={panelEl}>
+  <PanelSeam key="databases" active={expanded} />
   <div class="header">
     <button class="twisty" onclick={() => (expanded = !expanded)} aria-label="Toggle databases">
       {expanded ? "▾" : "▸"}
