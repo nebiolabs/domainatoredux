@@ -26,6 +26,7 @@
   let values = $state<Record<string, any>>({});
   let error = $state<string | null>(null);
   let running = $state(false);
+  let editedOutputs = new Set<string>();
 
   // The current directory: outputs land here, and input dropdowns list its files.
   const folder = $derived(ws.selectedFolder ?? ws.root ?? "");
@@ -80,8 +81,21 @@
   }
   function stemOf(p: string): string {
     const base = p.slice(Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")) + 1);
-    const dot = base.indexOf(".");
+    const dot = base.lastIndexOf(".");
     return dot > 0 ? base.slice(0, dot) : base;
+  }
+  function updateOutputNames(changedField: string, selectedPath: string): void {
+    const input = meta?.fields.find((field) => field.name === "input" && isInputRole(field.role));
+    const primary = input && (input.name === changedField ? selectedPath : values[input.name]);
+    const fallback = meta?.fields.find((field) => isInputRole(field.role)
+      && (field.name === changedField ? selectedPath : values[field.name]));
+    const path = primary || (fallback?.name === changedField ? selectedPath : fallback && values[fallback.name]);
+    const stem = path ? stemOf(String(path)) : "output";
+    for (const field of meta?.fields ?? []) {
+      if (field.role === "output_file" && field.output_name && !editedOutputs.has(field.name)) {
+        values[field.name] = field.output_name.replaceAll("{stem}", stem);
+      }
+    }
   }
   const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const showValue = (v: unknown) => (v === null || v === undefined ? "unset" : Array.isArray(v) ? v.join(",") || "empty" : String(v));
@@ -96,6 +110,7 @@
     void initial;
     error = null;
     schema = null;
+    editedOutputs = new Set();
     if (!meta) {
       error = `Unknown tool "${tool}".`;
       return;
@@ -146,6 +161,7 @@
             if (raw === undefined || raw === null) continue;
             if (field.role === "output_file") {
               v[field.name] = String(raw).split(/[\\/]/).pop() ?? "";
+              editedOutputs.add(field.name);
             } else if (field.role === "input_files") {
               v[field.name] = Array.isArray(raw) ? (raw[0] ?? "") : raw;
             } else if (field.role === "columns") {
@@ -274,7 +290,7 @@
               {#if groups.length === 0}
                 <span class="nofiles">No {field.file_types.join(" / ")} files/databases available</span>
               {:else}
-                <select bind:value={values[field.name]}>
+                <select bind:value={values[field.name]} onchange={(e) => updateOutputNames(field.name, e.currentTarget.value)}>
                   {#if !field.required}<option value="">(none)</option>{/if}
                   {#each groups as g, gi (g.label)}
                     <!-- The bar between the two groups; `<hr>` in a `<select>` is not reliable in WebKitGTK. -->
@@ -286,7 +302,7 @@
                 </select>
               {/if}
             {:else if field.role === "output_file"}
-              <input type="text" bind:value={values[field.name]} placeholder="filename" />
+              <input type="text" bind:value={values[field.name]} oninput={() => editedOutputs.add(field.name)} placeholder="filename" />
             {:else if prop?.enum}
               <select bind:value={values[field.name]}>
                 {#if enumHasNull(prop) || !field.required}

@@ -58,7 +58,7 @@ pub struct FieldSpec {
     #[serde(default)]
     pub select: Option<Select>,
     /// Output roles only: the seeded file name, `{stem}` being the primary
-    /// input's name up to its first `.`.
+    /// input's name without its final extension.
     #[serde(default)]
     pub output_name: Option<String>,
     /// `columns` role only: GUI overrides for the column builder, keyed by column

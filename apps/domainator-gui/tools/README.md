@@ -229,11 +229,13 @@ its type (`gui_defaults_fit_their_property`) and must not use a type `column_typ
 
 An `output_file` is a file-name box. The app writes the file into the current folder, the
 one named at the top of the dialog. `output_name` sets the starting name:
-- `{stem}` is replaced with the primary input's name, up to its first `.`. For
-  `/data/run1.search.gb`, the stem is `run1`.
+- `{stem}` is replaced with the primary input's name without its final extension.
+  For `/data/run1.search.gb`, the stem is `run1.search`.
 - The primary input is the field named `input` when it has a value, otherwise the first
   input with one.
 - With no input chosen, `{stem}` becomes `output`.
+- Changing the primary input updates templated output names until you edit an output
+  name yourself. Cloned jobs keep their saved output names.
 - `output_name` must be a file name, not a path. It can use no placeholder other than
   `{stem}`.
 
