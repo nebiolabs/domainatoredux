@@ -38,6 +38,8 @@
   // Sort + row-selection state.
   let sortCol = $state(-1);
   let sortDir = $state<1 | -1>(1);
+  let filters = $state<Record<number, string>>({});
+  let colWidths = $state<number[]>([]);
   let selected = $state(new Set<number>()); // indices into `rows` (≥1 = data rows)
   let rAnchor = -1;
   let showExtract = $state(false);
@@ -74,6 +76,7 @@
     dirty = false;
     selected = new Set();
     sortCol = -1;
+    filters = {};
     try {
       // The backend normalizes to LF and reports the file's real terminator.
       const f = await readTextFile(path);
@@ -93,6 +96,8 @@
         while (c.length < ncols) c.push("");
         return c;
       });
+      colWidths = Array.from({ length: ncols }, (_, column) =>
+        Math.min(320, Math.max(100, Math.max(...rows.slice(0, 200).map((row) => row[column].length), 0) * 8 + 32)));
     } catch (e) {
       error = String(e);
     } finally {
@@ -121,14 +126,18 @@
   }
   function addColumn() {
     rows = rows.map((row) => [...row, ""]);
+    colWidths = [...colWidths, 150];
     ncols += 1;
     dirty = true;
   }
   function deleteColumn(c: number) {
     rows = rows.map((row) => row.filter((_, i) => i !== c));
+    colWidths = colWidths.filter((_, index) => index !== c);
     ncols = Math.max(0, ncols - 1);
     if (sortCol === c) sortCol = -1;
     else if (sortCol > c) sortCol -= 1;
+    filters = Object.fromEntries(Object.entries(filters).filter(([key]) => Number(key) !== c)
+      .map(([key, value]) => [Number(key) > c ? Number(key) - 1 : Number(key), value]));
     dirty = true;
   }
   function sortByColumn(c: number) {
@@ -201,6 +210,28 @@
   }
 
   const header = $derived(rows[0] ?? []);
+  const tableWidth = $derived(56 + colWidths.reduce((sum, width) => sum + width, 0));
+  function startResize(e: PointerEvent, column: number) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = colWidths[column];
+    const move = (event: PointerEvent) => {
+      colWidths[column] = Math.max(60, startWidth + event.clientX - startX);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  const matchingRows = $derived.by(() => {
+    const active = Object.entries(filters).filter(([, value]) => value.trim())
+      .map(([column, value]) => [Number(column), value.trim().toLowerCase()] as const);
+    if (!active.length) return rows.slice(1).map((_, index) => index + 1);
+    return rows.slice(1).flatMap((row, index) =>
+      active.every(([column, value]) => row[column]?.toLowerCase().includes(value)) ? [index + 1] : []);
+  });
 
   // Row virtualization. A wide TSV at the 5000-row CAP used to mount one <input>
   // per cell for every row — 100k focusable elements — which WebView2 in
@@ -242,7 +273,7 @@
   // window is placed at the scroll position instead of after a pad of exact
   // height. Below the cap (every ordinary file) the exact 1:1 mapping is kept.
   const MAX_SPACER = 10_000_000;
-  const dataRows = $derived(Math.max(0, rows.length - 1));
+  const dataRows = $derived(matchingRows.length);
   const idealH = $derived(dataRows * ROW_H);
   const scaled = $derived(idealH > MAX_SPACER);
   const spacerH = $derived(scaled ? MAX_SPACER : idealH);
@@ -258,9 +289,9 @@
     return Math.min(maxFirst, Math.max(1, Math.round(frac * (maxFirst - 1)) + 1));
   });
   const lastRow = $derived(
-    Math.min(rows.length, firstRow + windowRows + (scaled ? 1 : 2 * OVERSCAN)),
+    Math.min(dataRows + 1, firstRow + windowRows + (scaled ? 1 : 2 * OVERSCAN)),
   );
-  const visibleRows = $derived(rows.slice(firstRow, lastRow));
+  const visibleRows = $derived(matchingRows.slice(firstRow - 1, lastRow - 1));
   const topPad = $derived(scaled ? scrollTop : (firstRow - 1) * ROW_H);
   const bottomPad = $derived(
     Math.max(0, spacerH - topPad - (lastRow - firstRow) * ROW_H),
@@ -283,12 +314,17 @@
         <button onclick={() => (selected = new Set())}>clear</button>
       {/if}
       <span class="dim">{Math.max(0, rows.length - 1).toLocaleString()} rows · {ncols} cols · {isCsv ? "CSV" : "TSV"} · {eolLabel}</span>
+      {#if dataRows !== rows.length - 1}<span class="dim">{dataRows.toLocaleString()} matching</span>{/if}
       {#if dirty}<span class="dot" title="Unsaved changes">●</span>{/if}
       {#if msg}<span class="dim">{msg}</span>{/if}
       {#if scaled}<span class="warn" title="Past the browser's maximum element height the scrollbar maps onto the row range rather than onto pixels.">proportional scrolling</span>{/if}
     </div>
     <div class="grid-scroll" bind:this={scrollEl} onscroll={onScroll}>
-      <table>
+      <table style="width:{tableWidth}px; table-layout:fixed;">
+        <colgroup>
+          <col style="width:56px" />
+          {#each colWidths as width, column (column)}<col style="width:{width}px" />{/each}
+        </colgroup>
         <thead>
           <tr>
             <th class="rownum"></th>
@@ -301,14 +337,21 @@
                   </button>
                   <button class="hbtn del" title="Delete column" aria-label="Delete column" onclick={() => deleteColumn(c)}>×</button>
                 </div>
+                <span class="resizer" role="separator" aria-label="Resize {header[c] || `column ${c + 1}`}" onpointerdown={(e) => startResize(e, c)}></span>
               </th>
+            {/each}
+          </tr>
+          <tr class="filterrow">
+            <th class="rownum"></th>
+            {#each header as _, c (c)}
+              <th><input aria-label="Filter {header[c] || `column ${c + 1}`}" placeholder="Filter…" value={filters[c] ?? ""} oninput={(e) => { filters[c] = e.currentTarget.value; if (scrollEl) scrollEl.scrollTop = 0; scrollTop = 0; }} /></th>
             {/each}
           </tr>
         </thead>
         <tbody>
           {#if topPad > 0}<tr class="pad" style="height:{topPad}px"><td colspan={ncols + 1}></td></tr>{/if}
-          {#each visibleRows as row, ri (firstRow + ri)}
-            {@const r = firstRow + ri}
+          {#each visibleRows as r (r)}
+            {@const row = rows[r]}
             <tr class:sel={selected.has(r)}>
               <td class="rownum" onclick={(e) => rowSelect(e, r)} title="Click to select (Ctrl/Shift for multiple)">
                 <span>{r}</span>
@@ -390,6 +433,17 @@
     font-size: 12.5px;
     font-family: var(--mono);
   }
+  th { position: relative; }
+  .resizer {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .resizer:hover { background: var(--accent); opacity: 0.5; }
   th,
   td {
     border: 1px solid var(--border);
@@ -402,6 +456,8 @@
     z-index: 1;
     background: var(--bg-panel);
   }
+  thead tr.filterrow th { top: 28px; }
+  .filterrow input { font-weight: 400; width: 100%; box-sizing: border-box; }
   .hcell {
     display: flex;
     align-items: center;
@@ -426,12 +482,14 @@
     background: none;
     color: var(--text);
     padding: 3px 6px;
-    width: 150px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     font: inherit;
   }
-  thead input {
+  thead .hcell input {
     font-weight: 600;
-    width: 120px;
+    flex: 1;
   }
   input:focus {
     outline: 2px solid var(--accent);

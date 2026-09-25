@@ -5,7 +5,7 @@ use domainator_core::app_support::hmm_logo::{
     index_hmm_file, logo_from_hmm_bytes, read_hmm_byte_ranges, HmmEntry, HmmLogo, HmmSummary,
 };
 use domainator_core::search::hmm_write::write_hmm_output;
-use domainator_core::app_support::summary_stats::{summarize, SummaryStats};
+use domainator_core::app_support::summary_stats::SummaryStats;
 use domainator_core::app_support::text_file::{detect_eol, from_lf, to_lf, Eol};
 use domainator_core::app_support::workspace::{classify_file, find_workspace_root};
 use domainator_core::app_support::provenance::{trace_source_sequences, SourceTrace};
@@ -100,7 +100,7 @@ fn histogram(scores: &[f64], bins: usize) -> Value {
 
 /// Pure-data summary statistics for a sequence file (Summary dashboard).
 #[tauri::command]
-pub async fn run_summary_stats(path: String) -> Result<SummaryStats, String> {
+pub async fn run_summary_stats(path: String, ncbi_taxonomy_path: Option<String>) -> Result<SummaryStats, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let kind = detect_filetype(std::path::Path::new(&path))
             .ok_or_else(|| format!("not a sequence file: {path}"))?;
@@ -108,7 +108,9 @@ pub async fn run_summary_stats(path: String) -> Result<SummaryStats, String> {
             FileType::Genbank => read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?,
             FileType::Fasta => read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?,
         };
-        Ok(summarize(&records))
+        let taxonomy = ncbi_taxonomy_path.as_deref().filter(|path| !path.is_empty())
+            .map(crate::taxonomy_cache::load).transpose()?;
+        Ok(domainator_core::app_support::summary_stats::summarize_with_taxonomy(&records, taxonomy.as_deref()))
     })
     .await
     .map_err(|e| format!("summary failed: {e}"))?

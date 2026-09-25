@@ -6,6 +6,7 @@
 use serde::Serialize;
 
 use crate::seq::SeqRecord;
+use crate::seq::taxonomy::NCBITaxonomy;
 use crate::DOMAIN_FEATURE_NAME;
 
 #[derive(Debug, Clone, Serialize)]
@@ -104,6 +105,10 @@ fn top_counts(map: std::collections::HashMap<String, usize>, limit: usize) -> Ve
 }
 
 pub fn summarize(records: &[SeqRecord]) -> SummaryStats {
+    summarize_with_taxonomy(records, None)
+}
+
+pub fn summarize_with_taxonomy(records: &[SeqRecord], taxonomy: Option<&NCBITaxonomy>) -> SummaryStats {
     use std::collections::HashMap;
 
     let lengths: Vec<usize> = records.iter().map(|r| r.len()).collect();
@@ -124,11 +129,18 @@ pub fn summarize(records: &[SeqRecord]) -> SummaryStats {
     let mut tax = TaxBuilder::default();
 
     for rec in records {
-        // Taxonomy path: the ORGANISM lineage, with organism as the leaf.
         let mut path: Vec<String> = rec.annotations.taxonomy.iter().filter(|s| !s.is_empty()).cloned().collect();
         if let Some(org) = &rec.annotations.organism {
             if path.last() != Some(org) {
                 path.push(org.clone());
+            }
+        }
+        if let Some(tax) = taxonomy {
+            let lineage = tax.lineage(crate::seq::taxid::record_taxid(rec));
+            if !lineage.is_empty() {
+                path = lineage.into_iter().rev().filter(|&id| id != 1)
+                    .map(|id| tax.name(id).map(str::to_string).unwrap_or_else(|| id.to_string()))
+                    .collect();
             }
         }
         if !path.is_empty() {
@@ -309,5 +321,61 @@ mod tests {
         assert_eq!(bacteria.children.len(), 1);
         assert_eq!(bacteria.children[0].name, "E. coli");
         assert!(bacteria.children[0].children.is_empty());
+    }
+
+    #[test]
+    fn taxid_only_record_uses_registered_taxonomy() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test/data/taxdmp");
+        let taxonomy = NCBITaxonomy::load(&fixture).unwrap();
+        let mut record = rec("a", 10, None, &[]);
+        let mut source = SeqFeature::new("source", Location::range(0, 10, 1));
+        source.set("db_xref", "taxon:562");
+        record.features.push(source);
+        assert_eq!(summarize(std::slice::from_ref(&record)).n_with_taxonomy, 0);
+        let stats = summarize_with_taxonomy(&[record], Some(&taxonomy));
+        assert_eq!(stats.n_with_taxonomy, 1);
+        assert_eq!(stats.taxonomy.children[0].name, "cellular organisms");
+        assert_eq!(stats.taxonomy.children[0].children[0].name, "Bacteria");
+        assert!(stats.taxonomy.children[0].count > 0);
+    }
+
+    #[test]
+    fn gui_taxonomy_matches_summary_report_taxid_priority() {
+        use crate::tools::summary_report::{summary_report, SummaryReportOptions};
+
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test/data/taxdmp");
+        let taxonomy = NCBITaxonomy::load(&fixture).unwrap();
+        let mut with_ox = rec("ox", 20, None, &[]);
+        with_ox.description = "protein OX=562 TaxID=2".into();
+        let mut source = SeqFeature::new("source", Location::range(0, 20, 1));
+        source.set("db_xref", "taxon:2");
+        with_ox.features.push(source);
+
+        let mut with_taxid = with_ox.clone();
+        with_taxid.description = "protein TaxID=562".into();
+
+        let mut longest_source = rec("source", 20, None, &[]);
+        let mut short = SeqFeature::new("source", Location::range(0, 5, 1));
+        short.set("db_xref", "taxon:562");
+        let mut long = SeqFeature::new("source", Location::range(0, 20, 1));
+        long.set("db_xref", "taxon:2");
+        longest_source.features = vec![short, long];
+
+        for (record, expected_taxid) in [(with_ox, 562), (with_taxid, 562), (longest_source, 2)] {
+            let report = summary_report(
+                std::slice::from_ref(&record),
+                &SummaryReportOptions { report_taxonomy: true, ..Default::default() },
+                Some(&taxonomy),
+            );
+            assert_eq!(report.taxonomy[0].taxid, expected_taxid);
+            let stats = summarize_with_taxonomy(&[record], Some(&taxonomy));
+            assert_eq!(stats.n_with_taxonomy, 1);
+            let lineage = taxonomy.lineage(expected_taxid);
+            let mut node = &stats.taxonomy;
+            for taxid in lineage.into_iter().rev().filter(|&taxid| taxid != 1) {
+                node = node.children.iter().find(|child| child.name == taxonomy.name(taxid).unwrap()).unwrap();
+            }
+            assert_eq!(node.count, 1);
+        }
     }
 }

@@ -458,12 +458,12 @@
   <header class="toolbar">
     <div class="tb-left">
       <span class="brand">Domainator</span>
+      <ToolsButton {tools} />
       <button onclick={chooseWorkspace} disabled={opening}>
         {opening ? "Opening…" : "Open workspace…"}
       </button>
       <span class="root-path" title={ws.root ?? ""}>{ws.root ?? "No workspace open"}</span>
     </div>
-    <ToolsButton {tools} />
     <div class="tb-right">
       <button class="about" title="Version and diagnostics" onclick={() => (aboutOpen = true)}>About</button>
     </div>
@@ -570,7 +570,7 @@
 
   <section class="main" bind:this={mainEl}>
     <div class="table-pane">
-      <FileTable />
+      <FileTable {tools} />
     </div>
     <div class="row-resizer" onpointerdown={dragTable} role="separator" aria-label="Resize viewer" tabindex="-1"></div>
     <div class="viewer-pane">
@@ -653,12 +653,9 @@
       "status  status  status";
     height: 100%;
   }
-  /* Three columns with equal outer tracks, so the Tools button sits at the true
-     center of the bar however long the workspace path is (that ellipsizes). */
   .toolbar {
     grid-area: toolbar;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    display: flex;
     align-items: center;
     gap: 12px;
     padding: 0 12px;
@@ -670,6 +667,7 @@
     align-items: center;
     gap: 12px;
     min-width: 0;
+    flex: 1;
   }
   .tb-left > :not(.root-path) {
     flex: none;

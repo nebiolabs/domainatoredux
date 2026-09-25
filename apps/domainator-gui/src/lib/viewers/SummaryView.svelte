@@ -1,6 +1,7 @@
 <script lang="ts">
   import { runSummaryStats } from "../api";
   import { cached } from "../cache";
+  import { ws } from "../state.svelte";
   import type { NameCount, SummaryStats, TaxNode } from "../types";
 
   let { path }: { path: string } = $props();
@@ -8,16 +9,20 @@
   let data = $state<SummaryStats | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(true);
+  const taxPath = $derived((ws.databases.find((db) => db.format === "taxonomy" && db.on_disk && db.managed_id === "ncbi_taxonomy")
+    ?? ws.databases.find((db) => db.format === "taxonomy" && db.on_disk))?.path ?? null);
 
   $effect(() => {
-    void path;
+    const selectedTaxonomy = taxPath;
+    let disposed = false;
     loading = true;
     error = null;
     data = null;
-    cached(`summary:${path}`, () => runSummaryStats(path))
-      .then((d) => (data = d))
-      .catch((e) => (error = String(e)))
-      .finally(() => (loading = false));
+    cached(`summary:${path}:${selectedTaxonomy ?? ""}`, () => runSummaryStats(path, selectedTaxonomy))
+      .then((d) => { if (!disposed) data = d; })
+      .catch((e) => { if (!disposed) error = String(e); })
+      .finally(() => { if (!disposed) loading = false; });
+    return () => { disposed = true; };
   });
 
   const unit = $derived(data?.is_protein ? "aa" : "bp");
@@ -133,6 +138,9 @@
             {/each}
           </svg>
         </div>
+      {:else}
+        <h3>Taxonomy</h3>
+        <p class="msg">No taxonomy lineage found in this file{taxPath ? " or the selected taxonomy database" : "; install NCBI Taxonomy from Reference Databases to resolve taxids"}.</p>
       {/if}
 
       <div class="cols">

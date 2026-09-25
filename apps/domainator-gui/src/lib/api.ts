@@ -165,8 +165,8 @@ export const runEnumReport = (
   ncbiTaxonomyPath: string | null,
 ): Promise<EnumRow[]> => invoke("run_enum_report", { path, by, columns, ncbiTaxonomyPath });
 
-export const runSummaryStats = (path: string): Promise<SummaryStats> =>
-  invoke("run_summary_stats", { path });
+export const runSummaryStats = (path: string, ncbiTaxonomyPath: string | null): Promise<SummaryStats> =>
+  invoke("run_summary_stats", { path, ncbiTaxonomyPath });
 
 export const renderSsnHtml = (path: string): Promise<string> =>
   invoke("render_ssn_html", { path });

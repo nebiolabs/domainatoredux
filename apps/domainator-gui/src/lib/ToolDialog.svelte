@@ -122,7 +122,10 @@
         let primaryInput = "";
         for (const field of meta?.fields ?? []) {
           if (isInputRole(field.role)) {
-            const pick = initialChoice(field, fileGroups(field), active?.path ?? null);
+            const seeded = initial?.[field.name];
+            const pick = seeded == null
+              ? initialChoice(field, fileGroups(field), active?.path ?? null)
+              : String(Array.isArray(seeded) ? seeded[0] ?? "" : seeded);
             v[field.name] = pick;
             // `input` names the output when it has a value; else the first input that does.
             if (pick && (field.name === "input" || !primaryInput)) primaryInput = pick;
@@ -198,20 +201,20 @@
     return out;
   }
 
-  async function run() {
+  function run() {
     if (!ws.root) {
       error = "Open a workspace first.";
       return;
     }
-    running = true;
     error = null;
     try {
-      await runTool(tool, collectParams(), ws.root);
-      if (ws.selectedFolder) await ws.selectFolder(ws.selectedFolder);
-      running = false;
-      onclose(); // success → close the dialog (errors keep it open below)
+      const params = collectParams();
+      running = true;
+      void runTool(tool, params, ws.root).then(() => {
+        if (ws.selectedFolder) return ws.selectFolder(ws.selectedFolder);
+      }).catch((e) => { ws.error = `Could not run job: ${e}`; });
+      onclose();
     } catch (e) {
-      // `toColumns` throws an Error naming the column; the backend rejects with a string.
       error = e instanceof Error ? e.message : String(e);
       running = false;
     }

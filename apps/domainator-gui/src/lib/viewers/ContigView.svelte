@@ -32,9 +32,10 @@
   let hasEvalue = $state(false);
 
   let tooltip = $state<{ x: number; y: number; feature: FeatureView } | null>(null);
+  let nameTooltip = $state<{ x: number; y: number; name: string } | null>(null);
 
   // ── geometry constants ─────────────────────────────────────────────────────
-  const GUTTER = 134; // fixed left label column (pinned during horizontal scroll)
+  let GUTTER = $state(134);
   const SEQ_H = 16; // nucleotide/residue letter track
   const SEQBAR_H = 7; // collapsed sequence bar (zoomed out)
   const TRANS_H = 16; // translation track (nucleotide contigs)
@@ -622,6 +623,13 @@
       scheduleDraw();
       return;
     }
+    const rect = scrollEl?.getBoundingClientRect();
+    const fr = rect && e.clientX - rect.left < GUTTER
+      ? frameAtY(viewTop + e.clientY - rect.top) : null;
+    nameTooltip = fr ? {
+      x: e.clientX + 12, y: e.clientY + 12,
+      name: fr.c.name && fr.c.name !== fr.c.id ? `${fr.c.id} (${fr.c.name})` : fr.c.id || fr.c.name,
+    } : null;
     const hit = featureAt(e.clientX, e.clientY);
     tooltip = hit ? { x: e.clientX + 12, y: e.clientY + 12, feature: hit.f } : null;
     scheduleDraw(); // the hover guide follows the cursor
@@ -633,9 +641,30 @@
   }
   function onPointerLeave() {
     tooltip = null;
+    nameTooltip = null;
     cursorBp = null;
     cursorContig = null;
     scheduleDraw();
+  }
+
+  function resizeGutter(e: PointerEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startWidth = GUTTER;
+    handle.onpointermove = (move) => {
+      move.stopPropagation();
+      GUTTER = Math.max(80, Math.min(viewW - 80, startWidth + move.clientX - startX));
+      setViewLeft(viewLeft);
+      scheduleDraw();
+    };
+    handle.onpointerup = handle.onpointercancel = () => {
+      handle.onpointermove = null;
+      handle.onpointerup = null;
+      handle.onpointercancel = null;
+    };
   }
 
   // ── drag auto-scroll (extend selection past the viewport edge) ────────────────
@@ -671,7 +700,7 @@
   }
 
   // ── zoom (relative to cursor) ────────────────────────────────────────────────
-  let lastCursorX = GUTTER + 200; // screen px within the scroll box (for +/- buttons)
+  let lastCursorX = 334; // screen px within the scroll box (for +/- buttons)
   // Rescale by `factor`, keeping genomic position `bp` pinned at screen x `screenPx`.
   function zoomKeeping(bp: number, screenPx: number, factor: number) {
     const next = Math.min(20, Math.max(0.002, pxPerBp * factor));
@@ -1817,6 +1846,7 @@
       role="application"
       aria-label="Contig annotation viewer"
     >
+      <button type="button" class="gutter-resize" style="left:{GUTTER - 3}px; height:{viewH}px; margin-bottom:-{viewH}px;" aria-label="Resize contig names" onpointerdown={resizeGutter} onkeydown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { GUTTER = Math.max(80, Math.min(viewW - 80, GUTTER + (e.key === "ArrowRight" ? 10 : -10))); scheduleDraw(); } }}></button>
       <!-- Spacer is only as tall as the stacked contigs (vertical native scroll);
            the x axis is JS-managed (viewLeft) so it isn't bound by DOM width limits. -->
       <div class="spacer" style="height:{vlayout.total}px;">
@@ -1881,6 +1911,9 @@
         <div class="tt-row"><b>{k}</b> {v}</div>
       {/each}
     </div>
+  {/if}
+  {#if nameTooltip}
+    <div class="tooltip" style="left: {nameTooltip.x}px; top: {nameTooltip.y}px;">{nameTooltip.name}</div>
   {/if}
 
   {#if showExtract}
@@ -2007,6 +2040,18 @@
     position: relative;
     min-height: 0;
   }
+  .gutter-resize {
+    position: sticky;
+    top: 0;
+    width: 6px;
+    z-index: 3;
+    cursor: col-resize;
+    touch-action: none;
+    border: 0;
+    padding: 0;
+    background: transparent;
+  }
+  .gutter-resize:hover { background: var(--accent); opacity: 0.5; }
   .spacer {
     position: relative;
     width: 100%;

@@ -45,6 +45,7 @@ class WorkspaceStore {
   tree = $state<FolderNode | null>(null);
   selectedFolder = $state<string | null>(null);
   files = $state<FileEntry[]>([]);
+  viewedJobFiles = $state<Record<string, string>>({});
   loadingFiles = $state(false);
   tabs = $state<OpenTab[]>([]);
   activeTabId = $state<string | null>(null);
@@ -111,6 +112,11 @@ class WorkspaceStore {
     try {
       const info = await openWorkspace(root);
       this.root = info.root;
+      try {
+        this.viewedJobFiles = JSON.parse(localStorage.getItem(`viewedJobFiles:${info.root}`) ?? "{}");
+      } catch {
+        this.viewedJobFiles = {};
+      }
       this.tree = info.tree;
       // The database list is shared, but a workspace from before it was may
       // still carry its own; passing the root folds that in (once).
@@ -139,13 +145,25 @@ class WorkspaceStore {
 
   openFile(file: FileEntry): void {
     const id = file.path;
-    if (id === this.activeTabId) return; // already showing; nothing to unmount
+    if (id === this.activeTabId) {
+      this.markViewed(file);
+      return;
+    }
     this.guardDirty(() => {
       if (!this.tabs.some((t) => t.id === id)) {
         this.tabs = [...this.tabs, { id, file }];
       }
       this.activeTabId = id;
+      this.markViewed(file);
     });
+  }
+
+  markViewed(file: FileEntry): void {
+    if (!file.created_by_job || !this.root) return;
+    this.viewedJobFiles[file.path] = file.created_by_job;
+    try {
+      localStorage.setItem(`viewedJobFiles:${this.root}`, JSON.stringify(this.viewedJobFiles));
+    } catch { /* ignore */ }
   }
 
   /// Open a file by path (used by cross-view nav), optionally scrolling to a contig.
@@ -161,11 +179,18 @@ class WorkspaceStore {
   /// Open a job output in a viewer if its type is viewable (else no-op).
   openOutput(path: string): void {
     const t = classifyPath(path);
-    if (t) this.openPath(path, t);
+    if (t) this.openFile(this.files.find((file) => file.path === path) ?? {
+      path, name: path.split(/[\\/]/).pop() ?? path, file_type: t,
+      description: "", size: 0, created_ms: null, modified_ms: null,
+      created_by_job: this.jobs.find((job) => job.outputs.includes(path))?.job_id ?? null,
+    });
   }
 
   // --- jobs ---
   upsertJob(job: JobInfo): void {
+    if (job.status === "completed") {
+      for (const output of job.outputs) invalidatePath(output);
+    }
     const i = this.jobs.findIndex((j) => j.job_id === job.job_id);
     if (i >= 0) {
       const copy = [...this.jobs];

@@ -5,6 +5,17 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+pub(crate) fn hide_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    #[cfg(not(windows))]
+    let _ = command;
+}
 
 /// Locate an external executable `name` (e.g. `"diamond"`): first the `env_vars`
 /// in order, then a bundled `external/<bundled_dir>/<name>` searched upward from

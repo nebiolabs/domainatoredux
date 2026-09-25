@@ -521,8 +521,9 @@ fn run_diamond(
 
     // Build the reference database (db.dmnd) under the temp dir.
     let dbpath = tmp.path().join("db");
-    let makedb = Command::new(&diamond_bin)
-        .arg("makedb")
+    let mut makedb_cmd = Command::new(&diamond_bin);
+    super::external::hide_console(&mut makedb_cmd);
+    let makedb = makedb_cmd.arg("makedb")
         .arg("--in")
         .arg(&ref_fasta)
         .arg("-d")
@@ -548,6 +549,7 @@ fn run_diamond(
     let max_target_seqs = if opts.mst_knn.is_some() { 0 } else { opts.k.unwrap_or(0) };
 
     let mut cmd = Command::new(&diamond_bin);
+    super::external::hide_console(&mut cmd);
     cmd.arg("blastp")
         .arg("-q")
         .arg(&input_fasta)

@@ -9,7 +9,10 @@
   import { ui } from "./ui.svelte";
   import { openFileWindow, revealInFileManager } from "./api";
   import { copyText } from "./clipboard";
-  import type { FileEntry } from "./types";
+  import { fieldAccepts, isInputRole, toolAcceptsFile } from "./toolInputs";
+  import type { FileEntry, ToolMeta } from "./types";
+
+  let { tools }: { tools: ToolMeta[] } = $props();
 
   const TYPE_LABEL: Record<string, string> = {
     genbank: "GenBank",
@@ -169,11 +172,30 @@
   // `user-select: none` (rows are click-to-open, so selecting text in them fights
   // the click), which left filenames and paths with no way at all to be copied.
   function rowMenu(e: MouseEvent, f: FileEntry) {
+    const fitting = tools.filter((tool) => toolAcceptsFile(tool, f.file_type));
+    const groups = new Map<string, ToolMeta[]>();
+    for (const tool of fitting) {
+      groups.set(tool.category, [...(groups.get(tool.category) ?? []), tool]);
+    }
     const items: CtxItem[] = [
       { label: "Open", action: () => activate(f) },
       {
         label: "Open in New Window",
         action: () => openFileWindow(f.path, f.name),
+      },
+      {
+        label: "Tools",
+        disabled: fitting.length === 0,
+        submenu: [...groups].flatMap(([category, list]) => [
+          { label: category, disabled: true },
+          ...list.map((tool) => ({
+            label: tool.label,
+            action: () => {
+              const input = tool.fields.find((field) => isInputRole(field.role) && fieldAccepts(field, f.file_type));
+              ws.openTool(tool.id, input ? { [input.name]: f.path } : undefined);
+            },
+          })),
+        ]),
       },
       SEP,
       {
@@ -392,7 +414,12 @@
       >
         {#each visibleColDefs as c (c.key)}
           {#if c.key === "name"}
-            <div class="cell cname" role="cell" title={f.name}>{f.name}</div>
+            <div class="cell cname" role="cell" title={f.name}>
+              <span class="filename">{f.name}</span>
+              {#if f.created_by_job && ws.viewedJobFiles[f.path] !== f.created_by_job}
+                <span class="new-badge" title="New job output">New</span>
+              {/if}
+            </div>
           {:else if c.key === "type"}
             <div class="cell" role="cell"><span class="badge badge-{f.file_type}">{TYPE_LABEL[f.file_type] ?? f.file_type}</span></div>
           {:else if c.key === "description"}
@@ -594,6 +621,17 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .new-badge {
+    flex: none;
+    margin-left: 7px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    font-size: 10px;
+  }
+  .cname { display: flex; align-items: center; }
+  .filename { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .num {
     text-align: right;
     color: var(--text-dim);

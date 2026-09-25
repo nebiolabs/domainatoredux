@@ -257,6 +257,7 @@ fn run_diamond(
     };
     let out_tsv = tmp.path().join("output.tsv");
     let mut cmd = Command::new(&bin);
+    super::external::hide_console(&mut cmd);
     cmd.arg("cluster")
         .arg("-d")
         .arg(input_fasta)
@@ -416,6 +417,7 @@ fn run_cdhit(
 
     let (exe, program) = cdhit_command(&bin, est)?;
     let mut cmd = Command::new(&exe);
+    super::external::hide_console(&mut cmd);
     if let Some(program) = program {
         cmd.arg(program);
     }
@@ -533,6 +535,7 @@ fn run_usearch(
     let centroids = tmp.path().join("output.fasta");
     let uc = tmp.path().join("output.uc");
     let mut cmd = Command::new(&bin);
+    super::external::hide_console(&mut cmd);
     cmd.arg("-sort")
         .arg("length")
         .arg("-threads")
