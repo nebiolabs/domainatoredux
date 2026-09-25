@@ -96,7 +96,6 @@ jobs:
             target: x86_64-pc-windows-msvc
             bundle_args: --bundles nsis
             artifact_globs: |
-              target/x86_64-pc-windows-msvc/release/domainator-gui.exe
               target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
           - app_id: domainator-gui
             app_path: apps/domainator-gui
@@ -192,9 +191,17 @@ jobs:
       - name: Upload app artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.app_id }}-${{ matrix.platform }}
+          name: ${{ matrix.app_id }}-${{ matrix.platform }}${{ matrix.app_id == 'domainator-gui' && matrix.target == 'x86_64-pc-windows-msvc' && '-setup' || '' }}
           if-no-files-found: error
           path: ${{ matrix.artifact_globs }}
+
+      - name: Upload portable Windows GUI
+        if: matrix.app_id == 'domainator-gui' && matrix.target == 'x86_64-pc-windows-msvc'
+        uses: actions/upload-artifact@v7
+        with:
+          name: domainator-gui-windows-msvc-x64-portable
+          if-no-files-found: error
+          path: target/x86_64-pc-windows-msvc/release/domainator-gui.exe
 
   # The GUI installers above carry no command-line tool, but the README sends users to
   # the Releases page for both. These are the pure-Rust crates, so this job needs none
