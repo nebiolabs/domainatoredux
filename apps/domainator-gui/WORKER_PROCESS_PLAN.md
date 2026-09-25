@@ -1,6 +1,28 @@
 # Plan: run tools in killable worker processes (self re-exec)
 
-**Status:** not started. Written 2026-09-24.
+**Status:** implemented 2026-09-24 (phases 1–7). Where the code differs from the
+text below:
+
+- **Escape hatch.** `DOMAINATOR_INPROCESS_JOBS=1` runs `domainator_cli::run` on the
+  job's thread. It does not restore the `run_*` functions, which are deleted.
+- **Output roles** in provenance come from the output file's type (`job_io::output_role`),
+  not from each old runner's string. Nothing reads output roles. The **input** roles,
+  which `trace_source_sequences` does read, are pinned by the golden-table test.
+- **Default concurrency is 2**, not 1.
+- **The CLI runs on a 256 MB-stack thread** in every path (`worker::run_cli`). Its
+  dispatch function overflows a 2 MB test or tokio thread in debug builds, and would
+  overflow Windows' 1 MB main thread too.
+- **A worker whose stdin closes kills its own process group** on Unix, so a diamond it
+  started stops with it. It does this only when it leads the group.
+- **`hmmer-report`'s `json` field** is now an `output_file`, so it is recorded and
+  cleaned up like the other outputs.
+- **The taxonomy pre-check stays in the GUI** (`cmd_tools::preflight`). With no
+  taxonomy database chosen, the CLI falls back to Python's `/tmp/ncbi_taxonomy_<user>`,
+  which no GUI user has set up. The GUI's message points to Reference Databases
+  instead.
+- **Database indexing** (§3.6, phase 7) runs `format-db --index` in a worker and has its
+  own Cancel in the Databases panel. It is not a Jobs-panel job, because a database
+  can live outside any workspace and so has no `.domainator/jobs/` to record into.
 
 **Goal:** run each Tools-menu job in a child process that is a copy of the GUI
 executable itself, started in a hidden "worker" mode. That makes Cancel real, keeps a

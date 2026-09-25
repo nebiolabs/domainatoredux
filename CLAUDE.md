@@ -114,9 +114,18 @@ keep in particular:
 - **`merge_cli` coverage** — a struct field the merge forgets is a CLI flag that silently
   does nothing.
 - **`every_offered_tool_is_dispatched_and_has_a_schema`** (`domainator-gui`) — the GUI tool
-  registry, `run_one`'s dispatch and the schema emitter are three hand-maintained lists in
-  three files. A menu entry with no dispatch arm fails only when the user presses Run; a
-  dialog field that is not a config property is rejected outright by `deny_unknown_fields`.
+  registry, the CLI's subcommands and the schema emitter are three hand-maintained lists in
+  three places. A Tools-menu job runs `<tool> --config <dialog params>` through
+  `domainator_cli::run` in a **worker process** (a copy of the GUI executable started with
+  `--domainator-worker`, `src-tauri/src/worker.rs`), so there is no per-tool GUI runner to
+  drift from the CLI. A menu entry the CLI has no subcommand for fails only when the user
+  presses Run; a dialog field that is not a config property is rejected outright by
+  `deny_unknown_fields` (`every_tools_dialog_params_parse_as_its_cli_config` feeds every
+  dialog's default params to the CLI with `--print_config`). A job's provenance inputs are
+  derived from its spec's `role`/`file_type` (`job_io.rs`), and
+  `derived_provenance_roles_match_the_golden_table` keeps the roles
+  `trace_source_sequences` follows. `tests/worker.rs` runs the real binary: worker mode
+  must never start Tauri, and Cancel must kill the whole process tree.
   `ToolField::role` must be one of `ROLES`, because a role `ToolDialog.svelte` cannot
   render makes the field silently disappear from the form. The registry is the tool
   spec files, `apps/domainator-gui/tools/<id>.yml`, one per tool and embedded by

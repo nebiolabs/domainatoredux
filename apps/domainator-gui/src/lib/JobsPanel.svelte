@@ -10,21 +10,27 @@
 
   let expanded = $state(true);
 
-  const runningCount = $derived(ws.jobs.filter((j) => isActive(j.status)).length);
+  const runningCount = $derived(
+    ws.jobs.filter((j) => j.status === "running" || j.status === "canceling").length,
+  );
+  const queuedCount = $derived(ws.jobs.filter((j) => j.status === "queued").length);
 
   function baseName(p: string): string {
     return p.split(/[\\/]/).pop() ?? p;
   }
   const STATUS_ICON: Record<string, string> = {
+    queued: "◷",
     running: "◐",
     canceling: "◌",
     completed: "✓",
     failed: "✕",
     canceled: "∅",
   };
-  // A job is still on the blocking pool in both states; `canceling` means the
-  // flag is set but the tool hasn't reached a point where it can stop.
-  const isActive = (s: string) => s === "running" || s === "canceling";
+  // A job this app has not finished: waiting for a slot, running in its worker
+  // process, or being stopped (`canceling` lasts only as long as the kill and
+  // the partial-output cleanup take).
+  const isActive = (s: string) => s === "queued" || s === "running" || s === "canceling";
+  const cancelable = (s: string) => s === "queued" || s === "running";
 
   // Pending destructive actions, shown through ConfirmDialog. These were raw
   // window.confirm() calls -- unstyled, and unreliable in these webviews.
@@ -83,8 +89,8 @@
       },
       SEP,
       {
-        label: "Cancel Run",
-        disabled: job.status !== "running",
+        label: job.status === "queued" ? "Remove from Queue" : "Cancel Run",
+        disabled: !cancelable(job.status),
         action: () => ws.cancelJob(job.job_id),
       },
       {
@@ -115,7 +121,9 @@
       {expanded ? "▾" : "▸"}
     </button>
     <span class="title">Jobs</span>
-    {#if runningCount > 0}<span class="running-badge">{runningCount} running</span>{:else}<span class="count">{ws.jobs.length}</span>{/if}
+    {#if runningCount + queuedCount > 0}<span class="running-badge"
+        >{runningCount} running{queuedCount > 0 ? `, ${queuedCount} queued` : ""}</span
+      >{:else}<span class="count">{ws.jobs.length}</span>{/if}
     {#if ws.jobs.length > 0}
       <button class="clear-all" onclick={clearAll} title="Clear job history">Clear</button>
     {/if}
@@ -137,9 +145,12 @@
               <span class="tool">{job.tool}</span>
               <button class="clone" onclick={() => ws.openTool(job.tool, job.params)} title="Clone into a new tool dialog">⎘</button>
               {#if job.status === "canceling"}
-                <span class="canceling" title="The tool has no interruption point; waiting for it to finish">canceling…</span>
-              {:else if job.status === "running"}
-                <button class="cancel" onclick={() => ws.cancelJob(job.job_id)} title="Cancel">×</button>
+                <span class="canceling" title="Stopping the tool and removing its partial outputs">canceling…</span>
+              {:else if cancelable(job.status)}
+                {#if job.status === "queued"}
+                  <span class="canceling" title="Waiting for a running job to finish (Preferences → Jobs at once)">queued</span>
+                {/if}
+                <button class="cancel" onclick={() => ws.cancelJob(job.job_id)} title={job.status === "queued" ? "Remove from the queue" : "Cancel (stops the tool and removes its partial outputs)"}>×</button>
               {:else}
                 <button class="del" onclick={(e) => removeJob(e, job)} title="Delete from history">×</button>
               {/if}

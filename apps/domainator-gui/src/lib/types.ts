@@ -318,10 +318,11 @@ export interface RunResult {
 export interface JobInfo {
   job_id: string;
   tool: string;
-  /// `canceling` is set the moment the user clicks cancel; the job stays on the
-  /// blocking pool until the tool reaches a point where it can stop (the core
-  /// tools have no interruption points), then settles as `canceled`.
-  status: "running" | "canceling" | "completed" | "failed" | "canceled";
+  /// `queued` until one of `Prefs.max_concurrent_jobs` slots is free. `canceling`
+  /// is set the moment the user clicks cancel and lasts while the worker process
+  /// is killed and its partial outputs removed (milliseconds), then settles as
+  /// `canceled`.
+  status: "queued" | "running" | "canceling" | "completed" | "failed" | "canceled";
   message: string;
   started_at_ms: string;
   outputs: string[];
@@ -374,6 +375,7 @@ export interface Prefs {
   reopen_last_workspace: boolean;
   theme: Theme;
   default_cpu: number;
+  max_concurrent_jobs: number;
   check_updates_on_launch: boolean;
   last_update_check_ms: number | null;
   last_seen_release: string | null;
@@ -384,6 +386,7 @@ export interface PrefsPatch {
   reopen_last_workspace?: boolean;
   theme?: Theme;
   default_cpu?: number;
+  max_concurrent_jobs?: number;
   check_updates_on_launch?: boolean;
 }
 

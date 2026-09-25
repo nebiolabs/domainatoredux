@@ -1074,12 +1074,15 @@ dependencies = [
 name = "domainator-gui"
 version = "1.0.0"
 dependencies = [
+ "anyhow",
  "base64 0.22.1",
  "bgzf",
+ "domainator-cli",
  "domainator-config",
  "domainator-core",
  "flate2",
  "fs4",
+ "libc",
  "rfd",
  "serde",
  "serde_json",
@@ -1090,6 +1093,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-window-state",
  "ureq",
+ "windows-sys 0.61.2",
  "zip",
 ]
 

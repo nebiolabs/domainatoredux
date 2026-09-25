@@ -1,64 +1,33 @@
 //! Tool listing / schema / execution.
 //!
-//! Forms are driven by `domainator-config`'s per-tool JSON Schema; the form's
-//! values deserialize straight back into the same `*Config` struct, which is
-//! resolved (shared with the CLI via `domainator_config::resolve`) and run off the
-//! UI thread. Each run records provenance (`jobs/<id>/job.json` + output sidecars).
+//! Forms are driven by `domainator-config`'s per-tool JSON Schema, and the form's
+//! values are the tool's `*Config` as JSON. A run writes them to
+//! `.domainator/jobs/<id>/worker-config.json` and runs `<tool> --config <that
+//! file>` through the CLI in a worker copy of this executable (`worker.rs`), so a
+//! GUI run takes exactly the code path a CLI run does. The job's inputs and
+//! outputs for provenance come from the tool spec (`job_io.rs`); each completed
+//! run records `jobs/<id>/job.json` plus output sidecars.
 //!
-//! Phase-3 scope: a curated matrix-tool set (`transform-matrix`,
-//! `build-ssn-viewer`) that pairs with the existing viewers. Generic dispatch for
-//! all tools, a job registry with live progress, and cancellation are deferred.
+//! Jobs wait in a queue for one of `Prefs::max_concurrent_jobs` slots. Cancel
+//! kills the worker's whole process tree and removes the declared outputs the run
+//! created or changed.
 
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 
-use domainator_config::resolve::{resolve_build_ssn, resolve_build_ssn_viewer, resolve_transform_matrix};
-use domainator_config::{
-    schema, BuildSsnConfig, BuildSsnViewerConfig, CleanSequencesConfig, ColorGenbankConfig,
-    ColorTableToLegendConfig, CompareContigsConfig, DeduplicateConfig, DomainSearchConfig, EnumConfig,
-    DomainateConfig, ExtractDomainsConfig, ExtractPeptidesConfig, ExtractUnannotatedConfig,
-    FilterDomainsConfig, GenbankToFastaConfig, HmmerBuildConfig, HmmerCompareConfig,
-    HmmerReportConfig, HmmerSearchConfig, HmmerSelectConfig, SelectByCdsConfig, SelectByCoordConfig,
-    SelectByContigConfig, SeqDistConfig, SortContigsConfig, TransformMatrixConfig, TrimContigsConfig,
-};
-use domainator_core::app_support::provenance::{new_job_id, now_ms, write_job, IoRef, JobRecord};
-use domainator_core::io::fasta::{read_fasta, write_fasta};
-use domainator_core::io::genbank::{read_genbank, write_genbank};
-use domainator_core::io::{detect_filetype, FileType};
-use domainator_core::matrix::{cytoscape, hdf5_io, read_matrix, text};
-use domainator_core::seq::SeqRecord;
-use domainator_core::tools::build_ssn::build_ssn;
-use domainator_core::tools::build_ssn_viewer::{build_ssn_viewer_bundle, gzip, serialize_bundle};
-use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
-use domainator_core::tools::domain_search::{domain_search, DomainSearchOptions};
-use domainator_core::tools::domainate::{self, domainate, DomainateOptions};
-use domainator_core::tools::enum_report::{enum_report, needs_taxonomy, OutputFormat};
-use domainator_core::tools::filter_domains::{filter_domains, AnnotationType, FilterDomainsOptions};
-use domainator_core::search::hmm_write::write_hmm_output;
-use domainator_core::tools::hmmer_build::{hmmer_build, write_hmm_out, HmmerBuildOptions};
-use domainator_core::tools::hmmer_select::{hmmer_select, parse_alphabet, Fields, SelectOptions};
-use domainator_core::tools::{
-    clean_sequences, color_genbank, color_table_to_legend, deduplicate_genbank, extract_domains,
-    extract_peptides, extract_unannotated, hmmer_compare as hmmer_compare_m,
-    hmmer_report as hmmer_report_m, hmmer_search as hmmer_search_m, select_by_coord, sort_contigs,
-    trim_contigs,
-};
-use domainator_core::io::fasta::write_fasta_bp;
-use domainator_core::tools::select_by_cds::{pad_records, select_by_cds, SelectByCdsOptions};
-use domainator_core::tools::select_by_contig::{select_by_contig, SelectByContigOptions};
-use domainator_core::tools::matrix_report::{
-    matrix_report, render_text, DEFAULT_MAX_MERGE, DEFAULT_MERGE_IMPACT_METRIC,
-};
-use domainator_core::tools::neighborhood::{validate_range, Range};
-use domainator_core::tools::select_common::parse_name_list;
-use domainator_core::tools::seq_dist::{detect_kind, seq_dist, SeqDistOptions};
-use domainator_core::tools::transform_matrix::transform_matrix;
+use domainator_config::schema;
+use domainator_core::app_support::provenance::{new_job_id, now_ms, write_job, JobRecord};
 use domainator_core::app_support::workspace::dot_dir;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+
+use crate::job_io;
+use crate::worker;
 
 /// Live state of a tool run, tracked in the [`JobRegistry`] managed state and
 /// broadcast to the UI via the `job-update` event.
@@ -66,7 +35,7 @@ use tauri::{AppHandle, Emitter};
 pub struct JobInfo {
     pub job_id: String,
     pub tool: String,
-    /// `running` | `completed` | `failed` | `canceled`.
+    /// `queued` | `running` | `canceling` | `completed` | `failed` | `canceled`.
     pub status: String,
     pub message: String,
     pub started_at_ms: String, // u128 as string (JSON-safe)
@@ -76,19 +45,19 @@ pub struct JobInfo {
     pub params: Value,
 }
 
-/// Managed state: all jobs seen this session + a cancel flag per running job.
-///
-/// The flags are `Arc<AtomicBool>` rather than a set of ids so the blocking worker
-/// itself can read them — checking only *after* `run_one` returned (as this used
-/// to) is too late to stop anything. Entries are removed when a job reaches a
-/// terminal state, so the map tracks running jobs rather than growing all session.
+/// Managed state: all jobs seen this session, the ones still live, and the queue
+/// that limits how many run at once.
 #[derive(Default)]
 pub struct JobRegistry {
     jobs: Mutex<HashMap<String, JobInfo>>,
-    canceled: Mutex<HashMap<String, std::sync::Arc<AtomicBool>>>,
+    /// Jobs this process has not finished: queued or running. Entries are removed
+    /// when a job reaches a terminal state, so the map tracks live jobs rather
+    /// than growing all session.
+    live: Mutex<HashMap<String, Arc<LiveJob>>>,
     /// Workspace root for persisting job history to `.domainator/jobs.json`
     /// (set when a workspace is opened via `load_jobs`).
     root: Mutex<Option<String>>,
+    queue: JobQueue,
 }
 
 /// Lock that survives a poisoned mutex — see `cmd_files::lock_poison_tolerant`.
@@ -230,11 +199,140 @@ pub async fn tool_schema(tool: String) -> Result<String, String> {
     schema(&tool).map_err(|e| e.to_string())
 }
 
-#[derive(Serialize)]
+
+#[derive(Serialize, Debug)]
 pub struct RunResult {
     pub job_id: String,
     pub outputs: Vec<String>,
     pub message: String,
+}
+
+/// A job's cancel state and, while its worker runs, the handle that kills it.
+/// Also what `cmd_db`'s database indexing uses.
+#[derive(Default)]
+pub(crate) struct LiveJob {
+    canceled: AtomicBool,
+    killer: Mutex<Option<worker::Killer>>,
+}
+
+impl LiveJob {
+    pub(crate) fn cancel(&self) {
+        self.canceled.store(true, Ordering::SeqCst);
+        if let Some(k) = reg_lock(&self.killer).as_ref() {
+            k.kill();
+        }
+    }
+
+    pub(crate) fn is_canceled(&self) -> bool {
+        self.canceled.load(Ordering::SeqCst)
+    }
+
+    /// Hold the running worker's killer. A cancel that arrived between the last
+    /// check and now finds no killer to call, so it is honored here: `cancel`
+    /// sets the flag before it takes the lock, and this reads it after.
+    fn attach(&self, killer: worker::Killer) {
+        let mut slot = reg_lock(&self.killer);
+        if self.is_canceled() {
+            killer.kill();
+        }
+        *slot = Some(killer);
+    }
+
+    fn detach(&self) {
+        *reg_lock(&self.killer) = None;
+    }
+}
+
+/// How many jobs may run at once when the preference is unreadable.
+const DEFAULT_MAX_CONCURRENT_JOBS: usize = domainator_core::app_support::prefs::DEFAULT_MAX_CONCURRENT_JOBS;
+
+/// First come, first served, at most `max` running.
+///
+/// Each worker defaults to every core, so two jobs at once already oversubscribe
+/// the machine; the shared in-process thread pool used to hide that.
+#[derive(Default)]
+struct JobQueue {
+    state: Mutex<QueueState>,
+    wake: Condvar,
+}
+
+#[derive(Default)]
+struct QueueState {
+    waiting: VecDeque<String>,
+    running: usize,
+}
+
+/// A running slot, given back on drop -- also when the job panics.
+struct Slot<'a>(&'a JobQueue);
+
+impl Drop for Slot<'_> {
+    fn drop(&mut self) {
+        reg_lock(&self.0.state).running -= 1;
+        self.0.wake.notify_all();
+    }
+}
+
+impl JobQueue {
+    /// Block until `job_id` is first in line and a slot is free. `None` when the
+    /// job was canceled while it waited. `max` is asked again at every wake-up,
+    /// so raising the preference lets queued jobs start without a restart.
+    fn acquire(&self, job_id: &str, live: &LiveJob, max: impl Fn() -> usize) -> Option<Slot<'_>> {
+        let mut st = reg_lock(&self.state);
+        st.waiting.push_back(job_id.to_string());
+        loop {
+            if live.is_canceled() {
+                st.waiting.retain(|j| j != job_id);
+                self.wake.notify_all();
+                return None;
+            }
+            if st.waiting.front().map(String::as_str) == Some(job_id) && st.running < max().max(1) {
+                st.waiting.pop_front();
+                st.running += 1;
+                // The next in line may fit too.
+                self.wake.notify_all();
+                return Some(Slot(self));
+            }
+            st = self
+                .wake
+                .wait_timeout(st, Duration::from_millis(500))
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+    }
+
+    fn wake_all(&self) {
+        self.wake.notify_all();
+    }
+}
+
+/// How a job did not complete.
+#[derive(Debug)]
+enum JobFailure {
+    /// The message says what the cleanup removed.
+    Canceled(String),
+    Failed(String),
+}
+
+/// Where a job's tool runs.
+pub(crate) enum Launcher {
+    /// A worker process started from this executable (the normal path).
+    Worker(PathBuf),
+    /// `domainator_cli::run` on the job's own thread: no kill, no crash
+    /// isolation, no captured output. The escape hatch behind
+    /// `DOMAINATOR_INPROCESS_JOBS=1`, kept for one release in case worker
+    /// processes misbehave on some platform, and what the unit tests use (a test
+    /// binary has no worker mode).
+    InProcess,
+}
+
+/// Set to `1` to run jobs in-process instead of in worker processes.
+pub const INPROCESS_ENV: &str = "DOMAINATOR_INPROCESS_JOBS";
+
+pub(crate) fn launcher() -> Result<Launcher, String> {
+    if std::env::var(INPROCESS_ENV).is_ok_and(|v| v == "1") {
+        return Ok(Launcher::InProcess);
+    }
+    worker::worker_exe().map(Launcher::Worker).map_err(|e| format!("locating this executable: {e}"))
 }
 
 /// The result the caller awaits; also mirrored into the `JobRegistry` and emitted
@@ -252,14 +350,15 @@ pub async fn run_tool(
 ) -> Result<RunResult, String> {
     let started = now_ms();
     let job_id = new_job_id(started);
+    let prefs_path = crate::cmd_prefs::prefs_path(&app).ok();
 
     // Apply the app-level default thread count, but only where the tool's schema
     // actually has a `cpu` property -- every config struct is
     // `deny_unknown_fields`, so a blind injection would make the run be rejected.
     // Guarded across all tools by `injecting_the_default_cpu_never_breaks_a_tool`.
     let mut params = params;
-    if let Ok(path) = crate::cmd_prefs::prefs_path(&app) {
-        let default_cpu = domainator_core::app_support::prefs::load_prefs(&path).default_cpu;
+    if let Some(path) = &prefs_path {
+        let default_cpu = domainator_core::app_support::prefs::load_prefs(path).default_cpu;
         if let Ok(schema_text) = domainator_config::schema(&tool) {
             if let Ok(schema) = serde_json::from_str::<Value>(&schema_text) {
                 domainator_core::app_support::tool_params::apply_default_cpu(
@@ -271,81 +370,76 @@ pub async fn run_tool(
         }
     }
 
-    let running = JobInfo {
+    let job_info = |status: &str, message: String, outputs: Vec<String>| JobInfo {
         job_id: job_id.clone(),
         tool: tool.clone(),
-        status: "running".into(),
-        message: String::new(),
+        status: status.into(),
+        message,
         started_at_ms: ms_str(started),
-        outputs: Vec::new(),
+        outputs,
         params: params.clone(),
     };
-    set_job(&registry, &app, running);
+    let live = Arc::new(LiveJob::default());
+    reg_lock(&registry.live).insert(job_id.clone(), live.clone());
+    set_job(&registry, &app, job_info("queued", String::new(), Vec::new()));
 
-    // Off-thread work. Cancellation is genuinely best-effort: the core tools have
-    // no interruption points, so once a tool has started the most `run_one` can do
-    // is refuse to write provenance for a run the user abandoned (and skip the work
-    // entirely if the cancel arrived before dispatch). Whatever output file the tool
-    // had already written stays on disk — it may have overwritten something, so
-    // deleting it behind the user's back would be worse than leaving it. The
-    // terminal message below says which of the two happened.
-    let flag = std::sync::Arc::new(AtomicBool::new(false));
-    reg_lock(&registry.canceled).insert(job_id.clone(), flag.clone());
-
-    let jid = job_id.clone();
-    let tool_c = tool.clone();
-    let root_c = workspace_root.clone();
-    let params_c = params.clone();
-    let flag_c = flag.clone();
-    // A panicking tool surfaces here as a `JoinError`. It must still reach a
-    // terminal state below: returning early (as this used to, via `?`) left the
-    // row at `running` -- or `canceling`, if the user had pressed Cancel --
-    // for the rest of the session, and persisted that way.
+    let (app_c, jid, tool_c, params_c, live_c) =
+        (app.clone(), job_id.clone(), tool.clone(), params.clone(), live.clone());
+    let root = PathBuf::from(&workspace_root);
+    // A panic here surfaces as a `JoinError`. It must still reach a terminal state
+    // below: returning early left the row at `running` (or `canceling`) for the
+    // rest of the session, and persisted that way.
     let outcome = tauri::async_runtime::spawn_blocking(move || {
-        run_one(&tool_c, params_c, &root_c, started, &jid, &flag_c)
+        let registry = app_c.state::<JobRegistry>();
+        let max = || {
+            prefs_path
+                .as_deref()
+                .map(|p| domainator_core::app_support::prefs::load_prefs(p).max_concurrent_jobs)
+                .unwrap_or(DEFAULT_MAX_CONCURRENT_JOBS)
+        };
+        let Some(_slot) = registry.queue.acquire(&jid, &live_c, max) else {
+            return Err(JobFailure::Canceled("canceled before it started".into()));
+        };
+        mark_running(&registry, &app_c, &jid);
+        let launcher = launcher().map_err(JobFailure::Failed)?;
+        let job = Job { tool: &tool_c, params: &params_c, root: &root, job_id: &jid, started };
+        run_one(&job, &launcher, &live_c)
     })
     .await
-    .unwrap_or_else(|e| Err(format!("the tool crashed: {e}")));
+    .unwrap_or_else(|e| Err(JobFailure::Failed(format!("the job crashed: {e}"))));
 
-    let canceled = flag.load(Ordering::Relaxed);
-    reg_lock(&registry.canceled).remove(&job_id);
-    let mut info = JobInfo {
-        job_id: job_id.clone(),
-        tool: tool.clone(),
-        status: String::new(),
-        message: String::new(),
-        started_at_ms: ms_str(started),
-        outputs: Vec::new(),
-        params: params.clone(),
-    };
+    reg_lock(&registry.live).remove(&job_id);
     match outcome {
-        _ if canceled => {
-            info.status = "canceled".into();
-            info.message = match &outcome {
-                Ok(r) if !r.outputs.is_empty() => {
-                    info.outputs = r.outputs.clone();
-                    "canceled too late to stop the tool — its output was kept, \
-                     but the run was not recorded"
-                        .into()
-                }
-                _ => "canceled".to_string(),
-            };
-            set_job(&registry, &app, info.clone());
-            Err("job canceled".into())
-        }
         Ok(r) => {
-            info.status = "completed".into();
-            info.message = r.message.clone();
-            info.outputs = r.outputs.clone();
-            set_job(&registry, &app, info);
+            set_job(&registry, &app, job_info("completed", r.message.clone(), r.outputs.clone()));
             Ok(r)
         }
-        Err(e) => {
-            info.status = "failed".into();
-            info.message = e.clone();
-            set_job(&registry, &app, info);
-            Err(e)
+        Err(JobFailure::Canceled(message)) => {
+            set_job(&registry, &app, job_info("canceled", message, Vec::new()));
+            Err("job canceled".into())
         }
+        Err(JobFailure::Failed(message)) => {
+            set_job(&registry, &app, job_info("failed", message.clone(), Vec::new()));
+            Err(message)
+        }
+    }
+}
+
+/// A queued job got its slot. One that was canceled meanwhile stays `canceling`.
+fn mark_running(registry: &JobRegistry, app: &AppHandle, job_id: &str) {
+    let info = {
+        let mut jobs = reg_lock(&registry.jobs);
+        match jobs.get_mut(job_id) {
+            Some(j) if j.status == "queued" => {
+                j.status = "running".into();
+                Some(j.clone())
+            }
+            _ => None,
+        }
+    };
+    if let Some(info) = info {
+        let _ = app.emit("job-update", &info);
+        persist_jobs(registry);
     }
 }
 
@@ -401,7 +495,7 @@ pub fn list_jobs(registry: tauri::State<'_, JobRegistry>) -> Vec<JobInfo> {
 
 /// Load persisted job history for a workspace (called on open). Sets the registry's
 /// root (so future updates persist there), replaces the in-memory jobs with the
-/// file's, and marks any left-over `running` jobs as interrupted (the process that
+/// file's, and marks any left-over live jobs as interrupted (the process that
 /// ran them is gone). Returns the history.
 /// Reads and rewrites `.domainator/jobs.json`, so `(async)`: a plain `fn`
 /// command would do that on Tauri's main thread.
@@ -415,7 +509,7 @@ pub fn load_jobs(registry: tauri::State<'_, JobRegistry>, workspace_root: String
     // Jobs this process is still running (reopening the workspace mid-run, say):
     // their in-memory row is the truth, and the file may be behind it. Everything
     // else non-terminal in the file belongs to a process that is gone.
-    let live: HashSet<String> = reg_lock(&registry.canceled).keys().cloned().collect();
+    let live: HashSet<String> = reg_lock(&registry.live).keys().cloned().collect();
     let list = {
         let mut map = reg_lock(&registry.jobs);
         let previous = std::mem::take(&mut *map);
@@ -434,19 +528,23 @@ pub fn load_jobs(registry: tauri::State<'_, JobRegistry>, workspace_root: String
 
 /// Give a job that no live process owns a terminal status.
 ///
-/// Both non-terminal states need it. `canceling` used to be missed: it reaches
-/// `jobs.json` whenever anything persists while a canceled tool is still running,
-/// and a job that never finished stayed "canceling…" across every relaunch.
+/// Every non-terminal state needs it. `canceling` used to be missed: it reaches
+/// `jobs.json` whenever anything persists while a canceled job is stopping, and a
+/// job that never finished stayed "canceling…" across every relaunch.
 fn settle_orphaned_job(j: &mut JobInfo) {
     match j.status.as_str() {
         "running" => {
             j.status = "failed".into();
-            j.message = "interrupted (app closed)".into();
+            j.message = "interrupted (app closed); its outputs may be incomplete".into();
+        }
+        "queued" => {
+            j.status = "canceled".into();
+            j.message = "not run (the app closed while it was queued)".into();
         }
         "canceling" => {
             j.status = "canceled".into();
-            j.message = "canceled (the app closed before the tool stopped; any \
-                         output it had written was kept)"
+            j.message = "canceled (the app closed while the job was stopping; \
+                         its outputs may be incomplete)"
                 .into();
         }
         _ => {}
@@ -469,21 +567,22 @@ pub fn clear_jobs(registry: tauri::State<'_, JobRegistry>) {
     persist_jobs(&registry);
 }
 
-/// Best-effort cancel. Sets the job's flag (which `run_one` checks at its own
-/// boundaries) and flips the visible status to `canceling` right away, so the
-/// click has feedback: the core tools can't be interrupted mid-run, and without
-/// this the row sat at "running" until the tool finished on its own.
+/// Cancel a queued or running job. A running job's worker is killed with
+/// everything it started; a queued one leaves the queue. The row shows
+/// `canceling` until the job's thread has cleaned up, which takes milliseconds.
 ///
-/// `(async)`: it now persists the history (see [`load_jobs`]).
+/// `(async)`: it persists the history (see [`load_jobs`]).
 #[tauri::command(async)]
 pub fn cancel_job(app: AppHandle, registry: tauri::State<'_, JobRegistry>, job_id: String) {
-    if let Some(flag) = reg_lock(&registry.canceled).get(&job_id) {
-        flag.store(true, Ordering::Relaxed);
+    let live = reg_lock(&registry.live).get(&job_id).cloned();
+    if let Some(live) = live {
+        live.cancel();
+        registry.queue.wake_all();
     }
     let pending = {
         let mut jobs = reg_lock(&registry.jobs);
         match jobs.get_mut(&job_id) {
-            Some(j) if j.status == "running" => {
+            Some(j) if j.status == "running" || j.status == "queued" => {
                 j.status = "canceling".into();
                 Some(j.clone())
             }
@@ -496,1170 +595,136 @@ pub fn cancel_job(app: AppHandle, registry: tauri::State<'_, JobRegistry>, job_i
     }
 }
 
-/// The actual tool dispatch + provenance write (runs on the blocking pool).
-///
-/// `canceled` is checked before dispatch (so a job canceled while it was still
-/// queued behind others does no work at all) and again before the provenance write
-/// (so an abandoned run isn't recorded in the DAG). There is no check *inside* a
-/// tool: none of the core tools expose an interruption point.
-fn run_one(
-    tool: &str,
-    params: Value,
-    root: &str,
+/// One job to run.
+struct Job<'a> {
+    tool: &'a str,
+    params: &'a Value,
+    root: &'a Path,
+    job_id: &'a str,
     started: u128,
-    job_id: &str,
-    canceled: &AtomicBool,
-) -> Result<RunResult, String> {
-    if canceled.load(Ordering::Relaxed) {
-        return Err("job canceled".into());
+}
+
+/// Run one job to the end: write its config, run the tool, and record provenance.
+///
+/// A job canceled before this starts does no work at all. One canceled while its
+/// tool runs has the declared outputs it created or changed removed, and is not
+/// recorded in the provenance DAG.
+fn run_one(job: &Job, launcher: &Launcher, live: &LiveJob) -> Result<RunResult, JobFailure> {
+    if live.is_canceled() {
+        return Err(JobFailure::Canceled("canceled before it started".into()));
     }
-    let (inputs, outputs, message) = match tool {
-        "domain-search" => run_domain_search(params.clone())?,
-        "domainate" => run_domainate(params.clone())?,
-        "seq-dist" => run_seq_dist(params.clone())?,
-        "compare-contigs" => run_compare_contigs(params.clone())?,
-        "select-by-cds" => run_select_by_cds(params.clone())?,
-        "select-by-contig" => run_select_by_contig(params.clone())?,
-        "filter-domains" => run_filter_domains(params.clone())?,
-        "hmmer-select" => run_hmmer_select(params.clone())?,
-        "hmmer-build" => run_hmmer_build(params.clone())?,
-        "hmmer-compare" => run_hmmer_compare(params.clone())?,
-        "hmmer-search" => run_hmmer_search(params.clone())?,
-        "hmmer-report" => run_hmmer_report(params.clone())?,
-        "genbank-to-fasta" => run_genbank_to_fasta(params.clone())?,
-        "clean-sequences" => run_clean_sequences(params.clone())?,
-        "sort-contigs" => run_sort_contigs(params.clone())?,
-        "select-by-coord" => run_select_by_coord(params.clone())?,
-        "trim-contigs" => run_trim_contigs(params.clone())?,
-        "extract-domains" => run_extract_domains(params.clone())?,
-        "extract-peptides" => run_extract_peptides(params.clone())?,
-        "extract-unannotated" => run_extract_unannotated(params.clone())?,
-        "color-genbank" => run_color_genbank(params.clone())?,
-        "color-table-to-legend" => run_color_table_to_legend(params.clone())?,
-        "deduplicate" => run_deduplicate(params.clone())?,
-        "enum-report" => run_export_enum_report(params.clone())?,
-        "matrix-report" => run_export_matrix_report(params.clone())?,
-        "transform-matrix" => run_transform_matrix(params.clone())?,
-        "build-ssn" => run_build_ssn(params.clone())?,
-        "build-ssn-viewer" => run_build_ssn_viewer(params.clone())?,
-        other => return Err(format!("tool not runnable from the GUI yet: {other}")),
-    };
-    if canceled.load(Ordering::Relaxed) {
-        // Canceled while the tool ran: report the outputs it produced, but write
-        // no provenance — the run is not part of the workspace's history.
-        return Ok(RunResult {
-            job_id: job_id.to_string(),
-            outputs: outputs.into_iter().map(|o| o.path).collect(),
-            message,
-        });
+    let spec = crate::tool_specs::specs()
+        .iter()
+        .find(|s| s.id == job.tool)
+        .ok_or_else(|| JobFailure::Failed(format!("tool not runnable from the GUI: {}", job.tool)))?;
+    let missing = job_io::missing_required_inputs(spec, job.params);
+    if !missing.is_empty() {
+        return Err(JobFailure::Failed(format!("missing required input: {}", missing.join(", "))));
     }
+    preflight(job.tool, job.params).map_err(JobFailure::Failed)?;
+
+    let dir = dot_dir(job.root).join("jobs").join(job.job_id);
+    let config = dir.join("worker-config.json");
+    std::fs::create_dir_all(&dir)
+        .and_then(|()| std::fs::write(&config, serde_json::to_vec_pretty(job.params).unwrap_or_default()))
+        .map_err(|e| JobFailure::Failed(format!("writing the job's config: {e}")))?;
+
+    let outputs = job_io::declared_outputs(spec, job.params);
+    let snapshot = job_io::OutputSnapshot::take(&outputs);
+    let args: Vec<OsString> = vec![job.tool.into(), "--config".into(), config.into_os_string()];
+    let ran = run_cli_command(launcher, &args, job.root, Some(&dir.join("worker.log")), live);
+    if live.is_canceled() {
+        let cleanup = snapshot.remove_changed();
+        return Err(JobFailure::Canceled(job_io::canceled_message(&cleanup)));
+    }
+    let message = ran.map_err(JobFailure::Failed)?;
+
     let record = JobRecord {
-        job_id: job_id.to_string(),
-        tool: tool.to_string(),
-        params,
-        inputs,
-        outputs: outputs.clone(),
-        started_at_ms: started,
+        job_id: job.job_id.to_string(),
+        tool: job.tool.to_string(),
+        params: job.params.clone(),
+        inputs: job_io::declared_inputs(spec, job.params),
+        outputs: job_io::existing_outputs(&outputs),
+        started_at_ms: job.started,
         finished_at_ms: now_ms(),
         status: "completed".into(),
         engine_version: env!("CARGO_PKG_VERSION").into(),
         upstream_version: domainator_core::version::UPSTREAM_VERSION.into(),
     };
-    write_job(Path::new(root), &record, &format!("{tool} output"))
-        .map_err(|e| format!("writing provenance: {e}"))?;
-    Ok(RunResult { job_id: job_id.to_string(), outputs: outputs.into_iter().map(|o| o.path).collect(), message })
+    write_job(job.root, &record, &format!("{} output", job.tool))
+        .map_err(|e| JobFailure::Failed(format!("writing provenance: {e}")))?;
+    Ok(RunResult {
+        job_id: job.job_id.to_string(),
+        outputs: record.outputs.into_iter().map(|o| o.path).collect(),
+        message,
+    })
 }
 
-type RunOutput = (Vec<IoRef>, Vec<IoRef>, String);
-
-/// Load a GenBank or FASTA sequence file (FASTA gets the given molecule type).
-fn load_sequence(path: &str, fasta_type: &str) -> Result<Vec<SeqRecord>, String> {
-    match detect_filetype(Path::new(path)) {
-        Some(FileType::Genbank) => read_genbank(path).map_err(|e| format!("reading GenBank: {e}")),
-        Some(FileType::Fasta) => read_fasta(path, Some(fasta_type)).map_err(|e| format!("reading FASTA: {e}")),
-        None => Err(format!("unsupported sequence file: {path}")),
+/// Checks the GUI makes before starting a tool, where its answer is better than
+/// the CLI's.
+///
+/// A taxonomy column with no taxonomy database chosen: the CLI would fall back to
+/// Python's `/tmp/ncbi_taxonomy_<user>` default, which a GUI user never set up,
+/// and fail there with a file-not-found. The GUI knows the database can be
+/// installed from its Reference Databases panel, so it says that instead.
+fn preflight(tool: &str, params: &Value) -> Result<(), String> {
+    let blank = |key: &str| params.get(key).and_then(Value::as_str).is_none_or(|s| s.trim().is_empty());
+    if tool == "enum-report" && blank("ncbi_taxonomy_path") {
+        if let Ok(cfg) = serde_json::from_value::<domainator_config::EnumConfig>(params.clone()) {
+            let analyses: Vec<_> = cfg.columns.iter().filter_map(|c| c.to_analysis().ok()).collect();
+            if domainator_core::tools::enum_report::needs_taxonomy(&analyses) {
+                return Err("the taxonomy columns need a taxonomy database: install NCBI Taxonomy \
+                            from Reference Databases, or choose one"
+                    .into());
+            }
+        }
     }
-}
-
-/// Compile a taxid allow-set from include/exclude lists or a taxonomy expression,
-/// using an NCBI taxdump at `path` (mirrors the CLI `compile_allowed_taxids`).
-/// Returns `None` when no filter is requested. Requires `path` when a filter is set.
-fn compile_allowed_taxids(
-    include: &[i64],
-    exclude: &[i64],
-    expr: Option<&str>,
-    path: Option<&str>,
-) -> Result<Option<HashSet<i64>>, String> {
-    let has_expr = expr.is_some_and(|e| !e.trim().is_empty());
-    if include.is_empty() && exclude.is_empty() && !has_expr {
-        return Ok(None);
-    }
-    if has_expr && (!include.is_empty() || !exclude.is_empty()) {
-        return Err("taxonomy_expr is mutually exclusive with include_taxids/exclude_taxids".into());
-    }
-    let path = path
-        .filter(|p| !p.trim().is_empty())
-        .ok_or("taxonomy filters require ncbi_taxonomy_path (a taxdump directory)")?;
-    let tax = crate::taxonomy_cache::load(path)?;
-    let allowed = if has_expr {
-        tax.compile_taxonomy_expression(expr.unwrap())
-    } else {
-        let inc: HashSet<i64> = include.iter().copied().collect();
-        let exc: HashSet<i64> = exclude.iter().copied().collect();
-        tax.compile_taxonomy_filter(
-            if inc.is_empty() { None } else { Some(&inc) },
-            if exc.is_empty() { None } else { Some(&exc) },
-        )
-    };
-    Ok(allowed)
-}
-
-fn ref_inputs(seq: &str, references: &[String]) -> Vec<IoRef> {
-    let mut v = vec![IoRef { path: seq.to_string(), role: "sequence".into() }];
-    for r in references {
-        v.push(IoRef { path: r.clone(), role: "reference".into() });
-    }
-    v
-}
-
-fn run_domain_search(params: Value) -> Result<RunOutput, String> {
-    let cfg: DomainSearchConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    let input = cfg.input.clone().ok_or("missing input sequences")?;
-    let output = cfg.output.clone().ok_or("missing output (GenBank)")?;
-    if cfg.references.is_empty() {
-        return Err("select at least one HMM reference".into());
-    }
-    let dbs = domainate::read_hmm_references(&cfg.references).map_err(|e| format!("reading references: {e}"))?;
-    // Neighborhood extraction (--cds_range/--kb_range/--whole_contig), mirroring the CLI.
-    let range = validate_range(
-        cfg.whole_contig,
-        cfg.kb_range,
-        cfg.kb_up,
-        cfg.kb_down,
-        cfg.cds_range,
-        cfg.cds_up,
-        cfg.cds_down,
-    )?;
-    if cfg.translate && !matches!(range, Range::None) {
-        return Err("translate is incompatible with neighborhood extraction (cds_range/kb_range/whole_contig)".into());
-    }
-    let strand = match cfg.strand.as_deref() {
-        Some("f") => Some(1),
-        Some("r") => Some(-1),
-        Some(other) => return Err(format!("strand must be 'f' or 'r', got {other:?}")),
-        None => None,
-    };
-    let allowed_taxids = compile_allowed_taxids(
-        &cfg.include_taxids,
-        &cfg.exclude_taxids,
-        cfg.taxonomy_expr.as_deref(),
-        cfg.ncbi_taxonomy_path.as_deref(),
-    )?;
-    let decoys = parse_name_list(&cfg.decoys, cfg.decoys_file.as_deref())
-        .map_err(|e| format!("reading decoys: {e}"))?;
-    let opts = DomainSearchOptions {
-        z: cfg.z.unwrap_or(1000.0),
-        evalue: cfg.evalue.unwrap_or(0.001),
-        min_evalue: cfg.min_evalue.unwrap_or(0.0),
-        max_overlap: cfg.max_overlap.unwrap_or(1.0),
-        add_annotations: cfg.add_annotations,
-        max_hits: cfg.max_hits,
-        max_hits_per_contig: cfg.max_hits_per_contig,
-        pad: cfg.pad,
-        batch_size: cfg.batch_size.unwrap_or(10000),
-        fasta_type: cfg.fasta_type.clone().unwrap_or_else(|| "protein".into()),
-        cpu: cfg.cpu.unwrap_or(0),
-        range,
-        normalize_direction: !cfg.keep_direction,
-        strand,
-        max_region_overlap: cfg.max_region_overlap.unwrap_or(1.0),
-        translate: cfg.translate,
-        max_mode: cfg.max_mode,
-        allowed_taxids,
-        decoys,
-    };
-    let hits = domain_search(std::slice::from_ref(&input), &dbs, &opts).map_err(|e| format!("domain_search: {e}"))?;
-    write_genbank(&output, &hits).map_err(|e| format!("writing GenBank: {e}"))?;
-    Ok((
-        ref_inputs(&input, &cfg.references),
-        vec![IoRef { path: output, role: "genbank".into() }],
-        format!("wrote {} hit contigs", hits.len()),
-    ))
-}
-
-fn run_domainate(params: Value) -> Result<RunOutput, String> {
-    let cfg: DomainateConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    let input = cfg.input.clone().ok_or("missing input sequences")?;
-    let output = cfg.output.clone().ok_or("missing output (GenBank)")?;
-    if cfg.references.is_empty() {
-        return Err("select at least one HMM reference".into());
-    }
-    let fasta_type = cfg.fasta_type.clone().unwrap_or_else(|| "protein".into());
-    let records = load_sequence(&input, &fasta_type)?;
-    let dbs = domainate::read_hmm_references(&cfg.references).map_err(|e| format!("reading references: {e}"))?;
-    if dbs.has_nucleotide() && records.iter().any(|r| r.is_protein()) {
-        return Err("cannot search protein inputs with a nucleotide reference".into());
-    }
-    let max_domains = match cfg.max_domains {
-        Some(0) | None => usize::MAX,
-        Some(n) => n,
-    };
-    let allowed_taxids = compile_allowed_taxids(
-        &cfg.include_taxids,
-        &cfg.exclude_taxids,
-        cfg.taxonomy_expr.as_deref(),
-        cfg.ncbi_taxonomy_path.as_deref(),
-    )?;
-    let opts = DomainateOptions {
-        z: cfg.z.unwrap_or(1000.0),
-        evalue: cfg.evalue.unwrap_or(0.001),
-        min_evalue: cfg.min_evalue.unwrap_or(0.0),
-        max_hits: max_domains,
-        max_overlap: cfg.max_overlap.unwrap_or(1.0),
-        no_annotations: cfg.no_annotations,
-        hits_only: cfg.hits_only,
-        overlap_by_db: cfg.overlap_by_db,
-        max_mode: cfg.max_mode,
-        allowed_taxids,
-        cpu: cfg.cpu.unwrap_or(0),
-        ..Default::default()
-    };
-    let annotated = domainate(records, &dbs, &opts);
-    write_genbank(&output, &annotated).map_err(|e| format!("writing GenBank: {e}"))?;
-    Ok((
-        ref_inputs(&input, &cfg.references),
-        vec![IoRef { path: output, role: "genbank".into() }],
-        format!("annotated {} records", annotated.len()),
-    ))
-}
-
-fn run_seq_dist(params: Value) -> Result<RunOutput, String> {
-    let cfg: SeqDistConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    let input = cfg.input.clone().ok_or("missing input sequences")?;
-    let output = cfg.sparse.clone().ok_or("missing output (matrix .hdf5)")?;
-    let input_kind = detect_kind(Path::new(&input)).ok_or_else(|| format!("could not detect input kind: {input}"))?;
-    let ref_kind = match cfg.reference.as_ref() {
-        Some(p) => Some(detect_kind(Path::new(p)).ok_or_else(|| format!("could not detect reference kind: {p}"))?),
-        None => None,
-    };
-    let opts = SeqDistOptions {
-        // The CLI default; the dialog seeds the GUI's own (`tools/seq-dist.yml`).
-        algorithm: cfg.algorithm.clone().unwrap_or_else(|| "diamond_us".into()),
-        mode: cfg.mode.clone().unwrap_or_else(|| "score".into()),
-        lb: cfg.lb.unwrap_or(0.0),
-        k: cfg.k,
-        mst_knn: cfg.mst_knn,
-        knn: cfg.knn,
-        params: domainator_core::tools::seq_dist::parse_diamond_params(
-            cfg.params.as_deref().unwrap_or(""),
-        )?,
-        cpu: cfg.cpu.unwrap_or(0),
-    };
-    let matrix = seq_dist(&input, input_kind, cfg.reference.as_deref(), ref_kind, &opts)
-        .map_err(|e| format!("seq_dist: {e}"))?;
-    hdf5_io::write_sparse(&output, &matrix).map_err(|e| format!("writing matrix: {e}"))?;
-    let mut inputs = vec![IoRef { path: input, role: "sequence".into() }];
-    if let Some(r) = cfg.reference {
-        inputs.push(IoRef { path: r, role: "reference".into() });
-    }
-    Ok((inputs, vec![IoRef { path: output, role: "matrix".into() }], format!("wrote {}×{} matrix", matrix.nrows(), matrix.ncols())))
-}
-
-fn run_compare_contigs(params: Value) -> Result<RunOutput, String> {
-    let cfg: CompareContigsConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one GenBank file".into());
-    }
-    let output = cfg.sparse.clone().ok_or("missing output (matrix .hdf5)")?;
-    let ji = cfg.ji.unwrap_or(0.5);
-    let ai = cfg.ai.unwrap_or(0.5);
-    if ji == 0.0 && ai == 0.0 {
-        return Err("set a non-zero Jaccard or Adjacency weight".into());
-    }
-    let opts = CompareContigsOptions {
-        ji_weight: ji,
-        ai_weight: ai,
-        databases: if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) },
-        k: cfg.k,
-        lb: cfg.lb.unwrap_or(0.0),
-        mst_knn: cfg.mst_knn,
-        knn: cfg.knn,
-        cpu: cfg.cpu.unwrap_or(0),
-    };
-    let matrix = compare_contigs(&cfg.input, &opts).map_err(|e| format!("compare_contigs: {e}"))?;
-    hdf5_io::write_sparse(&output, &matrix).map_err(|e| format!("writing matrix: {e}"))?;
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "genbank".into() }).collect();
-    Ok((inputs, vec![IoRef { path: output, role: "matrix".into() }], format!("wrote {}×{} matrix", matrix.nrows(), matrix.ncols())))
-}
-
-/// Load and concatenate all records from multiple sequence files (FASTA → protein).
-fn load_inputs(paths: &[String]) -> Result<Vec<SeqRecord>, String> {
-    let mut all = Vec::new();
-    for p in paths {
-        all.extend(load_sequence(p, "protein")?);
-    }
-    Ok(all)
-}
-
-/// Retain only records whose LOCUS name is in the contig name-list (if any).
-fn filter_contigs(
-    records: &mut Vec<SeqRecord>,
-    contigs: &[String],
-    contigs_file: Option<&str>,
-) -> Result<(), String> {
-    if let Some(set) =
-        parse_name_list(contigs, contigs_file).map_err(|e| format!("reading contigs: {e}"))?
-    {
-        records.retain(|r| set.contains(&r.name));
+    let filters = ["include_taxids", "exclude_taxids", "taxonomy_expr"].iter().any(|k| match params.get(*k) {
+        Some(Value::Array(a)) => !a.is_empty(),
+        Some(Value::String(s)) => !s.trim().is_empty(),
+        _ => false,
+    });
+    if filters && blank("ncbi_taxonomy_path") {
+        return Err("taxonomy filters need a taxonomy database: install NCBI Taxonomy from \
+                    Reference Databases, or choose one"
+            .into());
     }
     Ok(())
 }
 
-/// One `f`/`r` strand selector into the internal ±1 (mirrors the CLI).
-fn parse_strand(s: Option<&str>) -> Result<Option<i32>, String> {
-    match s {
-        Some("f") => Ok(Some(1)),
-        Some("r") => Ok(Some(-1)),
-        None | Some("") => Ok(None),
-        Some(other) => Err(format!("strand must be 'f' or 'r', got {other:?}")),
+/// Run a CLI command line (without the program name) where `launcher` says, and
+/// wait for it. `Ok` is the job message. A cancel through `live` kills it.
+pub(crate) fn run_cli_command(
+    launcher: &Launcher,
+    args: &[OsString],
+    cwd: &Path,
+    log: Option<&Path>,
+    live: &LiveJob,
+) -> Result<String, String> {
+    match launcher {
+        Launcher::Worker(exe) => run_in_worker(exe, args, cwd, log, live),
+        Launcher::InProcess => run_in_process(args),
     }
 }
 
-fn run_select_by_cds(params: Value) -> Result<RunOutput, String> {
-    let cfg: SelectByCdsConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input sequence file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output (GenBank)")?;
-    let mut records = load_inputs(&cfg.input)?;
-    let target_contigs =
-        parse_name_list(&cfg.contigs, cfg.contigs_file.as_deref()).map_err(|e| e.to_string())?;
-    if let Some(set) = &target_contigs {
-        records.retain(|r| set.contains(&r.name));
-    }
-    let target_cdss = parse_name_list(&cfg.cds, cfg.cds_file.as_deref()).map_err(|e| e.to_string())?;
-    let target_domains =
-        parse_name_list(&cfg.domains, cfg.domains_file.as_deref()).map_err(|e| e.to_string())?;
-    let range = validate_range(
-        cfg.whole_contig, cfg.kb_range, cfg.kb_up, cfg.kb_down, cfg.cds_range, cfg.cds_up, cfg.cds_down,
-    )?;
-    let strand = parse_strand(cfg.strand.as_deref())?;
-    let opts = SelectByCdsOptions {
-        target_cdss,
-        target_domains,
-        domain_expr: cfg.domain_expr,
-        range,
-        normalize_direction: !cfg.keep_direction,
-        evalue: cfg.evalue.unwrap_or(100_000_000.0),
-        invert: cfg.invert,
-        search_hits: cfg.search_hits,
-        max_region_overlap: cfg.max_region_overlap.unwrap_or(1.0),
-        strand,
-        databases: if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) },
-        unannotated: cfg.unannotated,
-        include_nucleic_acids: cfg.include_nucleic_acids,
-    };
-    let mut regions = select_by_cds(&records, &opts);
-    if !cfg.skip_deduplicate {
-        let mut seen = HashSet::new();
-        regions.retain(|r| seen.insert(r.record.name.clone()));
-    }
-    if cfg.pad {
-        pad_records(&mut regions);
-    }
-    let out_records: Vec<SeqRecord> = regions.into_iter().map(|r| r.record).collect();
-    write_genbank(&output, &out_records).map_err(|e| format!("writing GenBank: {e}"))?;
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((
-        inputs,
-        vec![IoRef { path: output, role: "genbank".into() }],
-        format!("selected {} regions", out_records.len()),
-    ))
-}
-
-fn run_select_by_contig(params: Value) -> Result<RunOutput, String> {
-    let cfg: SelectByContigConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input sequence file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output")?;
-    let records = load_inputs(&cfg.input)?;
-    let target_contigs =
-        parse_name_list(&cfg.contigs, cfg.contigs_file.as_deref()).map_err(|e| e.to_string())?;
-    let target_domains =
-        parse_name_list(&cfg.domains, cfg.domains_file.as_deref()).map_err(|e| e.to_string())?;
-    let needs_tax = !cfg.include_taxids.is_empty()
-        || !cfg.exclude_taxids.is_empty()
-        || cfg.taxonomy_expr.as_deref().is_some_and(|e| !e.trim().is_empty());
-    let tax = if needs_tax {
-        let path = cfg
-            .ncbi_taxonomy_path
-            .as_deref()
-            .filter(|p| !p.trim().is_empty())
-            .ok_or("taxonomy filters require ncbi_taxonomy_path (a taxdump directory)")?;
-        Some(crate::taxonomy_cache::load(path)?)
+fn run_in_worker(exe: &Path, args: &[OsString], cwd: &Path, log: Option<&Path>, live: &LiveJob) -> Result<String, String> {
+    let w = worker::spawn_exe(exe, args, Some(cwd), log)
+        .map_err(|e| format!("starting the worker process: {e}"))?;
+    live.attach(w.killer());
+    let exit = w.wait();
+    live.detach();
+    let exit = exit.map_err(|e| format!("waiting for the worker process: {e}"))?;
+    if exit.status.success() {
+        Ok(job_io::success_message(&exit.stdout, &exit.stderr))
     } else {
-        None
-    };
-    let opts = SelectByContigOptions {
-        target_domains,
-        domain_expr: cfg.domain_expr,
-        domain_evalue: cfg.evalue.unwrap_or(100_000_000.0),
-        first: cfg.first,
-        length_lb: cfg.length_lb,
-        length_ub: cfg.length_ub,
-        cds_count_lb: cfg.cds_count_lb,
-        cds_count_ub: cfg.cds_count_ub,
-        definition_regex: cfg.definition_regex,
-        sequence_regex: cfg.sequence_regex,
-        target_contigs,
-        contigs_regex: cfg.contigs_regex,
-        invert: cfg.invert,
-        include_taxids: if cfg.include_taxids.is_empty() { None } else { Some(cfg.include_taxids.iter().copied().collect()) },
-        exclude_taxids: if cfg.exclude_taxids.is_empty() { None } else { Some(cfg.exclude_taxids.iter().copied().collect()) },
-        taxonomy_expr: cfg.taxonomy_expr,
-        databases: if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) },
-        unannotated: cfg.unannotated,
-        search_score_lb: cfg.search_score_lb,
-        search_score_ub: cfg.search_score_ub,
-        domain_type: cfg.domain_type.unwrap_or_else(|| "domain".into()),
-    };
-    let selected = select_by_contig(records, tax.as_deref(), &opts).map_err(|e| e.to_string())?;
-    let role = if cfg.fasta_out { "fasta" } else { "genbank" };
-    if cfg.fasta_out {
-        write_fasta(&output, &selected).map_err(|e| format!("writing FASTA: {e}"))?;
-    } else {
-        write_genbank(&output, &selected).map_err(|e| format!("writing GenBank: {e}"))?;
+        Err(job_io::failure_message(&exit.stderr, &job_io::describe_exit(&exit.status)))
     }
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((
-        inputs,
-        vec![IoRef { path: output, role: role.into() }],
-        format!("selected {} contigs", selected.len()),
-    ))
 }
 
-fn run_filter_domains(params: Value) -> Result<RunOutput, String> {
-    let cfg: FilterDomainsConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input sequence file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output (GenBank)")?;
-    let mut records = load_inputs(&cfg.input)?;
-    filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-    let selected_domains =
-        parse_name_list(&cfg.domains, cfg.domains_file.as_deref()).map_err(|e| e.to_string())?;
-    let annotation_type =
-        AnnotationType::parse(cfg.annotation_type.as_deref().unwrap_or("all")).map_err(|e| e.to_string())?;
-    let opts = FilterDomainsOptions {
-        evalue: cfg.evalue.unwrap_or(100_000_000.0),
-        max_overlap: cfg.max_overlap.unwrap_or(1.0),
-        databases_keep: if cfg.databases_keep.is_empty() { None } else { Some(cfg.databases_keep.iter().cloned().collect()) },
-        databases_filter: if cfg.databases_filter.is_empty() { None } else { Some(cfg.databases_filter.iter().cloned().collect()) },
-        selected_domains,
-        annotation_type,
-    };
-    let out = filter_domains(records, &opts);
-    write_genbank(&output, &out).map_err(|e| format!("writing GenBank: {e}"))?;
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((
-        inputs,
-        vec![IoRef { path: output, role: "genbank".into() }],
-        format!("wrote {} records", out.len()),
-    ))
-}
-
-fn run_hmmer_select(params: Value) -> Result<RunOutput, String> {
-    let cfg: HmmerSelectConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input .hmm file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output (.hmm)")?;
-    let fields = Fields::from_field(cfg.field.as_deref().unwrap_or("all")).map_err(|e| e.to_string())?;
-    let opts = SelectOptions {
-        regex: cfg.regex,
-        exact: cfg.exact,
-        contains: cfg.contains,
-        fields,
-        case_sensitive: cfg.case_sensitive,
-        alphabet: parse_alphabet(cfg.alphabet.as_deref())?,
-    };
-    let summary = write_hmm_output(&output, |f| hmmer_select(&cfg.input, &opts, f))?;
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "hmm".into() }).collect();
-    let skipped = if summary.skipped_files > 0 {
-        format!(" ({} file(s) skipped by --alphabet)", summary.skipped_files)
-    } else {
-        String::new()
-    };
-    Ok((
-        inputs,
-        vec![IoRef { path: output, role: "hmm".into() }],
-        format!("selected {} profiles{skipped}", summary.found),
-    ))
-}
-
-fn run_hmmer_build(params: Value) -> Result<RunOutput, String> {
-    let cfg: HmmerBuildConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    let input = cfg.input.clone().ok_or("missing input MSA (Stockholm)")?;
-    let output = cfg.output.clone().ok_or("missing output (.hmm)")?;
-    let name = cfg
-        .name
-        .clone()
-        .filter(|n| !n.trim().is_empty())
-        .ok_or("a profile name is required")?;
-    let opts = HmmerBuildOptions {
-        name,
-        acc: cfg.acc.clone().filter(|s| !s.trim().is_empty()),
-        desc: cfg.desc.clone().filter(|s| !s.trim().is_empty()),
-        alphabet: cfg.alphabet.clone().filter(|s| !s.trim().is_empty()),
-        window_length: cfg.window_length,
-        window_beta: cfg.window_beta,
-    };
-    write_hmm_output(&output, |f| {
-        let hmm = hmmer_build(Path::new(&input), &opts)?;
-        write_hmm_out(&hmm, f)
-    })?;
-    Ok((
-        vec![IoRef { path: input, role: "msa".into() }],
-        vec![IoRef { path: output, role: "hmm".into() }],
-        "built 1 profile".into(),
-    ))
-}
-
-/// Write records as FASTA using the record **name** as the id (Biopython `.id`),
-/// matching the CLI's `write_fasta_bp_out` (used by genbank_to_fasta/extract_*/clean).
-fn write_fasta_bp_path(path: &str, records: &[SeqRecord]) -> Result<(), String> {
-    let mut w = std::io::BufWriter::new(
-        std::fs::File::create(path).map_err(|e| format!("creating {path}: {e}"))?,
-    );
-    write_fasta_bp(&mut w, records).map_err(|e| format!("writing FASTA: {e}"))?;
-    std::io::Write::flush(&mut w).map_err(|e| e.to_string())
-}
-
-fn set_of(v: &[String]) -> Option<HashSet<String>> {
-    if v.is_empty() { None } else { Some(v.iter().cloned().collect()) }
-}
-
-fn run_genbank_to_fasta(params: Value) -> Result<RunOutput, String> {
-    let cfg: GenbankToFastaConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output (FASTA)")?;
-    let records = load_inputs(&cfg.input)?;
-    write_fasta_bp_path(&output, &records)?;
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, vec![IoRef { path: output, role: "fasta".into() }], format!("wrote {} sequences", records.len())))
-}
-
-fn run_clean_sequences(params: Value) -> Result<RunOutput, String> {
-    let cfg: CleanSequencesConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output")?;
-    let fasta_type = cfg.fasta_type.clone().unwrap_or_else(|| "protein".into());
-    let mut records = Vec::new();
-    for p in &cfg.input {
-        records.extend(load_sequence(p, &fasta_type)?);
-    }
-    let opts = clean_sequences::CleanSequencesOptions {
-        fasta_type,
-        clean_name: cfg.clean_name,
-        deduplicate_names: cfg.deduplicate_names,
-        strip: cfg.strip,
-        filter_by_aa: cfg.filter_by_aa,
-    };
-    let mut stats = clean_sequences::CleaningStats::default();
-    let out = clean_sequences::clean_sequences(records, &opts, &mut stats);
-    let role = if cfg.fasta_out { "fasta" } else { "genbank" };
-    if cfg.fasta_out {
-        write_fasta_bp_path(&output, &out)?;
-    } else {
-        write_genbank(&output, &out).map_err(|e| format!("writing GenBank: {e}"))?;
-    }
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, vec![IoRef { path: output, role: role.into() }], format!("{} in → {} out", stats.input_count, stats.output_count)))
-}
-
-fn run_sort_contigs(params: Value) -> Result<RunOutput, String> {
-    let cfg: SortContigsConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output (GenBank)")?;
-    let records = load_inputs(&cfg.input)?;
-    let max_hits = match cfg.max_hits {
-        Some(0) | None => None,
-        Some(n) => Some(n),
-    };
-    let domains = set_of(&cfg.domains);
-    let databases = if domains.is_none() { None } else { set_of(&cfg.databases) };
-    let opts = sort_contigs::SortContigsOptions { max_hits, domains, databases };
-    let out = sort_contigs::sort_contigs(records, &opts).map_err(|e| e.to_string())?;
-    write_genbank(&output, &out).map_err(|e| format!("writing GenBank: {e}"))?;
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, vec![IoRef { path: output, role: "genbank".into() }], format!("sorted {} contigs", out.len())))
-}
-
-fn run_select_by_coord(params: Value) -> Result<RunOutput, String> {
-    let cfg: SelectByCoordConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output (GenBank)")?;
-    let coords_path = cfg.coords.clone().ok_or("a coordinate table is required")?;
-    let table = std::fs::read_to_string(&coords_path).map_err(|e| format!("reading coordinate table: {e}"))?;
-    let selections = select_by_coord::parse_coordinate_table(&table).map_err(|e| e.to_string())?;
-    let mut records: Vec<(String, SeqRecord)> = Vec::new();
-    for p in &cfg.input {
-        let base = basename(p);
-        for rec in load_sequence(p, "protein")? {
-            records.push((base.clone(), rec));
-        }
-    }
-    let out = select_by_coord::select_by_coord(&records, &selections).map_err(|e| e.to_string())?;
-    write_genbank(&output, &out).map_err(|e| format!("writing GenBank: {e}"))?;
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, vec![IoRef { path: output, role: "genbank".into() }], format!("selected {} regions", out.len())))
-}
-
-fn run_trim_contigs(params: Value) -> Result<RunOutput, String> {
-    let cfg: TrimContigsConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output (GenBank)")?;
-    let mut records = load_inputs(&cfg.input)?;
-    filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-    let (kb_truncation, cds_truncation) = trim_contigs::validate_range(
-        cfg.kb_both, cfg.kb_left, cfg.kb_right, cfg.cds_both, cfg.cds_left, cfg.cds_right,
-    ).map_err(|e| e.to_string())?;
-    let strip_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref()).map_err(|e| e.to_string())?;
-    let opts = trim_contigs::TrimContigsOptions {
-        kb_truncation,
-        cds_truncation,
-        strip_domains,
-        domain_expr: cfg.domain_expr.clone(),
-        no_domain: cfg.no_domain,
-    };
-    let out = trim_contigs::trim_contigs(records, &opts).map_err(|e| e.to_string())?;
-    write_genbank(&output, &out).map_err(|e| format!("writing GenBank: {e}"))?;
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, vec![IoRef { path: output, role: "genbank".into() }], format!("trimmed {} contigs", out.len())))
-}
-
-fn run_extract_domains(params: Value) -> Result<RunOutput, String> {
-    let cfg: ExtractDomainsConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output")?;
-    let mut records = load_inputs(&cfg.input)?;
-    filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-    let domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref()).map_err(|e| e.to_string())?;
-    let opts = extract_domains::ExtractDomainsOptions {
-        evalue: cfg.evalue,
-        score: cfg.score,
-        domains,
-        pad_up: cfg.pad_up.unwrap_or(0),
-        pad_down: cfg.pad_down.unwrap_or(0),
-        combine: cfg.combine,
-        keep_direction: cfg.keep_direction,
-        keep_name: cfg.keep_name,
-        search_hits: cfg.search_hits,
-        databases: set_of(&cfg.databases),
-        splice: cfg.splice,
-    };
-    let out = extract_domains::extract_domains(&records, &opts).map_err(|e| e.to_string())?;
-    let role = if cfg.fasta_out { "fasta" } else { "genbank" };
-    if cfg.fasta_out {
-        write_fasta_bp_path(&output, &out)?;
-    } else {
-        write_genbank(&output, &out).map_err(|e| format!("writing GenBank: {e}"))?;
-    }
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, vec![IoRef { path: output, role: role.into() }], format!("extracted {} domains", out.len())))
-}
-
-fn run_extract_peptides(params: Value) -> Result<RunOutput, String> {
-    let cfg: ExtractPeptidesConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output")?;
-    let mut records = load_inputs(&cfg.input)?;
-    filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-    let target_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref()).map_err(|e| e.to_string())?;
-    let target_cdss = parse_name_list(&cfg.cdss, cfg.cdss_file.as_deref()).map_err(|e| e.to_string())?;
-    let mut invert = cfg.invert;
-    let extract_all = target_domains.is_none() && target_cdss.is_none() && !cfg.unannotated && !cfg.search_hits;
-    if extract_all {
-        invert = false;
-    }
-    let opts = extract_peptides::ExtractPeptidesOptions {
-        evalue: cfg.evalue.unwrap_or(100_000_000.0),
-        target_domains,
-        target_cdss,
-        search_hits: cfg.search_hits,
-        strand: cfg.strand.clone().filter(|s| !s.is_empty()),
-        unannotated: cfg.unannotated,
-        invert,
-        databases: set_of(&cfg.databases),
-        keep_name: cfg.keep_name,
-        name_field: cfg.name_field.clone(),
-        extract_all,
-    };
-    let out = extract_peptides::extract_peptides(&records, &opts);
-    let role = if cfg.fasta_out { "fasta" } else { "genbank" };
-    if cfg.fasta_out {
-        write_fasta_bp_path(&output, &out)?;
-    } else {
-        write_genbank(&output, &out).map_err(|e| format!("writing GenBank: {e}"))?;
-    }
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, vec![IoRef { path: output, role: role.into() }], format!("extracted {} peptides", out.len())))
-}
-
-fn run_extract_unannotated(params: Value) -> Result<RunOutput, String> {
-    let cfg: ExtractUnannotatedConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output")?;
-    let mut records = load_inputs(&cfg.input)?;
-    filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-    let opts = extract_unannotated::ExtractUnannotatedOptions {
-        evalue: cfg.evalue,
-        score: cfg.score,
-        keep_direction: cfg.keep_direction,
-        keep_name: cfg.keep_name,
-        search_hits: cfg.search_hits,
-        databases: set_of(&cfg.databases),
-        largest: cfg.largest,
-        lb: cfg.lb,
-    };
-    let out = extract_unannotated::extract_unannotated(&records, &opts).map_err(|e| e.to_string())?;
-    let role = if cfg.fasta_out { "fasta" } else { "genbank" };
-    if cfg.fasta_out {
-        write_fasta_bp_path(&output, &out)?;
-    } else {
-        write_genbank(&output, &out).map_err(|e| format!("writing GenBank: {e}"))?;
-    }
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, vec![IoRef { path: output, role: role.into() }], format!("extracted {} regions", out.len())))
-}
-
-fn run_color_genbank(params: Value) -> Result<RunOutput, String> {
-    let cfg: ColorGenbankConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output (GenBank)")?;
-    let mut records = load_inputs(&cfg.input)?;
-    filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-    let targets = color_genbank::ColorTargets::parse(cfg.mode.as_deref().unwrap_or("cdss")).map_err(|e| e.to_string())?;
-    let color_feature = if cfg.domain_database { "database" } else { "name" }.to_string();
-    let mut color_map = match &cfg.color_table {
-        Some(path) if !path.trim().is_empty() => {
-            let text = std::fs::read_to_string(path).map_err(|e| format!("reading color table: {e}"))?;
-            let table = color_genbank::read_color_table(&text).map_err(|e| e.to_string())?;
-            color_genbank::ColorMap::from_table(table)
-        }
-        _ => color_genbank::ColorMap::auto(),
-    };
-    let search_hit_color = match cfg.search_hit_color.as_deref().filter(|c| !c.trim().is_empty()) {
-        Some(c) => Some(color_genbank::normalize_color_hex(c).map_err(|e| e.to_string())?),
-        None => None,
-    };
-    let opts = color_genbank::ColorGenbankOptions {
-        targets,
-        search_hit_color,
-        clear: cfg.clear,
-        databases: set_of(&cfg.databases),
-        color_feature,
-    };
-    let out = color_genbank::color_genbank(records, &mut color_map, &opts);
-    write_genbank(&output, &out).map_err(|e| format!("writing GenBank: {e}"))?;
-    let mut outputs = vec![IoRef { path: output, role: "genbank".into() }];
-    if let Some(path) = cfg.color_table_out.as_deref().filter(|p| !p.trim().is_empty()) {
-        use std::fmt::Write as _;
-        let mut t = String::new();
-        for (annotation, color) in color_map.items() {
-            let _ = writeln!(t, "{annotation}\t{color}");
-        }
-        std::fs::write(path, t).map_err(|e| format!("writing color table: {e}"))?;
-        outputs.push(IoRef { path: path.to_string(), role: "table".into() });
-    }
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, outputs, format!("colored {} records", out.len())))
-}
-
-fn run_color_table_to_legend(params: Value) -> Result<RunOutput, String> {
-    let cfg: ColorTableToLegendConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one color-table file".into());
-    }
-    let svg_path = cfg.svg.clone().ok_or("missing output (SVG)")?;
-    let mut table: Vec<(String, String)> = Vec::new();
-    let mut index: HashMap<String, usize> = HashMap::new();
-    for p in &cfg.input {
-        let text = std::fs::read_to_string(p).map_err(|e| format!("reading {p}: {e}"))?;
-        let entries = color_genbank::read_color_table(&text).map_err(|e| e.to_string())?;
-        for (k, v) in entries {
-            if let Some(&i) = index.get(&k) {
-                table[i].1 = v;
-            } else {
-                index.insert(k.clone(), table.len());
-                table.push((k, v));
-            }
-        }
-    }
-    let title = cfg.title.as_deref().filter(|t| !t.trim().is_empty()).unwrap_or("Legend");
-    let svg = color_table_to_legend::color_table_to_legend(&table, title);
-    std::fs::write(&svg_path, svg).map_err(|e| format!("writing {svg_path}: {e}"))?;
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "table".into() }).collect();
-    Ok((inputs, vec![IoRef { path: svg_path, role: "svg".into() }], format!("legend with {} entries", table.len())))
-}
-
-fn run_deduplicate(params: Value) -> Result<RunOutput, String> {
-    let cfg: DeduplicateConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output")?;
-    if cfg.prefix_count && cfg.suffix_count {
-        return Err("prefix_count and suffix_count are mutually exclusive".into());
-    }
-    let id = cfg.id.ok_or("an identity threshold (id) is required")?;
-    let fasta_type = cfg.fasta_type.clone().unwrap_or_else(|| "protein".into());
-    let mut records = Vec::new();
-    for p in &cfg.input {
-        records.extend(load_sequence(p, &fasta_type)?);
-    }
-    let opts = deduplicate_genbank::DeduplicateOptions {
-        algorithm: cfg.algorithm.clone().unwrap_or_else(|| "cd-hit".into()),
-        id,
-        both_strands: cfg.both_strands,
-        fasta_type: fasta_type.clone(),
-        cpu: cfg.cpu.unwrap_or(0),
-        bin_path: cfg.bin_path.clone().filter(|s| !s.trim().is_empty()),
-        params: Vec::new(),
-    };
-    let result = deduplicate_genbank::deduplicate(&records, &opts).map_err(|e| e.to_string())?;
-    let count_by_rep: HashMap<usize, usize> = result.clusters.iter().map(|(r, m)| (*r, m.len())).collect();
-    let mut final_name: HashMap<usize, String> = HashMap::new();
-    let mut out_records: Vec<SeqRecord> = Vec::new();
-    for &i in &result.representatives {
-        let mut rec = records[i].clone();
-        let base = rec.name.clone();
-        let count = count_by_rep.get(&i).copied().unwrap_or(1);
-        let newname = if cfg.prefix_count {
-            format!("{count}-{base}")
-        } else if cfg.suffix_count {
-            format!("{base}-{count}")
-        } else {
-            base
-        };
-        rec.name = newname.clone();
-        if cfg.fasta_out {
-            rec.id = newname.clone();
-        }
-        final_name.insert(i, newname);
-        out_records.push(rec);
-    }
-    let role = if cfg.fasta_out { "fasta" } else { "genbank" };
-    if cfg.fasta_out {
-        write_fasta_bp_path(&output, &out_records)?;
-    } else {
-        write_genbank(&output, &out_records).map_err(|e| format!("writing GenBank: {e}"))?;
-    }
-    let mut outputs = vec![IoRef { path: output, role: role.into() }];
-    if let Some(table_path) = cfg.cluster_table.as_deref().filter(|p| !p.trim().is_empty()) {
-        let sep = cfg.cluster_sep.clone().unwrap_or_else(|| " ; ".into());
-        let mut t = String::from("representative\tcontigs\n");
-        for (rep, members) in &result.clusters {
-            let rep_name = final_name.get(rep).cloned().unwrap_or_default();
-            let names: Vec<String> = members.iter().map(|&m| records[m].name.clone()).collect();
-            t.push_str(&format!("{rep_name}\t{}\n", names.join(&sep)));
-        }
-        std::fs::write(table_path, t).map_err(|e| format!("writing cluster table: {e}"))?;
-        outputs.push(IoRef { path: table_path.to_string(), role: "table".into() });
-    }
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, outputs, format!("{} in → {} representatives", records.len(), out_records.len())))
-}
-
-fn run_hmmer_compare(params: Value) -> Result<RunOutput, String> {
-    let cfg: HmmerCompareConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() || cfg.reference.is_empty() {
-        return Err("select query and reference HMM file(s)".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output")?;
-    let opts = hmmer_compare_m::HmmerCompareOptions {
-        score_cutoff: cfg.score_cutoff.unwrap_or(0.0),
-        alignments: cfg.alignments,
-        k: cfg.k,
-        cpu: cfg.cpu.unwrap_or(0),
-        max_output_gb: Some(cfg.max_output_gb.unwrap_or(25.0)),
-    };
-    let mut buf: Vec<u8> = Vec::new();
-    hmmer_compare_m::hmmer_compare(&cfg.input, &cfg.reference, &opts, &mut buf).map_err(|e| e.to_string())?;
-    std::fs::write(&output, &buf).map_err(|e| format!("writing {output}: {e}"))?;
-    let mut inputs: Vec<IoRef> = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "hmm".into() }).collect();
-    inputs.extend(cfg.reference.iter().map(|p| IoRef { path: p.clone(), role: "reference".into() }));
-    Ok((inputs, vec![IoRef { path: output, role: "table".into() }], "wrote comparison table".into()))
-}
-
-fn run_hmmer_search(params: Value) -> Result<RunOutput, String> {
-    let cfg: HmmerSearchConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() || cfg.reference.is_empty() {
-        return Err("select query and reference HMM file(s)".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output (.hmm)")?;
-    // As the CLI does: a blank cutoff means the default for the reference alphabet.
-    let score_cutoff = match cfg.score_cutoff {
-        Some(v) => v,
-        None => hmmer_search_m::default_score_cutoff_for(&cfg.reference)?.0,
-    };
-    let opts = hmmer_search_m::HmmerSearchOptions {
-        score_cutoff,
-        max_hits: cfg.max_hits,
-        cpu: cfg.cpu.unwrap_or(0),
-        max_output_gb: cfg.max_output_gb,
-    };
-    let found = write_hmm_output(&output, |f| hmmer_search_m::hmmer_search(&cfg.input, &cfg.reference, &opts, f))?;
-    let mut inputs: Vec<IoRef> = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "hmm".into() }).collect();
-    inputs.extend(cfg.reference.iter().map(|p| IoRef { path: p.clone(), role: "reference".into() }));
-    Ok((inputs, vec![IoRef { path: output, role: "hmm".into() }], format!("kept {found} query profiles")))
-}
-
-fn run_hmmer_report(params: Value) -> Result<RunOutput, String> {
-    let cfg: HmmerReportConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select at least one input .hmm file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output")?;
-    // The declarative columns → core analyses (leading `name` is always emitted).
-    let mut analyses = Vec::new();
-    for c in &cfg.columns {
-        analyses.push(c.to_analysis().map_err(|e| e.to_string())?);
-    }
-    let format = if cfg.json.is_some() { hmmer_report_m::OutputFormat::Json } else { hmmer_report_m::OutputFormat::Tsv };
-    let records = hmmer_report_m::read_hmms_to_iterators(&cfg.input).map_err(|e| e.to_string())?;
-    let col_names = cfg.column_names.as_deref();
-    let mut f = std::io::BufWriter::new(
-        std::fs::File::create(&output).map_err(|e| format!("creating {output}: {e}"))?,
-    );
-    hmmer_report_m::hmmer_report(&records, &analyses, col_names, format, &mut f).map_err(|e| e.to_string())?;
-    std::io::Write::flush(&mut f).map_err(|e| e.to_string())?;
-    let n_profiles: usize = records.iter().map(|(_, h)| h.len()).sum();
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "hmm".into() }).collect();
-    Ok((
-        inputs,
-        vec![IoRef { path: output, role: "table".into() }],
-        format!("reported {n_profiles} profiles × {} columns", analyses.len() + 1),
-    ))
-}
-
-fn str_param<'a>(params: &'a Value, key: &str) -> Result<&'a str, String> {
-    params.get(key).and_then(|v| v.as_str()).ok_or_else(|| format!("missing {key}"))
-}
-
-fn basename(path: &str) -> String {
-    Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
-}
-
-fn run_export_enum_report(params: Value) -> Result<RunOutput, String> {
-    // Resolved exactly as the CLI's arm does: the columns are `ColumnSpec`s, the
-    // taxonomy is loaded only when a column needs it.
-    let cfg: EnumConfig = serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    if cfg.input.is_empty() {
-        return Err("select an input sequence file".into());
-    }
-    let output = cfg.output.clone().ok_or("missing output (TSV)")?;
-    if cfg.columns.is_empty() {
-        return Err("add at least one column".into());
-    }
-    let by = cfg.by_enum().map_err(|e| e.to_string())?;
-    let analyses = cfg
-        .columns
-        .iter()
-        .map(|c| c.to_analysis().map_err(|e| e.to_string()))
-        .collect::<Result<Vec<_>, String>>()?;
-    let tax = if needs_taxonomy(&analyses) {
-        let path = cfg.ncbi_taxonomy_path.as_deref().ok_or(
-            "the taxonomy columns need a taxonomy database: install NCBI Taxonomy from Reference Databases, or choose one",
-        )?;
-        Some(crate::taxonomy_cache::load(path)?)
-    } else {
-        None
-    };
-    let targets = parse_name_list(&cfg.contigs, cfg.contigs_file.as_deref())
-        .map_err(|e| format!("reading contigs: {e}"))?;
-    let mut records = Vec::new();
-    for path in &cfg.input {
-        // The file name, not the full path, is what the `filename` column shows.
-        let fname = basename(path);
-        records.extend(load_sequence(path, "protein")?.into_iter().map(|r| (r, fname.clone())));
-    }
-    if let Some(set) = &targets {
-        records.retain(|(r, _)| set.contains(&r.name));
-    }
-    let databases: Option<HashSet<String>> = set_of(&cfg.databases);
-    // TSV to `output`, and NDJSON to `json` as well when it is set, as the CLI does.
-    let mut outputs = vec![IoRef { path: output.clone(), role: "report".into() }];
-    let mut targets_out = vec![(output, OutputFormat::Tsv)];
-    if let Some(json) = cfg.json.clone() {
-        outputs.push(IoRef { path: json.clone(), role: "report".into() });
-        targets_out.push((json, OutputFormat::Json));
-    }
-    let n_records = records.len();
-    for (path, format) in targets_out {
-        let mut f = std::io::BufWriter::new(
-            std::fs::File::create(&path).map_err(|e| format!("creating {path}: {e}"))?,
-        );
-        enum_report(
-            records.clone(),
-            by,
-            &analyses,
-            cfg.column_names.as_deref(),
-            tax.as_deref(),
-            databases.as_ref(),
-            format,
-            &mut f,
-        )?;
-        std::io::Write::flush(&mut f).map_err(|e| format!("writing {path}: {e}"))?;
-    }
-    let inputs = cfg.input.iter().map(|p| IoRef { path: p.clone(), role: "sequence".into() }).collect();
-    Ok((inputs, outputs, format!("reported {n_records} records × {} column groups", analyses.len())))
-}
-
-fn run_export_matrix_report(params: Value) -> Result<RunOutput, String> {
-    let input = str_param(&params, "input")?.to_string();
-    let output = str_param(&params, "output")?.to_string();
-    let m = read_matrix(&input).map_err(|e| format!("reading matrix: {e}"))?;
-    let report = matrix_report(&m, DEFAULT_MERGE_IMPACT_METRIC, DEFAULT_MAX_MERGE);
-    std::fs::write(&output, render_text(&report)).map_err(|e| format!("writing report: {e}"))?;
-    Ok((
-        vec![IoRef { path: input, role: "matrix".into() }],
-        vec![IoRef { path: output, role: "report".into() }],
-        format!("wrote matrix report ({} nodes, {} edges)", report.n_nodes, report.n_edges),
-    ))
-}
-
-fn run_transform_matrix(params: Value) -> Result<RunOutput, String> {
-    let cfg: TransformMatrixConfig =
-        serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    let input = cfg.input.clone().ok_or("missing input matrix")?;
-    let opts = resolve_transform_matrix(&cfg).map_err(|e| e.to_string())?;
-    let m = read_matrix(&input).map_err(|e| format!("reading matrix: {e}"))?;
-    let m = transform_matrix(m, &opts).map_err(|e| format!("transform_matrix: {e}"))?;
-
-    let mut outputs = Vec::new();
-    if let Some(p) = &cfg.dense {
-        hdf5_io::write_dense(p, &m).map_err(|e| format!("writing dense: {e}"))?;
-        outputs.push(IoRef { path: p.clone(), role: "dense".into() });
-    }
-    if let Some(p) = &cfg.dense_text {
-        text::write_dense_text(p, &m).map_err(|e| format!("writing dense_text: {e}"))?;
-        outputs.push(IoRef { path: p.clone(), role: "dense_text".into() });
-    }
-    if let Some(p) = &cfg.sparse {
-        hdf5_io::write_sparse(p, &m).map_err(|e| format!("writing sparse: {e}"))?;
-        outputs.push(IoRef { path: p.clone(), role: "sparse".into() });
-    }
-    if outputs.is_empty() {
-        return Err("no output specified (set dense, dense_text, or sparse)".into());
-    }
-    let inputs = vec![IoRef { path: input, role: "matrix".into() }];
-    Ok((inputs, outputs, format!("wrote {}×{} matrix", m.nrows(), m.ncols())))
-}
-
-fn run_build_ssn(params: Value) -> Result<RunOutput, String> {
-    let cfg: BuildSsnConfig =
-        serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    let input = cfg.input.clone().ok_or("missing input matrix")?;
-    let xgmml = cfg.xgmml.clone().ok_or("missing output (--xgmml path)")?;
-    if cfg.mst && cfg.mst_knn.is_some() {
-        return Err("mst and mst_knn are mutually exclusive".into());
-    }
-    // Resolve the optional color table (name→color TSV); subset files aren't
-    // exposed in the GUI form yet, so pass none for those.
-    let color_table = match cfg.color_table.as_deref().filter(|p| !p.trim().is_empty()) {
-        Some(path) => {
-            let text = std::fs::read_to_string(path).map_err(|e| format!("reading color table: {e}"))?;
-            let table = color_genbank::read_color_table(&text).map_err(|e| e.to_string())?;
-            Some(table.into_iter().collect::<std::collections::HashMap<_, _>>())
-        }
-        None => None,
-    };
-    let opts = resolve_build_ssn(&cfg, None, color_table);
-    let m = read_matrix(&input).map_err(|e| format!("reading matrix: {e}"))?;
-    let result = build_ssn(&m, &opts).map_err(|e| format!("build_ssn: {e}"))?;
-
-    let name =
-        Path::new(&xgmml).file_stem().and_then(|s| s.to_str()).unwrap_or("network").to_string();
-    let mut buf: Vec<u8> = Vec::new();
-    cytoscape::write_xgmml_to(&mut buf, &name, &result.table, &result.edges, result.node_fills.as_deref())
-        .map_err(|e| format!("writing XGMML: {e}"))?;
-    std::fs::write(&xgmml, &buf).map_err(|e| format!("writing {xgmml}: {e}"))?;
-    let mut outputs = vec![IoRef { path: xgmml, role: "xgmml".into() }];
-
-    if let Some(path) = &cfg.cluster_tsv {
-        let labels = result.cluster_labels.as_ref().ok_or("no cluster labels (set cluster)")?;
-        let mut out = String::new();
-        if !cfg.no_cluster_header {
-            out.push_str("contig\tcluster\n");
-        }
-        for (name, id) in result.table.names.iter().zip(labels) {
-            out.push_str(name);
-            out.push('\t');
-            out.push_str(&id.to_string());
-            out.push('\n');
-        }
-        std::fs::write(path, out).map_err(|e| format!("writing cluster tsv: {e}"))?;
-        outputs.push(IoRef { path: path.clone(), role: "cluster_tsv".into() });
-    }
-
-    if let Some(path) = cfg.color_table_out.as_deref().filter(|p| !p.trim().is_empty()) {
-        let ct = result.resolved_color_table.as_ref().ok_or("no color table resolved (set color_by)")?;
-        let mut items: Vec<(&String, &String)> = ct.iter().collect();
-        items.sort_by(|a, b| a.0.cmp(b.0));
-        let mut out = String::new();
-        for (k, v) in items {
-            out.push_str(k);
-            out.push('\t');
-            out.push_str(v);
-            out.push('\n');
-        }
-        std::fs::write(path, out).map_err(|e| format!("writing color table: {e}"))?;
-        outputs.push(IoRef { path: path.to_string(), role: "table".into() });
-    }
-
-    let inputs = vec![IoRef { path: input, role: "matrix".into() }];
-    Ok((inputs, outputs, format!("wrote {} nodes, {} edges", result.table.names.len(), result.edges.len())))
-}
-
-fn run_build_ssn_viewer(params: Value) -> Result<RunOutput, String> {
-    let cfg: BuildSsnViewerConfig =
-        serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
-    let input = cfg.input.clone().ok_or("missing input matrix")?;
-    let output = cfg.output.clone().ok_or("missing output (.dsnv path)")?;
-    let name = Path::new(&output)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("SSN")
-        .to_string();
-    let opts = resolve_build_ssn_viewer(&cfg, name, None);
-    let m = read_matrix(&input).map_err(|e| format!("reading matrix: {e}"))?;
-    let bundle = build_ssn_viewer_bundle(&m, &opts).map_err(|e| format!("building bundle: {e}"))?;
-    let compressed = gzip(&serialize_bundle(&bundle));
-    std::fs::write(&output, &compressed).map_err(|e| format!("writing .dsnv: {e}"))?;
-
-    let inputs = vec![IoRef { path: input, role: "matrix".into() }];
-    let outputs = vec![IoRef { path: output, role: "dsnv".into() }];
-    Ok((inputs, outputs, format!("wrote {}-node .dsnv bundle", m.nrows())))
+/// The [`Launcher::InProcess`] path.
+fn run_in_process(args: &[OsString]) -> Result<String, String> {
+    let argv: Vec<OsString> = std::iter::once(OsString::from("domainator")).chain(args.iter().cloned()).collect();
+    worker::run_cli(argv).map(|()| "completed".to_string()).map_err(|e| format!("{e:#}"))
 }
 
 #[cfg(test)]
@@ -1677,16 +742,35 @@ pub(crate) mod tests {
         d
     }
 
-    /// Three hand-maintained lists have to agree, in three different files: the
-    /// GUI registry below, `run_one`'s dispatch, and `domainator-config`'s schema
-    /// emitter. A tool offered in the menu but missing from the dispatch is a
+    fn not_canceled() -> LiveJob {
+        LiveJob::default()
+    }
+
+    fn run_in_process_job(tool: &str, params: Value, root: &Path) -> Result<RunResult, JobFailure> {
+        let job = Job { tool, params: &params, root, job_id: "job_test", started: 0 };
+        run_one(&job, &Launcher::InProcess, &not_canceled())
+    }
+
+    /// Whether the CLI accepts `params` as `<tool>`'s config file: the worker's
+    /// exact command line, with `--print_config` so nothing runs. This is where a
+    /// dialog field that is not a config property fails (`deny_unknown_fields`),
+    /// and where a tool id the CLI has no subcommand for does.
+    fn cli_accepts(dir: &Path, tool: &str, params: &Value) -> Result<(), String> {
+        let path = dir.join(format!("{tool}.json"));
+        std::fs::write(&path, serde_json::to_vec(params).unwrap()).unwrap();
+        let args = ["domainator", tool, "--config", &path.to_string_lossy(), "--print_config"];
+        worker::run_cli(args.map(OsString::from).to_vec()).map_err(|e| format!("{e:#}"))
+    }
+
+    /// Three lists have to agree, in three different places: the GUI registry
+    /// (`tools/*.yml`), the CLI's subcommands, and `domainator-config`'s schema
+    /// emitter. A tool offered in the menu that the CLI does not know is a
     /// dialog that fails only when the user presses Run; a dialog field that is
     /// not a config property is worse, because every config struct is
     /// `deny_unknown_fields`, so the run is rejected outright.
     #[test]
     fn every_offered_tool_is_dispatched_and_has_a_schema() {
-        let root = scratch("dispatch");
-        let root = root.to_string_lossy();
+        let dir = scratch("dispatch");
         for tool in tools() {
             let schema = domainator_config::schema(&tool.id)
                 .unwrap_or_else(|e| panic!("{} is in the menu but has no schema: {e}", tool.id));
@@ -1700,18 +784,61 @@ pub(crate) mod tests {
                     field.name
                 );
             }
-            // Empty params take every runner down its "missing input" path long
-            // before it touches a file, so this reaches the dispatch and nothing
-            // more expensive.
-            let not_canceled = AtomicBool::new(false);
-            if let Err(e) =
-                run_one(&tool.id, serde_json::json!({}), &root, 0, "job_test", &not_canceled)
-            {
-                assert!(
-                    !e.contains("not runnable from the GUI"),
-                    "{} is offered in the menu but has no run_one arm",
-                    tool.id
-                );
+            if let Err(e) = cli_accepts(&dir, &tool.id, &serde_json::json!({})) {
+                panic!("{} is offered in the menu but the CLI rejects `{} --config`: {e}", tool.id, tool.id);
+            }
+        }
+    }
+
+    /// The params a dialog produces on opening, before the user changes
+    /// anything: every shown field's seeded default, every file field filled.
+    fn dialog_params(spec: &crate::tool_specs::ToolSpec) -> Value {
+        let mut out = serde_json::Map::new();
+        for f in spec.fields.iter().filter(|f| f.show) {
+            let v = match f.role.as_str() {
+                "input_file" => Value::from(format!("/data/{}.in", f.name)),
+                "input_files" => Value::from(vec![format!("/data/{}.in", f.name)]),
+                "output_file" => Value::from(format!("/data/{}.out", f.name)),
+                _ => match f.effective_default() {
+                    Some(v) => v.clone(),
+                    None => continue,
+                },
+            };
+            out.insert(f.name.clone(), v);
+        }
+        Value::Object(out)
+    }
+
+    /// Worker mode hands the dialog's params to the CLI as a `--config` file, so a
+    /// shape mismatch is a run rejected outright. For every tool: the params a
+    /// dialog produces (schema defaults, every file field filled, each column
+    /// builder's default columns, the default thread count injected) must parse
+    /// as its CLI config, and each report column must resolve to an analysis.
+    #[test]
+    fn every_tools_dialog_params_parse_as_its_cli_config() {
+        let dir = scratch("dialog-params");
+        for spec in crate::tool_specs::specs() {
+            let mut params = dialog_params(spec);
+            let schema: Value = serde_json::from_str(&domainator_config::schema(&spec.id).unwrap()).unwrap();
+            domainator_core::app_support::tool_params::apply_default_cpu(&mut params, &schema, 4);
+            if let Err(e) = cli_accepts(&dir, &spec.id, &params) {
+                panic!("{}: the CLI rejects the dialog's params {params}: {e}", spec.id);
+            }
+            match spec.id.as_str() {
+                "enum-report" => {
+                    let cfg: domainator_config::EnumConfig = serde_json::from_value(params.clone()).unwrap();
+                    cfg.by_enum().unwrap();
+                    for c in &cfg.columns {
+                        c.to_analysis().unwrap_or_else(|e| panic!("enum-report column {c:?}: {e}"));
+                    }
+                }
+                "hmmer-report" => {
+                    let cfg: domainator_config::HmmerReportConfig = serde_json::from_value(params.clone()).unwrap();
+                    for c in &cfg.columns {
+                        c.to_analysis().unwrap_or_else(|e| panic!("hmmer-report column {c:?}: {e}"));
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -1719,12 +846,11 @@ pub(crate) mod tests {
     /// `cpu` is a config property on only some tools, and every config struct is
     /// `deny_unknown_fields` -- so injecting the preference blindly would not be
     /// ignored, it would make the run be **rejected**. This walks every offered
-    /// tool and asserts the injection never produces an unknown-field rejection,
-    /// which is the failure a user would otherwise only see on pressing Run.
+    /// tool and asserts the injection never produces a rejection, which is the
+    /// failure a user would otherwise only see on pressing Run.
     #[test]
     fn injecting_the_default_cpu_never_breaks_a_tool() {
-        let root = scratch("default-cpu");
-        let root = root.to_string_lossy();
+        let dir = scratch("default-cpu");
         for tool in tools() {
             let schema_text = domainator_config::schema(&tool.id).unwrap();
             let schema: Value = serde_json::from_str(&schema_text).unwrap();
@@ -1738,16 +864,87 @@ pub(crate) mod tests {
                 "{}: cpu injected iff the schema declares it",
                 tool.id
             );
-
-            let not_canceled = AtomicBool::new(false);
-            if let Err(e) = run_one(&tool.id, params, &root, 0, "job_cpu", &not_canceled) {
-                assert!(
-                    !e.contains("unknown field"),
-                    "{}: injecting cpu made the config be rejected: {e}",
-                    tool.id
-                );
+            if let Err(e) = cli_accepts(&dir, &tool.id, &params) {
+                panic!("{}: injecting cpu made the config be rejected: {e}", tool.id);
             }
         }
+    }
+
+    /// The input roles each tool's hand-written runner recorded before jobs moved
+    /// to worker processes, captured from those runners before they were deleted.
+    /// `(tool, field, role)`.
+    const GOLDEN_INPUT_ROLES: &[(&str, &str, &str)] = &[
+        ("build-ssn", "input", "matrix"),
+        ("build-ssn-viewer", "input", "matrix"),
+        ("clean-sequences", "input", "sequence"),
+        ("color-genbank", "input", "sequence"),
+        ("color-table-to-legend", "input", "table"),
+        ("compare-contigs", "input", "genbank"),
+        ("deduplicate", "input", "sequence"),
+        ("domain-search", "input", "sequence"),
+        ("domain-search", "references", "reference"),
+        ("domainate", "input", "sequence"),
+        ("domainate", "references", "reference"),
+        ("enum-report", "input", "sequence"),
+        ("extract-domains", "input", "sequence"),
+        ("extract-peptides", "input", "sequence"),
+        ("extract-unannotated", "input", "sequence"),
+        ("filter-domains", "input", "sequence"),
+        ("genbank-to-fasta", "input", "sequence"),
+        ("hmmer-build", "input", "msa"),
+        ("hmmer-compare", "input", "hmm"),
+        ("hmmer-compare", "reference", "reference"),
+        ("hmmer-report", "input", "hmm"),
+        ("hmmer-search", "input", "hmm"),
+        ("hmmer-search", "reference", "reference"),
+        ("hmmer-select", "input", "hmm"),
+        ("matrix-report", "input", "matrix"),
+        ("select-by-cds", "input", "sequence"),
+        ("select-by-contig", "input", "sequence"),
+        ("select-by-coord", "input", "sequence"),
+        ("seq-dist", "input", "sequence"),
+        ("seq-dist", "reference", "reference"),
+        ("sort-contigs", "input", "sequence"),
+        ("transform-matrix", "input", "matrix"),
+        ("trim-contigs", "input", "sequence"),
+    ];
+
+    /// `provenance::trace_source_sequences` walks the job graph by input role, and
+    /// that walk is what lets the SSN viewer pull a node's sequence out of the
+    /// workspace. The roles are now derived from the tool spec, so a spec edit
+    /// (a `file_type` changed, a field renamed) could break tracing with no error
+    /// anywhere. Every role the old runners recorded must still be derived; an
+    /// input they never recorded (a taxonomy database, a name list) may be added,
+    /// but never with a role the walk follows.
+    #[test]
+    fn derived_provenance_roles_match_the_golden_table() {
+        let mut derived: HashMap<(String, String), String> = HashMap::new();
+        for spec in crate::tool_specs::specs() {
+            for f in spec.fields.iter().filter(|f| matches!(f.role.as_str(), "input_file" | "input_files")) {
+                derived.insert((spec.id.clone(), f.name.clone()), job_io::input_role(f));
+            }
+        }
+        for (tool, field, role) in GOLDEN_INPUT_ROLES {
+            let got = derived.remove(&(tool.to_string(), field.to_string()));
+            assert_eq!(got.as_deref(), Some(*role), "{tool}.{field}: derived role differs from the old runner's");
+        }
+        use domainator_core::app_support::provenance::{FOLLOWED_INPUT_ROLES, SEQUENCE_SOURCE_ROLES};
+        for ((tool, field), role) in derived {
+            let r = role.as_str();
+            assert!(
+                !SEQUENCE_SOURCE_ROLES.contains(&r) && !FOLLOWED_INPUT_ROLES.contains(&r),
+                "{tool}.{field} is a new input with role {role:?}, which trace_source_sequences follows"
+            );
+        }
+        // And the derivation reads the params the dialog sends.
+        let spec = crate::tool_specs::specs().iter().find(|s| s.id == "domainate").unwrap();
+        let io = job_io::declared_inputs(
+            spec,
+            &serde_json::json!({"input": "contigs.gb", "references": ["a.hmm", "b.hmm"], "output": "o.gb"}),
+        );
+        let roles: Vec<(&str, &str)> = io.iter().map(|i| (i.path.as_str(), i.role.as_str())).collect();
+        assert_eq!(roles, vec![("contigs.gb", "sequence"), ("a.hmm", "reference"), ("b.hmm", "reference")]);
+        assert_eq!(job_io::declared_outputs(spec, &serde_json::json!({"output": "o.gb"})), vec!["o.gb"]);
     }
 
     /// Every tool must land in a known group. One outside `TOOL_CATEGORIES` is
@@ -1792,6 +989,7 @@ pub(crate) mod tests {
             params: serde_json::json!({}),
         };
         for (before, after) in [
+            ("queued", "canceled"),
             ("running", "failed"),
             ("canceling", "canceled"),
             ("completed", "completed"),
@@ -1818,44 +1016,67 @@ pub(crate) mod tests {
         assert!(order.windows(2).all(|w| w[0] <= w[1]), "list_tools is not grouped: {order:?}");
     }
 
-    /// A job canceled before dispatch must not run its tool at all. The flag used
-    /// to be read only *after* `run_one` returned, so "cancel" could not stop
-    /// anything — it just relabeled a run that had already completed and written
-    /// its provenance. Dispatching an unknown tool would normally produce the
-    /// "not runnable" error; seeing "canceled" instead proves the check happens
-    /// first.
+    /// A job canceled before it starts must not run its tool at all -- a queued
+    /// job must never launch. An unknown tool would normally produce the "not
+    /// runnable" error; seeing "canceled" instead proves the check happens first.
     #[test]
     fn a_job_canceled_before_dispatch_does_no_work() {
         let root = scratch("canceled-early");
-        let canceled = AtomicBool::new(true);
-        let err = run_one(
-            "not-a-tool",
-            serde_json::json!({}),
-            &root.to_string_lossy(),
-            0,
-            "j",
-            &canceled,
-        );
-        let Err(err) = err else { panic!("a canceled job must not report success") };
-        assert!(err.contains("canceled"), "{err}");
+        let canceled = LiveJob::default();
+        canceled.cancel();
+        let params = serde_json::json!({});
+        let job = Job { tool: "not-a-tool", params: &params, root: &root, job_id: "j", started: 0 };
+        let err = run_one(&job, &Launcher::InProcess, &canceled);
+        let Err(JobFailure::Canceled(msg)) = err else { panic!("a canceled job must not run: {err:?}") };
+        assert!(msg.contains("canceled"), "{msg}");
+        assert!(!dot_dir(&root).join("jobs").join("j").exists(), "a canceled job wrote its config");
     }
 
     #[test]
     fn an_unknown_tool_is_refused_by_name() {
         let root = scratch("unknown");
-        let not_canceled = AtomicBool::new(false);
-        let err = match run_one(
-            "not-a-tool",
-            serde_json::json!({}),
-            &root.to_string_lossy(),
-            0,
-            "j",
-            &not_canceled,
-        ) {
-            Err(e) => e,
-            Ok(_) => panic!("an unknown tool must not run"),
+        let err = match run_in_process_job("not-a-tool", serde_json::json!({}), &root) {
+            Err(JobFailure::Failed(e)) => e,
+            other => panic!("an unknown tool must not run: {other:?}"),
         };
         assert!(err.contains("not runnable from the GUI"), "{err}");
+    }
+
+    /// A required input left empty is refused before any process starts: a CLI
+    /// tool with no input reads stdin, and a worker's stdin is its lifeline.
+    #[test]
+    fn a_missing_required_input_is_refused_before_launch() {
+        let root = scratch("missing-input");
+        let err = match run_in_process_job("domainate", serde_json::json!({"output": "o.gb"}), &root) {
+            Err(JobFailure::Failed(e)) => e,
+            other => panic!("a job with no input must not run: {other:?}"),
+        };
+        assert!(err.contains("missing required input") && err.contains("Input sequences"), "{err}");
+    }
+
+    /// The queue runs jobs first come, first served, never more than `max` at
+    /// once, and a job canceled while it waits leaves the line.
+    #[test]
+    fn the_queue_limits_concurrency_and_drops_canceled_jobs() {
+        let q = JobQueue::default();
+        let (a, b, c) = (LiveJob::default(), LiveJob::default(), LiveJob::default());
+        let slot_a = q.acquire("a", &a, || 1).unwrap();
+        std::thread::scope(|s| {
+            let waiter = s.spawn(|| q.acquire("b", &b, || 1).map(|_slot| "b ran"));
+            let canceled = s.spawn(|| {
+                std::thread::sleep(Duration::from_millis(50));
+                q.acquire("c", &c, || 1).map(|_slot| "c ran")
+            });
+            std::thread::sleep(Duration::from_millis(150));
+            assert_eq!(reg_lock(&q.state).running, 1, "a second job started past max = 1");
+            c.cancel();
+            q.wake_all();
+            assert!(canceled.join().unwrap().is_none(), "a canceled queued job ran");
+            drop(slot_a);
+            assert_eq!(waiter.join().unwrap(), Some("b ran"));
+        });
+        assert_eq!(reg_lock(&q.state).running, 0);
+        assert!(reg_lock(&q.state).waiting.is_empty());
     }
 
     /// A one-record GenBank file for taxon 562, and a taxdump directory for it.
@@ -1892,10 +1113,9 @@ ORIGIN
         (gb, tax)
     }
 
-    /// The enum-report runner reads the dialog's column objects through
-    /// `EnumConfig`, as the CLI does -- parameterized columns and the taxonomy
-    /// ones included. It used to take bare names of the static columns only and
-    /// pass no taxonomy, so none of these could be run from the GUI.
+    /// The enum-report dialog's column objects run through the CLI's `EnumConfig`
+    /// -- parameterized columns and the taxonomy ones included -- and the job is
+    /// recorded with its inputs and outputs.
     #[test]
     fn enum_report_runs_parameterized_and_taxonomy_columns() {
         let (gb, tax) = enum_report_fixture("enum-report");
@@ -1914,9 +1134,9 @@ ORIGIN
                 {"type": "append", "name": "batch", "value_type": "int", "value": "7"}
             ]
         });
-        let root = gb.parent().unwrap().to_string_lossy().into_owned();
-        let not_canceled = AtomicBool::new(false);
-        run_one("enum-report", params, &root, 0, "job_enum", &not_canceled).unwrap();
+        let root = gb.parent().unwrap().to_path_buf();
+        let r = run_in_process_job("enum-report", params, &root).unwrap();
+        assert_eq!(r.outputs, vec![out.to_string_lossy().into_owned()]);
         let text = std::fs::read_to_string(&out).unwrap();
         let mut lines = text.lines();
         assert_eq!(
@@ -1927,10 +1147,14 @@ ORIGIN
             lines.next().unwrap(),
             "rec1\tc1\t12\twidget\tEscherichia coli\tEscherichia\t2\tsuperkingdom; genus; species\t7"
         );
+        let job = domainator_core::app_support::provenance::load_job(&root, "job_test").unwrap();
+        let inputs: Vec<(&str, &str)> = job.inputs.iter().map(|i| (i.path.as_str(), i.role.as_str())).collect();
+        assert!(inputs.contains(&(&*gb.to_string_lossy(), "sequence")), "{inputs:?}");
+        assert!(dot_dir(&root).join("jobs/job_test/worker-config.json").exists());
     }
 
     /// Asking for a taxonomy column with no taxonomy database is refused up front
-    /// with what to do about it, not run to an empty column or a raw I/O error.
+    /// with what to do about it, not run into the CLI's `/tmp` default.
     #[test]
     fn enum_report_taxonomy_columns_need_a_taxonomy_database() {
         let (gb, _tax) = enum_report_fixture("enum-report-notax");
@@ -1939,9 +1163,8 @@ ORIGIN
             "output": gb.with_file_name("out.tsv").to_string_lossy(),
             "columns": [{"type": "taxname_lineage"}]
         });
-        let root = gb.parent().unwrap().to_string_lossy().into_owned();
-        let not_canceled = AtomicBool::new(false);
-        let Err(err) = run_one("enum-report", params, &root, 0, "job_enum", &not_canceled) else {
+        let root = gb.parent().unwrap().to_path_buf();
+        let Err(JobFailure::Failed(err)) = run_in_process_job("enum-report", params, &root) else {
             panic!("a taxonomy column with no taxonomy database must be refused");
         };
         assert!(err.contains("taxonomy database"), "{err}");
@@ -1989,53 +1212,6 @@ ORIGIN
         let n = ids.len();
         ids.dedup();
         assert_eq!(n, ids.len(), "duplicate tool id");
-    }
-
-    #[test]
-    fn strand_accepts_only_f_and_r() {
-        assert_eq!(parse_strand(Some("f")).unwrap(), Some(1));
-        assert_eq!(parse_strand(Some("r")).unwrap(), Some(-1));
-        // Both "unset" spellings the dialog can produce: absent, or an empty box.
-        assert_eq!(parse_strand(None).unwrap(), None);
-        assert_eq!(parse_strand(Some("")).unwrap(), None);
-        for bad in ["F", "+", "forward", "1"] {
-            assert!(parse_strand(Some(bad)).is_err(), "{bad:?} should be rejected");
-        }
-    }
-
-    /// Taxonomy filtering needs a taxdump, and the expression form cannot be
-    /// combined with the include/exclude lists. Both checks run before the
-    /// (expensive) taxonomy load, so they are reachable without one.
-    #[test]
-    fn taxonomy_filters_validate_before_loading_a_taxdump() {
-        // Nothing requested: no filter, and no taxdump required.
-        assert!(compile_allowed_taxids(&[], &[], None, None).unwrap().is_none());
-        assert!(compile_allowed_taxids(&[], &[], Some("   "), None).unwrap().is_none());
-
-        let err = compile_allowed_taxids(&[2], &[], Some("Bacteria"), Some("/tmp")).unwrap_err();
-        assert!(err.contains("mutually exclusive"), "{err}");
-
-        for args in [(vec![2], vec![], None), (vec![], vec![9], None)] {
-            let err = compile_allowed_taxids(&args.0, &args.1, args.2, None).unwrap_err();
-            assert!(err.contains("ncbi_taxonomy_path"), "{err}");
-        }
-        // An empty path is the same as none -- the dialog sends "" for a blank box.
-        let err = compile_allowed_taxids(&[2], &[], None, Some("  ")).unwrap_err();
-        assert!(err.contains("ncbi_taxonomy_path"), "{err}");
-    }
-
-    /// The provenance DAG walk keys off these roles: `sequence` is a leaf source,
-    /// `reference` is ignored. Mislabeling them breaks SSN-node-to-record tracing.
-    #[test]
-    fn reference_inputs_are_labeled_for_the_provenance_walk() {
-        let v = ref_inputs("contigs.gb", &["a.hmm".into(), "b.hmm".into()]);
-        let roles: Vec<(&str, &str)> =
-            v.iter().map(|i| (i.path.as_str(), i.role.as_str())).collect();
-        assert_eq!(
-            roles,
-            vec![("contigs.gb", "sequence"), ("a.hmm", "reference"), ("b.hmm", "reference")]
-        );
-        assert_eq!(ref_inputs("x.gb", &[]).len(), 1);
     }
 
     #[test]

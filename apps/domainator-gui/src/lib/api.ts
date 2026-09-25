@@ -243,6 +243,11 @@ export const renameDatabase = (path: string, newName: string): Promise<DatabaseE
 export const deleteDatabase = (path: string): Promise<void> => invoke("delete_database", { path });
 export const buildDatabaseIndex = (path: string): Promise<number> =>
   invoke("build_database_index", { path });
+/// Stop a `buildDatabaseIndex` run; it then rejects with `INDEXING_CANCELED`.
+export const cancelDatabaseIndex = (path: string): Promise<void> =>
+  invoke("cancel_database_index", { path });
+/// Mirrors `cmd_db::INDEXING_CANCELED`.
+export const INDEXING_CANCELED = "indexing canceled";
 export const revealDatabase = (path: string): Promise<void> => invoke("reveal_database", { path });
 
 // --- contig annotation editing (GenBank write-back) ---

@@ -154,6 +154,22 @@
         Applies only to tools that accept a thread count, and only when you have not set
         one in the tool's own form.
       </p>
+      <div class="row">
+        <span class="lbl">Jobs at once</span>
+        <input
+          class="num"
+          type="number"
+          min="1"
+          value={prefs.max_concurrent_jobs}
+          onchange={(e) =>
+            save({ max_concurrent_jobs: Math.max(1, Math.floor(Number(e.currentTarget.value)) || 1) })}
+        />
+        <span class="dim">more wait in the Jobs panel's queue</span>
+      </div>
+      <p class="hint">
+        Each job runs in its own process and uses the thread count above, so two jobs at
+        once already share the cores between them.
+      </p>
 
       <div class="sec">Updates</div>
       <label class="row">

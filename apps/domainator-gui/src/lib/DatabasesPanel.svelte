@@ -102,10 +102,11 @@
       { label: "Copy Full Path", action: () => copy(d.path) },
       { label: "Show in File Manager", disabled: !d.on_disk, action: () => revealDatabase(d.path) },
     ];
-    if (needsIndex(d)) {
+    if (ws.indexing[d.path]) {
+      items.push(SEP, { label: "Cancel Indexing", action: () => ws.cancelDatabaseIndex(d.path) });
+    } else if (needsIndex(d)) {
       items.push(SEP, {
         label: d.index === "stale" ? "Rebuild Index" : "Build Index",
-        disabled: !!ws.indexing[d.path],
         action: () => ws.buildDatabaseIndex(d.path),
       });
     }
@@ -169,6 +170,9 @@
               <span class="tag warn" title="None of its files are on disk (moved, deleted, or an unplugged drive)">missing</span>
             {:else if ws.indexing[db.path]}
               <span class="tag">indexing…</span>
+              <button class="idx" title="Stop indexing (the partial index is removed)" onclick={() => ws.cancelDatabaseIndex(db.path)}>
+                Cancel
+              </button>
             {:else if needsIndex(db)}
               <button class="idx" title={INDEX_HINT[db.index]} onclick={() => ws.buildDatabaseIndex(db.path)}>
                 {db.index === "stale" ? "Rebuild index" : "Build index"}

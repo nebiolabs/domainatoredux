@@ -245,6 +245,20 @@ pub fn index_status(path: &Path, format: &str) -> IndexStatus {
 /// through `format-db`'s index-only path, which indexes a file in place rather
 /// than copying it (a 40 GB FASTA stays one file). Returns how many were written.
 pub fn build_database_index(path: &Path) -> Result<usize, String> {
+    let shards = index_targets(path)?;
+    let opts = crate::tools::format_db::FormatDbOptions { index: true, ..Default::default() };
+    for shard in &shards {
+        crate::tools::format_db::format_db(std::slice::from_ref(shard), &opts, &mut std::io::sink())
+            .map_err(|e| format!("indexing {shard}: {e}"))?;
+    }
+    Ok(shards.len())
+}
+
+/// The data files [`build_database_index`] would index, after the checks it makes
+/// first: the database is on disk, and none of it is plain gzip. The GUI runs the
+/// indexing itself as `format-db --index` over these, in a worker process it can
+/// kill.
+pub fn index_targets(path: &Path) -> Result<Vec<String>, String> {
     let shards: Vec<String> = resolve_database_shards(path)?
         .into_iter()
         .filter(|s| s.is_file())
@@ -256,12 +270,7 @@ pub fn build_database_index(path: &Path) -> Result<usize, String> {
     if shards.iter().any(|s| detect_compression(Path::new(s)) == Compression::Gzip) {
         return Err("plain gzip cannot be indexed; recompress it as BGZF with format-db --compress".into());
     }
-    let opts = crate::tools::format_db::FormatDbOptions { index: true, ..Default::default() };
-    for shard in &shards {
-        crate::tools::format_db::format_db(std::slice::from_ref(shard), &opts, &mut std::io::sink())
-            .map_err(|e| format!("indexing {shard}: {e}"))?;
-    }
-    Ok(shards.len())
+    Ok(shards)
 }
 
 /// Delete every file of the database at `path` ([`database_files`]). Returns

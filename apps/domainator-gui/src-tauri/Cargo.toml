@@ -24,6 +24,9 @@ serde_yaml = { workspace = true }
 [dependencies]
 domainator-core = { path = "../../../crates/domainator-core" }
 domainator-config = { path = "../../../crates/domainator-config" }
+# Tools-menu jobs run the CLI in a worker copy of this executable (`worker.rs`).
+domainator-cli = { path = "../../../crates/domainator-cli" }
+anyhow.workspace = true
 rfd = "0.17.2"
 tauri = { version = "2.11.4", features = [] }
 serde = { workspace = true }
@@ -47,3 +50,16 @@ tauri-plugin-window-state = "2.4.1"
 tauri-plugin-opener = "2.5.5"
 # `save_binary_file`: the JSON IPC bridge carries the PNG payload base64-encoded.
 base64 = "0.22"
+
+# `worker.rs`: kill a job's whole process tree. Both crates are already in the
+# dependency tree (through Tauri), so neither adds anything to the build.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }

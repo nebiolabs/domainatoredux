@@ -12,8 +12,14 @@ file takes effect on the next build.
 
 ## Adding a tool or an option
 
-- **New tool:** write `<id>.yml`. The file name must equal the tool's `id`. Then add a
-  `run_*` arm to `run_one` in `src-tauri/src/cmd_tools.rs`.
+- **New tool:** write `<id>.yml`. The file name must equal the tool's `id`, and the CLI
+  must have a subcommand of that name. Nothing else is needed: a job runs
+  `domainator <id> --config <the dialog's params>` in a worker process.
+- **File fields drive provenance and Cancel.** An input's role in the job's provenance
+  record comes from its `file_type` (a field named `reference`/`references` is always
+  `reference`), and the SSN viewer's node → sequence tracing follows those roles. A
+  canceled job deletes the files named by its `output_file` fields that it created or
+  changed, so a field that names an output file should have that role.
 - **New CLI option:** a new schema property makes
   `every_schema_property_is_listed_once` fail until the option is listed here, with
   `show: false` if the dialog should not offer it. That failure is how you decide about
@@ -61,7 +67,7 @@ fields:
 
 | Key | Required | What it does |
 |---|---|---|
-| `id` | yes | The tool's id, as in `domainator <id>` and `domainator schema <id>`. It must equal the file name without `.yml`. It is also the id `run_one` dispatches on. |
+| `id` | yes | The tool's id, as in `domainator <id>` and `domainator schema <id>`. It must equal the file name without `.yml`. A job runs `domainator <id> --config …`. |
 | `label` | yes | The name shown in the Tools menu, on the toolbar's Tools button, and as the dialog title. |
 | `category` | yes | The Tools menu submenu. It must be one of `cmd_tools::TOOL_CATEGORIES`: `Annotation & search`, `Selection & extraction`, `Matrices & networks`, `Reports`, `HMM profiles`, `Color` or `Conversion`. Categories appear in that order. Within one, tools appear in file-name order. |
 | `description` | yes | The sentence under the dialog title. |
@@ -247,8 +253,8 @@ written. Every required output needs an `output_name`.
     are chosen with `select` and `output_name`.
   - An array is written as a YAML list (`[a, b]`) and shows in the box as `a,b`.
   - When `gui_default` and `cli_default` differ, the dialog says so under the field.
-- **Clearing a field** sends nothing, and the run falls back to the CLI default. The
-  `run_*` functions use the same defaults as the CLI.
+- **Clearing a field** sends nothing, and the run falls back to the CLI default: the
+  params go to the CLI itself.
 - **A cloned job** (the Jobs panel's ⎘ button, or "Clone into Tool Dialog") starts from
   that job's saved values. Those replace
   these defaults for every field the job set.
@@ -280,6 +286,8 @@ from the shared `common_help` list by `fill_common_descriptions`.
 | `column_schemas_match_their_enums` (`domainator-config`) | a column type or parameter in the schema that the column enum lacks, or the reverse |
 | `required_outputs_have_a_name_template` | a required output with no `output_name`, or one with another placeholder or a path |
 | `one_spec_file_per_tool_named_after_it` | a file name that isn't its `id`, an unknown `category`, a duplicate `id` |
-| `every_offered_tool_is_dispatched_and_has_a_schema` (`cmd_tools.rs`) | a tool here with no `run_*` arm |
+| `every_offered_tool_is_dispatched_and_has_a_schema` (`cmd_tools.rs`) | a tool here the CLI has no subcommand for, or a shown field that is not a schema property |
+| `every_tools_dialog_params_parse_as_its_cli_config` (`cmd_tools.rs`) | a dialog whose default params (seeded values, files filled, default columns) the CLI rejects |
+| `derived_provenance_roles_match_the_golden_table` (`cmd_tools.rs`) | a `file_type` or field-name change that alters an input role the SSN tracing follows |
 
 Run them with `cargo test -p domainator-gui`.

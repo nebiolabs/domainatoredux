@@ -71,9 +71,20 @@ in particular:
   add a tool.**
 - **`merge_cli` coverage** — a struct field the merge forgets is a CLI flag that silently
   does nothing.
-- **`every_offered_tool_is_dispatched_and_has_a_schema`** (`domainator-gui`) — the GUI tool
-  registry, `run_one`'s dispatch and the schema emitter are three hand-maintained lists in
-  three files. A menu entry with no dispatch arm fails only when the user presses Run.
+- **`every_offered_tool_is_dispatched_and_has_a_schema`** and
+  **`every_tools_dialog_params_parse_as_its_cli_config`** (`domainator-gui`) — the GUI tool
+  registry, the CLI's subcommands and the schema emitter are three hand-maintained lists
+  in three places. GUI jobs run `<tool> --config <params>` through the CLI in a worker
+  process, so a menu entry the CLI does not know, or a dialog whose params the config
+  struct rejects, fails only when the user presses Run. The tests feed each tool's
+  dialog params to `domainator_cli::run` with `--print_config`.
+- **`derived_provenance_roles_match_the_golden_table`** (`domainator-gui`) — a job's
+  provenance inputs are derived from its tool spec, and `trace_source_sequences` follows
+  their roles. A spec edit that changes a role breaks SSN node → sequence tracing without
+  any error.
+- **`tests/worker.rs`** (`domainator-gui`) — runs the real binary in worker mode: it must
+  never start Tauri, Cancel must kill the whole process tree, a worker must exit when the
+  GUI's end of its stdin closes, and a worker run must produce the CLI's output.
 - **`the_managed_diamond_is_new_enough_for_deduplicate`** and
   **`managed_tools_match_the_core_locator`** (`domainator-gui`) — the External tools panel
   must not install a binary older than `MIN_DIAMOND_VERSION`, and every `ToolSpec`'s

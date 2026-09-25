@@ -53,7 +53,13 @@ Linux) and use Windows only to *validate the GUI*:
   then confirm the main window still loads a file* (a wedged event loop still
   paints and handles clicks, so "the UI responds" is not evidence it is healthy);
   Export SVG from a logo and check the dialog comes up *in front*; quit and
-  relaunch to confirm the workspace and window geometry come back.
+  relaunch to confirm the workspace and window geometry come back. After touching
+  job running (`worker.rs`, `cmd_tools.rs`):
+  - Cancel a diamond `seq-dist` run. In Task Manager, check that neither
+    `domainator-gui.exe` (the worker) nor `diamond.exe` is left behind.
+  - Kill the GUI from Task Manager in the middle of a job; check that the worker
+    dies.
+  - Confirm no console window appears when a job starts.
 - **`seq_dist` needs a Windows `diamond.exe`** on Windows (it shells out to the
   external `diamond` binary; the Linux binary in WSL2 won't run natively).
 
@@ -212,7 +218,9 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
     the current directory.
   - `param` is rendered from the tool's JSON schema.
 
-  Adding a tool takes a spec file plus a `run_*` arm.
+  Adding a tool takes a spec file, nothing else: a job runs `<id> --config <params>`
+  through the CLI in a worker process (see "Jobs run in worker processes" below), so
+  the CLI must have a subcommand named after the spec's `id`.
   `domain-search` exposes **neighborhood extraction** — `whole_contig`,
   `cds_range`/`cds_up`/`cds_down`, `kb_range`/`kb_up`/`kb_down`, `strand` (f/r),
   `keep_direction`, `translate` — so the neighborhood-based SSN path works
@@ -222,22 +230,18 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   `domain-search`/`domainate` expose **taxonomy filters** (`include_taxids` /
   `exclude_taxids` / `taxonomy_expr`, requiring an NCBI **taxdump directory** via
   `ncbi_taxonomy_path`) and `domain-search` also **decoys** (`decoys` list +
-  `decoys_file`) — compiled in `cmd_tools.rs` via `NCBITaxonomy::load` +
-  `compile_taxonomy_filter`/`_expression` and `parse_name_list` (mirroring the CLI).
+  `decoys_file`), handled by the CLI like every other option.
   Array params (decoys/taxid lists) render as comma-separated text in the form.
   `seq-dist` defaults to the pure-Rust `hmmer` algorithm; the `diamond_*`
   algorithms need the external `diamond` binary — **auto-downloadable** via the
-  **External tools** panel (see below). The workflow-tool option mapping lives
-  inline in `cmd_tools.rs` (only transform/build-ssn/build-ssn-viewer share
-  `resolve.rs`).
+  **External tools** panel (see below).
   The Tools menu also runs the **selection/filtering tools**: `select-by-cds`
   (CDSs by name/domain/`domain_expr`/`search_hits`/`unannotated` + neighborhood
   extraction + pad/dedup/strand/invert), `select-by-contig` (whole contigs by
   name/regex, domain content, taxonomy, length or CDS count; `fasta_out` toggles
   FASTA vs GenBank output), and `filter-domains` (strip domain annotations by
-  e-value/overlap/name/database, keeping the sequences). Each has a `run_*` arm in
-  `cmd_tools.rs` mirroring the CLI arm exactly (shared helpers `load_inputs`,
-  `filter_contigs`, `parse_strand`); `input` is a multi-file dropdown (`input_files`).
+  e-value/overlap/name/database, keeping the sequences); `input` is a multi-file
+  dropdown (`input_files`).
   The **HMM curation** tools are also in the menu: `hmmer-select` ("HMM select" —
   pull a subset of profiles from `.hmm` file(s) by regex/exact/substring on
   name/desc/acc; pairs with the HMM Logo viewer) and `hmmer-build` ("HMM build" —
@@ -247,13 +251,12 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   the graceful "no viewer" message). Both output `.hmm`, so the result opens in the
   HMM Logo viewer and appears in the domain-search/domainate reference dropdowns.
   The menu additionally covers the **sequence utilities / extractors / HMM-vs-HMM**
-  tools, each a `run_*` arm mirroring its CLI arm: `genbank-to-fasta`,
+  tools: `genbank-to-fasta`,
   `clean-sequences`, `sort-contigs`, `select-by-coord`, `trim-contigs`,
   `extract-domains`, `extract-peptides`, `extract-unannotated`, `color-genbank`
   (batch color-by-name/database + optional `color_table_out`), `color-table-to-legend`
   (SVG), `deduplicate` (hash backend needs nothing; cd-hit/diamond/usearch need a
-  binary), `hmmer-compare`, and `hmmer-search`. FASTA-emitting tools use
-  `write_fasta_bp` (record **name** as id, matching the CLI's `write_fasta_bp_out`).
+  binary), `hmmer-compare`, and `hmmer-search`.
   Two more GUI-only `classify_file` types support these: **`table`** (`.tsv`/`.csv`/
   `.tab`) so coordinate/color tables show in dropdowns, alongside **`stockholm`**.
 - **`hmmer-report` with a column builder.** "HMM report (export)" writes a per-profile
@@ -353,22 +356,37 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   GenBank-input tools, opened while a big contig view was on screen) sitting at
   "Loading…". This is a pure-frontend fix, so it takes effect via Vite HMR without a
   backend restart.
-- **Jobs run off-thread** (`spawn_blocking`), tracked in a `JobRegistry` managed
-  state, and broadcast as `job-update` events. The **Jobs panel** (left sidebar,
-  above Databases; `JobsPanel.svelte`) shows live status (running/completed/
-  failed/canceled), the result message, and clickable output files (openable ones
-  open in a viewer); running jobs have a Cancel button. **Cancellation is genuinely
-  best-effort and the UI says so.** `cancel_job` sets an `Arc<AtomicBool>` the
-  worker can see and flips the row to `canceling…` immediately; `run_one` checks
-  it before dispatch (so a job canceled while queued does no work at all) and
-  again before the provenance write (so an abandoned run is not recorded). None of
-  the core tools has an interruption point, so a tool already running finishes:
-  whatever output file it had written stays on disk — it may have overwritten
-  something, so deleting it behind the user's back would be worse — and the job's
-  message says so. Killing the `diamond`/`cd-hit`/`usearch` child processes would
-  need a `Child` handle plumbed out of `domainator-core`'s `tools/external.rs`; see
-  "Deferred details". Each completed run writes provenance (`jobs/<id>/job.json` +
-  output `.dom.json`).
+- **Jobs run in worker processes** (`worker.rs`, `cmd_tools.rs`, `job_io.rs`; the
+  design is `WORKER_PROCESS_PLAN.md`). `main.rs` first checks for a hidden
+  `--domainator-worker` flag; with it, the rest of the command line is a CLI command
+  line, handed to `domainator_cli::run`, and Tauri never starts. `run_tool` writes the
+  dialog's params to `.domainator/jobs/<id>/worker-config.json` and launches
+  `<this exe> --domainator-worker <tool> --config <that file>` (`/proc/self/exe` on
+  Linux), with stdout/stderr copied to `worker.log` beside it. The job message is
+  the tool's last line of output, or the CLI's error chain folded onto one line.
+  - **Queue.** Jobs wait (`queued`) for one of `Prefs::max_concurrent_jobs` slots
+    (default 2), first come first served.
+  - **Cancel** kills the worker's whole tree: its process group on Unix
+    (`process_group(0)` + `killpg`), a `KILL_ON_JOB_CLOSE` Job Object on Windows.
+    Then every declared output (the spec's `output_file` fields, never a pattern)
+    that the run created or changed is deleted, judged by size + mtime against a
+    snapshot taken at launch, and the message lists them.
+  - **Lifeline.** The worker exits when its stdin reaches end of file, killing its
+    process group; the GUI holds that pipe open for the job's lifetime, so a crashed
+    GUI takes its workers (and their diamond) with it. Because stdin is the
+    lifeline, `run_one` refuses a job whose required inputs are empty before
+    launching: a CLI tool with no input reads stdin.
+  - **Provenance** is derived from the spec (`job_io::input_role`): the roles are
+    what `trace_source_sequences` walks, pinned by
+    `derived_provenance_roles_match_the_golden_table`.
+  - **Escape hatch.** `DOMAINATOR_INPROCESS_JOBS=1` runs `domainator_cli::run` on
+    the job's own thread instead (no kill, no captured output). Remove it the
+    release after worker processes ship.
+  - The CLI runs on a 256 MB-stack thread in every path (`worker::run_cli`): its
+    dispatch function's unoptimized frame overflows a 2 MB thread and Windows' 1 MB
+    main thread.
+  - Tests needing the real binary are in `src-tauri/tests/worker.rs`; the
+    `__sleep*` worker commands they use are compiled out of release builds.
 - **Report-export tools** (also shown as jobs): `enum-report` writes a per-contig/
   cds/domain **TSV**, `matrix-report` writes a **text** summary + suggested cutoffs.
   (These export files to disk; the in-app Enum Report / Matrix Report *viewer* tabs
@@ -524,14 +542,10 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   `app_support` has no parity counterpart, so its `cargo test`s are the whole
   safety net — see `CLAUDE.md`.
 - **Still deferred, in rough priority order:**
-  - **Killing a running tool's subprocess.** Needs a `Child` handle plumbed out of
-    `domainator-core`'s `tools/external.rs` (diamond / cd-hit / usearch); the
-    pure-Rust tools would still need interruption points of their own.
-  - **A job queue with a concurrency cap.** `run_tool` spawns one blocking task per
-    invocation with no limit, and the tools use rayon's global pool, so two or three
-    concurrent runs saturate every core and starve the renderer.
-  - **Per-tool progress events.** `set_job` emits exactly twice per job (start and
-    terminal state); there is no progress channel, elapsed time, or output log.
+  - **Per-tool progress events.** `set_job` emits on queue, start and terminal
+    state; there is no progress channel or elapsed time. A worker could report
+    progress as stdout lines once the long-running CLI tools print some
+    (`WORKER_PROCESS_PLAN.md` §7).
   - **`FileTable` / `FolderTree` virtualization.** Both render every row.
     `TableView`, `EnumReport` and `HmmReport` are virtualized.
   - **Streaming the SSN payload.** `render_ssn_html` returns the whole embedded

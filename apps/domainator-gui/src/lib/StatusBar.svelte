@@ -10,13 +10,17 @@
   const running = $derived(
     ws.jobs.filter((j) => j.status === "running" || j.status === "canceling").length,
   );
+  const queued = $derived(ws.jobs.filter((j) => j.status === "queued").length);
   const dirty = $derived(ws.dirtyPaths.length);
 
   const activity = $derived.by(() => {
     if (ws.importing > 0) return `Importing ${ws.importing} file${ws.importing === 1 ? "" : "s"}…`;
     if (ws.loadingFiles) return "Loading folder…";
     if (ws.busy) return "Working…";
-    if (running > 0) return `${running} job${running === 1 ? "" : "s"} running`;
+    if (running > 0 || queued > 0) {
+      const q = queued > 0 ? `, ${queued} queued` : "";
+      return `${running} job${running === 1 ? "" : "s"} running${q}`;
+    }
     return null;
   });
 </script>

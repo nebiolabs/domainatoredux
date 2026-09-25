@@ -14,6 +14,8 @@ import {
   renameDatabase as apiRenameDatabase,
   deleteDatabase as apiDeleteDatabase,
   buildDatabaseIndex as apiBuildDatabaseIndex,
+  cancelDatabaseIndex as apiCancelDatabaseIndex,
+  INDEXING_CANCELED,
   rescanTree,
   syncReferenceDbs,
   unregisterDatabase,
@@ -190,9 +192,9 @@ class WorkspaceStore {
     }
   }
 
-  /// Ask the backend to cancel a running job. Cancellation is best-effort (the
-  /// core tools have no interruption points), so the job flips to `canceling`
-  /// and settles when the tool actually stops.
+  /// Ask the backend to cancel a queued or running job. A running job's worker
+  /// process is killed with everything it started; the job shows `canceling`
+  /// until its partial outputs are removed, then `canceled`.
   async cancelJob(id: string): Promise<void> {
     try {
       await apiCancelJob(id);
@@ -485,11 +487,22 @@ class WorkspaceStore {
     try {
       await apiBuildDatabaseIndex(path);
     } catch (e) {
-      this.dbError = String(e);
+      // A cancel is what the user asked for, not a failure.
+      if (String(e) !== INDEXING_CANCELED) this.dbError = String(e);
     } finally {
       delete this.indexing[path];
     }
     await this.loadDatabases();
+  }
+
+  /// Stop an index build. The indexer runs in a worker process, so this kills it
+  /// and removes the partial index; `buildDatabaseIndex` then settles.
+  async cancelDatabaseIndex(path: string): Promise<void> {
+    try {
+      await apiCancelDatabaseIndex(path);
+    } catch (e) {
+      this.dbError = `Could not cancel indexing: ${e}`;
+    }
   }
 
   async addDatabase(path: string): Promise<void> {

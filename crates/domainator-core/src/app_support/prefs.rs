@@ -20,6 +20,12 @@ use serde::{Deserialize, Serialize};
 /// How many recent workspaces to remember.
 pub const MAX_RECENT: usize = 10;
 
+/// How many Tools-menu jobs may run at once unless the user says otherwise. Each
+/// job is its own worker process and defaults to every core, so more than this
+/// mostly makes them slower together; two keeps a quick job from waiting behind
+/// a long one.
+pub const DEFAULT_MAX_CONCURRENT_JOBS: usize = 2;
+
 /// Current on-disk schema. Bump when a field's meaning changes incompatibly.
 const SCHEMA_VERSION: u32 = 1;
 
@@ -53,6 +59,10 @@ pub struct Prefs {
     /// bring `default_cpu = 64` with it.
     #[serde(default)]
     pub default_cpu: usize,
+    /// How many Tools-menu jobs run at once; the rest wait in a queue. `0` reads
+    /// as `1`.
+    #[serde(default = "default_max_concurrent_jobs")]
+    pub max_concurrent_jobs: usize,
     /// Whether to check for a newer release at launch.
     ///
     /// Defaults to **off**: a lab machine may be air-gapped or on a restricted
@@ -73,6 +83,10 @@ fn default_schema_version() -> u32 {
     SCHEMA_VERSION
 }
 
+fn default_max_concurrent_jobs() -> usize {
+    DEFAULT_MAX_CONCURRENT_JOBS
+}
+
 fn default_true() -> bool {
     true
 }
@@ -85,6 +99,7 @@ impl Default for Prefs {
             reopen_last_workspace: true,
             theme: Theme::System,
             default_cpu: 0,
+            max_concurrent_jobs: DEFAULT_MAX_CONCURRENT_JOBS,
             check_updates_on_launch: false,
             last_update_check_ms: None,
             last_seen_release: None,
@@ -139,6 +154,7 @@ pub struct PrefsPatch {
     pub reopen_last_workspace: Option<bool>,
     pub theme: Option<Theme>,
     pub default_cpu: Option<usize>,
+    pub max_concurrent_jobs: Option<usize>,
     pub check_updates_on_launch: Option<bool>,
 }
 
@@ -152,6 +168,9 @@ pub fn apply_patch(p: &mut Prefs, patch: &PrefsPatch) {
     }
     if let Some(v) = patch.default_cpu {
         p.default_cpu = v;
+    }
+    if let Some(v) = patch.max_concurrent_jobs {
+        p.max_concurrent_jobs = v.max(1);
     }
     if let Some(v) = patch.check_updates_on_launch {
         p.check_updates_on_launch = v;
@@ -219,6 +238,7 @@ mod tests {
         assert!(!p.reopen_last_workspace, "existing field kept its value");
         assert_eq!(p.theme, Theme::System);
         assert_eq!(p.default_cpu, 0);
+        assert_eq!(p.max_concurrent_jobs, DEFAULT_MAX_CONCURRENT_JOBS);
         assert!(!p.check_updates_on_launch);
         assert_eq!(p.last_update_check_ms, None);
 
@@ -256,10 +276,19 @@ mod tests {
                 reopen_last_workspace: Some(false),
                 theme: Some(Theme::Light),
                 default_cpu: Some(4),
+                max_concurrent_jobs: Some(3),
                 check_updates_on_launch: Some(true),
             },
         );
         assert_eq!(p.recent_workspaces.len(), 2);
+    }
+
+    /// Zero jobs at a time would queue everything forever.
+    #[test]
+    fn max_concurrent_jobs_is_at_least_one() {
+        let mut p = Prefs::default();
+        apply_patch(&mut p, &PrefsPatch { max_concurrent_jobs: Some(0), ..Default::default() });
+        assert_eq!(p.max_concurrent_jobs, 1);
     }
 
     #[test]

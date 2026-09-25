@@ -18,6 +18,14 @@ pub struct IoRef {
     pub role: String,
 }
 
+/// Input roles whose files hold node sequences: the leaves of
+/// [`trace_source_sequences`]. The GUI derives each job's input roles from its
+/// tool spec, and its golden-table test checks them against these.
+pub const SEQUENCE_SOURCE_ROLES: [&str; 3] = ["sequence", "genbank", "fasta"];
+
+/// Input roles [`trace_source_sequences`] follows one job further back.
+pub const FOLLOWED_INPUT_ROLES: [&str; 1] = ["matrix"];
+
 /// A completed tool run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobRecord {
@@ -133,15 +141,15 @@ pub fn trace_source_sequences(root: &Path, data_file: &Path) -> SourceTrace {
         let Some(job) = load_job(root, &job_id) else { continue };
         found_job = true;
         for inp in &job.inputs {
-            match inp.role.as_str() {
-                "sequence" | "genbank" | "fasta" => {
-                    if seen_sources.insert(inp.path.clone()) {
-                        sources.push(source_status(&inp.path, job.finished_at_ms));
-                    }
+            let role = inp.role.as_str();
+            if SEQUENCE_SOURCE_ROLES.contains(&role) {
+                if seen_sources.insert(inp.path.clone()) {
+                    sources.push(source_status(&inp.path, job.finished_at_ms));
                 }
-                "matrix" => queue.push(std::path::PathBuf::from(&inp.path)),
-                _ => {} // references / tables don't hold node sequences
+            } else if FOLLOWED_INPUT_ROLES.contains(&role) {
+                queue.push(std::path::PathBuf::from(&inp.path));
             }
+            // Anything else (references, tables) doesn't hold node sequences.
         }
     }
     SourceTrace { has_provenance: found_job && !sources.is_empty(), sources }

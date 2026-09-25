@@ -147,10 +147,12 @@ The bundles are unsigned. On macOS, open it once with right-click → Open, or:
 xattr -dr com.apple.quarantine /Applications/Domainator.app
 ```
 
-## Canceling a job in the app doesn't stop it
+## A job in the app failed and the message is cut short
 
-Known limitation: cancel stops a job that hasn't started, but a tool already running will
-finish. See [the app's limitations](gui.md#current-limitations).
+The Jobs panel shows one line. The tool's complete output, including the full error, is
+in `.domainator/jobs/<job>/worker.log` inside the workspace, beside the
+`worker-config.json` it ran with. You can rerun that exact job from a terminal with
+`domainator <tool> --config .domainator/jobs/<job>/worker-config.json`.
 
 ## Still stuck
 

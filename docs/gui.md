@@ -103,18 +103,35 @@ neighborhood extraction, taxonomy filters and decoys.
 
 ## Jobs and provenance
 
-Runs happen off the UI thread and appear in the **Jobs** panel with status, result
-message and clickable output files. Right-click a job to clone its parameters into a fresh
+Each run happens in its own background process and appears in the **Jobs** panel with
+status, result message and clickable output files. A tool run from the app runs the same
+code as `domainator <tool>` on the command line, with the dialog's settings passed as a
+config file; the config and the tool's full output are kept in
+`.domainator/jobs/<job>/worker-config.json` and `worker.log`. Right-click a job to clone its parameters into a fresh
 dialog, copy its parameters as JSON, reveal its output, or remove it from the history.
 
 Every completed run writes a provenance record under `.domainator/jobs/`, and stamps each
 output file with the job that made it. That record is what lets the SSN viewer trace a
 network back to the sequence file it came from, which is how **Open sequence(s)** works.
 
-**Cancel is best-effort.** It stops a job that has not started yet, but a tool already
-running will finish — none of the core tools currently have interruption points. Any
-output it had already written is left in place rather than deleted. The job message says
-as much.
+**Jobs at once.** By default two jobs run at the same time and the rest wait in the queue,
+marked *queued*. Change the number in **Preferences → Jobs at once**. Each job uses the
+**Default threads** setting (all cores unless you change it), so running several at once
+mostly makes them share the cores.
+
+**Cancel** stops a running job right away, along with any program it started (diamond,
+cd-hit, usearch). A queued job is simply removed from the queue. A tool stopped partway
+can leave a truncated file that still looks valid, so a cancel **deletes the job's
+declared output files that it created or changed**, and the job message lists them. Only
+files named in the tool's output fields are ever deleted. If an output file existed
+before the run and the tool had already overwritten it, its old contents were gone
+before you pressed Cancel; the message says so.
+
+If the app closes or crashes while jobs are running, their processes stop too. Those
+jobs show as interrupted next time, and their outputs may be incomplete.
+
+**Building a database index** (Databases panel) also runs in the background and can be
+canceled; a canceled build removes its partial index.
 
 ## Databases
 
@@ -230,10 +247,8 @@ installed external tools, with a copyable diagnostics blob — attach it when
 
 Worth knowing before you hit them:
 
-- **Canceling a running tool doesn't stop it** (see above).
-- **No job queue and no progress bars.** Runs are not throttled, so two or three heavy
-  jobs at once will saturate every core and make the window sluggish. Jobs report only
-  start and finish, not progress.
+- **No progress bars.** Jobs report only start and finish, not progress. The job's
+  `worker.log` (above) shows what the tool has printed so far.
 - **Compressed sequence files don't open in viewers.** BGZF and gzip inputs work fine as
   *tool* inputs, but the contig viewer needs an uncompressed file.
 - **FASTA is read-only in the contig viewer** — there is nowhere in a FASTA file to store

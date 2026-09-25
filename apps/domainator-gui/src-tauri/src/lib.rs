@@ -17,10 +17,12 @@ mod cmd_windows;
 mod cmd_workspace;
 mod menu_ids;
 mod external_tools;
+mod job_io;
 mod reference_dbs;
 mod taxonomy_cache;
 mod tool_spec_types;
 mod tool_specs;
+pub mod worker;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -105,6 +107,7 @@ pub fn run() {
             cmd_db::rename_database,
             cmd_db::delete_database,
             cmd_db::build_database_index,
+            cmd_db::cancel_database_index,
             cmd_db::reveal_database,
             cmd_edit::set_feature_color,
             cmd_edit::set_color_by_name,

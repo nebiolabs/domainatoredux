@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -23,6 +23,9 @@ use domainator_core::app_support::registry::{
     migrate_workspace_registry, save_registry_file, DatabaseEntry, DatabaseRegistry, IndexStatus,
     REGISTRY_NAME,
 };
+
+use crate::cmd_tools::LiveJob;
+use crate::job_io;
 
 /// Serializes every read-modify-write of the registry file. Registering from the
 /// panel and from a finishing reference download can otherwise interleave and
@@ -198,13 +201,75 @@ pub async fn delete_database(app: AppHandle, path: String) -> Result<(), String>
     .map_err(|e| format!("deleting database failed: {e}"))?
 }
 
-/// Build the `.didx` index for each of a database's data files, in place. Can
-/// take minutes on a large database; it runs on the blocking pool.
+/// Indexing runs in progress, by database path.
+static INDEXING: LazyLock<Mutex<HashMap<String, Arc<LiveJob>>>> = LazyLock::new(Default::default);
+
+/// Build the `.didx` index for each of a database's data files, in place.
+///
+/// Can take minutes on a large database, so it runs as `format-db --index` in a
+/// worker process (`worker.rs`), like a Tools-menu job: [`cancel_database_index`]
+/// can stop it, and a crash cannot take the app down. Returns the number of data
+/// files indexed.
 #[tauri::command]
 pub async fn build_database_index(path: String) -> Result<usize, String> {
-    tauri::async_runtime::spawn_blocking(move || registry::build_database_index(Path::new(&path)))
+    tauri::async_runtime::spawn_blocking(move || index_with(&path, crate::cmd_tools::launcher()))
         .await
         .map_err(|e| format!("indexing failed: {e}"))?
+}
+
+fn index_with(path: &str, launcher: Result<crate::cmd_tools::Launcher, String>) -> Result<usize, String> {
+    // The checks (on disk, not plain gzip) are quick and give the better message.
+    let shards = registry::index_targets(Path::new(path))?;
+    let indexes: Vec<String> = shards
+        .iter()
+        .map(|s| domainator_core::io::didx::index_path_for(Path::new(s)).to_string_lossy().into_owned())
+        .collect();
+    let live = Arc::new(LiveJob::default());
+    {
+        let mut running = INDEXING.lock().unwrap_or_else(|e| e.into_inner());
+        if running.contains_key(path) {
+            return Err(format!("{path} is already being indexed"));
+        }
+        running.insert(path.to_string(), live.clone());
+    }
+    // A config file rather than `-i` arguments: a database with many shards could
+    // pass Windows' 32K command-line limit.
+    let config = std::env::temp_dir().join(format!(
+        "domainator-index-{}-{}.json",
+        std::process::id(),
+        domainator_core::app_support::provenance::now_ms()
+    ));
+    let snapshot = job_io::OutputSnapshot::take(&indexes);
+    let ran = std::fs::write(&config, serde_json::json!({"input": shards, "index": true}).to_string())
+        .map_err(|e| format!("writing the indexing config: {e}"))
+        .and(launcher)
+        .and_then(|launcher| {
+            let args = ["format-db".into(), "--config".into(), config.clone().into_os_string()];
+            let cwd = Path::new(path).parent().unwrap_or(Path::new("."));
+            crate::cmd_tools::run_cli_command(&launcher, &args, cwd, None, &live)
+        });
+    let _ = std::fs::remove_file(&config);
+    INDEXING.lock().unwrap_or_else(|e| e.into_inner()).remove(path);
+    if live.is_canceled() {
+        // A killed indexer can leave a truncated `.didx`, and one that reads back
+        // wrong is worse than none: the database just shows as unindexed again.
+        snapshot.remove_changed();
+        return Err(INDEXING_CANCELED.into());
+    }
+    ran.map(|_| shards.len())
+}
+
+/// The error a canceled [`build_database_index`] returns. The panel checks for it
+/// so a cancel is not shown as a failure.
+pub const INDEXING_CANCELED: &str = "indexing canceled";
+
+/// Stop the indexing of `path`, if it is running, and remove the partial indexes.
+#[tauri::command(async)]
+pub fn cancel_database_index(path: String) {
+    let live = INDEXING.lock().unwrap_or_else(|e| e.into_inner()).get(&path).cloned();
+    if let Some(live) = live {
+        live.cancel();
+    }
 }
 
 /// Show a database in the OS file manager. A sharded database's logical path is
@@ -224,4 +289,27 @@ pub async fn reveal_database(app: AppHandle, path: String) -> Result<(), String>
     app.opener()
         .reveal_item_in_dir(&first)
         .map_err(|e| format!("could not open a file manager for {}: {e}", first.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Indexing goes through the CLI's `format-db --config` now, so the config it
+    /// writes must be one `FormatDbConfig` accepts, and the run must leave the
+    /// same `.didx` the in-process `registry::build_database_index` did.
+    #[test]
+    fn indexing_runs_format_db_and_writes_the_index() {
+        let dir = std::env::temp_dir().join(format!("domainator-gui-index-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("db.fasta");
+        std::fs::write(&db, ">a\nMKVLAAGIVG\n>b\nMSTNPKPQRK\n").unwrap();
+        let path = db.to_string_lossy().into_owned();
+
+        let n = index_with(&path, Ok(crate::cmd_tools::Launcher::InProcess)).unwrap();
+        assert_eq!(n, 1);
+        assert!(domainator_core::io::didx::index_path_for(&db).exists(), "no .didx written");
+        assert!(INDEXING.lock().unwrap().is_empty(), "a finished run stayed registered");
+    }
 }

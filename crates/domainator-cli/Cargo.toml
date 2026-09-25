@@ -6,6 +6,10 @@ license.workspace = true
 rust-version.workspace = true
 description = "Single-executable CLI for the Domainator Rust rewrite (`domainator <tool> [opts]`)."
 
+[lib]
+name = "domainator_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "domainator"
 path = "src/main.rs"
