@@ -133,8 +133,9 @@ E-value calculation, default 1000); `--max_overlap` (default 1.0, i.e. disabled)
 annotations overlapping a better hit, with `--overlap_by_db` to apply that per database;
 `--max_domains` and `--max_mode` to cap annotations per CDS; `--hits_only` to keep only
 records that hit something; `--no_annotations` to score without writing features;
-`--fasta_type` (default `protein`) to say how to read FASTA input; `--cpu`; taxonomy
-filters.
+`--fasta_type` (default `protein`) to say how to read FASTA input; `--cpu` to
+parallelize independent reference profiles, including profiles in one HMM file;
+taxonomy filters.
 
 ```bash
 domainator domainate -i contigs.gb -r pfam-A.hmm -r rebase_gold.fasta \

@@ -187,6 +187,7 @@ pub fn domain_search(
         max_mode: opts.max_mode,
         allowed_taxids: opts.allowed_taxids.clone(),
         max_hits_per_contig: opts.max_hits_per_contig,
+        parallel_profiles: false,
         ..Default::default()
     };
 

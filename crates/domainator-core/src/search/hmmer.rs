@@ -7,6 +7,7 @@ use std::path::Path;
 use hmmer_pure_rs::profile::{profile_config, P7_LOCAL};
 use hmmer_pure_rs::sequence::Sequence;
 use hmmer_pure_rs::{Alphabet, Bg, Hmm, OProfile, Pipeline, Profile, TopHits};
+use rayon::prelude::*;
 
 use super::results::SearchResult;
 
@@ -122,9 +123,10 @@ pub fn hmmsearch_db(
     evalue: f64,
     min_evalue: f64,
     max_mode: bool,
+    parallel_profiles: bool,
 ) -> Vec<NamedHit> {
-    let mut out = Vec::new();
-    for (hi, hmm) in db.hmms.iter().enumerate() {
+    let search_profile = |(hi, hmm): (usize, &Hmm)| {
+        let mut out = Vec::new();
         let abc = Alphabet::new(hmm.abc_type);
         let mut bg = Bg::new(&abc);
         // phmmer configures the background filter from the single-seq profile's
@@ -199,6 +201,41 @@ pub fn hmmsearch_db(
                 });
             }
         }
+        out
+    };
+    let per_profile: Vec<Vec<NamedHit>> = if parallel_profiles {
+        db.hmms.par_iter().enumerate().map(search_profile).collect()
+    } else {
+        db.hmms.iter().enumerate().map(search_profile).collect()
+    };
+    per_profile.into_iter().flatten().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profile_parallelism_preserves_order_and_hits() {
+        let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../../test/data/");
+        let db = load_hmm_dbs(&[format!("{fixture}FeSOD_pfam.hmm")]).unwrap().remove(0);
+        let records = crate::io::fasta::read_fasta_decompressed(
+            &format!("{fixture}FeSOD_20.fasta"), Some("protein"),
+        ).unwrap();
+        let peptides: Vec<_> = records.iter().take(4)
+            .map(|record| (record.id.clone(), record.seq.clone()))
+            .collect();
+        let serial = hmmsearch_db(&db, &peptides, 1000.0, 0.001, 0.0, false, false);
+        let parallel = crate::parallel::with_threads(4, || {
+            hmmsearch_db(&db, &peptides, 1000.0, 0.001, 0.0, false, true)
+        });
+        let signature = |hits: Vec<NamedHit>| {
+            hits.into_iter().map(|hit| {
+                let feature = hit.result.to_feature("Domainator", "0");
+                (hit.target, feature, hit.result.score.to_bits(), hit.result.evalue.to_bits(), hit.result.identity.to_bits())
+            }).collect::<Vec<_>>()
+        };
+        assert!(!serial.is_empty());
+        assert_eq!(signature(serial), signature(parallel));
     }
-    out
 }

@@ -389,8 +389,9 @@ pub struct DomainateOptions {
     /// Precompiled allowed-taxid set (`None` = no taxonomy filtering). Records
     /// whose lineage is not in the set are dropped before searching.
     pub allowed_taxids: Option<HashSet<i64>>,
-    /// Worker threads for the per-database search (`0` = all cores).
+    /// Worker threads for the profile and database searches (`0` = all cores).
     pub cpu: usize,
+    pub parallel_profiles: bool,
     /// Cap on independent whole-contig (nhmmer) best hits per contig (`None` =
     /// unlimited). Only affects the contig-level best-annotation path.
     pub max_hits_per_contig: Option<usize>,
@@ -411,6 +412,7 @@ impl Default for DomainateOptions {
             max_mode: false,
             allowed_taxids: None,
             cpu: 0,
+            parallel_profiles: true,
             max_hits_per_contig: None,
         }
     }
@@ -436,7 +438,7 @@ pub fn domainate(mut records: Vec<SeqRecord>, refs: &References, opts: &Domainat
         }
     }
 
-    // Protein search (hmmsearch + phmmer). Batch peptides across contigs.
+    // Protein search (hmmsearch + phmmer). Collect peptides across contigs.
     // Protein record: "{i},0". Nucleotide record's CDSs: "{i},{feature_index}".
     let mut peptides: Vec<(String, Vec<u8>)> = Vec::new();
     for (i, rec) in records.iter().enumerate() {
@@ -450,17 +452,21 @@ pub fn domainate(mut records: Vec<SeqRecord>, refs: &References, opts: &Domainat
         }
     }
 
-    // contig index -> (cds feature index -> SearchResults). Databases are searched
-    // in parallel (each independent); results are merged in database order so the
-    // output is deterministic regardless of thread count.
+    // contig index -> (cds feature index -> SearchResults). Independent profiles
+    // and databases run in parallel for domainate; domain-search processes its
+    // partitions in parallel instead. Merge in database and profile order.
     let mut hits: HashMap<usize, HashMap<usize, Vec<SearchResult>>> = HashMap::new();
     if !refs.protein.is_empty() && !peptides.is_empty() {
         let per_db: Vec<Vec<crate::search::hmmer::NamedHit>> = crate::parallel::with_threads(opts.cpu, || {
             use rayon::prelude::*;
-            refs.protein
-                .par_iter()
-                .map(|db| hmmsearch_db(db, &peptides, opts.z, opts.evalue, opts.min_evalue, opts.max_mode))
-                .collect()
+            let search_db = |db: &crate::search::hmmer::HmmDb| {
+                hmmsearch_db(db, &peptides, opts.z, opts.evalue, opts.min_evalue, opts.max_mode, opts.parallel_profiles)
+            };
+            if opts.parallel_profiles {
+                refs.protein.par_iter().map(search_db).collect()
+            } else {
+                refs.protein.iter().map(search_db).collect()
+            }
         });
         for nhs in per_db {
             for nh in nhs {

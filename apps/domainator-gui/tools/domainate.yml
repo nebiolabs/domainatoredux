@@ -33,6 +33,7 @@ fields:
     label: "Max domains"
   - name: max_overlap
     label: "Max overlap"
+    gui_default: 0.6
     cli_default: 1.0
   - name: max_mode
     label: "Max mode"
