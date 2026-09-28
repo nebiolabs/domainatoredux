@@ -143,7 +143,10 @@ conda env at `/home/sean/miniforge3/envs/domainator/bin/python` on the author's 
 
 ## CI
 
-`.github/workflows/check.yml` runs six jobs on every push to `main` and every PR:
+`.github/workflows/check.yml` runs six jobs. It is **manually dispatched** (the Actions
+tab, or `gh workflow run check.yml [--ref <branch>]`), not triggered by pushes or PRs:
+run the same checks locally before pushing (the commands under "Build / run", plus
+`scripts/sync_upstream.sh` for the upstream guards). The jobs:
 
 - **`rust`**: rustfmt, then build, clippy and rustdoc (all `-D warnings`) and tests for
   the pure-Rust crates.
@@ -158,9 +161,22 @@ conda env at `/home/sean/miniforge3/envs/domainator/bin/python` on the author's 
 - **`upstream-drift`**: clones upstream at the recorded pin to run the viewer-shell drift
   guard and the SSN core probe comparison.
 
-`.github/workflows/build-gui-apps.yml` packages the desktop apps (macOS `.dmg`, Windows
-NSIS, Linux `.deb`/AppImage) and the CLI binaries. It runs on `v*` release tags or manual
-dispatch, and releases are cut by hand from its artifacts.
+Packaging is two more workflows, both manually dispatched too (pushing a `v*` tag does
+not start them):
+
+- **`build-release.yml`**: the desktop app (macOS `.dmg`, Windows NSIS installer plus a
+  portable `.exe`, Linux `.deb`/AppImage) and the `domainator` CLI binary for the same
+  three platforms. The dispatch form has checkboxes for the products (GUI, CLI) and the
+  platforms (macOS, Windows, Linux), all ticked by default; a `setup` job filters the
+  build matrices to the ticked boxes, so an unticked target never starts a runner. From
+  the command line, untick with `-f`:
+  `gh workflow run build-release.yml --ref main -f linux=false`. It fails the run when
+  dispatched on a tag other than `v` + `workspace.package.version` (on a branch that
+  check is skipped).
+- **`build-genbank-summary.yml`**: the standalone genbank-summary app (macOS `.dmg`,
+  Windows NSIS). It is not part of a release; build it when you want it.
+
+Releases are cut by hand from the artifacts.
 
 ## Versioning and releases
 
@@ -185,7 +201,7 @@ Python release it reproduces is recorded separately and reported next to it.
     viewer shell;
   - a `sync_upstream.sh` guard comparing `UPSTREAM_VERSION` with the vendored
     `__version__`.
-- **Tags** are `vX.Y.Z`, one per release, covering the CLI and both apps. The packaging
+- **Tags** are `vX.Y.Z`, one per release, covering the CLI and both apps. The release packaging
   workflow refuses a tag that differs from `v` + `workspace.package.version`. (The
   `v0.11.0` tag predates this scheme; the first release under it is `v1.0.0`.)
 
@@ -194,8 +210,8 @@ To cut a release:
 1. Bump `workspace.package.version` in `Cargo.toml`.
 2. Add an entry to `CHANGELOG.md` that names the upstream version and commit it is at
    parity with.
-3. Commit, tag `vX.Y.Z` and push the tag. `build-gui-apps.yml` builds the installers and
-   CLI binaries.
+3. Commit, tag `vX.Y.Z` and push the tag, then dispatch the packaging workflow on it
+   with every box ticked (the default): `gh workflow run build-release.yml --ref vX.Y.Z`.
 4. Create the GitHub release from those artifacts, with the changelog entry as its notes.
    The GUI's update check reads the latest non-prerelease release's tag.
 

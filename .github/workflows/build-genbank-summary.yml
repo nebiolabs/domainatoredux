@@ -1,0 +1,119 @@
+name: Build genbank-summary
+
+# Manual dispatch only: the small standalone genbank-summary Tauri app
+# (apps/genbank-summary). It is not part of a release; build it when you want it.
+# Start it from the Actions tab or with `gh workflow run build-genbank-summary.yml`.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: genbank-summary (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app_id: genbank-summary
+            app_path: apps/genbank-summary
+            package_name: domainator-genbank-summary
+            platform: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            bundle_args: --bundles dmg
+            artifact_globs: |
+              target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          # - app_id: genbank-summary
+          #   app_path: apps/genbank-summary
+          #   package_name: domainator-genbank-summary
+          #   platform: macos-intel
+          #   os: macos-13
+          #   target: x86_64-apple-darwin
+          #   bundle_args: --bundles dmg
+          #   artifact_globs: |
+          #     target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+          - app_id: genbank-summary
+            app_path: apps/genbank-summary
+            package_name: domainator-genbank-summary
+            platform: windows-msvc-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle_args: --bundles nsis
+            artifact_globs: |
+              target/x86_64-pc-windows-msvc/release/domainator-genbank-summary.exe
+              target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          # - app_id: genbank-summary
+          #   app_path: apps/genbank-summary
+          #   package_name: domainator-genbank-summary
+          #   platform: windows-x64
+          #   os: ubuntu-24.04
+          #   target: x86_64-pc-windows-gnu
+          #   bundle_args: --bundles nsis
+          #   artifact_globs: |
+          #     target/x86_64-pc-windows-gnu/release/domainator-genbank-summary.exe
+          #     target/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe
+
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ${{ matrix.app_path }}/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Set up MSVC command prompt
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+
+      - name: Provide MSVC m.lib compatibility shim
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $stubDir = Join-Path $env:RUNNER_TEMP 'msvc-empty-m-lib'
+          New-Item -ItemType Directory -Force -Path $stubDir | Out-Null
+          Set-Content -Path (Join-Path $stubDir 'm_stub.c') -Value 'void __domainator_empty_m_lib(void) {}'
+          Push-Location $stubDir
+          cl /nologo /c m_stub.c
+          lib /nologo /out:m.lib m_stub.obj
+          Pop-Location
+          "LIB=$stubDir;$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install Windows GNU cross-build tools
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        run: |
+          sudo apt update
+          sudo apt install -y mingw-w64 nsis
+
+      - name: Cache Cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          key: ${{ matrix.app_id }}-${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        working-directory: ${{ matrix.app_path }}
+        run: npm ci
+
+      - name: Build app
+        working-directory: ${{ matrix.app_path }}
+        run: npm run tauri build -- --target ${{ matrix.target }} ${{ matrix.bundle_args }}
+
+      - name: Upload app artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.app_id }}-${{ matrix.platform }}
+          if-no-files-found: error
+          path: ${{ matrix.artifact_globs }}
+

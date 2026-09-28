@@ -1,17 +1,18 @@
 name: Check
 
-# The packaging workflow (build-gui-apps.yml) only runs on `v*` release tags, so nothing
-# was verifying the library on an ordinary push. `rust` is the fast gate for the
+# The packaging workflows (build-release.yml, build-genbank-summary.yml) only build
+# artifacts; this one verifies the code. `rust` is the fast gate for the
 # pure-Rust crates (zero warnings from rustc, clippy and rustdoc, plus rustfmt); `gui`
 # does the same for the two Tauri apps, whose system dependencies make it the slow one;
 # `frontend` type-checks the three web frontends; `policy` holds the whole-repo checks
 # (dependency licenses and advisories, American spelling, the mdbook); `msrv` keeps
 # `rust-version` honest. Lint levels live in Cargo.toml's `[workspace.lints]`, so a
 # local `cargo clippy` enforces the same rules.
+#
+# Manual dispatch only (Actions tab -> Check -> Run workflow, or `gh workflow run
+# check.yml`): the checks are run locally before pushing, and this repo's Actions
+# minutes come out of the nebiolabs organization's shared budget.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -79,7 +80,7 @@ jobs:
           workspaces: . -> target
           key: gui
 
-      # Same list as build-gui-apps.yml, minus the AppImage-only patchelf.
+      # Same list as build-release.yml, minus the AppImage-only patchelf.
       - name: Install WebKitGTK
         run: |
           sudo apt update

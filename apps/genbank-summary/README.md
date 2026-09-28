@@ -97,14 +97,13 @@ this first app scaffold.
 
 ## GitHub Actions builds
 
-The repository workflow `.github/workflows/build-gui-apps.yml` builds this app
-on GitHub-hosted macOS and Windows runners. It can be started manually from the
-Actions tab with `workflow_dispatch`, or by pushing a `vX.Y.Z` release tag.
+The repository workflow `.github/workflows/build-genbank-summary.yml` builds this
+app on GitHub-hosted macOS and Windows runners. It only runs when started manually,
+from the Actions tab or with `gh workflow run build-genbank-summary.yml`; it is not
+part of a release.
 
-The workflow uses a matrix with `app_id`, `app_path`, `package_name`, `platform`,
-and `target` fields. To add another small GUI tool later, add another set of
-matrix entries pointing at that app directory. The current app produces macOS ARM
-and macOS Intel `.dmg` artifacts plus a Windows x64 NSIS installer artifact.
+It produces a macOS ARM `.dmg` and a Windows x64 NSIS installer; the macOS Intel
+entry is kept in the matrix, commented out.
 The active Windows job uses the native `x86_64-pc-windows-msvc` target on a
 Windows runner. It creates a tiny empty `m.lib` compatibility shim before the
 build because one dependency path asks MSVC to link the Unix math library name,

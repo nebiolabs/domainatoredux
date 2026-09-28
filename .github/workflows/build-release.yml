@@ -1,0 +1,245 @@
+name: Build Release
+
+# Manual dispatch only. The form's checkboxes pick the products (GUI, CLI) and the
+# platforms to build; everything is ticked by default, which is a release. From the
+# command line, untick with `-f`, e.g.
+#   gh workflow run build-release.yml --ref main -f linux=false -f cli=false
+# Releases are tagged `vX.Y.Z`; dispatch on the tag (`--ref vX.Y.Z`) so the version
+# check compares it. See docs/development.md, "Versioning and releases". The
+# standalone genbank-summary app is build-genbank-summary.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      gui:
+        description: domainator-gui installers
+        type: boolean
+        default: true
+      cli:
+        description: domainator CLI binaries
+        type: boolean
+        default: true
+      macos:
+        description: macOS (arm64)
+        type: boolean
+        default: true
+      windows:
+        description: Windows (x64)
+        type: boolean
+        default: true
+      linux:
+        description: Linux (x64)
+        type: boolean
+        default: true
+
+jobs:
+  # A release tag must name the version the binaries report. It comes from
+  # `workspace.package.version` alone (CLI `--version`, the GUI About box, job
+  # provenance, the installer), so a tag that disagrees ships artifacts whose
+  # every self-description contradicts the release page. On a branch it is skipped.
+  version:
+    name: Tag matches workspace version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Compare the tag with Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          want=$(awk '/^\[workspace.package\]/{p=1; next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/, "", $0); sub(/^version=/, ""); print; exit}' Cargo.toml)
+          tag="${GITHUB_REF_NAME}"
+          echo "tag: ${tag}  workspace.package.version: ${want}"
+          if [ -z "${want}" ] || [ "${tag}" != "v${want}" ]; then
+            echo "::error::tag ${tag} does not match workspace.package.version ${want} (expected v${want})"
+            exit 1
+          fi
+
+  # The build matrices, filtered to the ticked boxes. A job-level `if:` cannot see
+  # `matrix`, so filtering here is what keeps an unticked platform from starting (and
+  # billing) a runner at all. Each target is one JSON object per line, keyed by
+  # `family` (the platform checkbox it belongs to); a line starting with `#` is off.
+  # An output left empty means that product has nothing to build, and its job is
+  # skipped.
+  setup:
+    name: Select targets
+    runs-on: ubuntu-latest
+    outputs:
+      gui: ${{ steps.pick.outputs.gui }}
+      cli: ${{ steps.pick.outputs.cli }}
+    steps:
+      - name: Filter the matrices
+        id: pick
+        env:
+          BUILD_GUI: ${{ inputs.gui }}
+          BUILD_CLI: ${{ inputs.cli }}
+          MACOS: ${{ inputs.macos }}
+          WINDOWS: ${{ inputs.windows }}
+          LINUX: ${{ inputs.linux }}
+        run: |
+          families=$(jq -cn --arg m "$MACOS" --arg w "$WINDOWS" --arg l "$LINUX" \
+            '[if $m == "true" then "macos" else empty end,
+              if $w == "true" then "windows" else empty end,
+              if $l == "true" then "linux" else empty end]')
+          pick() {
+            grep -v '^[[:space:]]*\(#\|$\)' |
+              jq -cs --argjson f "$families" \
+                'map(select(.family as $x | $f | index($x))) | if length == 0 then empty else {include: .} end'
+          }
+
+          gui=""
+          if [ "$BUILD_GUI" = true ]; then
+            gui=$(pick <<'EOF'
+          {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "target": "aarch64-apple-darwin", "bundle_args": "--bundles dmg", "artifact": "domainator-gui-macos-arm64", "artifact_globs": "target/aarch64-apple-darwin/release/bundle/dmg/*.dmg"}
+          {"family": "windows", "platform": "windows-msvc-x64", "os": "windows-latest", "target": "x86_64-pc-windows-msvc", "bundle_args": "--bundles nsis", "artifact": "domainator-gui-windows-msvc-x64-setup", "artifact_globs": "target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe"}
+          {"family": "linux", "platform": "linux-x64", "os": "ubuntu-24.04", "target": "x86_64-unknown-linux-gnu", "bundle_args": "--bundles deb,appimage", "artifact": "domainator-gui-linux-x64", "artifact_globs": "target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb\ntarget/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage"}
+          # Linux -> Windows GNU cross-build (experimental, unsigned; verified to build +
+          # bundle an NSIS installer from Ubuntu). Cheaper than a Windows runner, but ship
+          # signed MSVC builds. Uncomment to enable.
+          # {"family": "windows", "platform": "windows-gnu-x64", "os": "ubuntu-24.04", "target": "x86_64-pc-windows-gnu", "bundle_args": "--bundles nsis", "artifact": "domainator-gui-windows-gnu-x64", "artifact_globs": "target/x86_64-pc-windows-gnu/release/domainator-gui.exe\ntarget/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe"}
+          EOF
+            )
+          fi
+
+          cli=""
+          if [ "$BUILD_CLI" = true ]; then
+            cli=$(pick <<'EOF'
+          {"family": "linux", "platform": "linux-x64", "os": "ubuntu-latest", "bin": "target/release/domainator"}
+          {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "bin": "target/release/domainator"}
+          {"family": "windows", "platform": "windows-x64", "os": "windows-latest", "bin": "target/release/domainator.exe"}
+          EOF
+            )
+          fi
+
+          if [ -z "$gui" ] && [ -z "$cli" ]; then
+            echo "::error::nothing selected: tick at least one product and one platform"
+            exit 1
+          fi
+          echo "gui: ${gui:-(none)}"
+          echo "cli: ${cli:-(none)}"
+          echo "gui=$gui" >> "$GITHUB_OUTPUT"
+          echo "cli=$cli" >> "$GITHUB_OUTPUT"
+
+  gui:
+    name: domainator-gui (${{ matrix.platform }})
+    needs: [version, setup]
+    if: needs.setup.outputs.gui != ''
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.gui) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/domainator-gui/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Set up MSVC command prompt
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+
+      - name: Provide MSVC m.lib compatibility shim
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $stubDir = Join-Path $env:RUNNER_TEMP 'msvc-empty-m-lib'
+          New-Item -ItemType Directory -Force -Path $stubDir | Out-Null
+          Set-Content -Path (Join-Path $stubDir 'm_stub.c') -Value 'void __domainator_empty_m_lib(void) {}'
+          Push-Location $stubDir
+          cl /nologo /c m_stub.c
+          lib /nologo /out:m.lib m_stub.obj
+          Pop-Location
+          "LIB=$stubDir;$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # Tauri v2 on Linux renders through WebKitGTK, and `tauri build` needs the
+      # -dev packages plus patchelf to assemble the AppImage. No appindicator
+      # packages: the app declares no `trayIcon`.
+      - name: Install Linux GUI build dependencies
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt update
+          sudo apt install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev librsvg2-dev patchelf \
+            build-essential file
+
+      - name: Install Windows GNU cross-build tools
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        run: |
+          sudo apt update
+          sudo apt install -y mingw-w64 nsis
+
+      - name: Cache Cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          key: domainator-gui-${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        working-directory: apps/domainator-gui
+        run: npm ci
+
+      - name: Build app
+        working-directory: apps/domainator-gui
+        run: npm run tauri build -- --target ${{ matrix.target }} ${{ matrix.bundle_args }}
+
+      - name: Upload app artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          path: ${{ matrix.artifact_globs }}
+
+      - name: Upload portable Windows GUI
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        uses: actions/upload-artifact@v7
+        with:
+          name: domainator-gui-windows-msvc-x64-portable
+          if-no-files-found: error
+          path: target/x86_64-pc-windows-msvc/release/domainator-gui.exe
+
+  # The GUI installers carry no command-line tool, but the README sends users to the
+  # Releases page for both. These are the pure-Rust crates, so this job needs none of
+  # the WebKitGTK stack the GUI build installs.
+  cli:
+    name: domainator CLI (${{ matrix.platform }})
+    needs: [version, setup]
+    if: needs.setup.outputs.cli != ''
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.cli) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          key: cli-${{ matrix.platform }}
+
+      - name: Build CLI
+        run: cargo build --release -p domainator-cli
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: domainator-cli-${{ matrix.platform }}
+          if-no-files-found: error
+          path: ${{ matrix.bin }}
