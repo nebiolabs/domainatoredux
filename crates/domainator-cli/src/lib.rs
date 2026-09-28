@@ -3644,9 +3644,16 @@ fn dispatch(cli: Cli) -> Result<()> {
                 std::fs::write(p, render_text(&report))?;
             }
             if let Some(p) = &cfg.json {
-                std::fs::write(p, serde_json::to_string_pretty(&to_json(&report))?)?;
+                let text = serde_json::to_string_pretty(&to_json(&report))?;
+                // `--json -` is stdout, as upstream; only `--json` has that spelling.
+                if p == "-" {
+                    println!("{text}");
+                } else {
+                    std::fs::write(p, text)?;
+                }
             }
-            println!(
+            // A status line, so stderr: stdout may be carrying the JSON.
+            eprintln!(
                 "matrix report: {} nodes, {} edges",
                 report.n_nodes, report.n_edges
             );
