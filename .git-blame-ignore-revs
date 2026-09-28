@@ -1,0 +1,8 @@
+# Formatting-only commits, skipped by `git blame`. GitHub's blame view reads this
+# file automatically; locally, run once:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# A hash here only stays valid if the commit reaches main unchanged, so merge
+# with a fast-forward or merge commit, not a squash or rebase.
+
+# Apply rustfmt to the workspace
+548e8e316897436acb54a42391c16a83b9222c9f
