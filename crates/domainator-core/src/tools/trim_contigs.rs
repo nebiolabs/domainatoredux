@@ -28,6 +28,11 @@ pub struct TrimContigsOptions {
 
 /// `validate_range` for trim_contigs (`kb_both/kb_left/kb_right` and
 /// `cds_both/cds_left/cds_right`). Returns `(kb_truncation, cds_truncation)`.
+///
+/// Upstream's trim_contigs imports `select_by_cds.validate_range` itself, passing
+/// both/left/right as range/up/down, so this delegates to the same port rather than
+/// keeping a copy. A copy once dropped the non-negativity check: a negative
+/// `--kb_left` then reached the slice as a negative index and panicked.
 pub fn validate_range(
     kb_both: Option<f64>,
     kb_left: Option<f64>,
@@ -36,55 +41,16 @@ pub fn validate_range(
     cds_left: Option<i64>,
     cds_right: Option<i64>,
 ) -> Result<TrimRanges, String> {
-    // (Python names these kb_range/kb_up/kb_down internally but the flags are
-    // kb_both/kb_left/kb_right. There is no non-negativity check in the trim
-    // validate_range.)
-    let mut cds_seen = false;
-    let mut cds_out: Option<(i64, i64)> = None;
-    if cds_left.is_some() || cds_right.is_some() {
-        cds_out = Some((0, 0));
-    }
-    if let Some(l) = cds_left {
-        cds_out = Some((l, cds_out.unwrap().1));
-        cds_seen = true;
-    }
-    if let Some(r) = cds_right {
-        cds_out = Some((cds_out.unwrap().0, r));
-        cds_seen = true;
-    }
-    if let Some(b) = cds_both {
-        if cds_seen {
-            return Err("Cannot specify cds_range with cds_down or cds_up".into());
-        }
-        cds_seen = true;
-        cds_out = Some((b, b));
-    }
-
-    if cds_seen && (kb_both.is_some() || kb_left.is_some() || kb_right.is_some()) {
-        return Err("Cannot specify kb_range and cds_range".into());
-    }
-
-    let mut kb_seen = false;
-    let mut kb_out: Option<(f64, f64)> = None;
-    if kb_left.is_some() || kb_right.is_some() {
-        kb_out = Some((0.0, 0.0));
-    }
-    if let Some(l) = kb_left {
-        kb_out = Some((l, kb_out.unwrap().1));
-        kb_seen = true;
-    }
-    if let Some(r) = kb_right {
-        kb_out = Some((kb_out.unwrap().0, r));
-        kb_seen = true;
-    }
-    if let Some(b) = kb_both {
-        if kb_seen {
-            return Err("Cannot specify kb_range with kb_down or kb_up".into());
-        }
-        kb_out = Some((b, b));
-    }
-
-    Ok((kb_out, cds_out))
+    use crate::tools::neighborhood::{validate_range, Range};
+    Ok(
+        match validate_range(
+            false, kb_both, kb_left, kb_right, cds_both, cds_left, cds_right,
+        )? {
+            Range::Kb(l, r) => (Some((l, r)), None),
+            Range::Cds(l, r) => (None, Some((l, r))),
+            Range::None | Range::Whole => (None, None),
+        },
+    )
 }
 
 /// `strip_domains_from_ends`: advance `left_cds` / retract `right_cds` past end
@@ -325,6 +291,17 @@ mod tests {
         // Conflicts.
         assert!(validate_range(None, None, None, Some(2), Some(1), None).is_err());
         assert!(validate_range(Some(1.0), None, None, Some(2), None, None).is_err());
+        // Negative ranges are rejected, as upstream does; one used to panic in the slice.
+        for bad in [
+            validate_range(Some(-1.0), None, None, None, None, None),
+            validate_range(None, Some(-1.0), Some(1.0), None, None, None),
+            validate_range(None, None, Some(-0.5), None, None, None),
+            validate_range(None, None, None, Some(-1), None, None),
+            validate_range(None, None, None, None, Some(-1), None),
+            validate_range(None, None, None, None, None, Some(-2)),
+        ] {
+            assert!(bad.is_err(), "{bad:?}");
+        }
     }
 
     fn cds(cds_id: &str, start: i64, end: i64) -> SeqFeature {
