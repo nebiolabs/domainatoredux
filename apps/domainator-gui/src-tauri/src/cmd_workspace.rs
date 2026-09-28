@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use domainator_core::app_support::workspace::{
-    accepted_types_hint, classify_file, dot_dir, is_reserved_name, list_files, open_or_init_manifest,
-    scan_folder_tree, FileEntry, FileMeta, FolderNode, Settings, DOT_DIR,
+    accepted_types_hint, classify_file, is_in_dot_dir, is_reserved_name, list_files, move_data_file,
+    open_or_init_manifest, scan_folder_tree, FileEntry, FileMeta, FolderNode, Settings, DOT_DIR,
 };
 use serde::Serialize;
 
@@ -82,8 +82,7 @@ pub async fn import_files(
     tauri::async_runtime::spawn_blocking(move || {
         let root = Path::new(&workspace_root);
         let target = Path::new(&dir);
-        if target.starts_with(dot_dir(root)) || target.components().any(|c| c.as_os_str() == DOT_DIR)
-        {
+        if is_in_dot_dir(root, target) {
             return Err("cannot import into the .domainator directory".to_string());
         }
         if !target.is_dir() {
@@ -197,7 +196,7 @@ pub async fn rename_file(
             return Err(format!("'{clean}' is reserved"));
         }
         let old = Path::new(&path);
-        if old.starts_with(dot_dir(root)) || old.components().any(|c| c.as_os_str() == DOT_DIR) {
+        if is_in_dot_dir(root, old) {
             return Err("refusing to rename inside the .domainator directory".into());
         }
         if !old.is_file() {
@@ -214,15 +213,7 @@ pub async fn rename_file(
             return Err(format!("already exists: {clean}"));
         }
         std::fs::rename(old, &new_path).map_err(|e| format!("renaming: {e}"))?;
-        // Move the metadata sidecar if one exists.
-        let old_sc = FileMeta::sidecar_path(root, old);
-        if old_sc.is_file() {
-            let new_sc = FileMeta::sidecar_path(root, &new_path);
-            if let Some(parent) = new_sc.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let _ = std::fs::rename(&old_sc, &new_sc);
-        }
+        FileMeta::follow(root, old, &new_path);
         Ok(new_path.to_string_lossy().into_owned())
     })
     .await
@@ -236,7 +227,7 @@ pub async fn delete_file(workspace_root: String, path: String) -> Result<(), Str
     tauri::async_runtime::spawn_blocking(move || {
         let root = Path::new(&workspace_root);
         let p = Path::new(&path);
-        if p.starts_with(dot_dir(root)) || p.components().any(|c| c.as_os_str() == DOT_DIR) {
+        if is_in_dot_dir(root, p) {
             return Err("refusing to delete inside the .domainator directory".to_string());
         }
         if !p.is_file() {
@@ -248,4 +239,36 @@ pub async fn delete_file(workspace_root: String, path: String) -> Result<(), Str
     })
     .await
     .map_err(|e| format!("delete failed: {e}"))?
+}
+
+/// What a batch move did: `(old, new)` for each file that moved, `(path, reason)`
+/// for each that did not. One bad file never stops the rest.
+#[derive(Serialize)]
+pub struct MoveReport {
+    pub moved: Vec<(String, String)>,
+    pub failed: Vec<(String, String)>,
+}
+
+/// Move data files into workspace folder `dest_dir`, each with its metadata
+/// sidecar and `.didx` index (`workspace::move_data_file`). Never overwrites.
+#[tauri::command]
+pub async fn move_files(
+    workspace_root: String,
+    paths: Vec<String>,
+    dest_dir: String,
+) -> Result<MoveReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = Path::new(&workspace_root);
+        let dest = Path::new(&dest_dir);
+        let mut report = MoveReport { moved: Vec::new(), failed: Vec::new() };
+        for p in paths {
+            match move_data_file(root, Path::new(&p), dest) {
+                Ok(np) => report.moved.push((p, np.to_string_lossy().into_owned())),
+                Err(e) => report.failed.push((p, e.to_string())),
+            }
+        }
+        report
+    })
+    .await
+    .map_err(|e| format!("move failed: {e}"))
 }

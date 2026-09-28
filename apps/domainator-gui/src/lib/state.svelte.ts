@@ -8,6 +8,7 @@ import {
   listDatabases,
   listFolder,
   loadJobs as apiLoadJobs,
+  moveFiles as apiMoveFiles,
   openWorkspace,
   registerDatabase,
   renameFile as apiRenameFile,
@@ -87,7 +88,7 @@ class WorkspaceStore {
   jobs = $state<JobInfo[]>([]);
   // A request to open the tool dialog (from the Tools menu or a job "clone"),
   // consumed by App. `initial` pre-fills the form (clone).
-  requestedTool = $state<{ id: string; initial?: Record<string, unknown> } | null>(null);
+  requestedTool = $state<{ id: string; initial?: Record<string, unknown>; seedActive?: boolean } | null>(null);
   // A request to open the "new subfolder" input for this folder (from the folder
   // tree's context menu), consumed by App -- which owns that inline form. Same
   // consume-and-clear channel as `requestedTool`.
@@ -102,9 +103,54 @@ class WorkspaceStore {
   }
 
   /// Open the tool dialog for `id`, optionally pre-filled with `initial` params.
-  openTool(id: string, initial?: Record<string, unknown>): void {
-    this.requestedTool = { id, initial };
+  /// `seedActive: false` keeps inputs `initial` leaves empty from seeding with
+  /// the active tab (see `ToolDialog`'s prop of the same name).
+  openTool(id: string, initial?: Record<string, unknown>, opts?: { seedActive?: boolean }): void {
+    this.requestedTool = { id, initial, seedActive: opts?.seedActive };
   }
+
+  // ── file table selection ────────────────────────────────────────────────────
+  // Paths selected in the file table. A plain object for the reason `dirty` is
+  // one. Independent of the active tab: a plain click sets both, Ctrl/Shift+click
+  // only this.
+  selectedPaths = $state<Record<string, true>>({});
+  // Where a Shift+click range starts.
+  selectionAnchor = $state<string | null>(null);
+
+  /// The selected files, in listing order.
+  get selectedFiles(): FileEntry[] {
+    return this.files.filter((f) => this.selectedPaths[f.path]);
+  }
+
+  /// The files a tool should be offered for: the selection, or failing that the
+  /// active tab (the table highlights it, and the tool dialog seeds from it).
+  get toolTargets(): FileEntry[] {
+    const sel = this.selectedFiles;
+    if (sel.length) return sel;
+    const active = this.tabs.find((t) => t.id === this.activeTabId)?.file;
+    return active ? [active] : [];
+  }
+
+  setSelection(paths: string[], anchor: string | null = paths[0] ?? null): void {
+    this.selectedPaths = Object.fromEntries(paths.map((p) => [p, true as const]));
+    this.selectionAnchor = anchor;
+  }
+
+  toggleSelected(path: string): void {
+    if (this.selectedPaths[path]) delete this.selectedPaths[path];
+    else this.selectedPaths[path] = true;
+    this.selectionAnchor = path;
+  }
+
+  clearSelection(): void {
+    this.setSelection([], null);
+  }
+
+  // ── dragging files onto a folder ───────────────────────────────────────────
+  // Set while files from the table are dragged (pointer events, not HTML5 DnD —
+  // see FileTable), so the folder tree can highlight the folder under the pointer.
+  dragging = $state<{ paths: string[]; x: number; y: number } | null>(null);
+  dropTarget = $state<string | null>(null);
 
   async open(root: string): Promise<void> {
     this.error = null;
@@ -130,11 +176,20 @@ class WorkspaceStore {
   }
 
   async selectFolder(path: string): Promise<void> {
+    // Another folder starts with nothing selected; re-listing the same one (a
+    // refresh after a job, delete or move) keeps the selection.
+    if (path !== this.selectedFolder) this.clearSelection();
     this.selectedFolder = path;
     this.loadingFiles = true;
     this.error = null;
     try {
       this.files = await listFolder(this.root ?? path, path);
+      // A refresh keeps what is still listed selected; a file that went away drops out.
+      const present = new Set(this.files.map((f) => f.path));
+      const kept = Object.keys(this.selectedPaths).filter((p) => present.has(p));
+      if (kept.length !== Object.keys(this.selectedPaths).length) {
+        this.setSelection(kept, kept.includes(this.selectionAnchor ?? "") ? this.selectionAnchor : (kept[0] ?? null));
+      }
     } catch (e) {
       this.error = String(e);
       this.files = [];
@@ -366,17 +421,64 @@ class WorkspaceStore {
 
   /// Delete a data file: close its tab, drop cached views, remove from disk, refresh.
   async deleteFile(path: string): Promise<void> {
-    if (!this.root) return;
+    await this.deleteFiles([path]);
+  }
+
+  /// Delete several data files. One that fails does not stop the rest; the
+  /// failures are reported together and the folder is re-listed once.
+  async deleteFiles(paths: string[]): Promise<void> {
+    if (!this.root || !paths.length) return;
     this.error = null;
     this.busy = true;
+    const failed: string[] = [];
     try {
-      await deleteFile(this.root, path);
-      // The file is gone, so "save your changes?" would only recreate it. Drop
-      // the buffer instead of prompting.
-      this.clearDirty(path);
-      this.closeTab(path);
-      invalidatePath(path);
+      for (const path of paths) {
+        try {
+          await deleteFile(this.root, path);
+        } catch (e) {
+          failed.push(String(e));
+          continue;
+        }
+        // The file is gone, so "save your changes?" would only recreate it. Drop
+        // the buffer instead of prompting.
+        this.clearDirty(path);
+        this.closeTab(path);
+        invalidatePath(path);
+      }
       if (this.selectedFolder) await this.selectFolder(this.selectedFolder);
+    } finally {
+      this.busy = false;
+    }
+    if (failed.length) this.error = failed.length === 1 ? failed[0] : `${failed.length} files were not deleted: ${failed.join("; ")}`;
+  }
+
+  /// Move data files into workspace folder `destDir` (sidecars and `.didx`
+  /// indexes go with them). An open tab follows its file, as it does a rename.
+  /// A name already taken in `destDir` is skipped and reported, never overwritten.
+  async moveFiles(paths: string[], destDir: string): Promise<void> {
+    if (!this.root || !paths.length) return;
+    this.error = null;
+    // An unsaved buffer is keyed by the old path, and saving it after the move
+    // would recreate the file there. Leave such a file where it is.
+    const unsaved = paths.filter((p) => this.dirty[p]);
+    const movable = paths.filter((p) => !this.dirty[p]);
+    this.busy = true;
+    try {
+      const report = await apiMoveFiles(this.root, movable, destDir);
+      report.failed.push(...unsaved.map((p): [string, string] => [p, "has unsaved changes; save it first"]));
+      for (const [from, to] of report.moved) {
+        if (from === to) continue;
+        invalidatePath(from);
+        if (this.tabs.some((t) => t.id === from)) {
+          this.closeTab(from);
+          this.openOutput(to);
+        }
+      }
+      if (report.failed.length) {
+        const names = report.failed.map(([p, why]) => `${p.split(/[\\/]/).pop()}: ${why}`);
+        this.error = report.failed.length === 1 ? `Not moved — ${names[0]}` : `${report.failed.length} files were not moved: ${names.join("; ")}`;
+      }
+      await this.refreshFolder();
     } catch (e) {
       this.error = String(e);
     } finally {

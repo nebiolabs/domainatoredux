@@ -29,7 +29,17 @@ a folder name, and protected from deletion.
 - **Left sidebar** — the folder tree, plus the Jobs, Databases, Reference databases and
   External tools panels.
 - **File table** — the recognized data files in the selected folder, with type, size and
-  record count. Click a row to open it.
+  record count. Click a row to open it. Ctrl/Cmd+click adds a row to the selection or
+  takes it out, Shift+click selects a range, Ctrl/Cmd+A selects every file and Escape
+  clears the selection. Neither Ctrl/Cmd+click nor Shift+click opens the file.
+  Right-click works on the whole selection:
+  **Tools** lists only the tools that can take every selected file, **Delete N Files…**
+  asks once for all of them, and **Move to Folder…** moves them into another workspace
+  folder, or into a new one you make in the same dialog. You can also drag the selected
+  rows onto a folder in the tree. A collapsed folder opens if you hold the drag over it.
+  A moved file keeps its description and job history, and its `.didx` index moves with
+  it. Moving never overwrites a file of the same name. Such a file stays where it is and
+  the others still move. A file with unsaved edits also stays where it is; save it first.
 - **Viewer dock** — a tab per open file. Each file type offers one or more **sub-views**,
   shown as a second row of tabs. The ⧉ button pops any tab into its own window, which is
   how you compare two contigs side by side.
@@ -71,8 +81,14 @@ still asks about its unsaved edits first.
 The **Tools** menu runs 28 of the command-line tools, grouped as Annotation & search,
 Selection & extraction, Matrices & networks, Reports, HMM profiles, Color and
 Conversion. The **Tools** button in the middle of the toolbar offers the same groups cut
-down to the tools that take the selected file as an input, and the dialog it opens starts
-with that file filled in.
+down to the tools that can take the selected files as inputs, and the dialog it opens
+starts with those files filled in. Selecting a matrix `.hdf5` and a `.tsv`, for example,
+offers only Build SSN and Build SSN Viewer, with the matrix as the input and the table as
+metadata. A tool is offered only if every selected file fits one of its inputs at the
+same time. An input that takes a single file takes only one of them, so two Stockholm
+alignments do not offer hmmer-build. Fields that take several files (enum-report's
+input, domainate's references) list one dropdown per file, with **＋ Add file** and ✕ to
+change the list.
 
 Each dialog is generated from the same JSON Schema the CLI prints
 (`domainator schema <tool>`), so the options and their types are exactly the CLI's — they

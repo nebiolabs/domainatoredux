@@ -70,6 +70,7 @@ pub fn run() {
             cmd_workspace::rescan_tree,
             cmd_workspace::create_folder,
             cmd_workspace::delete_file,
+            cmd_workspace::move_files,
             cmd_files::load_contig_view,
             cmd_files::load_matrix_report,
             cmd_files::load_hmm_logo,

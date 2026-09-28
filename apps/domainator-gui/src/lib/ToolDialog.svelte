@@ -10,12 +10,19 @@
     tool,
     meta,
     initial = null,
+    seedActive = true,
     onclose,
   }: {
     tool: string;
     meta: ToolMeta | null;
-    // Pre-fill values (from a cloned job's params); overrides the seeded defaults.
+    // Pre-fill values (from a cloned job's params, or the file table's selection);
+    // overrides the seeded defaults.
     initial?: Record<string, any> | null;
+    // Whether input fields `initial` leaves empty may seed from the active tab.
+    // Off when `initial` is the file selection: it already says which files the
+    // user meant, and the open tab would otherwise land in a spare field of the
+    // same type (build-ssn's cluster table, say).
+    seedActive?: boolean;
     onclose: () => void;
   } = $props();
 
@@ -84,12 +91,15 @@
     const dot = base.lastIndexOf(".");
     return dot > 0 ? base.slice(0, dot) : base;
   }
-  function updateOutputNames(changedField: string, selectedPath: string): void {
+  /// An input field's first chosen path: `input_files` holds a list of them.
+  function firstPath(name: string): string {
+    const v = values[name];
+    return String((Array.isArray(v) ? v.find(Boolean) : v) ?? "");
+  }
+  function updateOutputNames(): void {
     const input = meta?.fields.find((field) => field.name === "input" && isInputRole(field.role));
-    const primary = input && (input.name === changedField ? selectedPath : values[input.name]);
-    const fallback = meta?.fields.find((field) => isInputRole(field.role)
-      && (field.name === changedField ? selectedPath : values[field.name]));
-    const path = primary || (fallback?.name === changedField ? selectedPath : fallback && values[fallback.name]);
+    const fallback = meta?.fields.find((field) => isInputRole(field.role) && firstPath(field.name));
+    const path = (input && firstPath(input.name)) || (fallback && firstPath(fallback.name));
     const stem = path ? stemOf(String(path)) : "output";
     for (const field of meta?.fields ?? []) {
       if (field.role === "output_file" && field.output_name && !editedOutputs.has(field.name)) {
@@ -133,15 +143,17 @@
           }
         }
         // Seed input dropdowns per the spec's `select`.
-        const active = ws.tabs.find((t) => t.id === ws.activeTabId)?.file ?? null;
+        const active = seedActive ? (ws.tabs.find((t) => t.id === ws.activeTabId)?.file ?? null) : null;
         let primaryInput = "";
         for (const field of meta?.fields ?? []) {
           if (isInputRole(field.role)) {
             const seeded = initial?.[field.name];
-            const pick = seeded == null
-              ? initialChoice(field, fileGroups(field), active?.path ?? null)
-              : String(Array.isArray(seeded) ? seeded[0] ?? "" : seeded);
-            v[field.name] = pick;
+            const picks: string[] = seeded == null
+              ? [initialChoice(field, fileGroups(field), active?.path ?? null)]
+              : (Array.isArray(seeded) ? seeded : [seeded]).map(String);
+            const pick = picks.find(Boolean) ?? "";
+            // `input_files` is a list of dropdowns, one per file.
+            v[field.name] = field.role === "input_files" ? (picks.length ? picks : [""]) : pick;
             // `input` names the output when it has a value; else the first input that does.
             if (pick && (field.name === "input" || !primaryInput)) primaryInput = pick;
           }
@@ -163,7 +175,8 @@
               v[field.name] = String(raw).split(/[\\/]/).pop() ?? "";
               editedOutputs.add(field.name);
             } else if (field.role === "input_files") {
-              v[field.name] = Array.isArray(raw) ? (raw[0] ?? "") : raw;
+              const list = (Array.isArray(raw) ? raw : [raw]).map(String);
+              v[field.name] = list.length ? list : [""];
             } else if (field.role === "columns") {
               v[field.name] = toRows(raw, columnTypes(field, schemaProp(field.name)));
             } else if (Array.isArray(raw)) {
@@ -190,7 +203,8 @@
       if (field.role === "input_file") {
         if (val) out[field.name] = val;
       } else if (field.role === "input_files") {
-        if (val) out[field.name] = [val]; // config expects a list
+        const list = (Array.isArray(val) ? val : [val]).filter(Boolean);
+        if (list.length) out[field.name] = list;
       } else if (field.role === "output_file") {
         const name = String(val ?? "").trim();
         if (name) out[field.name] = join(folder, name);
@@ -290,8 +304,8 @@
               {#if groups.length === 0}
                 <span class="nofiles">No {field.file_types.join(" / ")} files/databases available</span>
               {:else}
-                <select bind:value={values[field.name]} onchange={(e) => updateOutputNames(field.name, e.currentTarget.value)}>
-                  {#if !field.required}<option value="">(none)</option>{/if}
+                {#snippet options()}
+                  {#if !field.required || field.role === "input_files"}<option value="">(none)</option>{/if}
                   {#each groups as g, gi (g.label)}
                     <!-- The bar between the two groups; `<hr>` in a `<select>` is not reliable in WebKitGTK. -->
                     {#if gi > 0}<option class="sep" disabled value="__separator__">────────────────</option>{/if}
@@ -299,7 +313,43 @@
                       {#each g.items as c (c.value)}<option value={c.value}>{c.label}</option>{/each}
                     </optgroup>
                   {/each}
-                </select>
+                {/snippet}
+                {#if field.role === "input_files" && Array.isArray(values[field.name])}
+                  <div class="multi">
+                    {#each values[field.name] as _, i (i)}
+                      <div class="multi-row">
+                        <select bind:value={values[field.name][i]} onchange={() => queueMicrotask(updateOutputNames)}>
+                          {@render options()}
+                        </select>
+                        {#if values[field.name].length > 1}
+                          <button
+                            type="button"
+                            class="rm"
+                            title="Remove this file"
+                            aria-label="Remove this file"
+                            onclick={(e) => {
+                              e.preventDefault();
+                              values[field.name].splice(i, 1);
+                              updateOutputNames();
+                            }}>✕</button
+                          >
+                        {/if}
+                      </div>
+                    {/each}
+                    <button
+                      type="button"
+                      class="add"
+                      onclick={(e) => {
+                        e.preventDefault();
+                        values[field.name].push("");
+                      }}>＋ Add file</button
+                    >
+                  </div>
+                {:else}
+                  <select bind:value={values[field.name]} onchange={() => queueMicrotask(updateOutputNames)}>
+                    {@render options()}
+                  </select>
+                {/if}
               {/if}
             {:else if field.role === "output_file"}
               <input type="text" bind:value={values[field.name]} oninput={() => editedOutputs.add(field.name)} placeholder="filename" />
@@ -405,6 +455,39 @@
   .flabel {
     font-size: 12.5px;
     text-align: right;
+  }
+  .multi {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .multi-row {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .multi-row select {
+    flex: 1;
+    min-width: 0;
+  }
+  .rm,
+  .add {
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-dim);
+    border-radius: 4px;
+    font-size: 11.5px;
+    padding: 2px 7px;
+    cursor: pointer;
+  }
+  .add {
+    align-self: flex-start;
+  }
+  .rm:hover,
+  .add:hover {
+    color: var(--text);
+    border-color: var(--accent);
   }
   .req {
     color: #e5484d;

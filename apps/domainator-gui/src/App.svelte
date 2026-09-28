@@ -167,6 +167,7 @@
   let tools = $state<ToolMeta[]>([]);
   let activeTool = $state<string | null>(null);
   let toolInitial = $state<Record<string, unknown> | null>(null);
+  let toolSeedActive = $state(true);
   let aboutOpen = $state(false);
   let prefsOpen = $state(false);
   let pendingClose = $state<string[] | null>(null);
@@ -180,6 +181,7 @@
     if (!req) return;
     activeTool = req.id;
     toolInitial = req.initial ?? null;
+    toolSeedActive = req.seedActive ?? true;
     ws.requestedTool = null;
   });
 
@@ -501,6 +503,7 @@
       tool={activeTool}
       meta={tools.find((m) => m.id === activeTool) ?? null}
       initial={toolInitial}
+      seedActive={toolSeedActive}
       onclose={() => {
         activeTool = null;
         toolInitial = null;

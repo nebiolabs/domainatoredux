@@ -12,14 +12,24 @@
   let expanded = $state(untrack(() => depth < 1));
 
   const selected = $derived(ws.selectedFolder === node.path);
+  // Files dragged from the table are over this folder (`FileTable` moves them
+  // here on release). Hovering a collapsed folder opens it, so a drag can reach
+  // a subfolder without letting go.
+  const dropping = $derived(ws.dropTarget === node.path);
+  $effect(() => {
+    if (!dropping || expanded || !node.children.length) return;
+    const t = setTimeout(() => (expanded = true), 600);
+    return () => clearTimeout(t);
+  });
 
   function select() {
     ws.selectFolder(node.path);
     if (node.children.length) expanded = true;
   }
 
-  // Folder rename/delete are absent on purpose: `cmd_workspace`'s rename_file /
-  // delete_file are file-level, and folder equivalents would be new backend
+  // Folder rename/delete/move are absent on purpose: `cmd_workspace`'s
+  // rename_file / delete_file / move_files are file-level (files move here by
+  // dragging them from the table), and folder equivalents would be new backend
   // commands with their own reserved-name and recursion rules.
   function menu(e: MouseEvent) {
     const items: CtxItem[] = [
@@ -57,6 +67,8 @@
 <div
   class="row"
   class:selected
+  class:dropping
+  data-folder-path={node.path}
   style="padding-left: {depth * 14 + 8}px"
   onclick={select}
   role="treeitem"
@@ -104,6 +116,10 @@
   }
   .row.selected {
     background: var(--row-selected);
+  }
+  .row.dropping {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    box-shadow: inset 0 0 0 1px var(--accent);
   }
   .twisty {
     width: 16px;

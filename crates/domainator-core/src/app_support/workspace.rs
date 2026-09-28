@@ -210,6 +210,91 @@ impl FileMeta {
     pub fn remove(root: &Path, data_file: &Path) {
         let _ = fs::remove_file(Self::sidecar_path(root, data_file));
     }
+
+    /// Carry a data file's sidecar (if any) along after the file moved from `old`
+    /// to `new`. Best-effort: losing a description is not worth failing a move for.
+    pub fn follow(root: &Path, old: &Path, new: &Path) {
+        let old_sc = Self::sidecar_path(root, old);
+        if !old_sc.is_file() {
+            return;
+        }
+        let new_sc = Self::sidecar_path(root, new);
+        if let Some(parent) = new_sc.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::rename(&old_sc, &new_sc);
+    }
+}
+
+/// True if `path` is (or is inside) the reserved machinery directory.
+pub fn is_in_dot_dir(root: &Path, path: &Path) -> bool {
+    path.starts_with(dot_dir(root)) || path.components().any(|c| c.as_os_str() == DOT_DIR)
+}
+
+/// Move `src` to `dest`: a rename, or copy + remove when the two are on different
+/// filesystems (a workspace subfolder can be a mount). The copy keeps the source's
+/// mtime, because a `.didx` index judges staleness by size + mtime.
+fn move_path(src: &Path, dest: &Path) -> std::io::Result<()> {
+    if fs::rename(src, dest).is_ok() {
+        return Ok(());
+    }
+    let modified = fs::metadata(src)?.modified()?;
+    fs::copy(src, dest)?;
+    let copied = fs::OpenOptions::new().write(true).open(dest).and_then(|f| f.set_modified(modified));
+    if let Err(e) = copied.and_then(|()| fs::remove_file(src)) {
+        let _ = fs::remove_file(dest);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// Move data file `src` into workspace folder `dest_dir`, keeping its name, and
+/// bring along what belongs to it: the metadata sidecar under `.domainator/meta/`
+/// and a `<name>.didx` index beside it (the file table never lists the index, so
+/// leaving it behind would strand it invisibly). Returns the new path; moving a
+/// file into the folder it is already in returns `src` unchanged.
+///
+/// Never overwrites: a name already taken in `dest_dir` (by the file or by its
+/// index) is an error and nothing moves.
+pub fn move_data_file(root: &Path, src: &Path, dest_dir: &Path) -> std::io::Result<PathBuf> {
+    use std::io::{Error, ErrorKind};
+    let invalid = |msg: String| Error::new(ErrorKind::InvalidInput, msg);
+    if is_in_dot_dir(root, src) || is_in_dot_dir(root, dest_dir) {
+        return Err(invalid(format!("refusing to move into or out of the {DOT_DIR} directory")));
+    }
+    if !dest_dir.is_dir() {
+        return Err(invalid(format!("not a folder: {}", dest_dir.display())));
+    }
+    if !is_within(root, dest_dir) {
+        return Err(invalid(format!("not inside the workspace: {}", dest_dir.display())));
+    }
+    if !src.is_file() {
+        return Err(invalid(format!("not a file: {}", src.display())));
+    }
+    let name = src.file_name().ok_or_else(|| invalid(format!("not a file: {}", src.display())))?;
+    if let (Ok(from), Ok(to)) = (src.parent().unwrap_or(src).canonicalize(), dest_dir.canonicalize()) {
+        if from == to {
+            return Ok(src.to_path_buf());
+        }
+    }
+    let dest = dest_dir.join(name);
+    let src_index = crate::io::didx::index_path_for(src);
+    let dest_index = crate::io::didx::index_path_for(&dest);
+    let has_index = src_index.is_file();
+    if dest.exists() || (has_index && dest_index.exists()) {
+        return Err(Error::new(
+            ErrorKind::AlreadyExists,
+            format!("{} already exists in {}", name.to_string_lossy(), dest_dir.display()),
+        ));
+    }
+    move_path(src, &dest)?;
+    if has_index {
+        // The data file already moved; an index that cannot follow is only a
+        // stale-index rebuild later, not a reason to report the move as failed.
+        let _ = move_path(&src_index, &dest_index);
+    }
+    FileMeta::follow(root, src, &dest);
+    Ok(dest)
 }
 
 /// A recognized data file in a folder (one MIDDLE-panel row).
@@ -411,6 +496,78 @@ mod tests {
             FileMeta::sidecar_path(Path::new("/ws"), Path::new("/ws/sub/foo.gb")),
             PathBuf::from("/ws/.domainator/meta/sub/foo.gb.dom.json")
         );
+    }
+
+    fn move_workspace(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("domainator-move-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::create_dir_all(root.join("b")).unwrap();
+        root
+    }
+
+    /// The index and sidecar are invisible in the file table, so a move that
+    /// leaves them behind looks complete and silently loses both.
+    #[test]
+    fn move_brings_the_sidecar_and_index_along() {
+        let root = move_workspace("along");
+        let src = root.join("a").join("x.gb");
+        fs::write(&src, b"LOCUS").unwrap();
+        fs::write(crate::io::didx::index_path_for(&src), b"idx").unwrap();
+        FileMeta { description: "kept".into(), ..Default::default() }.save(&root, &src).unwrap();
+        let mtime = fs::metadata(&src).unwrap().modified().unwrap();
+
+        let dest = move_data_file(&root, &src, &root.join("b")).unwrap();
+        assert_eq!(dest, root.join("b").join("x.gb"));
+        assert!(!src.exists());
+        assert_eq!(fs::read(&dest).unwrap(), b"LOCUS");
+        assert_eq!(fs::metadata(&dest).unwrap().modified().unwrap(), mtime, "the index's staleness check reads mtime");
+        assert!(crate::io::didx::index_path_for(&dest).is_file());
+        assert!(!crate::io::didx::index_path_for(&src).exists());
+        assert_eq!(FileMeta::load(&root, &dest).description, "kept");
+        assert!(!FileMeta::sidecar_path(&root, &src).exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn move_never_overwrites() {
+        let root = move_workspace("clash");
+        let src = root.join("a").join("x.gb");
+        fs::write(&src, b"new").unwrap();
+        fs::write(root.join("b").join("x.gb"), b"old").unwrap();
+        let err = move_data_file(&root, &src, &root.join("b")).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&src).unwrap(), b"new", "the source stays put");
+        assert_eq!(fs::read(root.join("b").join("x.gb")).unwrap(), b"old");
+
+        // A clash on the index alone refuses too, rather than clobbering it.
+        let other = root.join("a").join("y.gb");
+        fs::write(&other, b"y").unwrap();
+        fs::write(crate::io::didx::index_path_for(&other), b"idx").unwrap();
+        fs::write(root.join("b").join("y.gb.didx"), b"someone else's").unwrap();
+        assert!(move_data_file(&root, &other, &root.join("b")).is_err());
+        assert!(other.is_file());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn move_stays_inside_the_workspace() {
+        let root = move_workspace("bounds");
+        let src = root.join("a").join("x.gb");
+        fs::write(&src, b"x").unwrap();
+        fs::create_dir_all(dot_dir(&root).join("meta")).unwrap();
+        assert!(move_data_file(&root, &src, &dot_dir(&root).join("meta")).is_err());
+        let outside = std::env::temp_dir().join(format!("domainator-move-{}-outside", std::process::id()));
+        fs::create_dir_all(&outside).unwrap();
+        assert!(move_data_file(&root, &src, &outside).is_err());
+        assert!(move_data_file(&root, &root.join("a").join("gone.gb"), &root.join("b")).is_err());
+        assert!(src.is_file());
+
+        // Into its own folder is a no-op, not an "already exists" error.
+        assert_eq!(move_data_file(&root, &src, &root.join("a")).unwrap(), src);
+        assert!(src.is_file());
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&outside);
     }
 
     #[test]

@@ -50,6 +50,16 @@ export const createFolder = (parent: string, name: string): Promise<string> =>
 export const deleteFile = (workspaceRoot: string, path: string): Promise<void> =>
   invoke("delete_file", { workspaceRoot, path });
 
+/// `cmd_workspace::MoveReport`: `[old, new]` per moved file, `[path, reason]` per failure.
+export interface MoveReport {
+  moved: [string, string][];
+  failed: [string, string][];
+}
+
+/// Move data files (with their sidecars and `.didx` indexes) into `destDir`.
+export const moveFiles = (workspaceRoot: string, paths: string[], destDir: string): Promise<MoveReport> =>
+  invoke("move_files", { workspaceRoot, paths, destDir });
+
 export const loadContigView = (path: string): Promise<ContigFileView> =>
   invoke("load_contig_view", { path });
 

@@ -5,11 +5,12 @@
   import { validateFilename } from "./filetypes";
   import NameModal from "./NameModal.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import MoveToFolderDialog from "./MoveToFolderDialog.svelte";
   import { openContextMenu, SEP, type CtxItem } from "./ctxmenu.svelte";
   import { ui } from "./ui.svelte";
   import { openFileWindow, revealInFileManager } from "./api";
   import { copyText } from "./clipboard";
-  import { fieldAccepts, isInputRole, toolAcceptsFile } from "./toolInputs";
+  import { toolChoices } from "./toolMenu";
   import type { FileEntry, ToolMeta } from "./types";
 
   let { tools }: { tools: ToolMeta[] } = $props();
@@ -151,13 +152,52 @@
   function activate(f: FileEntry) {
     ws.openFile(f);
   }
-  // The file pending deletion, shown in ConfirmDialog. Was a raw window.confirm(),
+  // The files pending deletion, shown in ConfirmDialog. Was a raw window.confirm(),
   // which is unstyled (a destructive action looked like a benign one) and not
   // dependable in these webviews -- the same reason NameModal exists.
-  let deleteFor = $state<FileEntry | null>(null);
+  let deleteFor = $state<FileEntry[] | null>(null);
+  // The row's own 🗑 deletes that row, whatever else is selected.
   function remove(e: MouseEvent, f: FileEntry) {
     e.stopPropagation();
-    deleteFor = f;
+    deleteFor = [f];
+  }
+  let moveFor = $state<string[] | null>(null);
+
+  // ── selection ───────────────────────────────────────────────────────────────
+  // A plain click selects the row and opens it (as before multi-select);
+  // Ctrl/Cmd+click toggles and Shift+click selects a range, neither opening.
+  function rowClick(e: MouseEvent, f: FileEntry) {
+    if (suppressClick) return;
+    if (e.shiftKey) {
+      const order = sortedFiles.map((x) => x.path);
+      const from = ws.selectionAnchor && order.includes(ws.selectionAnchor) ? order.indexOf(ws.selectionAnchor) : order.indexOf(f.path);
+      const to = order.indexOf(f.path);
+      ws.setSelection(order.slice(Math.min(from, to), Math.max(from, to) + 1), order[from]);
+    } else if (e.ctrlKey || e.metaKey) {
+      ws.toggleSelected(f.path);
+    } else {
+      ws.setSelection([f.path]);
+      activate(f);
+    }
+  }
+  function rowKey(e: KeyboardEvent, f: FileEntry) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (e.key === "Enter") activate(f);
+    else if (mod && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      ws.setSelection(sortedFiles.map((x) => x.path));
+    } else if (e.key === "Escape") ws.clearSelection();
+    else if (e.key === "Delete") {
+      e.preventDefault();
+      deleteFor = targetsFor(f);
+    }
+  }
+  /// What an action on row `f` applies to: the selection if `f` is in it, else
+  /// `f` alone (which becomes the selection, as in a file manager).
+  function targetsFor(f: FileEntry): FileEntry[] {
+    if (!ws.selectedPaths[f.path]) ws.setSelection([f.path]);
+    const sel = ws.selectedFiles;
+    return sel.length ? sel : [f];
   }
 
   // ── context menus ───────────────────────────────────────────────────────────
@@ -172,48 +212,49 @@
   // `user-select: none` (rows are click-to-open, so selecting text in them fights
   // the click), which left filenames and paths with no way at all to be copied.
   function rowMenu(e: MouseEvent, f: FileEntry) {
-    const fitting = tools.filter((tool) => toolAcceptsFile(tool, f.file_type));
-    const groups = new Map<string, ToolMeta[]>();
-    for (const tool of fitting) {
-      groups.set(tool.category, [...(groups.get(tool.category) ?? []), tool]);
-    }
+    const targets = targetsFor(f);
+    const one = targets.length === 1;
+    const n = targets.length;
+    const groups = toolChoices(tools, targets);
     const items: CtxItem[] = [
-      { label: "Open", action: () => activate(f) },
+      { label: "Open", disabled: !one, action: () => activate(f) },
       {
         label: "Open in New Window",
+        disabled: !one,
         action: () => openFileWindow(f.path, f.name),
       },
       {
         label: "Tools",
-        disabled: fitting.length === 0,
+        disabled: groups.size === 0,
         submenu: [...groups].flatMap(([category, list]) => [
           { label: category, disabled: true },
-          ...list.map((tool) => ({
-            label: tool.label,
-            action: () => {
-              const input = tool.fields.find((field) => isInputRole(field.role) && fieldAccepts(field, f.file_type));
-              ws.openTool(tool.id, input ? { [input.name]: f.path } : undefined);
-            },
-          })),
+          ...list.map((c) => ({ label: c.tool.label, action: c.open })),
         ]),
       },
       SEP,
       {
         label: "Rename…",
+        disabled: !one,
         action: () => {
           renameFor = f;
         },
       },
+      {
+        label: one ? "Move to Folder…" : `Move ${n} Files to Folder…`,
+        action: () => {
+          moveFor = targets.map((t) => t.path);
+        },
+      },
       SEP,
-      { label: "Copy Name", action: () => copy(f.name) },
-      { label: "Copy Full Path", action: () => copy(f.path) },
-      { label: "Show in File Manager", action: () => revealInFileManager(ws.root, f.path) },
+      { label: "Copy Name", disabled: !one, action: () => copy(f.name) },
+      { label: one ? "Copy Full Path" : `Copy ${n} Full Paths`, action: () => copy(targets.map((t) => t.path).join("\n")) },
+      { label: "Show in File Manager", disabled: !one, action: () => revealInFileManager(ws.root, f.path) },
       SEP,
       {
-        label: "Delete…",
+        label: one ? "Delete…" : `Delete ${n} Files…`,
         danger: true,
         action: () => {
-          deleteFor = f;
+          deleteFor = targets;
         },
       },
     ];
@@ -337,6 +378,90 @@
       unlisten?.();
     };
   });
+
+  // ── Dragging rows onto a folder in the tree (a move) ──────────────────────────
+  // Pointer events, not HTML5 drag-and-drop: with Tauri's native file drop on --
+  // which the import above needs -- WebView2 never delivers in-page HTML5 drag
+  // events, so `draggable` rows would work on Linux and macOS and do nothing on
+  // Windows. The folder rows carry `data-folder-path`; `FolderTree` highlights
+  // `ws.dropTarget`.
+  const DRAG_THRESHOLD = 5;
+  let press: { f: FileEntry; x: number; y: number } | null = null;
+  // The click that ends a drag must not also select-and-open the row.
+  let suppressClick = false;
+
+  function rowPointerDown(e: PointerEvent, f: FileEntry) {
+    if (e.button !== 0 || e.shiftKey || e.ctrlKey || e.metaKey) return;
+    if ((e.target as HTMLElement).closest("button")) return; // ✎ / 🗑
+    press = { f, x: e.clientX, y: e.clientY };
+    window.addEventListener("pointermove", dragMove);
+    window.addEventListener("pointerup", dragEnd);
+    window.addEventListener("pointercancel", dragCancel);
+    window.addEventListener("keydown", dragKey, true);
+    window.addEventListener("blur", dragCancel);
+  }
+  function folderUnder(x: number, y: number): string | null {
+    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-folder-path]");
+    const path = el?.dataset.folderPath ?? null;
+    return path && path !== ws.selectedFolder ? path : null; // the files are already there
+  }
+  function dragMove(e: PointerEvent) {
+    if (!press) return;
+    if (!ws.dragging) {
+      if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < DRAG_THRESHOLD) return;
+      const paths = targetsFor(press.f).map((t) => t.path);
+      ws.dragging = { paths, x: e.clientX, y: e.clientY };
+    }
+    ws.dragging.x = e.clientX;
+    ws.dragging.y = e.clientY;
+    ws.dropTarget = folderUnder(e.clientX, e.clientY);
+  }
+  function stopDrag() {
+    window.removeEventListener("pointermove", dragMove);
+    window.removeEventListener("pointerup", dragEnd);
+    window.removeEventListener("pointercancel", dragCancel);
+    window.removeEventListener("keydown", dragKey, true);
+    window.removeEventListener("blur", dragCancel);
+    const dragged = ws.dragging !== null;
+    press = null;
+    ws.dragging = null;
+    ws.dropTarget = null;
+    if (dragged) {
+      // The click (if any) is dispatched right after this pointerup.
+      suppressClick = true;
+      setTimeout(() => (suppressClick = false), 0);
+    }
+  }
+  function dragEnd(e: PointerEvent) {
+    const paths = ws.dragging?.paths;
+    const target = ws.dragging ? folderUnder(e.clientX, e.clientY) : null;
+    stopDrag();
+    if (paths && target) void ws.moveFiles(paths, target);
+  }
+  function dragCancel() {
+    stopDrag();
+  }
+  function dragKey(e: KeyboardEvent) {
+    if (e.key === "Escape" && ws.dragging) {
+      e.preventDefault();
+      e.stopPropagation();
+      stopDrag();
+    }
+  }
+  $effect(() => () => stopDrag());
+
+  const deleteTitle = $derived(
+    !deleteFor ? "" : deleteFor.length === 1 ? `Delete “${deleteFor[0].name}”?` : `Delete ${deleteFor.length} files?`,
+  );
+  const DELETE_LISTED = 8;
+  const deleteBody = $derived.by(() => {
+    const list = deleteFor ?? [];
+    const warn = `This permanently removes ${list.length === 1 ? "the file" : "these files"} from disk. It cannot be undone.`;
+    if (list.length <= 1) return warn;
+    const names = list.slice(0, DELETE_LISTED).map((f) => `• ${f.name}`);
+    if (list.length > DELETE_LISTED) names.push(`…and ${list.length - DELETE_LISTED} more`);
+    return `${names.join("\n")}\n\n${warn}`;
+  });
 </script>
 
 <div
@@ -405,11 +530,14 @@
       <div
         class="row"
         class:active={ws.activeTabId === f.path}
+        class:selected={ws.selectedPaths[f.path]}
         role="row"
         tabindex="0"
+        aria-selected={!!ws.selectedPaths[f.path]}
         style="grid-template-columns: var(--grid);"
-        onclick={() => activate(f)}
-        onkeydown={(e) => e.key === "Enter" && activate(f)}
+        onclick={(e) => rowClick(e, f)}
+        onkeydown={(e) => rowKey(e, f)}
+        onpointerdown={(e) => rowPointerDown(e, f)}
         oncontextmenu={(e) => rowMenu(e, f)}
       >
         {#each visibleColDefs as c (c.key)}
@@ -463,17 +591,26 @@
 {/if}
 {#if deleteFor}
   <ConfirmDialog
-    title="Delete “{deleteFor.name}”?"
-    body="This permanently removes the file from disk. It cannot be undone."
+    title={deleteTitle}
+    body={deleteBody}
     confirmLabel="Delete"
     danger={true}
     onconfirm={async () => {
-      const f = deleteFor;
-      if (f) await ws.deleteFile(f.path);
+      const list = deleteFor;
+      if (list) await ws.deleteFiles(list.map((f) => f.path));
       deleteFor = null;
     }}
     oncancel={() => (deleteFor = null)}
   />
+{/if}
+{#if moveFor}
+  <MoveToFolderDialog paths={moveFor} onclose={() => (moveFor = null)} />
+{/if}
+{#if ws.dragging}
+  <div class="drag-ghost" style="left: {ws.dragging.x + 14}px; top: {ws.dragging.y + 10}px;">
+    {ws.dragging.paths.length === 1 ? ws.dragging.paths[0].split(/[\\/]/).pop() : `${ws.dragging.paths.length} files`}
+    {#if ws.dropTarget}<span class="dg-to">→ {ws.dropTarget.split(/[\\/]/).pop()}</span>{/if}
+  </div>
 {/if}
 {#if renameFor}
   <NameModal
@@ -610,8 +747,28 @@
   .row:hover {
     background: var(--row-hover);
   }
-  .row.active {
+  .row.selected {
     background: var(--row-selected);
+  }
+  /* The open tab, which a Ctrl+click can leave outside the selection. */
+  .row.active {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .drag-ghost {
+    position: fixed;
+    z-index: 200;
+    pointer-events: none;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--accent);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .dg-to {
+    color: var(--text-dim);
+    margin-left: 4px;
   }
   .cell {
     overflow: hidden;
