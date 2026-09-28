@@ -4,7 +4,7 @@
 //! construction). The normalizing modes densify first, matching the Python
 //! implementation which converts to a dense array for the row/column-max math.
 
-use super::{DataMatrix, Storage};
+use super::{csr_row, DataMatrix, Storage};
 
 /// `log10(2)`, the EFI score's per-bit factor.
 pub const LOG10_2: f64 = std::f64::consts::LOG10_2;
@@ -57,8 +57,7 @@ pub fn apply_lower_bound(m: &mut DataMatrix, lb: f64) {
             let mut new_indices: Vec<i32> = Vec::with_capacity(indices.len());
             let mut new_indptr: Vec<i32> = vec![0; nrows + 1];
             for r in 0..nrows {
-                let (s, e) = (indptr[r] as usize, indptr[r + 1] as usize);
-                for k in s..e {
+                for k in csr_row(indptr, r) {
                     if values[k] > lb {
                         new_values.push(values[k]);
                         new_indices.push(indices[k]);

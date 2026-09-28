@@ -115,6 +115,8 @@ pub fn read(path: &str) -> io::Result<DataMatrix> {
             // (docs/file_formats.md), so read both as i64 and narrow here.
             let indices = read_index_array(&reader, SPARSE_CSR_INDICES)?;
             let indptr = read_index_array(&reader, SPARSE_CSR_INDPTR)?;
+            super::validate_csr(nr, nc, values.len(), &indices, &indptr)
+                .map_err(|e| read_err(format!("malformed sparse matrix: {e}")))?;
             Storage::Sparse {
                 values,
                 indices,

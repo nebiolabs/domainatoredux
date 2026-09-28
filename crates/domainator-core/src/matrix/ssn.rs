@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use super::{DataMatrix, Storage};
+use super::{csr_index, csr_row, DataMatrix, Storage};
 
 pub const MERGE_IMPACT_MIN_CHILD: &str = "min_child";
 pub const MERGE_IMPACT_PRODUCT: &str = "product";
@@ -118,9 +118,8 @@ fn for_each_offdiag(m: &DataMatrix, mut f: impl FnMut(usize, usize, f64)) {
             indptr,
         } => {
             for r in 0..m.nrows() {
-                let (s, e) = (indptr[r] as usize, indptr[r + 1] as usize);
-                for k in s..e {
-                    let c = indices[k] as usize;
+                for k in csr_row(indptr, r) {
+                    let c = csr_index(indices[k]);
                     if r != c {
                         f(r, c, values[k]);
                     }

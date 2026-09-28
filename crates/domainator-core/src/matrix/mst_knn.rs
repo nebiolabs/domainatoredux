@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{build_sparse_max, DataMatrix, Storage};
+use super::{build_sparse_max, csr_index, csr_row, DataMatrix, Storage};
 
 /// A canonical undirected pair, always `(min_index, max_index)`.
 type Pair = (usize, usize);
@@ -40,9 +40,8 @@ fn for_each_entry(m: &DataMatrix, mut f: impl FnMut(usize, usize, f64)) {
             indptr,
         } => {
             for r in 0..m.nrows() {
-                let (s, e) = (indptr[r] as usize, indptr[r + 1] as usize);
-                for k in s..e {
-                    f(r, indices[k] as usize, values[k]);
+                for k in csr_row(indptr, r) {
+                    f(r, csr_index(indices[k]), values[k]);
                 }
             }
         }
