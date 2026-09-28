@@ -7,7 +7,7 @@
 
   // `index` set → single-profile mode (a popped-out logo): show just that profile,
   // no browser list.
-  let { path, index }: { path: string; index?: number } = $props();
+  let { path, index, active = true }: { path: string; index?: number; active?: boolean } = $props();
 
   const single = $derived(index !== undefined);
   let profiles = $state<HmmSummary[]>([]);
@@ -42,8 +42,10 @@
 
   // A later request for a different profile (the tab is already open, and the user
   // clicked another row in the Profiles table) — same consume-and-clear channel.
+  // Only the visible view consumes it: this view stays mounted while hidden, and
+  // the Profiles table sets the request just before switching to it.
   $effect(() => {
-    if (single) return;
+    if (single || !active) return;
     const requested = takeRequestedProfile();
     if (requested !== undefined) selectedIndex = requested;
   });

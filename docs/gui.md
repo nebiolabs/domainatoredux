@@ -42,16 +42,18 @@ a folder name, and protected from deletion.
   the others still move. A file with unsaved edits also stays where it is; save it first.
 - **Viewer dock** — a tab per open file. Each file type offers one or more **sub-views**,
   shown as a second row of tabs. The ⧉ button pops any tab into its own window, which is
-  how you compare two contigs side by side.
+  how you compare two contigs side by side. A view keeps its zoom, scroll position,
+  selection and filters while you switch to other tabs and back. Closing the tab resets
+  it, and so does a job overwriting the file.
 - **Status bar** — workspace path, running jobs, unsaved changes.
 
 **Saving.** A file's line endings are preserved — the editors detect CRLF / LF / CR on
 open, show which in the toolbar, and write the same back, so saving a Windows file on
 Linux does not rewrite every line in it. The Table and Text views are editors; everything else writes through as you
 act, so there is nothing to save. **File → Save** (Ctrl/Cmd+S) writes the editor you are
-looking at, and is grayed out when there is nothing unsaved. If you switch tabs, close the
-tab or close the window with unsaved edits, you are asked whether to **Save**, **Discard**
-or **Cancel** first. Files above 64 MB do not open in an editor — they can still be used as
+looking at, and is grayed out when that file has nothing unsaved. Switching tabs keeps
+unsaved edits as they are. If you close the tab or the window with unsaved edits, you are
+asked whether to **Save**, **Discard** or **Cancel** first. Files above 64 MB do not open in an editor — they can still be used as
 tool inputs.
 
 There is a native menu bar (File / Edit / View / Tools / Help) with the usual
@@ -68,7 +70,8 @@ still asks about its unsaved edits first.
 | | **Enum Report** | The [`enum-report`](cli-reference.md#enum-report) table, live: per contig, CDS or domain, sortable, with per-column filters. **Columns** opens the same column builder as the export (every column type, parameters included), and **Taxonomy** picks the database the taxonomy columns use. |
 | | **Summary** | A dashboard of the dataset: counts, a contig-length histogram, top domains / databases / organisms, and a taxonomy icicle plot built from the records' own lineage — no taxdump needed. This one has no CLI equivalent. |
 | `.hdf5` `.hdf` `.h5` | **Matrix Report** | The score histogram and suggested clustering cutoffs. Click a threshold to select it. |
-| `.dsnv` (and legacy `.ssnv`) | **SSN Viewer** | The interactive network: drag the threshold slider to split it into clusters, switch between force-directed, grid, packed and treemap layouts, edit and chart metadata columns, color by gradient, and save sessions. Select nodes and click **Open sequence(s)** to pull those records out of the workspace into a new sequence tab. |
+| `.dsnv` (and legacy `.ssnv`) | **SSN Viewer** | The interactive network: drag the threshold slider to split it into clusters, switch between force-directed, grid, packed and treemap layouts, edit and chart metadata columns, color by gradient, and save sessions. Save session, Save extraction and the view, table,
+chart and legend exports open a Save dialog. Select nodes and click **Open sequence(s)** to pull those records out of the workspace into a new sequence tab. |
 | `.hmm` `.hmmer` | **Profiles** | A filterable table of every profile in the file. Opens instantly even for tens of thousands of profiles, because it never computes a logo up front. Extract a subset to a new `.hmm`. |
 | | **Logo** | A sequence logo for one profile, with an occupancy strip, horizontal virtualization, and **Export SVG**. |
 | `.tsv` `.csv` `.tab` | **Table** | View and edit a delimited table. Every row is editable however long the file is — rendering is virtualized, and past the point where a browser stops growing a scrollbar the scroll position maps onto the row range instead. |

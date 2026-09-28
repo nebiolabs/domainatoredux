@@ -201,8 +201,9 @@ machinery:
   one the unsaved-changes dialog calls on "Save".
 - `ws.markDirty(path)` / `ws.clearDirty(path)` — drives the File menu's enabled state
   and the close guard.
-- `ws.guardDirty(...)` — already wraps every route that unmounts an editor, so tab
-  switches and closes prompt with no extra work.
+- `ws.guardDirty(paths, ...)` — already wraps every route that closes a tab, so closes
+  prompt with no extra work. Tab switches do not unmount the editor (ViewerDock keeps
+  visited views mounted), so they need no prompt.
 
 ## Verification
 

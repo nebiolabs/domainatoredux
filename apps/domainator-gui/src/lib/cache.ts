@@ -1,7 +1,8 @@
 // Session cache for computed viewer payloads (enum report, matrix report, contig
 // view, HMM logo, SSN html), keyed by command + path + params. It's a module
-// singleton, so it survives component remounts — clicking between file tabs and
-// view sub-tabs returns instantly instead of recomputing on the backend.
+// singleton, so it survives component remounts. Views stay mounted across tab
+// switches (ViewerDock's keep-alive), so what this saves now is recomputing a
+// file that was closed and reopened.
 //
 // Promises (not resolved values) are cached, so concurrent requests for the same
 // key dedupe. Failed loads are not cached (so they can be retried).

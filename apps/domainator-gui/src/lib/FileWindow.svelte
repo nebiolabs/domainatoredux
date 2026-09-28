@@ -12,6 +12,13 @@
   let activeId = $state("");
   const currentId = $derived(activeId || views[0]?.id || "");
   const current = $derived(views.find((v) => v.id === currentId) ?? views[0] ?? null);
+
+  // Keep-alive, as in ViewerDock: a sub-view stays mounted once shown, so
+  // switching between them keeps each one's zoom, scroll and selection.
+  let visited = $state<string[]>([]);
+  $effect(() => {
+    if (current && !visited.includes(current.id)) visited.push(current.id);
+  });
 </script>
 
 <div class="fw">
@@ -31,12 +38,16 @@
     </div>
   {/if}
   <div class="body">
-    {#if current}
-      {@const View = current.component}
-      {#key currentId}
-        <View {path} />
-      {/key}
-    {:else}
+    {#each visited as id (id)}
+      {@const v = views.find((x) => x.id === id)}
+      {#if v}
+        {@const View = v.component}
+        <div class="pane" class:hidden={id !== current?.id} inert={id !== current?.id}>
+          <View {path} active={id === current?.id} />
+        </div>
+      {/if}
+    {/each}
+    {#if !current}
       <div class="placeholder">No viewer for this file type.</div>
     {/if}
   </div>
@@ -73,6 +84,16 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    position: relative;
+  }
+  /* visibility, not display: none — see ViewerDock. */
+  .pane {
+    position: absolute;
+    inset: 0;
+  }
+  .pane.hidden {
+    visibility: hidden;
+    pointer-events: none;
   }
   .placeholder {
     padding: 24px;

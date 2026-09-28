@@ -6,7 +6,7 @@
   import NameModal from "../NameModal.svelte";
   import type { ContigFileView, ContigView as Contig, FeatureView } from "../types";
 
-  let { path }: { path: string } = $props();
+  let { path, active = true }: { path: string; active?: boolean } = $props();
 
   // ── data / load ──────────────────────────────────────────────────────────
   let data = $state<ContigFileView | null>(null);
@@ -1575,10 +1575,6 @@
       hasEvalue = d.evalue_range !== null;
       if (d.evalue_range) maxEvalueExp = Math.ceil(Math.log10(Math.max(d.evalue_range[1], 1e-300)));
       fit();
-      if (ws.focusContig[path] !== undefined) {
-        focused = ws.focusContig[path];
-        delete ws.focusContig[path];
-      }
     } catch (e) {
       error = String(e);
     } finally {
@@ -1591,7 +1587,20 @@
     load();
   });
 
-  // Scroll a focused contig into view (SSN node → this contig).
+  // Take a pending "show this contig" request (SSN node → this contig). An
+  // effect rather than part of `load`: the view stays mounted across tab
+  // switches, so a request can arrive long after the load. Only the visible
+  // view consumes it.
+  $effect(() => {
+    if (!active || !data) return;
+    const requested = ws.focusContig[path];
+    if (requested !== undefined) {
+      focused = requested;
+      delete ws.focusContig[path];
+    }
+  });
+
+  // Scroll a focused contig into view.
   $effect(() => {
     if (focused === null || !data || !scrollEl) return;
     const idx = focused;
@@ -1619,6 +1628,9 @@
   // own Copy could never have served it anyway. The visible ⧉ buttons below are
   // the primary affordance; this is the shortcut for them.
   function onKeydown(e: KeyboardEvent) {
+    // Hidden views stay mounted (ViewerDock's keep-alive); only the visible one
+    // owns the shortcut.
+    if (!active) return;
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c" && hasSel) {
       // WebView2 binds Ctrl+Shift+C to the DevTools element picker when dev tools
       // are enabled (debug builds); swallow it so the shortcut behaves the same

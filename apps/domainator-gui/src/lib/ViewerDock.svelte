@@ -56,6 +56,44 @@
   // switch the dock to a sibling tab (HmmReport's "logo" button → the Logo view).
   const currentViewId = $derived(active ? (ws.subActive[active.id] ?? views[0]?.id ?? "") : "");
   const currentView = $derived(views.find((v) => v.id === currentViewId) ?? views[0] ?? null);
+  const activeKey = $derived(active && currentView ? paneKey(active.id, currentView.id) : null);
+
+  // Keep-alive: every view that has been shown stays mounted until its tab
+  // closes, so zoom, scroll, selection and filters survive switching tabs (and
+  // the SSN iframe does not reload and re-run its layout). Views mount lazily,
+  // on first show, so opening many tabs does not load many files.
+  //
+  // `visited` is in first-shown order and is what the panes are rendered from,
+  // never `ws.tabs`: a keyed each moves DOM nodes when its order changes, and
+  // moving an iframe reloads it.
+  type Pane = { key: string; tabId: string; viewId: string };
+  let visited = $state<Pane[]>([]);
+
+  function paneKey(tabId: string, viewId: string): string {
+    return tabId + "\u0000" + viewId;
+  }
+
+  $effect(() => {
+    const key = activeKey;
+    if (key && active && currentView && !visited.some((p) => p.key === key)) {
+      visited.push({ key, tabId: active.id, viewId: currentView.id });
+    }
+  });
+
+  // A closed tab's panes are dropped, which destroys their viewers: reopening
+  // the file starts from a fresh view.
+  $effect(() => {
+    const open = new Set(ws.tabs.map((t) => t.id));
+    if (visited.some((p) => !open.has(p.tabId))) {
+      visited = visited.filter((p) => open.has(p.tabId));
+    }
+  });
+
+  function paneView(p: Pane) {
+    const tab = ws.tabs.find((t) => t.id === p.tabId);
+    const view = tab ? viewsFor(tab.file.file_type).find((v) => v.id === p.viewId) : undefined;
+    return tab && view ? { path: tab.file.path, component: view.component } : null;
+  }
 </script>
 
 <div class="dock">
@@ -95,14 +133,21 @@
   {/if}
 
   <div class="tab-body">
+    {#each visited as p (p.key)}
+      {@const pv = paneView(p)}
+      {#if pv}
+        {@const View = pv.component}
+        <div class="pane" class:hidden={p.key !== activeKey} inert={p.key !== activeKey}>
+          <!-- A file rewritten on disk (a job output, a rename) remounts its view. -->
+          {#key ws.fileRev[pv.path] ?? 0}
+            <View path={pv.path} active={p.key === activeKey} />
+          {/key}
+        </div>
+      {/if}
+    {/each}
     {#if !active}
       <div class="placeholder">Open a file to view it here.</div>
-    {:else if currentView}
-      {@const View = currentView.component}
-      {#key active.id + ":" + currentView.id}
-        <View path={active.file.path} />
-      {/key}
-    {:else}
+    {:else if !currentView}
       <div class="placeholder">
         No viewer yet for <b>{active.file.file_type}</b> files. (Coming in a later phase.)
       </div>
@@ -198,6 +243,18 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    position: relative;
+  }
+  /* Hidden panes use visibility, not display: none, so they keep their size and
+     scroll offsets — a 0×0 box would re-clamp the canvases and the virtualized
+     tables, and drop native scroll positions. */
+  .pane {
+    position: absolute;
+    inset: 0;
+  }
+  .pane.hidden {
+    visibility: hidden;
+    pointer-events: none;
   }
   .placeholder {
     padding: 24px;

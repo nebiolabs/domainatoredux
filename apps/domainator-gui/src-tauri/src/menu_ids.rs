@@ -391,17 +391,19 @@ mod tests {
         );
     }
 
-    /// Every route that unmounts the mounted editor must ask about an unsaved
-    /// buffer first.
+    /// Every route that closes a tab must ask about an unsaved buffer first.
     ///
-    /// `ViewerDock` keys its viewer on the active tab, so changing tabs *destroys*
-    /// the editor component -- and the `$effect` teardown that clears the dirty
-    /// flag goes with it, so even the window-close guard could not see the edits
-    /// that had just been discarded. Switching away from a half-edited TSV lost it
-    /// silently. `Workspace.guardDirty` is the one chokepoint, and this asserts
-    /// nothing writes `this.activeTabId` / `this.tabs` outside it: a new method
-    /// (`closeTabsToTheRight`, say) reintroduces the data loss with no other
+    /// Closing a tab destroys its editor component (`ViewerDock` drops the panes
+    /// of a tab that leaves `ws.tabs`), and the `$effect` teardown that clears the
+    /// dirty flag goes with it, so even the window-close guard could not see the
+    /// edits that had just been discarded. `Workspace.guardDirty` is the one
+    /// chokepoint, and this asserts nothing reassigns `this.tabs` outside it: a new
+    /// method (`closeTabsToTheRight`, say) reintroduces the data loss with no other
     /// symptom, because the buffer is gone before anything can report it.
+    ///
+    /// Only removal needs the guard. Switching tabs (`this.activeTabId =`) keeps
+    /// every visited view mounted, and appending a tab (`[...this.tabs, ...]`)
+    /// destroys nothing.
     #[test]
     fn every_tab_mutation_goes_through_the_unsaved_changes_guard() {
         const STATE_TS: &str = include_str!("../../src/lib/state.svelte.ts");
@@ -435,10 +437,12 @@ mod tests {
         );
 
         let mut unguarded = Vec::new();
-        for needle in ["this.activeTabId =", "this.tabs ="] {
+        for needle in ["this.tabs ="] {
             for (i, _) in STATE_TS.match_indices(needle) {
-                // `===` / `==` are comparisons, not assignments.
-                if STATE_TS[i + needle.len()..].starts_with('=') {
+                let rhs = &STATE_TS[i + needle.len()..];
+                // `===` / `==` are comparisons, not assignments; an append removes
+                // nothing.
+                if rhs.starts_with('=') || rhs.trim_start().starts_with("[...this.tabs,") {
                     continue;
                 }
                 if !guarded.iter().any(|&(lo, hi)| i > lo && i < hi) {
@@ -449,7 +453,7 @@ mod tests {
         }
         assert!(
             unguarded.is_empty(),
-            "these change the open tabs without going through `guardDirty`, so an \
+            "these remove open tabs without going through `guardDirty`, so an \
              unsaved editor buffer is discarded with no prompt: {unguarded:?}"
         );
     }

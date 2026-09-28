@@ -11,11 +11,20 @@ import SvgView from "./SvgView.svelte";
 import TableView from "./TableView.svelte";
 import TextView from "./TextView.svelte";
 
-// One selectable view tab within an opened file. `component` takes a `path` prop.
+// Props every viewer is given. `active` is false while the view is mounted but
+// hidden (another tab or sub-view is showing -- see ViewerDock's keep-alive);
+// a viewer that acts on window-wide input or on a one-shot `ws` request gates
+// on it. Only viewers that need it declare it.
+export interface ViewerProps {
+  path: string;
+  active?: boolean;
+}
+
+// One selectable view tab within an opened file.
 export interface ViewDescriptor {
   id: string;
   label: string;
-  component: Component<{ path: string }>;
+  component: Component<ViewerProps>;
 }
 
 // Maps a file type to its ordered view tabs. Sequence files will grow Enum /

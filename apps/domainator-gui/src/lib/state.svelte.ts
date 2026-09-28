@@ -63,7 +63,7 @@ class WorkspaceStore {
   dirty = $state<Record<string, true>>({});
   // A pending "you have unsaved changes" decision, rendered by App as a
   // Save / Discard / Cancel dialog. Set by `guardDirty` whenever something would
-  // unmount or replace the editor holding an unsaved buffer.
+  // close the tab of an editor holding an unsaved buffer.
   pendingDirty = $state<{ path: string; proceed: () => void } | null>(null);
   error = $state<string | null>(null);
   // Requested contig to scroll to when a viewer opens (keyed by file path);
@@ -76,6 +76,10 @@ class WorkspaceStore {
   // here rather than in ViewerDock so a viewer can switch the dock to a sibling
   // tab — HmmReport → Logo, for instance.
   subActive = $state<Record<string, string>>({});
+  // Bumped when a file is rewritten on disk while it may be open (a job output),
+  // so ViewerDock remounts that file's views. Views otherwise stay mounted across
+  // tab switches and would keep showing the old contents.
+  fileRev = $state<Record<string, number>>({});
   // Set while a multi-file copy is running, so the file table can show progress
   // instead of appearing to do nothing.
   importing = $state(0);
@@ -96,10 +100,8 @@ class WorkspaceStore {
 
   /// Switch the viewer dock to sibling view `viewId` for the file at `path`.
   showSubView(path: string, viewId: string): void {
-    this.guardDirty(() => {
-      this.subActive[path] = viewId;
-      this.activeTabId = path;
-    });
+    this.subActive[path] = viewId;
+    this.activeTabId = path;
   }
 
   /// Open the tool dialog for `id`, optionally pre-filled with `initial` params.
@@ -204,13 +206,11 @@ class WorkspaceStore {
       this.markViewed(file);
       return;
     }
-    this.guardDirty(() => {
-      if (!this.tabs.some((t) => t.id === id)) {
-        this.tabs = [...this.tabs, { id, file }];
-      }
-      this.activeTabId = id;
-      this.markViewed(file);
-    });
+    if (!this.tabs.some((t) => t.id === id)) {
+      this.tabs = [...this.tabs, { id, file }];
+    }
+    this.activeTabId = id;
+    this.markViewed(file);
   }
 
   markViewed(file: FileEntry): void {
@@ -244,7 +244,11 @@ class WorkspaceStore {
   // --- jobs ---
   upsertJob(job: JobInfo): void {
     if (job.status === "completed") {
-      for (const output of job.outputs) invalidatePath(output);
+      for (const output of job.outputs) {
+        invalidatePath(output);
+        // Remounting an editor with an unsaved buffer would silently drop it.
+        if (!this.dirty[output]) this.fileRev[output] = (this.fileRev[output] ?? 0) + 1;
+      }
     }
     const i = this.jobs.findIndex((j) => j.job_id === job.job_id);
     if (i >= 0) {
@@ -315,45 +319,50 @@ class WorkspaceStore {
     return Object.keys(this.dirty);
   }
 
-  // ── the mounted editor ─────────────────────────────────────────────────────
-  // Only one editor is mounted at a time (ViewerDock keys its viewer on the
-  // active tab + view), so this is a single slot rather than a map. Plain fields,
-  // not `$state`: they hold a function identity that is never rendered.
-  private editorPath: string | null = null;
-  private editorSave: (() => Promise<void>) | null = null;
+  // ── mounted editors ────────────────────────────────────────────────────────
+  // ViewerDock keeps every visited view mounted until its tab closes, so several
+  // editors can be mounted at once, each with its own buffer. A plain Map, not
+  // `$state`: it holds function identities that are never rendered.
+  private editors = new Map<string, () => Promise<void>>();
 
-  /// Register the mounted editor's save hook; returns the unregister function,
+  /// Register a mounted editor's save hook; returns the unregister function,
   /// so a viewer can use it directly as an `$effect` teardown.
   registerEditor(path: string, save: () => Promise<void>): () => void {
-    this.editorPath = path;
-    this.editorSave = save;
+    this.editors.set(path, save);
     return () => {
-      if (this.editorPath !== path) return; // a newer editor already took the slot
-      this.editorPath = null;
-      this.editorSave = null;
+      if (this.editors.get(path) === save) this.editors.delete(path);
     };
   }
 
-  /// File → Save: write the mounted editor's buffer. A no-op when the active view
-  /// is not an editor, which is why the menu item is grayed out then.
-  async saveEditor(): Promise<void> {
-    await this.editorSave?.();
+  /// Write the buffer of the editor for `path` (default: the active tab). A
+  /// no-op when that tab is not an editor, which is why File → Save is grayed
+  /// out then.
+  async saveEditor(path: string | null = this.activeTabId): Promise<void> {
+    if (path !== null) await this.editors.get(path)?.();
   }
 
-  /// Run `proceed`, but if the mounted editor has an unsaved buffer, ask first.
+  /// Write every unsaved editor buffer (the window-close "Save and close").
+  async saveAllEditors(): Promise<void> {
+    for (const path of this.dirtyPaths) await this.saveEditor(path);
+  }
+
+  /// Run `proceed`, but first ask about each of `paths` that has an unsaved
+  /// editor buffer — the tabs about to be closed.
   ///
-  /// Every route that unmounts or replaces that editor goes through here —
-  /// switching tabs, opening another file, closing a tab. Without it the buffer
-  /// went with the component: `ViewerDock`'s `{#key}` destroys the viewer on a
-  /// tab switch, and the teardown that clears the dirty flag ran too, so even the
-  /// window-close guard could not see the edits that had just been thrown away.
-  guardDirty(proceed: () => void): void {
-    const p = this.editorPath;
-    if (p === null || !this.dirty[p]) {
+  /// Every route that closes a tab goes through here. Closing destroys the
+  /// editor, and the teardown that clears the dirty flag goes with it, so
+  /// without this even the window-close guard could not see the edits that had
+  /// just been thrown away. Switching tabs no longer needs it: the editor stays
+  /// mounted, buffer and all.
+  guardDirty(paths: string[], proceed: () => void): void {
+    const p = paths.find((path) => this.dirty[path] && this.editors.has(path));
+    if (p === undefined) {
       proceed();
       return;
     }
-    this.pendingDirty = { path: p, proceed };
+    // Once `p` is saved or discarded it is clean, so asking again moves on to
+    // the next unsaved one.
+    this.pendingDirty = { path: p, proceed: () => this.guardDirty(paths, proceed) };
   }
 
   canOpen(path: string): boolean {
@@ -363,8 +372,9 @@ class WorkspaceStore {
   closeTab(id: string): void {
     const idx = this.tabs.findIndex((t) => t.id === id);
     if (idx === -1) return;
-    this.guardDirty(() => {
+    this.guardDirty([id], () => {
       this.rememberClosed(this.tabs[idx]);
+      delete this.subActive[id];
       this.tabs = this.tabs.filter((t) => t.id !== id);
       if (this.activeTabId === id) {
         const next = this.tabs[idx] ?? this.tabs[idx - 1] ?? null;
@@ -375,16 +385,19 @@ class WorkspaceStore {
 
   /// Close every tab but `id`, which becomes active.
   closeOtherTabs(id: string): void {
-    this.guardDirty(() => {
+    const closing = this.tabs.filter((t) => t.id !== id).map((t) => t.id);
+    this.guardDirty(closing, () => {
       for (const t of this.tabs) if (t.id !== id) this.rememberClosed(t);
+      for (const c of closing) delete this.subActive[c];
       this.tabs = this.tabs.filter((t) => t.id === id);
       this.activeTabId = this.tabs.length ? id : null;
     });
   }
 
   closeAllTabs(): void {
-    this.guardDirty(() => {
+    this.guardDirty(this.tabs.map((t) => t.id), () => {
       for (const t of this.tabs) this.rememberClosed(t);
+      this.subActive = {};
       this.tabs = [];
       this.activeTabId = null;
     });
@@ -406,8 +419,7 @@ class WorkspaceStore {
   }
 
   setActive(id: string): void {
-    if (id === this.activeTabId) return;
-    this.guardDirty(() => (this.activeTabId = id));
+    this.activeTabId = id;
   }
 
   async refreshTree(): Promise<void> {

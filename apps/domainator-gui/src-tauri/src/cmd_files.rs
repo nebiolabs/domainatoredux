@@ -666,9 +666,9 @@ pub async fn save_text_file(
 
 /// Pop a native "Save As" dialog and write decoded base64 bytes to the chosen
 /// path. The binary twin of [`save_text_file`], used by viewers that export a
-/// raster image (PNG). The payload arrives base64-encoded because the IPC bridge
-/// is JSON: a `Vec<u8>` would serialize as a decimal array, roughly four bytes of
-/// wire per byte of image. Returns the saved path, or `None` if canceled.
+/// raster image (PNG) or a gzipped SSN bundle (`.dsnv`). The payload arrives
+/// base64-encoded because the IPC bridge is JSON: a `Vec<u8>` would serialize as
+/// a decimal array, roughly four bytes of wire per byte of data. Returns the saved path, or `None` if canceled.
 #[tauri::command]
 pub async fn save_binary_file(
     window: tauri::WebviewWindow,
@@ -680,7 +680,7 @@ pub async fn save_binary_file(
     use base64::Engine as _;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(contents_base64.as_bytes())
-        .map_err(|e| format!("decoding image data: {e}"))?;
+        .map_err(|e| format!("decoding file data: {e}"))?;
     // `async` + `AsyncFileDialog`: a sync command would show the dialog on Tauri's
     // main thread — see the note on `cmd_workspace::pick_directory`.
     let picked = rfd::AsyncFileDialog::new()

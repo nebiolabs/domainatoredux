@@ -4,6 +4,8 @@
     openFileWindow,
     renderSsnHtml,
     resolveRecords,
+    saveBinaryFile,
+    saveTextFile,
     traceNetworkSources,
   } from "../api";
   import { cached } from "../cache";
@@ -21,6 +23,8 @@
   let naming = $state(false);
   let openNote = $state<string | null>(null);
   let trace = $state<SourceTrace | null>(null);
+  let saveNote = $state<{ text: string; err: boolean } | null>(null);
+  let frame = $state<HTMLIFrameElement | null>(null);
 
   // This viewer can be shown inside the main shell (has a ViewerDock for tabs) or
   // in a detached pop-out window (no dock). `ws.openPath` only shows in the shell,
@@ -76,6 +80,42 @@ document.addEventListener("contextmenu", function (e) {
 });
 <\/script>`;
 
+  // Every save/export button in the shell (Save session, Save extraction, Export
+  // view PNG/SVG, Export table, the chart and legend exports) ends in a click on a
+  // detached `<a download href="blob:...">`. In a sandboxed iframe WebKitGTK,
+  // WKWebView and WebView2 all drop that click, and Tauri has no download handler
+  // to catch it, so the buttons did nothing. This script intercepts the click and
+  // hands the Blob to the host, which shows a native Save dialog (`onMessage`).
+  //
+  // The Blob is captured when the URL is created because the shell revokes the URL
+  // right after `click()`, before an async fetch of it could run. Injected here
+  // for the same reason as the suppressor above: the shell is a generated file.
+  const IFRAME_DOWNLOAD_BRIDGE = `<script>
+(function () {
+  var blobs = new Map();
+  var create = URL.createObjectURL.bind(URL);
+  var revoke = URL.revokeObjectURL.bind(URL);
+  URL.createObjectURL = function (obj) {
+    var url = create(obj);
+    if (obj instanceof Blob) blobs.set(url, obj);
+    return url;
+  };
+  URL.revokeObjectURL = function (url) {
+    blobs.delete(url);
+    revoke(url);
+  };
+  var click = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () {
+    var blob = this.hasAttribute("download") ? blobs.get(this.href) : undefined;
+    if (!blob) return click.call(this);
+    window.parent.postMessage(
+      { type: "domainator-ssn-download", filename: this.download || "download", blob: blob },
+      "*",
+    );
+  };
+})();
+<\/script>`;
+
   $effect(() => {
     void path;
     loading = true;
@@ -85,8 +125,9 @@ document.addEventListener("contextmenu", function (e) {
     openNote = null;
     naming = false;
     trace = null;
+    saveNote = null;
     cached(`ssnhtml:${path}`, () => renderSsnHtml(path))
-      .then((h) => (html = h + IFRAME_CONTEXTMENU_SUPPRESSOR))
+      .then((h) => (html = h + IFRAME_CONTEXTMENU_SUPPRESSOR + IFRAME_DOWNLOAD_BRIDGE))
       .catch((e) => (error = String(e)))
       .finally(() => (loading = false));
     // Trace provenance in parallel (cached — it only reads small JSON sidecars).
@@ -95,17 +136,57 @@ document.addEventListener("contextmenu", function (e) {
       .catch(() => (trace = { has_provenance: false, sources: [] }));
   });
 
-  // Listen for node-selection messages from the embedded SSN viewer iframe.
+  // Listen for messages from the embedded SSN viewer iframe: node selection (the
+  // shell's GUI host hook) and downloads (IFRAME_DOWNLOAD_BRIDGE). Only this
+  // viewer's own iframe counts — other SSN tabs stay mounted and post to the same
+  // window.
   $effect(() => {
     const onMessage = (e: MessageEvent) => {
+      if (!frame || e.source !== frame.contentWindow) return;
       if (e.data?.type === "domainator-ssn-selection" && Array.isArray(e.data.labels)) {
         selectedLabels = e.data.labels as string[];
         openNote = null;
+      } else if (e.data?.type === "domainator-ssn-download" && e.data.blob instanceof Blob) {
+        saveDownload(String(e.data.filename), e.data.blob as Blob);
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   });
+
+  const FILTER_NAMES: Record<string, string> = {
+    png: "PNG image",
+    svg: "SVG image",
+    tsv: "TSV table",
+    dsnv: "SSN viewer bundle",
+    json: "JSON",
+  };
+
+  // Base64 in chunks: a spread of a multi-megabyte array into
+  // `String.fromCharCode` overflows the call stack.
+  function toBase64(bytes: Uint8Array): string {
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(bin);
+  }
+
+  // Show a native Save dialog for a file the shell tried to download.
+  async function saveDownload(filename: string, blob: Blob) {
+    const dot = filename.lastIndexOf(".");
+    const ext = dot > 0 ? filename.slice(dot + 1).toLowerCase() : "";
+    const filter = FILTER_NAMES[ext] ?? (ext ? ext.toUpperCase() : "File");
+    const isText = blob.type.startsWith("text/") || blob.type === "image/svg+xml" || ext === "tsv";
+    try {
+      const saved = isText
+        ? await saveTextFile(filename, ext, filter, await blob.text())
+        : await saveBinaryFile(filename, ext, filter, toBase64(new Uint8Array(await blob.arrayBuffer())));
+      saveNote = saved ? { text: `Saved ${saved}`, err: false } : null;
+    } catch (err) {
+      saveNote = { text: `Saving ${filename} failed: ${err}`, err: true };
+    }
+  }
 
   // Resolve every selected node label within the network's traced source files
   // (one cached scan), then write those records to a real workspace file `dir/name`.
@@ -159,8 +240,20 @@ document.addEventListener("contextmenu", function (e) {
         {#if openNote}<span class="note">{openNote}</span>{/if}
       </div>
     {/if}
-    <!-- The bundle is embedded in the shell, which self-loads via DecompressionStream. -->
-    <iframe title="SSN viewer" srcdoc={html} sandbox="allow-scripts allow-same-origin"></iframe>
+    {#if saveNote}
+      <div class="selbar">
+        <span class="note" class:err={saveNote.err}>{saveNote.text}</span>
+        <button onclick={() => (saveNote = null)}>Dismiss</button>
+      </div>
+    {/if}
+    <!-- The bundle is embedded in the shell, which self-loads via DecompressionStream.
+         `allow-modals` lets the shell's own alert/confirm prompts show. -->
+    <iframe
+      bind:this={frame}
+      title="SSN viewer"
+      srcdoc={html}
+      sandbox="allow-scripts allow-same-origin allow-modals"
+    ></iframe>
   {:else}
     <!-- No HTML and no error: don't leave the pane blank with no explanation. -->
     <div class="msg">No network to show for this bundle.</div>
@@ -196,6 +289,9 @@ document.addEventListener("contextmenu", function (e) {
   }
   .selbar .note {
     color: var(--text-dim);
+  }
+  .selbar .note.err {
+    color: #e5484d;
   }
   .selbar .note.warn {
     color: #b7791f;
