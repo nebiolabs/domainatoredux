@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const wasmPath = resolve(
-  __dirname,
+  import.meta.dirname,
   "wasm/target/wasm32-unknown-unknown/release/domainator_genbank_summary_wasm.wasm",
 );
 

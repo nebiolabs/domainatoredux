@@ -2,6 +2,9 @@
   "name": "domainator-genbank-summary-wasm",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "build:wasm": "cargo build --manifest-path wasm/Cargo.toml --target wasm32-unknown-unknown --release",
     "dev": "npm run build:wasm && vite --host 127.0.0.1 --port 1430",
@@ -11,6 +14,6 @@
   },
   "devDependencies": {
     "typescript": "^5.5.0",
-    "vite": "^6.4.3"
+    "vite": "^8.3.1"
   }
 }

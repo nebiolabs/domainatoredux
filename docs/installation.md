@@ -58,7 +58,7 @@ Use `--release` for any real work — the debug build is several times slower.
 
 ## Build the desktop app from source
 
-You additionally need [Node.js](https://nodejs.org/) (CI uses 24) and the
+You additionally need [Node.js](https://nodejs.org/) 20.19+ or 22.12+ (vite 8's floor; CI uses 24) and the
 [Tauri v2 prerequisites](https://tauri.app/start/prerequisites/) for your platform.
 
 ```bash
