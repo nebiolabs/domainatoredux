@@ -77,29 +77,11 @@ pub async fn load_matrix_report(path: String) -> Result<Value, String> {
 /// Bin `scores` (any order) into `bins` equal-width buckets over [min,max].
 /// Returns `[[bin_low, count], ...]`. Empty for fewer than 2 distinct values.
 fn histogram(scores: &[f64], bins: usize) -> Value {
-    if scores.len() < 2 {
-        return json!([]);
-    }
-    let min = scores.iter().cloned().fold(f64::INFINITY, f64::min);
-    let max = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    if !(min.is_finite() && max.is_finite()) || max <= min {
-        return json!([]);
-    }
-    let width = (max - min) / bins as f64;
-    let mut counts = vec![0i64; bins];
-    for &s in scores {
-        let mut idx = ((s - min) / width) as usize;
-        if idx >= bins {
-            idx = bins - 1;
-        }
-        counts[idx] += 1;
-    }
-    let out: Vec<Value> = counts
-        .iter()
-        .enumerate()
-        .map(|(i, &c)| json!([min + i as f64 * width, c]))
+    let out: Vec<Value> = domainator_core::stats::histogram(scores, bins)
+        .into_iter()
+        .map(|(low, c)| json!([low, c]))
         .collect();
-    Value::Array(out)
+    json!(out)
 }
 
 // Phase-2 note: the matrix report assumes a symmetric SSN-style matrix (MaxTree);

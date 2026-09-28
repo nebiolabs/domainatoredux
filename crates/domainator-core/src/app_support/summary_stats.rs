@@ -83,27 +83,10 @@ pub struct SummaryStats {
 }
 
 fn histogram(vals: &[usize], bins: usize) -> Vec<[f64; 2]> {
-    if vals.len() < 2 {
-        return Vec::new();
-    }
-    let min = *vals.iter().min().unwrap() as f64;
-    let max = *vals.iter().max().unwrap() as f64;
-    if max <= min {
-        return Vec::new();
-    }
-    let width = (max - min) / bins as f64;
-    let mut counts = vec![0i64; bins];
-    for &v in vals {
-        let mut idx = ((v as f64 - min) / width) as usize;
-        if idx >= bins {
-            idx = bins - 1;
-        }
-        counts[idx] += 1;
-    }
-    counts
-        .iter()
-        .enumerate()
-        .map(|(i, &c)| [min + i as f64 * width, c as f64])
+    let vals: Vec<f64> = vals.iter().map(|&v| v as f64).collect();
+    crate::stats::histogram(&vals, bins)
+        .into_iter()
+        .map(|(low, c)| [low, c as f64])
         .collect()
 }
 

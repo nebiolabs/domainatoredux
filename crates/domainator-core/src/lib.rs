@@ -11,6 +11,7 @@ pub mod palette;
 pub mod parallel;
 pub mod search;
 pub mod seq;
+pub mod stats;
 pub mod tools;
 pub mod version;
 

@@ -141,11 +141,7 @@ fn ascii_histogram(scores_desc: &[f64], bins: usize, width: usize) -> String {
     let span = (max - min).max(f64::MIN_POSITIVE);
     let mut counts = vec![0usize; bins];
     for &s in scores_desc {
-        let mut b = ((s - min) / span * bins as f64) as usize;
-        if b >= bins {
-            b = bins - 1;
-        }
-        counts[b] += 1;
+        counts[crate::stats::floor_index((s - min) / span * bins as f64, bins)] += 1;
     }
     let peak = counts.iter().copied().max().unwrap_or(1).max(1);
     let mut out = String::from("Edge counts by score:\n");

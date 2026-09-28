@@ -20,6 +20,7 @@
 //! the rest of such a file is an ordinary bundle, so a saved session's `metadata`
 //! simply reflects whatever was edited in the viewer.
 
+use crate::stats::percentile;
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
@@ -382,24 +383,6 @@ pub fn cluster_for_node(hierarchy: &Value, node_index: usize, threshold: f64) ->
             _ => return Some(current),
         }
     }
-}
-
-/// `np.percentile` with linear interpolation — **not** nearest-rank.
-///
-/// `values` must be sorted ascending. Note the navigator's `median` is
-/// `percentile(50)`, which differs from `matrix_report`'s edge-score median on
-/// even-length inputs.
-fn percentile(sorted: &[f64], q: f64) -> f64 {
-    if sorted.is_empty() {
-        return f64::NAN;
-    }
-    let pos = (sorted.len() - 1) as f64 * q / 100.0;
-    let lo = pos.floor() as usize;
-    if lo + 1 >= sorted.len() {
-        return sorted[sorted.len() - 1];
-    }
-    let frac = pos - lo as f64;
-    sorted[lo] + frac * (sorted[lo + 1] - sorted[lo])
 }
 
 /// Summarize the metadata distribution across a set of member node indices.

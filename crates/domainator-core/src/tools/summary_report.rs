@@ -72,15 +72,7 @@ pub struct SummaryReportOptions {
 
 /// `np.percentile(values, 50)` — linear interpolation, not nearest-rank.
 fn median(sorted: &[f64]) -> f64 {
-    if sorted.is_empty() {
-        return f64::NAN;
-    }
-    let pos = (sorted.len() - 1) as f64 / 2.0;
-    let lo = pos.floor() as usize;
-    if lo + 1 >= sorted.len() {
-        return sorted[sorted.len() - 1];
-    }
-    sorted[lo] + (pos - lo as f64) * (sorted[lo + 1] - sorted[lo])
+    crate::stats::percentile(sorted, 50.0)
 }
 
 /// Accumulator for one domain name across the whole input.
