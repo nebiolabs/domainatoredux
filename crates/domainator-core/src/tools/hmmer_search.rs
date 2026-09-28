@@ -98,9 +98,8 @@ pub fn hmmer_search<W: Write>(
     }
 
     let max_bytes = match opts.max_output_gb {
-        Some(gb) if gb < 0.0 => return Err("--max_output_gb must be >= 0.".into()),
-        Some(gb) if gb > 0.0 => Some((gb * 1_000_000_000.0) as u64),
-        _ => None,
+        Some(gb) => crate::tools::output_guardrails::max_output_gb_to_bytes(gb)?,
+        None => None,
     };
     let mut written: u64 = 0;
     let mut buf: Vec<u8> = Vec::new();
@@ -163,7 +162,7 @@ pub fn py_g(x: f64) -> String {
         let e: i32 = e.parse().unwrap_or(0);
         return format!("{m}e{}{:02}", if e < 0 { '-' } else { '+' }, e.abs());
     }
-    let decimals = (5 - exp).max(0) as usize;
+    let decimals = (5 - exp).max(0).unsigned_abs() as usize;
     let text = format!("{x:.decimals$}");
     if text.contains('.') {
         text.trim_end_matches('0').trim_end_matches('.').to_string()

@@ -86,7 +86,8 @@ fn deduplicate_name(name: &str, seen: &mut HashMap<String, usize>) -> String {
 /// Linear slice `[start, end)` keeping (and truncating) all overlapping features,
 /// shifting coordinates by `-start`. Mirrors `utils.slice_record` with
 /// `truncate_features=True` for the simple forward-strand case used by `--strip`.
-fn slice_linear(rec: &SeqRecord, start: i64, end: i64) -> SeqRecord {
+fn slice_linear(rec: &SeqRecord, start_idx: usize, end_idx: usize) -> SeqRecord {
+    let (start, end) = (start_idx as i64, end_idx as i64);
     let mut features = Vec::new();
     for f in &rec.features {
         let mut parts: Vec<(i64, i64, i32, bool, bool)> = Vec::new();
@@ -118,7 +119,7 @@ fn slice_linear(rec: &SeqRecord, start: i64, end: i64) -> SeqRecord {
         });
     }
     SeqRecord {
-        seq: rec.seq[start as usize..end as usize].to_vec(),
+        seq: rec.seq[start_idx..end_idx].to_vec(),
         features,
         ..rec.clone()
     }
@@ -146,7 +147,7 @@ pub fn clean_sequences(
         if opts.strip {
             let (s, e) = strip_bounds(&contig.seq, canonical);
             if s != 0 || e != contig.seq.len() {
-                contig = slice_linear(&contig, s as i64, e as i64);
+                contig = slice_linear(&contig, s, e);
             }
         }
 

@@ -209,9 +209,13 @@ pub fn motif_count_analysis(pattern: String) -> Analysis {
     }
 }
 pub fn net_charge_analysis(ph_str: &str) -> Result<Analysis, String> {
+    // Held as a string (it names the column), so the config-wide finite check never
+    // sees it as a number; upstream's float parser rejects nan/inf, and so does this.
     let ph: f64 = ph_str
         .parse()
-        .map_err(|_| format!("net_charge pH {ph_str:?}"))?;
+        .ok()
+        .filter(|p: &f64| p.is_finite())
+        .ok_or_else(|| format!("net_charge pH {ph_str:?}"))?;
     Ok(Analysis {
         columns: vec![(format!("net_charge_{ph_str}"), ColType::Float)],
         kind: Kind::NetCharge(ph),
@@ -385,7 +389,9 @@ fn single_protein_sequence(rec: &SeqRecord) -> Option<Vec<u8>> {
         let cds = &cdss[0];
         let pep = match cds.feature.get_first("translation") {
             Some(t) if !t.is_empty() => t.to_string(),
-            _ => crate::seq::translate::translate_dna(&extract_cds_seq(rec, &cds.feature)),
+            _ => crate::seq::translate::translate_dna(
+                &crate::seq::translate::extract_location_seq(&cds.feature.location, &rec.seq),
+            ),
         };
         let mut bytes = pep.into_bytes();
         while bytes.last() == Some(&b'*') {
@@ -394,21 +400,6 @@ fn single_protein_sequence(rec: &SeqRecord) -> Option<Vec<u8>> {
         return Some(bytes);
     }
     None
-}
-
-/// Spliced coding nucleotides for a CDS feature.
-fn extract_cds_seq(rec: &SeqRecord, cds: &SeqFeature) -> Vec<u8> {
-    let mut out = Vec::new();
-    for &(s, e, strand, _, _) in &cds.location.parts {
-        let (lo, hi) = if s <= e { (s, e) } else { (e, s) };
-        let sub = &rec.seq[lo as usize..hi as usize];
-        if strand == -1 {
-            out.extend(crate::seq::translate::revcomp(sub));
-        } else {
-            out.extend_from_slice(sub);
-        }
-    }
-    out
 }
 
 /// Build a [`SliceLoc`] from a feature `Location` (preserving part order).

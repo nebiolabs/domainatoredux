@@ -85,14 +85,9 @@ pub fn hmmer_compare<W: Write>(
 
     // Output-size guardrail (uncompressed TSV bytes; default via caller, 0/None disables).
     let max_bytes: Option<u64> = match opts.max_output_gb {
-        Some(gb) if gb < 0.0 => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "--max_output_gb must be >= 0.",
-            ));
-        }
-        Some(gb) if gb > 0.0 => Some((gb * 1_000_000_000.0) as u64),
-        _ => None,
+        Some(gb) => crate::tools::output_guardrails::max_output_gb_to_bytes(gb)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?,
+        None => None,
     };
     let over_limit = |projected: u64, max: u64| -> io::Error {
         io::Error::other(format!(

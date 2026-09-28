@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use crate::seq::location::{CompoundOp, Location};
+use crate::seq::location::{to_index, CompoundOp, Location};
 use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::tools::select_common::{BooleanEvaluator, DomainatorCds};
 
@@ -68,7 +68,7 @@ fn strip_domains_from_ends(
         return Ok((left_cds, right_cds));
     }
     let strip = |i: i64| -> bool {
-        let dn = &cds_list[i as usize].domain_names;
+        let dn = &cds_list[to_index(i)].domain_names;
         dn.intersection(strip_domains).next().is_some()
             || domain_expr.map(|e| e.check_expression(dn)).unwrap_or(false)
             || (no_domain && dn.is_empty())
@@ -164,33 +164,30 @@ fn trim_contig(
             }
         }
 
-        // Guard against out-of-range indexing when cdss is non-empty.
-        if !cdss.is_empty()
-            && left_cds >= 0
-            && right_cds >= 0
-            && (left_cds as usize) < cdss.len()
-            && (right_cds as usize) < cdss.len()
-        {
-            if cdss[left_cds as usize].feature.location.start()
-                > cdss[right_cds as usize].feature.location.end()
-            {
+        // Both ends must name a CDS; an index outside the list (or negative) skips
+        // this adjustment.
+        let at = |i: i64| usize::try_from(i).ok().and_then(|i| cdss.get(i));
+        if let (Some(lc), Some(rc)) = (at(left_cds), at(right_cds)) {
+            let (lc_start, rc_end) = (lc.feature.location.start(), rc.feature.location.end());
+            if lc_start > rc_end {
                 eprintln!(
                     "WARNING: CDSs in contig {} overlap after trimming. Skipping contig.",
                     record.id
                 );
                 return None;
             }
-            if left_cds > 0 && cdss[left_cds as usize].feature.location.start() > left {
-                left = cdss[left_cds as usize].feature.location.start();
+            if left_cds > 0 && lc_start > left {
+                left = lc_start;
             }
-            if right_cds < cdss.len() as i64 - 1
-                && cdss[right_cds as usize].feature.location.end() < right
-            {
-                right = cdss[right_cds as usize].feature.location.end();
+            if right_cds < cdss.len() as i64 - 1 && rc_end < right {
+                right = rc_end;
             }
         }
     }
 
+    // Validated options keep both edges inside the contig already; clamping makes
+    // that local, so the slice below cannot be handed a negative index.
+    let (left, right) = (left.max(0), right.min(rec_len));
     if left >= right {
         return None;
     }
@@ -240,7 +237,7 @@ fn slice_forward(record: &SeqRecord, left: i64, right: i64) -> SeqRecord {
         });
     }
     SeqRecord {
-        seq: record.seq[left as usize..right as usize].to_vec(),
+        seq: record.seq[to_index(left)..to_index(right)].to_vec(),
         features,
         topology: Topology::Linear,
         ..record.clone()
@@ -315,7 +312,7 @@ mod tests {
             id: "c".into(),
             name: "c".into(),
             description: String::new(),
-            seq: vec![b'A'; len as usize],
+            seq: vec![b'A'; usize::try_from(len).unwrap()],
             molecule_type: Some("DNA".into()),
             topology: Topology::Linear,
             annotations: Annotations::default(),

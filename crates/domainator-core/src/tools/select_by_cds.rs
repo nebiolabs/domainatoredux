@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 
+use crate::seq::location::to_index;
 use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::tools::neighborhood::{
     cds_neighborhood, overlap_size, reverse_complement_record, slice_contains, slice_record, Cds,
@@ -220,7 +221,7 @@ pub fn pad_records(regions: &mut [Region]) {
     let right: Vec<i64> = ends.iter().map(|e| max_end - e).collect();
 
     for (i, region) in regions.iter_mut().enumerate() {
-        let left = shift[i] as usize;
+        let left = to_index(shift[i]);
         if left > 0 {
             let mut seq = vec![b'N'; left];
             seq.extend_from_slice(&region.record.seq);
@@ -236,7 +237,7 @@ pub fn pad_records(regions: &mut [Region]) {
             region
                 .record
                 .seq
-                .extend(std::iter::repeat_n(b'N', right[i] as usize));
+                .extend(std::iter::repeat_n(b'N', to_index(right[i])));
         }
     }
 }

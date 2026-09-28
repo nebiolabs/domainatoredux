@@ -156,6 +156,16 @@ fn parse_loc(s: &str, strand: i32) -> Option<Location> {
     })
 }
 
+/// A 0-based coordinate as a slice or list index.
+///
+/// For coordinates the caller has already clamped or proven non-negative. Parsed
+/// locations can be negative (the parser accepts `0..9`), so a negative value here
+/// means a missed check upstream; it is reported as that, rather than becoming an
+/// index near `usize::MAX` that fails somewhere less obvious.
+pub fn to_index(pos: i64) -> usize {
+    usize::try_from(pos).unwrap_or_else(|_| panic!("negative coordinate {pos} used as an index"))
+}
+
 /// Parse a GenBank location string (e.g. `complement(join(1..2,4..5))`) into our
 /// lean model. Falls back to an empty single-point location on parse failure
 /// (the reader never rejects a record over a location it can't read — plan E4).

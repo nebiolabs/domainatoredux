@@ -119,6 +119,7 @@ fn today_genbank() -> String {
 
 /// Days since the Unix epoch → `(year, month, day)`. Howard Hinnant's
 /// `civil_from_days`, which is exact for the whole proleptic Gregorian range.
+#[allow(clippy::cast_sign_loss)] // the algorithm bounds day to 1..=31 and month to 1..=12
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);

@@ -26,15 +26,21 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
 
 # Lint policy lives here, not in CI flags, so a local `cargo clippy` enforces the same
-# rules CI does. Every member opts in with `[lints] workspace = true`. The cast lints
-# (`cast_possible_truncation` and friends) are deliberately absent: ~245 sites in the
-# offset/coordinate math need a case-by-case audit before they can be switched on.
+# rules CI does. Every member opts in with `[lints] workspace = true`.
+#
+# `cast_sign_loss` is on because a negative coordinate cast to `usize` becomes an index
+# near usize::MAX (it once crashed `trim-contigs`). Use `seq::location::to_index` for a
+# coordinate already known non-negative, `stats::floor_index` for a float, and
+# `usize::try_from` otherwise. `cast_possible_wrap` and `cast_possible_truncation` stay
+# off: every target is 64-bit, where those casts (mostly usize <-> i64, u64 -> usize)
+# cannot lose data, and the float ones mirror Python's `int()` on purpose.
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }
 unsafe_op_in_unsafe_fn = "deny"
 unused_qualifications = "warn"
 
 [workspace.lints.clippy]
+cast_sign_loss = "warn"
 undocumented_unsafe_blocks = "warn"
 
 [profile.release]

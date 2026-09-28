@@ -94,8 +94,11 @@ fn resolve_threshold(threshold: Option<&str>, hierarchy: &Value) -> Result<f64, 
             if matches!(t.to_lowercase().as_str(), "inf" | "infinity" | "∞") {
                 return Ok(f64::INFINITY);
             }
+            // NaN parses, but cuts nothing meaningful; infinity is handled above.
             t.parse::<f64>()
-                .map_err(|_| format!("Could not parse --threshold '{s}' as a number."))
+                .ok()
+                .filter(|v| !v.is_nan())
+                .ok_or_else(|| format!("Could not parse --threshold '{s}' as a number."))
         }
     }
 }

@@ -8,7 +8,7 @@
 //! `select_by_cds.pad_circular_cds`, for linear and circular topologies, with
 //! `normalize_direction` (reverse-complement reverse-strand neighborhoods).
 
-use crate::seq::location::{CompoundOp, Location};
+use crate::seq::location::{to_index, CompoundOp, Location};
 use crate::seq::translate::revcomp;
 use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
@@ -244,7 +244,7 @@ pub(crate) fn cds_unique_name(feature: &SeqFeature) -> String {
 
 /// Slice `[lo, hi)` of `contig`, reverse-complemented when `strand == -1`.
 fn extract(contig: &[u8], lo: i64, hi: i64, strand: i32) -> Vec<u8> {
-    let sub = &contig[lo as usize..hi as usize];
+    let sub = &contig[to_index(lo)..to_index(hi)];
     if strand == -1 {
         revcomp(sub)
     } else {
@@ -338,7 +338,10 @@ pub fn validate_range(
     cds_up: Option<i64>,
     cds_down: Option<i64>,
 ) -> Result<Range, String> {
-    let neg_f = |x: Option<f64>| x.is_some_and(|v| v < 0.0);
+    // `!(v >= 0.0)` also catches NaN; an infinite kb range would overflow the
+    // coordinate math. The CLI rejects both earlier (`reject_non_finite`); this keeps
+    // the library safe for other callers.
+    let neg_f = |x: Option<f64>| x.is_some_and(|v| !(v >= 0.0 && v.is_finite()));
     let neg_i = |x: Option<i64>| x.is_some_and(|v| v < 0);
     if neg_f(kb_range) || neg_f(kb_up) || neg_f(kb_down) {
         return Err("kb_range must be >= 0".into());
@@ -478,8 +481,8 @@ pub(crate) fn cds_neighborhood(
                         (focus_idx as i64 + cd).min(n - 1),
                     )
                 };
-                let left_coord = cds_list[left_cds as usize].start();
-                let right_coord = cds_list[right_cds as usize].end();
+                let left_coord = cds_list[to_index(left_cds)].start();
+                let right_coord = cds_list[to_index(right_cds)].end();
                 let left_pad = (focus.start() - left_coord).max(0);
                 let right_pad = (right_coord - focus.end()).max(0);
                 if strand == -1 {
@@ -537,9 +540,9 @@ pub(crate) fn cds_neighborhood(
                 arc_to_forward_parts(ca, cb, l)
             };
             let mut nbhd: Vec<(i64, i64)> = Vec::new();
-            nbhd.extend(arc(&cds_list[li as usize]));
+            nbhd.extend(arc(&cds_list[to_index(li)]));
             nbhd.extend(arc_to_forward_parts(a, b, l));
-            nbhd.extend(arc(&cds_list[ri as usize]));
+            nbhd.extend(arc(&cds_list[to_index(ri)]));
             ordered_circular_envelope(&nbhd, l)
         }
         Range::Whole => (a, b), // replaced below
@@ -1152,6 +1155,10 @@ mod tests {
         // Conflicts / negatives are errors.
         assert!(validate_range(false, None, None, None, Some(2), Some(1), None).is_err());
         assert!(validate_range(false, Some(1.0), None, None, Some(2), None, None).is_err());
+        for bad in [f64::NAN, f64::INFINITY, -1.0] {
+            assert!(validate_range(false, Some(bad), None, None, None, None, None).is_err());
+            assert!(validate_range(false, None, None, Some(bad), None, None, None).is_err());
+        }
         assert!(validate_range(false, None, None, None, Some(-1), None, None).is_err());
     }
 

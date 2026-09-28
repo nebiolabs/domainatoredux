@@ -126,8 +126,11 @@ pub fn translate_dna(seq: &[u8]) -> String {
 pub fn extract_location_seq(loc: &Location, contig: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     for &(start, end, strand, _b, _a) in &loc.parts {
-        let s = start.max(0) as usize;
-        let e = (end.max(0) as usize).min(contig.len());
+        // Clamped to the contig like a Python slice, so a malformed location (the
+        // parser accepts `0..9` and ends past the sequence) yields fewer bases, not a
+        // panic.
+        let s = usize::try_from(start).unwrap_or(0);
+        let e = usize::try_from(end).unwrap_or(0).min(contig.len());
         if s >= e {
             continue;
         }

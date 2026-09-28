@@ -8,7 +8,7 @@
 //! `residues_searched` is the total residues over all targets × strands searched,
 //! and after the per-hit `lnP += log(N/W)` adjustment `evalue = exp(lnP)` directly.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use hmmer_pure_rs::alphabet::{Alphabet, AlphabetType, DSQ_SENTINEL};
 use hmmer_pure_rs::bg::Bg;
@@ -82,10 +82,13 @@ pub fn nhmmer_db(
         let do_watson = true;
         let do_crick = abc.complement.is_some();
 
-        let msv_counter = AtomicU64::new(0);
-        let bias_counter = AtomicU64::new(0);
-        let vit_counter = AtomicU64::new(0);
-        let fwd_counter = AtomicU64::new(0);
+        // Residue counts past each filter stage, as C's `pli->pos_past_*`. Signed
+        // because the Viterbi and Forward stages subtract window overlap, which can
+        // exceed a window's own length. Nothing reads them yet.
+        let msv_counter = AtomicI64::new(0);
+        let bias_counter = AtomicI64::new(0);
+        let vit_counter = AtomicI64::new(0);
+        let fwd_counter = AtomicI64::new(0);
 
         use rayon::prelude::*;
         let all_hits: Vec<Hit> = sequences
@@ -283,10 +286,10 @@ fn search_longtarget(
     max_length: i32,
     do_max: bool,
     is_complement: bool,
-    msv_counter: &AtomicU64,
-    bias_counter: &AtomicU64,
-    vit_counter: &AtomicU64,
-    fwd_counter: &AtomicU64,
+    msv_counter: &AtomicI64,
+    bias_counter: &AtomicI64,
+    vit_counter: &AtomicI64,
+    fwd_counter: &AtomicI64,
 ) -> Vec<Hit> {
     use hmmer_pure_rs::simd::ssv_longtarget;
 
@@ -313,7 +316,7 @@ fn search_longtarget(
     }
 
     let ml = if max_length > 0 {
-        max_length as usize
+        max_length.unsigned_abs() as usize
     } else {
         hmm.m * 4
     };
@@ -357,7 +360,7 @@ fn search_longtarget(
         if msv_pval > f1_thresh {
             continue;
         }
-        msv_counter.fetch_add(win_len as u64, Ordering::Relaxed);
+        msv_counter.fetch_add(win_len as i64, Ordering::Relaxed);
         let mut filtered = win.clone();
         filtered.score = usc;
         msv_filtered.push(filtered);
@@ -381,7 +384,7 @@ fn search_longtarget(
         const B1: usize = 110;
         const B2: usize = 240;
         let max_length_w = if hmm.max_length > 0 {
-            hmm.max_length as usize
+            hmm.max_length.unsigned_abs() as usize
         } else {
             subseq_len
         };
@@ -411,7 +414,7 @@ fn search_longtarget(
                 continue;
             }
         }
-        bias_counter.fetch_add(subseq_len as u64, Ordering::Relaxed);
+        bias_counter.fetch_add(subseq_len as i64, Ordering::Relaxed);
 
         let mut bg_loc = bg.clone();
         bg_loc.set_length(loc_window_len);
@@ -453,7 +456,7 @@ fn search_longtarget(
                     add -= (pe - abs_n) as i64;
                 }
             }
-            vit_counter.fetch_add(add as u64, Ordering::Relaxed);
+            vit_counter.fetch_add(add, Ordering::Relaxed);
             prev_end = Some(abs_n + w.length);
             vit_windows.push(ssv_longtarget::HmmWindow {
                 n: abs_n,
@@ -553,7 +556,7 @@ fn search_longtarget(
         let ran = lpli.run(&mut lgm, &mut lom, &lb, hmm, &win_sq, &mut lth);
         if lpli.n_past_fwd > 0 {
             let add = (win_len as i64) - (fwd_overlap as i64);
-            fwd_counter.fetch_add(add as u64, Ordering::Relaxed);
+            fwd_counter.fetch_add(add, Ordering::Relaxed);
             if win_idx + 1 < windows.len() {
                 let next = &windows[win_idx + 1];
                 let this_end = win.n + win.length;
@@ -620,10 +623,10 @@ fn search_longtarget(
     _max_length: i32,
     _do_max: bool,
     _is_complement: bool,
-    _msv_counter: &AtomicU64,
-    _bias_counter: &AtomicU64,
-    _vit_counter: &AtomicU64,
-    _fwd_counter: &AtomicU64,
+    _msv_counter: &AtomicI64,
+    _bias_counter: &AtomicI64,
+    _vit_counter: &AtomicI64,
+    _fwd_counter: &AtomicI64,
 ) -> Vec<Hit> {
     Vec::new()
 }

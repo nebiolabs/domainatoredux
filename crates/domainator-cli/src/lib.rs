@@ -1430,10 +1430,8 @@ fn parse_mst_knn(value: &str) -> std::result::Result<usize, String> {
     let v: i64 = value
         .parse()
         .map_err(|_| format!("`{value}` is not an integer"))?;
-    if v < 0 {
-        return Err("--mst_knn must be an integer >= 0 (0 reduces to --mst)".to_string());
-    }
-    Ok(v as usize)
+    usize::try_from(v)
+        .map_err(|_| "--mst_knn must be an integer >= 0 (0 reduces to --mst)".to_string())
 }
 
 /// A pure kNN graph with `k = 0` would have no edges at all, so `--knn` starts at 1.
@@ -1441,10 +1439,10 @@ fn parse_knn(value: &str) -> std::result::Result<usize, String> {
     let v: i64 = value
         .parse()
         .map_err(|_| format!("`{value}` is not an integer"))?;
-    if v < 1 {
-        return Err("--knn must be an integer >= 1".to_string());
+    match usize::try_from(v) {
+        Ok(k) if k >= 1 => Ok(k),
+        _ => Err("--knn must be an integer >= 1".to_string()),
     }
-    Ok(v as usize)
 }
 
 fn load(input: &Path) -> Result<Vec<SeqRecord>> {
@@ -1539,13 +1537,9 @@ fn opt_path(path: &Option<PathBuf>) -> Result<Option<String>> {
 /// if the cumulative uncompressed GenBank size of `records` exceeds `max_gb` GB.
 /// `max_gb == 0` disables the check; `max_gb < 0` is an error.
 fn enforce_output_limit_gb(records: &[SeqRecord], max_gb: f64) -> Result<()> {
-    if max_gb < 0.0 {
-        anyhow::bail!("--max_output_gb must be >= 0.");
-    }
-    if max_gb == 0.0 {
+    let Some(max_bytes) = max_output_gb_to_bytes(max_gb)? else {
         return Ok(());
-    }
-    let max_bytes = (max_gb * 1_000_000_000.0) as u64;
+    };
     let mut total: u64 = 0;
     let mut buf: Vec<u8> = Vec::new();
     for rec in records {
@@ -1565,17 +1559,10 @@ fn enforce_output_limit_gb(records: &[SeqRecord], max_gb: f64) -> Result<()> {
     Ok(())
 }
 
-/// Convert a `--max_output_gb` value (GB) to a byte budget, mirroring
-/// `output_guardrails.max_output_gb_to_bytes`: negative is an error, `0` disables
-/// (returns `None`).
+/// `output_guardrails.max_output_gb_to_bytes` (the core port): negative or
+/// non-finite is an error, `0` disables (returns `None`).
 fn max_output_gb_to_bytes(max_gb: f64) -> Result<Option<u64>> {
-    if max_gb < 0.0 {
-        anyhow::bail!("--max_output_gb must be >= 0.");
-    }
-    if max_gb == 0.0 {
-        return Ok(None);
-    }
-    Ok(Some((max_gb * 1_000_000_000.0) as u64))
+    tools::output_guardrails::max_output_gb_to_bytes(max_gb).map_err(anyhow::Error::msg)
 }
 
 /// Fail when `actual_bytes` of an already-serialized output exceeds the byte
@@ -2017,6 +2004,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::DomainateConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2142,6 +2130,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::DomainSearchConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2255,6 +2244,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::DeduplicateConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2356,6 +2346,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::GenbankToFastaConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2392,6 +2383,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::CleanSequencesConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2457,6 +2449,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::SortContigsConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2502,6 +2495,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::SelectByCoordConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2564,6 +2558,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::FilterDomainsConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2629,6 +2624,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::ColorGenbankConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2705,6 +2701,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::ColorTableToLegendConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2785,6 +2782,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::TrimContigsConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2857,6 +2855,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::ExtractDomainsConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -2935,6 +2934,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::ExtractPeptidesConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3015,6 +3015,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::ExtractUnannotatedConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3083,6 +3084,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::SeqDistConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3183,6 +3185,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::CompareContigsConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3265,6 +3268,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::TransformMatrixConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3361,6 +3365,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::BuildSsnConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3501,6 +3506,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::BuildSsnViewerConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3614,6 +3620,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::MatrixReportConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3670,6 +3677,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::SummaryReportConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3747,6 +3755,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::SsnNavigatorConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3781,6 +3790,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => EnumConfig::default(),
             };
             cfg.merge_cli(cli_cfg);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -3931,6 +3941,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::SelectByCdsConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -4054,6 +4065,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::SelectByContigConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -4147,6 +4159,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::HmmerCompareConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -4187,6 +4200,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::HmmerReportConfig::default(),
             };
             cfg.merge_cli(cli_cfg);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -4253,6 +4267,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::HmmerSelectConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -4316,6 +4331,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::HmmerBuildConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -4373,6 +4389,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::HmmerSearchConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
@@ -4449,6 +4466,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => config::FormatDbConfig::default(),
             };
             cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
             if do_print {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());

@@ -30,6 +30,43 @@ pub fn load_config<T: for<'de> Deserialize<'de>>(path: &str) -> Result<T> {
     }
 }
 
+/// Reject a NaN or infinite number anywhere in a resolved config, naming its key.
+///
+/// Upstream's jsonargparse refuses `nan` and `inf` for every float option ("Expected
+/// a <class 'float'>. Got value: nan"). Rust's `f64` parser accepts both, and so does
+/// YAML (`.nan`, `.inf`), so without this a `--kb_range inf` reached the coordinate
+/// math and overflowed. Run once on the merged config, it covers every float flag
+/// and config field of every tool, with nothing per-field to forget.
+pub fn reject_non_finite<T: Serialize>(cfg: &T) -> Result<()> {
+    fn walk(v: &serde_yaml::Value, path: &mut Vec<String>) -> Option<(String, f64)> {
+        match v {
+            serde_yaml::Value::Number(n) => n
+                .as_f64()
+                .filter(|f| !f.is_finite())
+                .map(|f| (path.join("."), f)),
+            serde_yaml::Value::Sequence(items) => items.iter().enumerate().find_map(|(i, x)| {
+                path.push(i.to_string());
+                let hit = walk(x, path);
+                path.pop();
+                hit
+            }),
+            serde_yaml::Value::Mapping(m) => m.iter().find_map(|(k, x)| {
+                path.push(k.as_str().map_or_else(|| format!("{k:?}"), str::to_string));
+                let hit = walk(x, path);
+                path.pop();
+                hit
+            }),
+            serde_yaml::Value::Tagged(t) => walk(&t.value, path),
+            _ => None,
+        }
+    }
+    let value = serde_yaml::to_value(cfg).context("serializing config")?;
+    match walk(&value, &mut Vec::new()) {
+        Some((key, f)) => anyhow::bail!("`{key}` must be a finite number, not {f}"),
+        None => Ok(()),
+    }
+}
+
 /// Serialize resolved params as YAML for `--print_config`.
 pub fn print_config<T: Serialize>(cfg: &T) -> Result<String> {
     serde_yaml::to_string(cfg).context("serializing config")
@@ -2470,6 +2507,62 @@ fn select_by_cds_schema() -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reject_non_finite_names_the_key() {
+        #[derive(Serialize)]
+        struct Inner {
+            ph: f64,
+        }
+        #[derive(Serialize)]
+        struct Cfg {
+            kb_range: Option<f64>,
+            evalues: Vec<f64>,
+            nested: Inner,
+        }
+        let ok = Cfg {
+            kb_range: Some(1.5),
+            evalues: vec![0.0, 1e-300],
+            nested: Inner { ph: 7.0 },
+        };
+        assert!(reject_non_finite(&ok).is_ok());
+        let unset = Cfg {
+            kb_range: None,
+            ..ok
+        };
+        assert!(reject_non_finite(&unset).is_ok());
+        for (cfg, key) in [
+            (
+                Cfg {
+                    kb_range: Some(f64::NAN),
+                    evalues: vec![],
+                    nested: Inner { ph: 7.0 },
+                },
+                "`kb_range`",
+            ),
+            (
+                Cfg {
+                    kb_range: None,
+                    evalues: vec![1.0, f64::INFINITY],
+                    nested: Inner { ph: 7.0 },
+                },
+                "`evalues.1`",
+            ),
+            (
+                Cfg {
+                    kb_range: None,
+                    evalues: vec![],
+                    nested: Inner {
+                        ph: f64::NEG_INFINITY,
+                    },
+                },
+                "`nested.ph`",
+            ),
+        ] {
+            let err = reject_non_finite(&cfg).unwrap_err().to_string();
+            assert!(err.starts_with(key), "{err}");
+        }
+    }
 
     /// Every tool, paired with the config struct `resolve.rs` deserializes into.
     ///

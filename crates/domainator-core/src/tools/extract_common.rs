@@ -443,14 +443,14 @@ fn slice_record_truncating(
     slice: &SliceLoc,
     keep_features: &[SeqFeature],
 ) -> SeqRecord {
-    use crate::seq::location::{CompoundOp, Location};
+    use crate::seq::location::{to_index, CompoundOp, Location};
     // Build sequence + per-part shifts.
     let mut seq = Vec::new();
     let mut shifts = Vec::with_capacity(slice.parts.len());
     let mut acc = 0i64;
     for p in &slice.parts {
         shifts.push(acc);
-        let sub = &rec.seq[p.start as usize..p.end as usize];
+        let sub = &rec.seq[to_index(p.start)..to_index(p.end)];
         if p.strand == -1 {
             seq.extend(crate::seq::translate::revcomp(sub));
         } else {
