@@ -12,11 +12,33 @@ cargo test                       # the unit suite; no conda or clone needed
 ./target/debug/domainator <tool> [opts]
 ```
 
-**The project holds itself to zero warnings, from both `rustc` and clippy:**
+**The project holds itself to zero warnings, from `rustc`, clippy and rustdoc, with
+rustfmt-clean formatting:**
 
 ```bash
+cargo fmt --all --check                                      # must be clean
 cargo build --workspace 2>&1 | grep -c warning:              # must be 0
 cargo clippy --workspace --all-targets -- -D warnings        # must be clean
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace   # must be clean
+```
+
+Lint levels live in the root `Cargo.toml`'s `[workspace.lints]` (every member opts in
+with `[lints] workspace = true`), so these commands enforce the same rules CI does. The
+policy adds `unsafe_op_in_unsafe_fn`, `unused_qualifications`, `rust_2018_idioms` and
+clippy's `undocumented_unsafe_blocks` (every `unsafe` block carries a `// SAFETY:`
+comment). The cast lints (`cast_possible_truncation` and friends) are not on yet: they
+flag ~245 sites in the offset and coordinate math, each needing a decision.
+
+Three whole-repo checks need their tools installed (`cargo install cargo-deny
+typos-cli`), plus the frontend type checks:
+
+```bash
+cargo deny check      # deny.toml: license allowlist, RustSec advisories, git sources
+typos                 # _typos.toml: spelling, including the American-English rule
+mdbook build          # the docs book; a SUMMARY.md entry with no file fails
+(cd apps/domainator-gui && npm run check)                  # svelte-check
+(cd apps/genbank-summary && npx tsc --noEmit)
+(cd wasm_apps/genbank-summary && npx tsc --noEmit)
 ```
 
 `--all-targets` matters: `cargo build` does not compile `#[cfg(test)]` code, so a broken
@@ -121,11 +143,20 @@ conda env at `/home/sean/miniforge3/envs/domainator/bin/python` on the author's 
 
 ## CI
 
-`.github/workflows/check.yml` runs build (`-D warnings`), clippy (`-D warnings`) and tests
-on the pure-Rust crates, plus a second job that clones upstream at the recorded pin to run
-the viewer-shell drift guard and the SSN core probe comparison. It does **not** build the
-Tauri crates — webkit2gtk costs more to install than that gate is worth, so the GUI's
-guard tests run locally and via `sync_upstream.sh`.
+`.github/workflows/check.yml` runs six jobs on every push to `main` and every PR:
+
+- **`rust`**: rustfmt, then build, clippy and rustdoc (all `-D warnings`) and tests for
+  the pure-Rust crates.
+- **`gui`**: installs WebKitGTK, builds both frontends (`tauri::generate_context!` needs
+  `dist/` at compile time), then runs workspace-wide clippy and rustdoc and the two apps'
+  tests. This is the only CI run of the GUI's registry, tool-spec and reference-database
+  guards.
+- **`frontend`**: `svelte-check --fail-on-warnings` for the GUI, `tsc --noEmit` for both
+  genbank-summary frontends, and `npm audit` on shipped (non-dev) dependencies.
+- **`policy`**: `cargo deny check`, `typos` (pinned to an exact release) and `mdbook build`.
+- **`msrv`**: `cargo check` of the pure-Rust crates at the `rust-version` in `Cargo.toml`.
+- **`upstream-drift`**: clones upstream at the recorded pin to run the viewer-shell drift
+  guard and the SSN core probe comparison.
 
 `.github/workflows/build-gui-apps.yml` packages the desktop apps (macOS `.dmg`, Windows
 NSIS, Linux `.deb`/AppImage) and the CLI binaries. It runs on `v*` release tags or manual

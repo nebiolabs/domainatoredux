@@ -1,9 +1,13 @@
 name: Check
 
 # The packaging workflow (build-gui-apps.yml) only runs on `v*` release tags, so nothing
-# was verifying the library on an ordinary push. This job is the fast gate: it builds,
-# lints and tests the pure-Rust crates and enforces the zero-warning rule for both
-# rustc and clippy.
+# was verifying the library on an ordinary push. `rust` is the fast gate for the
+# pure-Rust crates (zero warnings from rustc, clippy and rustdoc, plus rustfmt); `gui`
+# does the same for the two Tauri apps, whose system dependencies make it the slow one;
+# `frontend` type-checks the three web frontends; `policy` holds the whole-repo checks
+# (dependency licenses and advisories, American spelling, the mdbook); `msrv` keeps
+# `rust-version` honest. Lint levels live in Cargo.toml's `[workspace.lints]`, so a
+# local `cargo clippy` enforces the same rules.
 on:
   push:
     branches: [main]
@@ -23,15 +27,19 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
 
-      # The Tauri app crates need webkit2gtk and friends, which cost more to install
-      # than this gate is worth. domainator-core is where the logic and all 172 tests
-      # live, and it plus the CLI and config crates are pure Rust.
+      # Whole workspace: rustfmt needs no system libraries, so the Tauri crates are
+      # covered here too. `vendor/hdf5-pure` is not a member and is left alone.
+      - name: Format
+        run: cargo fmt --all --check
+
+      # The Tauri app crates need webkit2gtk and friends; they build in the `gui` job.
+      # These three are pure Rust.
       - name: Build (warnings are errors)
         env:
           RUSTFLAGS: "-D warnings"
@@ -45,6 +53,142 @@ jobs:
       # slipped through once before.
       - name: Clippy (warnings are errors)
         run: cargo clippy -p domainator-core -p domainator-config -p domainator-cli --all-targets -- -D warnings
+
+      # A doc comment naming a function that was since renamed still compiles; only
+      # rustdoc notices the link no longer resolves.
+      - name: Rustdoc (warnings are errors)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps -p domainator-core -p domainator-config -p domainator-cli
+
+  # The two Tauri apps. This is where the GUI's own guards run -- the tool registry vs
+  # CLI vs schema checks, the tool-spec tests, the reference-database storage tests --
+  # none of which have an upstream to be checked against.
+  gui:
+    name: gui build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: gui
+
+      # Same list as build-gui-apps.yml, minus the AppImage-only patchelf.
+      - name: Install WebKitGTK
+        run: |
+          sudo apt update
+          sudo apt install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev librsvg2-dev
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      # `tauri::generate_context!` embeds `frontendDist` at compile time, and `dist/`
+      # is gitignored, so both frontends must be built before cargo sees the crates.
+      - name: Build the frontends
+        run: |
+          for app in apps/domainator-gui apps/genbank-summary; do
+            (cd "$app" && npm ci && npm run build)
+          done
+
+      - name: Clippy, whole workspace (warnings are errors)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rustdoc, whole workspace (warnings are errors)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --workspace
+
+      - name: Test the apps
+        run: cargo test -p domainator-gui -p domainator-genbank-summary
+
+  # Type checks only; no Rust toolchain needed. genbank-summary has no svelte-check,
+  # but its `build` script runs `tsc`, which is the same gate.
+  frontend:
+    name: frontend type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: svelte-check (domainator-gui)
+        working-directory: apps/domainator-gui
+        run: |
+          npm ci
+          npx svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+
+      - name: tsc (genbank-summary, desktop and wasm)
+        run: |
+          for app in apps/genbank-summary wasm_apps/genbank-summary; do
+            (cd "$app" && npm ci && npx tsc --noEmit)
+          done
+
+      # Shipped dependencies only: dev-only advisories (the vite/esbuild dev server)
+      # never reach a user and often need a major bump to clear.
+      - name: npm audit (runtime dependencies)
+        run: |
+          for app in apps/domainator-gui apps/genbank-summary wasm_apps/genbank-summary; do
+            (cd "$app" && npm audit --omit=dev --audit-level=high)
+          done
+
+  # Repository-wide checks that need no build.
+  policy:
+    name: licenses, advisories, spelling, book
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # deny.toml: the license allowlist (no GPL-family crate may slip in as a
+      # dependency), RustSec advisories, and the allowed git sources.
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+      # _typos.toml: typos plus the American-English rule. Pinned to an exact
+      # release, as upstream advises: each release adds dictionary entries, which
+      # would otherwise fail CI on an unchanged tree.
+      - uses: crate-ci/typos@v1.50.3
+
+      # SUMMARY.md sets `create-missing = false`, so a listed page with no file is a
+      # build error -- but only if something builds the book.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook@0.5.4
+      - name: mdbook build
+        run: mdbook build
+
+  # `rust-version` in Cargo.toml is a promise to anyone building from source. The
+  # Tauri crates are excluded: they are built by release CI on stable, never from
+  # source by users.
+  msrv:
+    name: msrv
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read rust-version from Cargo.toml
+        id: msrv
+        run: echo "version=$(grep -oP '^rust-version *= *"\K[^"]+' Cargo.toml)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: msrv
+
+      - name: Check at the MSRV
+        run: cargo check -p domainator-core -p domainator-config -p domainator-cli --all-targets
 
   upstream-drift:
     name: upstream drift guards

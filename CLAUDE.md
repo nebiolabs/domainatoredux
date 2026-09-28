@@ -15,10 +15,19 @@ cargo build                      # debug build of the workspace
 cargo build --release            # optimized (lto); use for any timing/benchmarks
 cargo build --workspace 2>&1 | grep -c warning:   # keep this at 0
 cargo clippy --workspace --all-targets -- -D warnings   # also keep this clean
+cargo fmt --all                                         # CI runs --check
 ./target/debug/domainator <tool> [opts]           # run a tool
 ```
 
-**Zero warnings means both**: `rustc` *and* `cargo clippy --all-targets -- -D warnings`.
+**Zero warnings means all of them**: `rustc`, `cargo clippy --all-targets -- -D warnings`,
+and `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace` (a doc link to a renamed
+item compiles fine; only rustdoc notices), plus `cargo fmt --all --check`. Lint levels
+live in `[workspace.lints]` in the root `Cargo.toml`, which has every member opted in; every `unsafe` block
+needs a `// SAFETY:` comment (`undocumented_unsafe_blocks`). CI also runs `cargo deny
+check` (`deny.toml`: license allowlist — no GPL-family crate — plus advisories), `typos`
+(`_typos.toml`, `locale = "en-us"`, which enforces the spelling rule below),
+`svelte-check`/`tsc` on the frontends, `mdbook build` and an MSRV check; see
+`docs/development.md`, "CI".
 Use `--all-targets` — `cargo build` does not compile `#[cfg(test)]` code, so a broken
 test-only initializer is invisible to the build alone. Where a lint is wrong for this
 codebase, silence it with a narrow `#[allow(...)]` **plus a one-line reason** (the

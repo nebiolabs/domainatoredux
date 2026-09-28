@@ -1,0 +1,47 @@
+# `typos` (crate-ci/typos) spell check, run in CI's `policy` job. The locale is what
+# enforces the repo's American-English rule (CLAUDE.md, "Spelling"): a British
+# spelling is reported as a typo. Local run: `cargo install typos-cli && typos`.
+
+[files]
+# Not ours to edit (see CLAUDE.md): the generated viewer shell, the synced upstream
+# fixtures, the vendored hdf5-pure, and the upstream clone. Plus build output.
+extend-exclude = [
+    "crates/domainator-core/assets/ssn_viewer_shell.html",
+    "test/data/",
+    "vendor/",
+    "external/",
+    "scratch/",
+    "**/dist/",
+    "**/node_modules/",
+    "*.zip",
+]
+
+[default]
+locale = "en-us"
+extend-ignore-re = [
+    # Upstream's report heading, misspelling included; summary-report's text output
+    # is compared against Python's, so the port keeps it.
+    "Domain Co-occurence",
+    # Test vector for base64 (RFC 4648 section 10).
+    'b"fo"',
+    # Non-ASCII test input, `caf\u{e9}`.
+    'caf\\u\{e9\}',
+]
+
+[default.extend-words]
+# The tool, `domainate` / `Domainate`.
+domainate = "domainate"
+# HMMER: the ALPH header field, log-odds (LOD) scores, and C's
+# `p7_tophits_ComputeNhmmerEvalues`.
+alph = "alph"
+lod = "lod"
+evalues = "evalues"
+# The BLOSUM substitution matrices.
+blosum = "blosum"
+# Threonine, as in the E. coli gene `thrA`; also a local in seq_compare.rs.
+thr = "thr"
+# Plural of "amino acid" in identifiers (`CHARGED_AAS`).
+aas = "aas"
+# Standard I/O usage ("cannot be seeked"), and "mis-parses".
+seeked = "seeked"
+mis = "mis"
