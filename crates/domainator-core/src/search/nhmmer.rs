@@ -302,6 +302,9 @@ fn search_longtarget(
     om_ssv.reconfig_msv_length(max_length);
     let om = &om_ssv;
 
+    // SAFETY: the callee's only contract is SSE2 (`#[target_feature(enable = "sse2")]`);
+    // this function is x86_64-only and returned above unless `is_x86_feature_detected!`
+    // confirmed it.
     let mut windows = unsafe {
         ssv_longtarget::p7_ssv_filter_longtarget(&sq.dsq, sq.n, om, bg, 0.02, max_length)
     };
@@ -343,6 +346,7 @@ fn search_longtarget(
         let mut bg_win = bg.clone();
         bg_win.set_length(win_len);
         let nullsc = bg_win.null_one(win_len);
+        // SAFETY: SSE2 is confirmed at the top of this function, as above.
         let usc = match unsafe {
             hmmer_pure_rs::simd::msv_filter::p7_msv_filter(&sub_dsq, win_len, &msv_om)
         } {
@@ -422,6 +426,7 @@ fn search_longtarget(
 
         let mut vit_om = om.clone();
         vit_om.reconfig_length(loc_window_len as i32);
+        // SAFETY: SSE2 is confirmed at the top of this function, as above.
         let mut sub_windows = unsafe {
             hmmer_pure_rs::simd::vit_filter::p7_viterbi_filter_longtarget(
                 &vit_sub_dsq,

@@ -294,7 +294,7 @@ pub const VIEWER_APP_NAME: &str = "Domainator Similarity Network Viewer";
 /// The page's `<h1>`: the app name, plus the network name when there is one.
 ///
 /// Mirrors `ssn_viewer_html.viewer_heading`. Titles that name no particular network
-/// collapse to the bare app name rather than rendering "<app name>: <app name>"; the
+/// collapse to the bare app name rather than rendering "`<app name>: <app name>`"; the
 /// pre-0.11 app name is included so bundles written before the rename behave the same.
 /// Upstream applies this at render time, which a frozen template token cannot do — hence
 /// the `heading-token` local patch in `scripts/regen_ssn_viewer_shell.py`.

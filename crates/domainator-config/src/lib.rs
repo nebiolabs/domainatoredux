@@ -131,7 +131,7 @@ impl ColumnSpec {
         })
     }
 
-    /// Reverse of [`Self::static_name`]: the no-argument column for a flag name.
+    /// Reverse of `static_name`: the no-argument column for a flag name.
     pub fn from_static_flag(name: &str) -> Option<ColumnSpec> {
         use ColumnSpec::*;
         Some(match name {
@@ -2728,10 +2728,7 @@ mod tests {
     /// the `oneOf` entries, and the enum is what deserializes the result, so a
     /// variant the schema lacks can never be chosen, and an entry the enum lacks
     /// builds a column the run rejects.
-    fn check_columns_schema<T: serde::Serialize + serde::de::DeserializeOwned>(
-        tool: &str,
-        all: &[T],
-    ) {
+    fn check_columns_schema<T: Serialize + serde::de::DeserializeOwned>(tool: &str, all: &[T]) {
         let schema: serde_json::Value = serde_json::from_str(&schema(tool).unwrap()).unwrap();
         let variants = schema["properties"]["columns"]["items"]["oneOf"]
             .as_array()

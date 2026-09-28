@@ -27,7 +27,7 @@ pub struct LogoPosition {
     pub index: usize,
     /// Stack height in bits (`Σ letter heights`).
     pub total_ic: f64,
-    /// Match-state occupancy in [0,1].
+    /// Match-state occupancy in `[0, 1]`.
     pub occupancy: f64,
     /// P(match→insert) at this node — the insert bar.
     pub insert_prob: f64,

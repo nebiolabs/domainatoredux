@@ -1658,11 +1658,11 @@ fn write_fasta_bp_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result
 /// Load an `NCBITaxonomy` from `--ncbi_taxonomy_path` (only when a taxonomy
 /// filter/column is in use).
 fn load_taxonomy(path: &str) -> Result<NCBITaxonomy> {
-    NCBITaxonomy::load(std::path::Path::new(path)).context("loading NCBI taxonomy")
+    NCBITaxonomy::load(Path::new(path)).context("loading NCBI taxonomy")
 }
 
 /// Load a sequence file, treating FASTA as `fasta_type` (protein/nucleotide).
-fn load_typed(input: &std::path::Path, fasta_type: &str) -> Result<Vec<SeqRecord>> {
+fn load_typed(input: &Path, fasta_type: &str) -> Result<Vec<SeqRecord>> {
     let path = input.to_str().context("non-UTF8 path")?;
     match detect_filetype(input) {
         Some(FileType::Genbank) => read_genbank(path).context("reading GenBank"),
@@ -2154,7 +2154,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .context("missing required `output` (-o / --output or config)")?;
             let dbs =
                 domainate::read_hmm_references(&cfg.references).context("reading references")?;
-            let range = domainator_core::tools::neighborhood::validate_range(
+            let range = tools::neighborhood::validate_range(
                 cfg.whole_contig,
                 cfg.kb_range,
                 cfg.kb_up,
@@ -2164,8 +2164,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 cfg.cds_down,
             )
             .map_err(|e| anyhow::anyhow!(e))?;
-            if cfg.translate && !matches!(range, domainator_core::tools::neighborhood::Range::None)
-            {
+            if cfg.translate && !matches!(range, tools::neighborhood::Range::None) {
                 anyhow::bail!("--translate is incompatible with neighborhood extraction (--cds_range/--kb_range/--whole_contig)");
             }
             // Mirrors Python's "Protein sequence output is not compatible with
@@ -2571,8 +2570,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             let mut records = load_inputs_str(&cfg.input)?;
             filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let selected_domains =
-                tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let selected_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
             let databases_keep = if cfg.databases_keep.is_empty() {
                 None
             } else {
@@ -2802,8 +2800,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 cfg.cds_right,
             )
             .map_err(|e| anyhow::anyhow!(e))?;
-            let strip_domains =
-                tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let strip_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
             let opts = tools::trim_contigs::TrimContigsOptions {
                 kb_truncation,
                 cds_truncation,
@@ -2866,8 +2863,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             let mut records = load_inputs_str(&cfg.input)?;
             filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let selected_domains =
-                tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let selected_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
             let databases = if cfg.databases.is_empty() {
                 None
             } else {
@@ -2945,10 +2941,8 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             let mut records = load_inputs_str(&cfg.input)?;
             filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let target_domains =
-                tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
-            let target_cdss =
-                tools::select_common::parse_name_list(&cfg.cdss, cfg.cdss_file.as_deref())?;
+            let target_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let target_cdss = parse_name_list(&cfg.cdss, cfg.cdss_file.as_deref())?;
             let databases = if cfg.databases.is_empty() {
                 None
             } else {
@@ -3118,10 +3112,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 k: cfg.k,
                 mst_knn: cfg.mst_knn,
                 knn: cfg.knn,
-                params: domainator_core::tools::seq_dist::parse_diamond_params(
-                    cfg.params.as_deref().unwrap_or(""),
-                )
-                .map_err(|e| anyhow::anyhow!(e))?,
+                params: tools::seq_dist::parse_diamond_params(cfg.params.as_deref().unwrap_or(""))
+                    .map_err(|e| anyhow::anyhow!(e))?,
                 cpu: cfg.cpu.unwrap_or(0),
             };
             let matrix = seq_dist(
@@ -3409,7 +3401,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let opts = config::resolve::resolve_build_ssn(&cfg, subset_labels, color_table);
             let result = build_ssn(&matrix, &opts).context("running build_ssn")?;
 
-            let name = std::path::Path::new(&xgmml)
+            let name = Path::new(&xgmml)
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("")
@@ -3515,7 +3507,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
 
             let stem = |p: &str| {
-                std::path::Path::new(p)
+                Path::new(p)
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("")
@@ -3763,7 +3755,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .input
                 .clone()
                 .context("missing required `input` (-i / --input or config)")?;
-            let bundle = ssn_bundle::load_bundle(std::path::Path::new(&input))
+            let bundle = ssn_bundle::load_bundle(Path::new(&input))
                 .with_context(|| format!("reading bundle {input}"))?;
             let opts = config::resolve::resolve_ssn_navigator(&cfg);
             let result = ssn_navigator(&bundle, &opts).map_err(anyhow::Error::msg)?;
@@ -3950,7 +3942,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             let target_cdss = parse_name_list(&cfg.cds, cfg.cds_file.as_deref())?;
             let target_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
-            let range = domainator_core::tools::neighborhood::validate_range(
+            let range = tools::neighborhood::validate_range(
                 cfg.whole_contig,
                 cfg.kb_range,
                 cfg.kb_up,

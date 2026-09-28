@@ -484,7 +484,7 @@ pub fn classify_database(path: &str) -> Result<DatabaseEntry, String> {
 mod tests {
     use super::*;
 
-    fn workspace(name: &str) -> std::path::PathBuf {
+    fn workspace(name: &str) -> PathBuf {
         let root =
             std::env::temp_dir().join(format!("domainator-registry-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&root);

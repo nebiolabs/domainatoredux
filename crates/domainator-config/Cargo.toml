@@ -6,6 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 description = "Shared per-tool config schema + resolution for the Domainator CLI and GUI."
 
+[lints]
+workspace = true
+
 [dependencies]
 domainator-core = { path = "../domainator-core" }
 anyhow.workspace = true

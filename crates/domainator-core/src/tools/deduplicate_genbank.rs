@@ -274,7 +274,7 @@ fn run_diamond(
     cpus: usize,
 ) -> Result<Vec<(String, Vec<String>)>, String> {
     let bin = match &opts.bin_path {
-        Some(p) => std::path::PathBuf::from(p),
+        Some(p) => PathBuf::from(p),
         None => find_binary(DIAMOND_BIN_NAME, &[DIAMOND_ENV_VAR, "DIAMOND"], "diamond"),
     };
     let out_tsv = tmp.path().join("output.tsv");
@@ -435,7 +435,7 @@ fn run_cdhit(
     est: bool,
 ) -> Result<Vec<(String, Vec<String>)>, String> {
     let bin = match &opts.bin_path {
-        Some(p) => std::path::PathBuf::from(p),
+        Some(p) => PathBuf::from(p),
         None => find_binary(CDHIT_BIN_NAME, &[CDHIT_ENV_VAR, "CDHIT"], "cdhit"),
     };
     let word_size = cdhit_word_size(opts.id, est)?;
@@ -564,7 +564,7 @@ fn run_usearch(
     _records: &[SeqRecord],
 ) -> Result<Vec<(String, Vec<String>)>, String> {
     let bin = match &opts.bin_path {
-        Some(p) => std::path::PathBuf::from(p),
+        Some(p) => PathBuf::from(p),
         None => find_binary(USEARCH_BIN_NAME, &[USEARCH_ENV_VAR, "USEARCH"], "usearch"),
     };
     let centroids = tmp.path().join("output.fasta");

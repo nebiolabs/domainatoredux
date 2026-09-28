@@ -17,6 +17,9 @@ path = "src/main.rs"
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
+[lints]
+workspace = true
+
 [dependencies]
 domainator-core = { path = "../../../crates/domainator-core" }
 rfd = "0.17.2"

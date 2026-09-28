@@ -36,7 +36,7 @@ const ALLOWED_HOSTS: &[&str] = &["github.com", "api.github.com"];
 
 /// Whether `url` is one this app will open.
 ///
-/// Requires `https://`, a host in [`ALLOWED_HOSTS`] matched on the **whole** host
+/// Requires `https://`, a host in `ALLOWED_HOSTS` matched on the **whole** host
 /// (so `github.com.evil.example` is rejected, not merely suffix-checked), no
 /// embedded credentials, and no control characters — a newline in a URL handed to
 /// a platform opener is an argument-injection primitive on more than one OS.

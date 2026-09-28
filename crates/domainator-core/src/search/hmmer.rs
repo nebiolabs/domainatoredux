@@ -21,7 +21,7 @@ const PHMMER_PEXTEND: f32 = 0.4;
 /// The profiles are HMMs whether they came from an `.hmm` file (hmmsearch) or were
 /// built from single reference sequences (phmmer). `program` labels which — it is
 /// written verbatim into the output `program` qualifier and selects the phmmer
-/// background-filter setup used by [`search_protein_db`].
+/// background-filter setup used by [`hmmsearch_db`].
 pub struct HmmDb {
     pub name: String,
     pub hmms: Vec<Hmm>,

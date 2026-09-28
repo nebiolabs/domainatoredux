@@ -445,7 +445,7 @@ pub fn alphabet_mismatch_message(
 /// alphabets produces exactly such a file. The `hmmer_*` tools therefore reject a mixed
 /// set rather than writing one. Returns `None` when there are no profiles at all.
 pub fn common_hmm_alphabet(
-    hmms: &[hmmer_pure_rs::hmm::Hmm],
+    hmms: &[Hmm],
     role: &str,
 ) -> Result<Option<hmmer_pure_rs::alphabet::AlphabetType>, String> {
     let mut found: Option<(hmmer_pure_rs::alphabet::AlphabetType, &str)> = None;

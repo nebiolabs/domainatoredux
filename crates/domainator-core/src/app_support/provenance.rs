@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(loaded.tool, "seq-dist");
         assert_eq!(loaded.outputs[0].role, "matrix");
 
-        let meta = crate::app_support::workspace::FileMeta::load(&root, Path::new(&out));
+        let meta = FileMeta::load(&root, Path::new(&out));
         assert_eq!(meta.created_by_job.as_deref(), Some("job_1"));
         assert_eq!(meta.description, "a distance matrix");
         assert!(load_job(&root, "job_missing").is_none());
@@ -251,7 +251,7 @@ mod tests {
     fn an_existing_description_survives_a_rerun() {
         let root = workspace("description");
         let out = touch(&root, "m.hdf5");
-        let mut meta = crate::app_support::workspace::FileMeta::load(&root, Path::new(&out));
+        let mut meta = FileMeta::load(&root, Path::new(&out));
         meta.description = "mine".into();
         meta.save(&root, Path::new(&out)).unwrap();
 
@@ -261,7 +261,7 @@ mod tests {
             "generated",
         )
         .unwrap();
-        let meta = crate::app_support::workspace::FileMeta::load(&root, Path::new(&out));
+        let meta = FileMeta::load(&root, Path::new(&out));
         assert_eq!(meta.description, "mine");
         assert_eq!(meta.created_by_job.as_deref(), Some("job_2"));
     }

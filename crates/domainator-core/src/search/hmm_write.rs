@@ -389,8 +389,7 @@ mod tests {
             "FEXTRA set: that is a BGZF header, which easel rejects"
         );
         let mut back = Vec::new();
-        std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(gz.as_slice()), &mut back)
-            .unwrap();
+        io::Read::read_to_end(&mut flate2::read::GzDecoder::new(gz.as_slice()), &mut back).unwrap();
         assert_eq!(back, std::fs::read(dir.join("x.hmm")).unwrap());
         std::fs::remove_dir_all(&dir).ok();
     }

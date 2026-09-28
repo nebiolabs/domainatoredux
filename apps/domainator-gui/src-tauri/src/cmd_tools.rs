@@ -370,7 +370,7 @@ pub async fn run_tool(
     let mut params = params;
     if let Some(path) = &prefs_path {
         let default_cpu = domainator_core::app_support::prefs::load_prefs(path).default_cpu;
-        if let Ok(schema_text) = domainator_config::schema(&tool) {
+        if let Ok(schema_text) = schema(&tool) {
             if let Ok(schema) = serde_json::from_str::<Value>(&schema_text) {
                 domainator_core::app_support::tool_params::apply_default_cpu(
                     &mut params,
@@ -481,7 +481,7 @@ fn mark_running(registry: &JobRegistry, app: &AppHandle, job_id: &str) {
 /// without bound.
 const MAX_PERSISTED_JOBS: usize = 500;
 
-fn jobs_file(root: &str) -> std::path::PathBuf {
+fn jobs_file(root: &str) -> PathBuf {
     dot_dir(Path::new(root)).join("jobs.json")
 }
 
@@ -645,7 +645,7 @@ struct Job<'a> {
 /// A job canceled before this starts does no work at all. One canceled while its
 /// tool runs has the declared outputs it created or changed removed, and is not
 /// recorded in the provenance DAG.
-fn run_one(job: &Job, launcher: &Launcher, live: &LiveJob) -> Result<RunResult, JobFailure> {
+fn run_one(job: &Job<'_>, launcher: &Launcher, live: &LiveJob) -> Result<RunResult, JobFailure> {
     if live.is_canceled() {
         return Err(JobFailure::Canceled("canceled before it started".into()));
     }
@@ -815,7 +815,7 @@ pub(crate) mod tests {
         tauri::async_runtime::block_on(list_tools())
     }
 
-    fn scratch(name: &str) -> std::path::PathBuf {
+    fn scratch(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("domainator-gui-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
@@ -864,7 +864,7 @@ pub(crate) mod tests {
     fn every_offered_tool_is_dispatched_and_has_a_schema() {
         let dir = scratch("dispatch");
         for tool in tools() {
-            let schema = domainator_config::schema(&tool.id)
+            let schema = schema(&tool.id)
                 .unwrap_or_else(|e| panic!("{} is in the menu but has no schema: {e}", tool.id));
             let parsed: Value = serde_json::from_str(&schema).unwrap();
             let props = parsed["properties"].as_object().unwrap();
@@ -914,8 +914,7 @@ pub(crate) mod tests {
         let dir = scratch("dialog-params");
         for spec in crate::tool_specs::specs() {
             let mut params = dialog_params(spec);
-            let schema: Value =
-                serde_json::from_str(&domainator_config::schema(&spec.id).unwrap()).unwrap();
+            let schema: Value = serde_json::from_str(&schema(&spec.id).unwrap()).unwrap();
             domainator_core::app_support::tool_params::apply_default_cpu(&mut params, &schema, 4);
             if let Err(e) = cli_accepts(&dir, &spec.id, &params) {
                 panic!(
@@ -955,7 +954,7 @@ pub(crate) mod tests {
     fn injecting_the_default_cpu_never_breaks_a_tool() {
         let dir = scratch("default-cpu");
         for tool in tools() {
-            let schema_text = domainator_config::schema(&tool.id).unwrap();
+            let schema_text = schema(&tool.id).unwrap();
             let schema: Value = serde_json::from_str(&schema_text).unwrap();
             let mut params = serde_json::json!({});
             domainator_core::app_support::tool_params::apply_default_cpu(&mut params, &schema, 4);
@@ -1099,8 +1098,7 @@ pub(crate) mod tests {
     /// A category no tool uses is a submenu that would render empty.
     #[test]
     fn every_category_is_used_by_at_least_one_tool() {
-        let used: std::collections::HashSet<String> =
-            tools().into_iter().map(|t| t.category).collect();
+        let used: HashSet<String> = tools().into_iter().map(|t| t.category).collect();
         for cat in TOOL_CATEGORIES {
             assert!(
                 used.contains(cat),
@@ -1246,7 +1244,7 @@ pub(crate) mod tests {
 
     /// A one-record GenBank file for taxon 562, and a taxdump directory for it.
     /// Shared with `cmd_files`' Enum Report tab tests.
-    pub(crate) fn enum_report_fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    pub(crate) fn enum_report_fixture(name: &str) -> (PathBuf, PathBuf) {
         let dir = scratch(name);
         let gb = dir.join("one.gb");
         std::fs::write(

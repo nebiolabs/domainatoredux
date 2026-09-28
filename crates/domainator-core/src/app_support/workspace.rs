@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 /// Users may not create a file or folder with this name.
 pub const DOT_DIR: &str = ".domainator";
 
-/// `<root>/.domainator` (not created here; writers call [`ensure_dot_dir`]).
+/// `<root>/.domainator` (not created here; writers call [`ensure_dot_subdir`]).
 pub fn dot_dir(root: &Path) -> PathBuf {
     root.join(DOT_DIR)
 }

@@ -34,7 +34,7 @@ pub struct UpdateCheck {
 /// Parse `1.2.3`, `v1.2.3` or `1.2.3-rc.1` into `(major, minor, patch, prerelease)`.
 ///
 /// Returns `None` for anything else, and callers treat `None` as "not newer" —
-/// the app must never nag because a tag was unparseable.
+/// the app must never nag because a tag was unparsable.
 pub fn parse_version(s: &str) -> Option<(u64, u64, u64, Option<String>)> {
     let s = s.trim();
     let s = s
@@ -61,7 +61,7 @@ pub fn parse_version(s: &str) -> Option<(u64, u64, u64, Option<String>)> {
 /// Whether `latest` is strictly newer than `current`.
 ///
 /// A prerelease sorts *below* the same numeric release (`1.0.0-rc.1 < 1.0.0`),
-/// matching semver. Unparseable input on either side is "not newer".
+/// matching semver. Unparsable input on either side is "not newer".
 pub fn is_newer(latest: &str, current: &str) -> bool {
     let (Some(l), Some(c)) = (parse_version(latest), parse_version(current)) else {
         return false;
@@ -187,7 +187,7 @@ mod tests {
 
     /// The important one: a garbage tag must never produce a nag.
     #[test]
-    fn an_unparseable_tag_is_never_newer() {
+    fn an_unparsable_tag_is_never_newer() {
         assert!(!is_newer("nightly", "0.1.0"));
         assert!(!is_newer("", "0.1.0"));
         assert!(!is_newer("1.0.0", "not-a-version"));

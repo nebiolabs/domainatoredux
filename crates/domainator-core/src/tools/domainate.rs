@@ -488,7 +488,7 @@ pub fn domainate(
     refs: &References,
     opts: &DomainateOptions,
 ) -> Vec<SeqRecord> {
-    let empty_dropped = std::collections::HashSet::new();
+    let empty_dropped = HashSet::new();
 
     // Taxonomy pre-filter: drop records whose lineage is not in the allowed set
     // (mirrors Python `filter_by_taxonomy` applied to the input records).

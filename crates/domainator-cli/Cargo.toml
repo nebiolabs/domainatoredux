@@ -14,6 +14,9 @@ path = "src/lib.rs"
 name = "domainator"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 domainator-core = { path = "../domainator-core" }
 domainator-config = { path = "../domainator-config" }

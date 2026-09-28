@@ -10,7 +10,7 @@
 //! auto-generated map. The auto-generated path mirrors Python's
 //! `AutoColormap`, which uses `seaborn.color_palette('husl', n_colors=30)`
 //! shuffled with `random.Random(12)`. The 30-color husl palette is
-//! deterministic, so the shuffled list is hardcoded below (see [`AUTO_PALETTE`])
+//! deterministic, so the shuffled list is hardcoded below (see `AUTO_PALETTE`)
 //! — reproducing Python's output byte-for-byte for the seaborn/HSLuv math in the
 //! reference environment. If seaborn ever changes its husl implementation this
 //! constant would need regenerating; the color-table path is unaffected.

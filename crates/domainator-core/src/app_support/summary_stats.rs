@@ -245,7 +245,7 @@ mod tests {
     }
 
     fn domain(name: &str, db: &str) -> SeqFeature {
-        let mut f = SeqFeature::new(crate::DOMAIN_FEATURE_NAME, Location::range(0, 9, 1));
+        let mut f = SeqFeature::new(DOMAIN_FEATURE_NAME, Location::range(0, 9, 1));
         f.set("name", name);
         f.set("database", db);
         f
@@ -337,7 +337,7 @@ mod tests {
             .iter()
             .map(|n| n.name.as_str())
             .collect();
-        assert_eq!(kinds, vec![crate::DOMAIN_FEATURE_NAME, "CDS"]);
+        assert_eq!(kinds, vec![DOMAIN_FEATURE_NAME, "CDS"]);
     }
 
     /// Lineages merge by name into one tree, children sort by descending count,

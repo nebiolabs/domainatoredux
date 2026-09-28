@@ -143,7 +143,7 @@ mod tests {
         path
     }
 
-    fn features(path: &str) -> Vec<crate::seq::SeqFeature> {
+    fn features(path: &str) -> Vec<SeqFeature> {
         read_genbank(path)
             .unwrap()
             .into_iter()

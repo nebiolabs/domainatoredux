@@ -442,7 +442,7 @@ struct Ctx<'a> {
 }
 
 impl Analysis {
-    fn compute(&self, rec: &SeqRecord, ctx: &Ctx) -> Vec<Value> {
+    fn compute(&self, rec: &SeqRecord, ctx: &Ctx<'_>) -> Vec<Value> {
         match &self.kind {
             Kind::Domains => vec![Value::Str(get_domain_content(rec).0)],
             Kind::DomainDescriptions => vec![Value::Str(get_domain_content(rec).1)],

@@ -220,7 +220,7 @@ pub fn spawn(args: &[OsString], cwd: Option<&Path>, log: Option<&Path>) -> std::
 
 /// Start `exe --domainator-worker <args>` in its own process tree, with stdin
 /// piped as the lifeline and stdout/stderr copied to `log` (when given) and kept
-/// in memory, last [`TAIL_BYTES`] of each.
+/// in memory, last `TAIL_BYTES` of each.
 pub fn spawn_exe(
     exe: &Path,
     args: &[OsString],
@@ -325,7 +325,7 @@ pub struct Worker {
 /// How a worker ended.
 pub struct WorkerExit {
     pub status: ExitStatus,
-    /// The last [`TAIL_BYTES`] of its stdout, lossily decoded.
+    /// The last `TAIL_BYTES` of its stdout, lossily decoded.
     pub stdout: String,
     pub stderr: String,
 }
@@ -340,7 +340,7 @@ impl Worker {
         self.killer.clone()
     }
 
-    /// The stdout captured so far (its last [`TAIL_BYTES`]).
+    /// The stdout captured so far (its last `TAIL_BYTES`).
     pub fn stdout_so_far(&self) -> String {
         String::from_utf8_lossy(&lock(&self.stdout)).into_owned()
     }

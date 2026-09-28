@@ -38,7 +38,7 @@ impl Loc {
     pub fn is_empty(&self) -> bool {
         self.parts.is_empty()
     }
-    /// `stranded_start_human_readable`: parts[0].end if reverse, else parts[0].start+1.
+    /// `stranded_start_human_readable`: `parts[0].end` if reverse, else `parts[0].start + 1`.
     pub fn stranded_start_hr(&self) -> i64 {
         if self.strand == -1 {
             self.parts[0].1

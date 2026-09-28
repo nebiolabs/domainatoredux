@@ -279,7 +279,7 @@ mod tests {
     }
 
     /// Write `hmms` to a temp `.hmm` and return its path (kept alive by `dir`).
-    fn hmm_file(dir: &std::path::Path, stem: &str, hmms: &[Hmm]) -> String {
+    fn hmm_file(dir: &Path, stem: &str, hmms: &[Hmm]) -> String {
         let path = dir.join(format!("{stem}.hmm"));
         let mut out = std::fs::File::create(&path).unwrap();
         for h in hmms {
