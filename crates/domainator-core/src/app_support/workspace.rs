@@ -76,7 +76,11 @@ pub fn migrate_legacy_layout(root: &Path) {
     if dot.exists() {
         return; // already migrated (or a fresh workspace)
     }
-    let moves = [("workspace.json", false), ("databases.json", false), ("jobs", true)];
+    let moves = [
+        ("workspace.json", false),
+        ("databases.json", false),
+        ("jobs", true),
+    ];
     let any = moves.iter().any(|(n, _)| root.join(n).exists());
     if !any {
         return;
@@ -94,7 +98,9 @@ pub fn migrate_legacy_layout(root: &Path) {
 /// Python `EXTENSION_TO_TYPE` map plus the GUI-only `ssn_viewer` bundle type.
 /// `SystemTime` → epoch milliseconds (None if before the epoch / unavailable).
 fn sys_time_ms(t: Option<std::time::SystemTime>) -> Option<u64> {
-    t?.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis() as u64)
+    t?.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_millis() as u64)
 }
 
 /// Cheap record count for a data file, by streaming lines (no full parse):
@@ -240,7 +246,10 @@ fn move_path(src: &Path, dest: &Path) -> std::io::Result<()> {
     }
     let modified = fs::metadata(src)?.modified()?;
     fs::copy(src, dest)?;
-    let copied = fs::OpenOptions::new().write(true).open(dest).and_then(|f| f.set_modified(modified));
+    let copied = fs::OpenOptions::new()
+        .write(true)
+        .open(dest)
+        .and_then(|f| f.set_modified(modified));
     if let Err(e) = copied.and_then(|()| fs::remove_file(src)) {
         let _ = fs::remove_file(dest);
         return Err(e);
@@ -260,19 +269,29 @@ pub fn move_data_file(root: &Path, src: &Path, dest_dir: &Path) -> std::io::Resu
     use std::io::{Error, ErrorKind};
     let invalid = |msg: String| Error::new(ErrorKind::InvalidInput, msg);
     if is_in_dot_dir(root, src) || is_in_dot_dir(root, dest_dir) {
-        return Err(invalid(format!("refusing to move into or out of the {DOT_DIR} directory")));
+        return Err(invalid(format!(
+            "refusing to move into or out of the {DOT_DIR} directory"
+        )));
     }
     if !dest_dir.is_dir() {
         return Err(invalid(format!("not a folder: {}", dest_dir.display())));
     }
     if !is_within(root, dest_dir) {
-        return Err(invalid(format!("not inside the workspace: {}", dest_dir.display())));
+        return Err(invalid(format!(
+            "not inside the workspace: {}",
+            dest_dir.display()
+        )));
     }
     if !src.is_file() {
         return Err(invalid(format!("not a file: {}", src.display())));
     }
-    let name = src.file_name().ok_or_else(|| invalid(format!("not a file: {}", src.display())))?;
-    if let (Ok(from), Ok(to)) = (src.parent().unwrap_or(src).canonicalize(), dest_dir.canonicalize()) {
+    let name = src
+        .file_name()
+        .ok_or_else(|| invalid(format!("not a file: {}", src.display())))?;
+    if let (Ok(from), Ok(to)) = (
+        src.parent().unwrap_or(src).canonicalize(),
+        dest_dir.canonicalize(),
+    ) {
         if from == to {
             return Ok(src.to_path_buf());
         }
@@ -284,7 +303,11 @@ pub fn move_data_file(root: &Path, src: &Path, dest_dir: &Path) -> std::io::Resu
     if dest.exists() || (has_index && dest_index.exists()) {
         return Err(Error::new(
             ErrorKind::AlreadyExists,
-            format!("{} already exists in {}", name.to_string_lossy(), dest_dir.display()),
+            format!(
+                "{} already exists in {}",
+                name.to_string_lossy(),
+                dest_dir.display()
+            ),
         ));
     }
     move_path(src, &dest)?;
@@ -358,7 +381,10 @@ pub fn open_or_init_manifest(root: &Path) -> std::io::Result<WorkspaceManifest> 
             return Ok(m);
         }
     }
-    let manifest = WorkspaceManifest { schema_version: SCHEMA_VERSION, settings: Settings::default() };
+    let manifest = WorkspaceManifest {
+        schema_version: SCHEMA_VERSION,
+        settings: Settings::default(),
+    };
     save_manifest(root, &manifest)?;
     Ok(manifest)
 }
@@ -385,7 +411,11 @@ pub fn scan_folder_tree(root: &Path) -> std::io::Result<FolderNode> {
                 continue;
             }
             let path = entry.path();
-            children.push(FolderNode { path: path.to_string_lossy().into_owned(), name, children: walk(&path)? });
+            children.push(FolderNode {
+                path: path.to_string_lossy().into_owned(),
+                name,
+                children: walk(&path)?,
+            });
         }
         children.sort_by_cached_key(|c| c.name.to_ascii_lowercase());
         Ok(children)
@@ -395,7 +425,11 @@ pub fn scan_folder_tree(root: &Path) -> std::io::Result<FolderNode> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| root.to_string_lossy().into_owned());
-    Ok(FolderNode { path: root.to_string_lossy().into_owned(), name, children: walk(root)? })
+    Ok(FolderNode {
+        path: root.to_string_lossy().into_owned(),
+        name,
+        children: walk(root)?,
+    })
 }
 
 /// List recognized data files directly inside `dir` (non-recursive), with sidecar
@@ -408,7 +442,9 @@ pub fn list_files(root: &Path, dir: &Path) -> std::io::Result<Vec<FileEntry>> {
             continue;
         }
         let path = entry.path();
-        let Some(file_type) = classify_file(&path) else { continue };
+        let Some(file_type) = classify_file(&path) else {
+            continue;
+        };
         let name = entry.file_name().to_string_lossy().into_owned();
         let meta = FileMeta::load(root, &path);
         let md = entry.metadata().ok();
@@ -435,7 +471,9 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     let tmp = dir.join(format!(
         ".{}.tmp",
-        path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "ws".into())
+        path.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "ws".into())
     ));
     fs::write(&tmp, bytes)?;
     fs::rename(&tmp, path)
@@ -480,8 +518,14 @@ mod tests {
         assert!(is_within(&root, &root), "a root contains itself");
         assert!(is_within(&root, &nested));
         assert!(is_within(&root, &file));
-        assert!(!is_within(&root, &sibling), "shared name prefix is not containment");
-        assert!(!is_within(&root, &base), "the parent is not inside the child");
+        assert!(
+            !is_within(&root, &sibling),
+            "shared name prefix is not containment"
+        );
+        assert!(
+            !is_within(&root, &base),
+            "the parent is not inside the child"
+        );
         // `..` must not be able to escape and come back looking legitimate.
         assert!(!is_within(&root, &root.join("..").join("workspace2")));
         // Nonexistent paths fail closed.
@@ -499,7 +543,8 @@ mod tests {
     }
 
     fn move_workspace(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("domainator-move-{}-{name}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("domainator-move-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("a")).unwrap();
         fs::create_dir_all(root.join("b")).unwrap();
@@ -514,14 +559,23 @@ mod tests {
         let src = root.join("a").join("x.gb");
         fs::write(&src, b"LOCUS").unwrap();
         fs::write(crate::io::didx::index_path_for(&src), b"idx").unwrap();
-        FileMeta { description: "kept".into(), ..Default::default() }.save(&root, &src).unwrap();
+        FileMeta {
+            description: "kept".into(),
+            ..Default::default()
+        }
+        .save(&root, &src)
+        .unwrap();
         let mtime = fs::metadata(&src).unwrap().modified().unwrap();
 
         let dest = move_data_file(&root, &src, &root.join("b")).unwrap();
         assert_eq!(dest, root.join("b").join("x.gb"));
         assert!(!src.exists());
         assert_eq!(fs::read(&dest).unwrap(), b"LOCUS");
-        assert_eq!(fs::metadata(&dest).unwrap().modified().unwrap(), mtime, "the index's staleness check reads mtime");
+        assert_eq!(
+            fs::metadata(&dest).unwrap().modified().unwrap(),
+            mtime,
+            "the index's staleness check reads mtime"
+        );
         assert!(crate::io::didx::index_path_for(&dest).is_file());
         assert!(!crate::io::didx::index_path_for(&src).exists());
         assert_eq!(FileMeta::load(&root, &dest).description, "kept");
@@ -557,7 +611,8 @@ mod tests {
         fs::write(&src, b"x").unwrap();
         fs::create_dir_all(dot_dir(&root).join("meta")).unwrap();
         assert!(move_data_file(&root, &src, &dot_dir(&root).join("meta")).is_err());
-        let outside = std::env::temp_dir().join(format!("domainator-move-{}-outside", std::process::id()));
+        let outside =
+            std::env::temp_dir().join(format!("domainator-move-{}-outside", std::process::id()));
         fs::create_dir_all(&outside).unwrap();
         assert!(move_data_file(&root, &src, &outside).is_err());
         assert!(move_data_file(&root, &root.join("a").join("gone.gb"), &root.join("b")).is_err());

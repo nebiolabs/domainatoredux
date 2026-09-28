@@ -22,7 +22,11 @@ fn main() {
 
     // Asymmetric variant (different labels) to exercise COL_* datasets.
     let storage2 = match &m.storage {
-        Storage::Sparse { values, indices, indptr } => Storage::Sparse {
+        Storage::Sparse {
+            values,
+            indices,
+            indptr,
+        } => Storage::Sparse {
             values: values.clone(),
             indices: indices.clone(),
             indptr: indptr.clone(),

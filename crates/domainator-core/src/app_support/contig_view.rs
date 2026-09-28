@@ -128,7 +128,13 @@ fn feature_name(f: &SeqFeature) -> String {
 fn part_views(loc: &Location) -> Vec<PartView> {
     loc.parts
         .iter()
-        .map(|&(start, end, strand, before, after)| PartView { start, end, strand, before, after })
+        .map(|&(start, end, strand, before, after)| PartView {
+            start,
+            end,
+            strand,
+            before,
+            after,
+        })
         .collect()
 }
 
@@ -182,7 +188,12 @@ fn contig_view(index: usize, rec: &SeqRecord) -> ContigView {
         }
         .to_string(),
         is_protein: rec.is_protein(),
-        features: rec.features.iter().enumerate().map(|(i, f)| feature_view(i, f)).collect(),
+        features: rec
+            .features
+            .iter()
+            .enumerate()
+            .map(|(i, f)| feature_view(i, f))
+            .collect(),
     }
 }
 
@@ -190,8 +201,11 @@ fn contig_view(index: usize, rec: &SeqRecord) -> ContigView {
 /// record; the union of `database` values, the set of feature kinds, and the
 /// evalue range are computed for the filter UI.
 pub fn build_contig_file_view(path: &str, records: &[SeqRecord]) -> ContigFileView {
-    let contigs: Vec<ContigView> =
-        records.iter().enumerate().map(|(i, r)| contig_view(i, r)).collect();
+    let contigs: Vec<ContigView> = records
+        .iter()
+        .enumerate()
+        .map(|(i, r)| contig_view(i, r))
+        .collect();
 
     let mut databases: Vec<String> = Vec::new();
     let mut feature_kinds: Vec<String> = Vec::new();
@@ -259,15 +273,27 @@ mod tests {
 
     #[test]
     fn flattens_hit_qualifiers() {
-        let fv = feature_view(0, &feat(DOMAIN_FEATURE_NAME, &[("database", "Pfam"), ("evalue", "1e-20")]));
+        let fv = feature_view(
+            0,
+            &feat(
+                DOMAIN_FEATURE_NAME,
+                &[("database", "Pfam"), ("evalue", "1e-20")],
+            ),
+        );
         assert_eq!(fv.database.as_deref(), Some("Pfam"));
         assert_eq!(fv.evalue, Some(1e-20));
     }
 
     #[test]
     fn cds_name_precedence() {
-        assert_eq!(feature_name(&feat("CDS", &[("locus_tag", "b0001"), ("gene", "thrA")])), "b0001");
+        assert_eq!(
+            feature_name(&feat("CDS", &[("locus_tag", "b0001"), ("gene", "thrA")])),
+            "b0001"
+        );
         assert_eq!(feature_name(&feat("CDS", &[("gene", "thrA")])), "thrA");
-        assert_eq!(feature_name(&feat("source", &[("organism", "E. coli")])), "E. coli");
+        assert_eq!(
+            feature_name(&feat("source", &[("organism", "E. coli")])),
+            "E. coli"
+        );
     }
 }

@@ -86,15 +86,25 @@ impl Default for DomainSearchOptions {
 /// The best-hit domain name for a protein record (its `Domain_Search` feature's
 /// `name`, else the highest-scoring `Domainator` feature's `name`).
 fn best_hit_name(rec: &SeqRecord) -> Option<String> {
-    if let Some(f) = rec.features.iter().find(|f| f.kind == DOMAIN_SEARCH_BEST_HIT_NAME) {
+    if let Some(f) = rec
+        .features
+        .iter()
+        .find(|f| f.kind == DOMAIN_SEARCH_BEST_HIT_NAME)
+    {
         return f.get_first("name").map(str::to_string);
     }
     rec.features
         .iter()
         .filter(|f| f.kind == DOMAIN_FEATURE_NAME)
         .max_by(|a, b| {
-            let sa = a.get_first("score").and_then(|s| s.parse::<f64>().ok()).unwrap_or(f64::NEG_INFINITY);
-            let sb = b.get_first("score").and_then(|s| s.parse::<f64>().ok()).unwrap_or(f64::NEG_INFINITY);
+            let sa = a
+                .get_first("score")
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(f64::NEG_INFINITY);
+            let sb = b
+                .get_first("score")
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(f64::NEG_INFINITY);
             sa.total_cmp(&sb)
         })
         .and_then(|f| f.get_first("name").map(str::to_string))
@@ -132,9 +142,11 @@ fn read_partition(
     default_mol: &str,
 ) -> std::io::Result<Vec<SeqRecord>> {
     match filetype {
-        FileType::Genbank => GenbankReader::open(path, offset, compressed, Some(default_mol.to_string()))?
-            .take(n_records as usize)
-            .collect(),
+        FileType::Genbank => {
+            GenbankReader::open(path, offset, compressed, Some(default_mol.to_string()))?
+                .take(n_records as usize)
+                .collect()
+        }
         FileType::Fasta => {
             fasta::read_fasta_partition(path, offset, compressed, n_records, Some(default_mol))
         }
@@ -174,7 +186,11 @@ pub fn domain_search(
 
     // `-Z 0` means "use the actual total target count" for per-sequence E-values
     // (the `.didx` headers / offset scan already gave us the per-shard totals).
-    let z = if opts.z == 0.0 { total_cds as f64 } else { opts.z };
+    let z = if opts.z == 0.0 {
+        total_cds as f64
+    } else {
+        opts.z
+    };
 
     let dopts = DomainateOptions {
         z,
@@ -192,64 +208,78 @@ pub fn domain_search(
     };
 
     // Parallel map preserves partition order; results are concatenated in order.
-    let per_part: Vec<std::io::Result<Vec<Region>>> = crate::parallel::with_threads(opts.cpu, || {
-        use rayon::prelude::*;
-        parts
-            .par_iter()
-            .map(|p| {
-                let records = read_partition(
-                    &p.path, p.offset, p.n_records, p.filetype, p.compressed, &opts.fasta_type,
-                )?;
-                let mut emitted = Vec::new();
-                for rec in domainate(records, refs, &dopts) {
-                    // Protein hits pass through whole; nucleotide hits go through
-                    // neighborhood extraction.
-                    if rec.molecule_type.as_deref() == Some("protein") {
-                        // Decoy filter: drop the protein if its best hit is a decoy.
-                        if let Some(decoys) = &opts.decoys {
-                            if best_hit_name(&rec).is_some_and(|n| decoys.contains(&n)) {
-                                continue;
+    let per_part: Vec<std::io::Result<Vec<Region>>> =
+        crate::parallel::with_threads(opts.cpu, || {
+            use rayon::prelude::*;
+            parts
+                .par_iter()
+                .map(|p| {
+                    let records = read_partition(
+                        &p.path,
+                        p.offset,
+                        p.n_records,
+                        p.filetype,
+                        p.compressed,
+                        &opts.fasta_type,
+                    )?;
+                    let mut emitted = Vec::new();
+                    for rec in domainate(records, refs, &dopts) {
+                        // Protein hits pass through whole; nucleotide hits go through
+                        // neighborhood extraction.
+                        if rec.molecule_type.as_deref() == Some("protein") {
+                            // Decoy filter: drop the protein if its best hit is a decoy.
+                            if let Some(decoys) = &opts.decoys {
+                                if best_hit_name(&rec).is_some_and(|n| decoys.contains(&n)) {
+                                    continue;
+                                }
                             }
+                            // A whole-protein hit is not a neighborhood, so there is
+                            // nothing to align: `--pad` only right-pads these to a common
+                            // length, and the CLI refuses the combination anyway.
+                            emitted.push(Region {
+                                record: rec,
+                                dist_to_start: 0,
+                            });
+                        } else if opts.translate {
+                            emitted.extend(
+                                crate::tools::neighborhood::translate_peptides(&rec, opts.strand)
+                                    .into_iter()
+                                    .map(|record| Region {
+                                        record,
+                                        dist_to_start: 0,
+                                    }),
+                            );
+                        } else {
+                            emitted.extend(select_by_cds_hits(
+                                &rec,
+                                opts.range,
+                                opts.normalize_direction,
+                                opts.strand,
+                                opts.max_region_overlap,
+                                opts.decoys.as_ref(),
+                                opts.max_hits_per_contig,
+                            )?);
                         }
-                        // A whole-protein hit is not a neighborhood, so there is
-                        // nothing to align: `--pad` only right-pads these to a common
-                        // length, and the CLI refuses the combination anyway.
-                        emitted.push(Region { record: rec, dist_to_start: 0 });
-                    } else if opts.translate {
-                        emitted.extend(
-                            crate::tools::neighborhood::translate_peptides(&rec, opts.strand)
-                                .into_iter()
-                                .map(|record| Region { record, dist_to_start: 0 }),
-                        );
-                    } else {
-                        emitted.extend(select_by_cds_hits(
-                            &rec,
-                            opts.range,
-                            opts.normalize_direction,
-                            opts.strand,
-                            opts.max_region_overlap,
-                            opts.decoys.as_ref(),
-                            opts.max_hits_per_contig,
-                        )?);
                     }
-                }
-                // Bound each worker's result by --max_hits before it reaches the
-                // parent: a single partition can contribute at most `max_hits` to a
-                // global top-N, so this is lossless, and it turns the parent's peak
-                // memory from every hit in the database into
-                // O(partitions * max_hits). The sort is stable and the partitions are
-                // merged in order below, so the surviving set is identical to sorting
-                // everything at the end.
-                if let Some(max_hits) = opts.max_hits {
-                    if emitted.len() > max_hits {
-                        emitted.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
-                        emitted.truncate(max_hits);
+                    // Bound each worker's result by --max_hits before it reaches the
+                    // parent: a single partition can contribute at most `max_hits` to a
+                    // global top-N, so this is lossless, and it turns the parent's peak
+                    // memory from every hit in the database into
+                    // O(partitions * max_hits). The sort is stable and the partitions are
+                    // merged in order below, so the surviving set is identical to sorting
+                    // everything at the end.
+                    if let Some(max_hits) = opts.max_hits {
+                        if emitted.len() > max_hits {
+                            emitted.sort_by(|a, b| {
+                                best_score(&b.record).total_cmp(&best_score(&a.record))
+                            });
+                            emitted.truncate(max_hits);
+                        }
                     }
-                }
-                Ok(emitted)
-            })
-            .collect()
-    });
+                    Ok(emitted)
+                })
+                .collect()
+        });
 
     let mut out: Vec<Region> = Vec::new();
     for part_result in per_part {
@@ -322,7 +352,10 @@ mod tests {
 
     #[test]
     fn best_score_of_a_region_with_no_hit_feature_is_negative_infinity() {
-        assert_eq!(best_score(&region(vec![scored(DOMAIN_FEATURE_NAME, "99.0")])), f64::NEG_INFINITY);
+        assert_eq!(
+            best_score(&region(vec![scored(DOMAIN_FEATURE_NAME, "99.0")])),
+            f64::NEG_INFINITY
+        );
         assert_eq!(best_score(&region(vec![])), f64::NEG_INFINITY);
     }
 }

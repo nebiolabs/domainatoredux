@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
-use domainator_config as config;
 use config::{load_config, print_config, schema, ColumnSpec, EnumConfig, HmmerReportColumn};
+use domainator_config as config;
 
 use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
@@ -23,24 +23,24 @@ use domainator_core::matrix::{hdf5_io, read_matrix, text};
 use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
 use domainator_core::seq::SeqRecord;
-use domainator_core::tools::enum_report::{self, needs_taxonomy, Analysis, OutputFormat};
-use domainator_core::tools::select_by_cds::{pad_records, select_by_cds, SelectByCdsOptions};
-use domainator_core::tools::select_by_contig::{select_by_contig, SelectByContigOptions};
-use domainator_core::tools::select_common::parse_name_list;
 use domainator_core::tools;
-use domainator_core::tools::deduplicate_genbank;
-use domainator_core::tools::clean_sequences;
-use domainator_core::tools::sort_contigs;
-use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
-use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
 use domainator_core::tools::build_ssn::build_ssn;
 use domainator_core::tools::build_ssn_viewer::{
     build_ssn_viewer_bundle, gzip, render_html, serialize_bundle,
 };
+use domainator_core::tools::clean_sequences;
+use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
+use domainator_core::tools::deduplicate_genbank;
+use domainator_core::tools::enum_report::{self, needs_taxonomy, Analysis, OutputFormat};
+use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
 use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
+use domainator_core::tools::select_by_cds::{pad_records, select_by_cds, SelectByCdsOptions};
+use domainator_core::tools::select_by_contig::{select_by_contig, SelectByContigOptions};
+use domainator_core::tools::select_common::parse_name_list;
+use domainator_core::tools::seq_dist::{detect_kind, seq_dist, SeqDistOptions};
+use domainator_core::tools::sort_contigs;
 use domainator_core::tools::ssn_bundle;
 use domainator_core::tools::ssn_navigator::ssn_navigator;
-use domainator_core::tools::seq_dist::{detect_kind, seq_dist, SeqDistOptions};
 use domainator_core::tools::transform_matrix::transform_matrix;
 use domainator_core::tools::{domain_search, domainate};
 
@@ -62,10 +62,7 @@ enum Command {
         verbose: bool,
     },
     /// Read a GenBank/FASTA file and write it back out as GenBank (round-trip).
-    Convert {
-        input: PathBuf,
-        output: PathBuf,
-    },
+    Convert { input: PathBuf, output: PathBuf },
     /// Annotate sequences with hits to reference HMMs (protein hmmsearch path).
     Domainate {
         /// Input sequence file (GenBank or FASTA).
@@ -1430,7 +1427,9 @@ enum Command {
 /// `--mst_knn k` is exact shorthand for `--mst --knn k`, so `0` is legal and means
 /// the spanning tree alone.
 fn parse_mst_knn(value: &str) -> std::result::Result<usize, String> {
-    let v: i64 = value.parse().map_err(|_| format!("`{value}` is not an integer"))?;
+    let v: i64 = value
+        .parse()
+        .map_err(|_| format!("`{value}` is not an integer"))?;
     if v < 0 {
         return Err("--mst_knn must be an integer >= 0 (0 reduces to --mst)".to_string());
     }
@@ -1439,7 +1438,9 @@ fn parse_mst_knn(value: &str) -> std::result::Result<usize, String> {
 
 /// A pure kNN graph with `k = 0` would have no edges at all, so `--knn` starts at 1.
 fn parse_knn(value: &str) -> std::result::Result<usize, String> {
-    let v: i64 = value.parse().map_err(|_| format!("`{value}` is not an integer"))?;
+    let v: i64 = value
+        .parse()
+        .map_err(|_| format!("`{value}` is not an integer"))?;
     if v < 1 {
         return Err("--knn must be an integer >= 1".to_string());
     }
@@ -1451,7 +1452,10 @@ fn load(input: &Path) -> Result<Vec<SeqRecord>> {
     match detect_filetype(input) {
         Some(FileType::Genbank) => read_genbank(path).context("reading GenBank"),
         Some(FileType::Fasta) => fasta::read_fasta(path, Some("protein")).context("reading FASTA"),
-        None => anyhow::bail!("could not detect file type from extension: {}", input.display()),
+        None => anyhow::bail!(
+            "could not detect file type from extension: {}",
+            input.display()
+        ),
     }
 }
 
@@ -1461,7 +1465,9 @@ fn load_inputs(inputs: &[PathBuf]) -> Result<Vec<SeqRecord>> {
     if inputs.is_empty() {
         use std::io::Read;
         let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf).context("reading stdin")?;
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .context("reading stdin")?;
         let dir = std::env::temp_dir();
         let tmp = dir.join(format!("domainator_stdin_{}.gb", std::process::id()));
         std::fs::write(&tmp, &buf)?;
@@ -1478,7 +1484,11 @@ fn load_inputs(inputs: &[PathBuf]) -> Result<Vec<SeqRecord>> {
 
 /// Filter `records` in place to those whose LOCUS name (Python's `contig.id`) is
 /// in the `--contigs`/`--contigs_file` set. A no-op when both are empty.
-fn filter_contigs(records: &mut Vec<SeqRecord>, contigs: &[String], contigs_file: Option<&str>) -> Result<()> {
+fn filter_contigs(
+    records: &mut Vec<SeqRecord>,
+    contigs: &[String],
+    contigs_file: Option<&str>,
+) -> Result<()> {
     let set = parse_name_list(contigs, contigs_file)?;
     if let Some(set) = set {
         records.retain(|r| set.contains(&r.id));
@@ -1494,12 +1504,16 @@ fn load_inputs_str(inputs: &[String]) -> Result<Vec<SeqRecord>> {
 
 /// Convert paths to UTF-8 strings.
 fn paths_to_strings(paths: &[PathBuf]) -> Result<Vec<String>> {
-    paths.iter().map(|p| p.to_str().map(str::to_string).context("non-UTF8 path")).collect()
+    paths
+        .iter()
+        .map(|p| p.to_str().map(str::to_string).context("non-UTF8 path"))
+        .collect()
 }
 
 /// Read a color table: a TSV with no header mapping a value to a hex color.
 fn read_color_table(path: &str) -> Result<std::collections::HashMap<String, String>> {
-    let text = std::fs::read_to_string(path).with_context(|| format!("reading color table {path}"))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading color table {path}"))?;
     let mut map = std::collections::HashMap::new();
     for line in text.lines() {
         if line.trim().is_empty() {
@@ -1567,7 +1581,12 @@ fn max_output_gb_to_bytes(max_gb: f64) -> Result<Option<u64>> {
 /// Fail when `actual_bytes` of an already-serialized output exceeds the byte
 /// budget for `max_gb`. `description` names the output; `mitigation` lists the
 /// relevant flags for the failure message.
-fn enforce_bytes_gb(actual_bytes: u64, max_gb: f64, description: &str, mitigation: &str) -> Result<()> {
+fn enforce_bytes_gb(
+    actual_bytes: u64,
+    max_gb: f64,
+    description: &str,
+    mitigation: &str,
+) -> Result<()> {
     let Some(max_bytes) = max_output_gb_to_bytes(max_gb)? else {
         return Ok(());
     };
@@ -1601,7 +1620,9 @@ fn enforce_matrix_gb(
 /// Write records as GenBank to a file, or to stdout when `output` is None.
 fn write_genbank_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result<()> {
     match output {
-        Some(p) => write_genbank(p.to_str().context("non-UTF8 path")?, records).context("writing GenBank"),
+        Some(p) => {
+            write_genbank(p.to_str().context("non-UTF8 path")?, records).context("writing GenBank")
+        }
         None => {
             let stdout = std::io::stdout();
             let mut h = std::io::BufWriter::new(stdout.lock());
@@ -1646,7 +1667,10 @@ fn load_typed(input: &std::path::Path, fasta_type: &str) -> Result<Vec<SeqRecord
     match detect_filetype(input) {
         Some(FileType::Genbank) => read_genbank(path).context("reading GenBank"),
         Some(FileType::Fasta) => fasta::read_fasta(path, Some(fasta_type)).context("reading FASTA"),
-        None => anyhow::bail!("could not detect file type from extension: {}", input.display()),
+        None => anyhow::bail!(
+            "could not detect file type from extension: {}",
+            input.display()
+        ),
     }
 }
 
@@ -1660,7 +1684,9 @@ fn parse_dedup_params(s: Option<&str>) -> Result<Vec<(String, Option<String>)>> 
     let wrapped = format!("{{{s}}}");
     let val: serde_json::Value =
         serde_json::from_str(&wrapped).context("parsing --params as a JSON dict")?;
-    let obj = val.as_object().context("--params must be a JSON object body")?;
+    let obj = val
+        .as_object()
+        .context("--params must be a JSON object body")?;
     let mut out = Vec::new();
     for (k, v) in obj {
         let sv = match v {
@@ -1687,9 +1713,15 @@ fn compile_allowed_taxids(
         return Ok(None);
     }
     if has_expr && (!include.is_empty() || !exclude.is_empty()) {
-        anyhow::bail!("--taxonomy_expr is mutually exclusive with --include_taxids/--exclude_taxids.");
+        anyhow::bail!(
+            "--taxonomy_expr is mutually exclusive with --include_taxids/--exclude_taxids."
+        );
     }
-    let tax = load_taxonomy(&path.map(str::to_string).unwrap_or_else(default_ncbi_taxonomy_path))?;
+    let tax = load_taxonomy(
+        &path
+            .map(str::to_string)
+            .unwrap_or_else(default_ncbi_taxonomy_path),
+    )?;
     let allowed = if has_expr {
         tax.compile_taxonomy_expression(expr.unwrap())
     } else {
@@ -1724,7 +1756,9 @@ fn parse_enum_args(args: &[String]) -> Result<EnumCli> {
     let mut i = 0;
     let next = |i: &mut usize, what: &str| -> Result<String> {
         *i += 1;
-        args.get(*i).cloned().with_context(|| format!("{what} requires a value"))
+        args.get(*i)
+            .cloned()
+            .with_context(|| format!("{what} requires a value"))
     };
     let consume_multi = |i: &mut usize| -> Vec<String> {
         let mut out = Vec::new();
@@ -1745,20 +1779,29 @@ fn parse_enum_args(args: &[String]) -> Result<EnumCli> {
             "--contigs" => cfg.contigs.extend(consume_multi(&mut i)),
             "--contigs_file" => cfg.contigs_file = Some(next(&mut i, "--contigs_file")?),
             "--column_names" => cfg.column_names = Some(consume_multi(&mut i)),
-            "--ncbi_taxonomy_path" => cfg.ncbi_taxonomy_path = Some(next(&mut i, "--ncbi_taxonomy_path")?),
+            "--ncbi_taxonomy_path" => {
+                cfg.ncbi_taxonomy_path = Some(next(&mut i, "--ncbi_taxonomy_path")?)
+            }
             "--json" => cfg.json = Some(next(&mut i, "--json")?),
             "--config" => config_path = Some(next(&mut i, "--config")?),
             "--print_config" => print_config = true,
             "--taxonomy_update" => {}
             "--html" | "--html_max_height" => {
-                anyhow::bail!("enum_report HTML output is not supported in this port; use TSV or --json")
+                anyhow::bail!(
+                    "enum_report HTML output is not supported in this port; use TSV or --json"
+                )
             }
-            "--taxid" => cfg.columns.push(ColumnSpec::Taxid { ranks: consume_multi(&mut i) }),
-            "--taxname" => cfg.columns.push(ColumnSpec::Taxname { ranks: consume_multi(&mut i) }),
+            "--taxid" => cfg.columns.push(ColumnSpec::Taxid {
+                ranks: consume_multi(&mut i),
+            }),
+            "--taxname" => cfg.columns.push(ColumnSpec::Taxname {
+                ranks: consume_multi(&mut i),
+            }),
             "--qualifier" => {
                 let feature = next(&mut i, "--qualifier")?;
                 let qualifier = next(&mut i, "--qualifier")?;
-                cfg.columns.push(ColumnSpec::Qualifier { feature, qualifier });
+                cfg.columns
+                    .push(ColumnSpec::Qualifier { feature, qualifier });
             }
             "--feature_count" => {
                 let feature = next(&mut i, "--feature_count")?;
@@ -1784,7 +1827,11 @@ fn parse_enum_args(args: &[String]) -> Result<EnumCli> {
                 let name = next(&mut i, "--append")?;
                 let value_type = next(&mut i, "--append")?;
                 let value = next(&mut i, "--append")?;
-                cfg.columns.push(ColumnSpec::Append { name, value_type, value });
+                cfg.columns.push(ColumnSpec::Append {
+                    name,
+                    value_type,
+                    value,
+                });
             }
             other if other.starts_with("--") => {
                 let name = &other[2..];
@@ -1797,7 +1844,11 @@ fn parse_enum_args(args: &[String]) -> Result<EnumCli> {
         }
         i += 1;
     }
-    Ok(EnumCli { config: cfg, config_path, print_config })
+    Ok(EnumCli {
+        config: cfg,
+        config_path,
+        print_config,
+    })
 }
 
 /// CLI-provided `hmmer_report` params (column order preserved) + control flags.
@@ -1818,7 +1869,9 @@ fn parse_hmmer_report_args(args: &[String]) -> Result<HmmerReportCli> {
     let mut i = 0;
     let next = |i: &mut usize, what: &str| -> Result<String> {
         *i += 1;
-        args.get(*i).cloned().with_context(|| format!("{what} requires a value"))
+        args.get(*i)
+            .cloned()
+            .with_context(|| format!("{what} requires a value"))
     };
     let consume_multi = |i: &mut usize| -> Vec<String> {
         let mut out = Vec::new();
@@ -1839,13 +1892,19 @@ fn parse_hmmer_report_args(args: &[String]) -> Result<HmmerReportCli> {
             "--config" => config_path = Some(next(&mut i, "--config")?),
             "--print_config" => print_config = true,
             "--html" | "--html_max_height" => {
-                anyhow::bail!("hmmer_report HTML output is not supported in this port; use TSV or --json")
+                anyhow::bail!(
+                    "hmmer_report HTML output is not supported in this port; use TSV or --json"
+                )
             }
             "--append" => {
                 let name = next(&mut i, "--append")?;
                 let value_type = next(&mut i, "--append")?;
                 let value = next(&mut i, "--append")?;
-                cfg.columns.push(HmmerReportColumn::Append { name, value_type, value });
+                cfg.columns.push(HmmerReportColumn::Append {
+                    name,
+                    value_type,
+                    value,
+                });
             }
             other if other.starts_with("--") => {
                 let name = &other[2..];
@@ -1858,7 +1917,11 @@ fn parse_hmmer_report_args(args: &[String]) -> Result<HmmerReportCli> {
         }
         i += 1;
     }
-    Ok(HmmerReportCli { config: cfg, config_path, print_config })
+    Ok(HmmerReportCli {
+        config: cfg,
+        config_path,
+        print_config,
+    })
 }
 
 /// Run one `domainator` command line. `args` includes the program name first, as
@@ -1892,7 +1955,11 @@ fn dispatch(cli: Cli) -> Result<()> {
                 for r in &records {
                     println!(
                         "  id={} name={} mol={:?} len={} features={}",
-                        r.id, r.name, r.molecule_type, r.len(), r.features.len()
+                        r.id,
+                        r.name,
+                        r.molecule_type,
+                        r.len(),
+                        r.features.len()
                     );
                 }
             }
@@ -1904,9 +1971,26 @@ fn dispatch(cli: Cli) -> Result<()> {
             println!("wrote {} records to {}", records.len(), output.display());
         }
         Command::Domainate {
-            input, references, output, evalue, min_evalue, z, max_overlap, max_domains, max_mode,
-            overlap_by_db, hits_only, no_annotations, cpu, fasta_type, include_taxids, exclude_taxids,
-            taxonomy_expr, ncbi_taxonomy_path, config: config_path, print_config: do_print,
+            input,
+            references,
+            output,
+            evalue,
+            min_evalue,
+            z,
+            max_overlap,
+            max_domains,
+            max_mode,
+            overlap_by_db,
+            hits_only,
+            no_annotations,
+            cpu,
+            fasta_type,
+            include_taxids,
+            exclude_taxids,
+            taxonomy_expr,
+            ncbi_taxonomy_path,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::DomainateConfig {
                 input: opt_path(&input)?,
@@ -1937,15 +2021,22 @@ fn dispatch(cli: Cli) -> Result<()> {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
             }
-            let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
-            let output = cfg.output.context("missing required `output` (-o / --output or config)")?;
+            let input = cfg
+                .input
+                .context("missing required `input` (-i / --input or config)")?;
+            let output = cfg
+                .output
+                .context("missing required `output` (-o / --output or config)")?;
             let fasta_type = cfg.fasta_type.as_deref().unwrap_or("protein");
             let records = load_typed(&PathBuf::from(&input), fasta_type)?;
             let allowed_taxids = compile_allowed_taxids(
-                &cfg.include_taxids, &cfg.exclude_taxids, cfg.taxonomy_expr.as_deref(),
+                &cfg.include_taxids,
+                &cfg.exclude_taxids,
+                cfg.taxonomy_expr.as_deref(),
                 cfg.ncbi_taxonomy_path.as_deref(),
             )?;
-            let dbs = domainate::read_hmm_references(&cfg.references).context("reading references")?;
+            let dbs =
+                domainate::read_hmm_references(&cfg.references).context("reading references")?;
             // Protein input cannot be searched with nucleotide references
             // (mirrors validate_input_molecule_types).
             if dbs.has_nucleotide() && records.iter().any(|r| r.is_protein()) {
@@ -1975,21 +2066,75 @@ fn dispatch(cli: Cli) -> Result<()> {
             println!("wrote {} records to {}", annotated.len(), output);
         }
         Command::DomainSearch {
-            input, references, output, evalue, min_evalue, z, add_annotations, max_hits,
-            max_hits_per_contig, max_overlap, max_mode, batch_size, cpu, fasta_type, decoys,
-            decoys_file, whole_contig, cds_range, cds_up, cds_down, kb_range, kb_up, kb_down,
-            strand, keep_direction, max_region_overlap, translate, pad, include_taxids, exclude_taxids,
-            taxonomy_expr, ncbi_taxonomy_path, max_output_gb, config: config_path, print_config: do_print,
+            input,
+            references,
+            output,
+            evalue,
+            min_evalue,
+            z,
+            add_annotations,
+            max_hits,
+            max_hits_per_contig,
+            max_overlap,
+            max_mode,
+            batch_size,
+            cpu,
+            fasta_type,
+            decoys,
+            decoys_file,
+            whole_contig,
+            cds_range,
+            cds_up,
+            cds_down,
+            kb_range,
+            kb_up,
+            kb_down,
+            strand,
+            keep_direction,
+            max_region_overlap,
+            translate,
+            pad,
+            include_taxids,
+            exclude_taxids,
+            taxonomy_expr,
+            ncbi_taxonomy_path,
+            max_output_gb,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::DomainSearchConfig {
                 input: opt_path(&input)?,
                 references: paths_to_strings(&references)?,
                 output: opt_path(&output)?,
-                evalue, min_evalue, z, add_annotations, max_hits, max_hits_per_contig, max_overlap,
-                max_mode, batch_size, cpu, fasta_type,
-                whole_contig, cds_range, cds_up, cds_down, kb_range, kb_up, kb_down,
-                strand, keep_direction, translate, pad, max_region_overlap,
-                decoys, decoys_file, include_taxids, exclude_taxids, taxonomy_expr, ncbi_taxonomy_path,
+                evalue,
+                min_evalue,
+                z,
+                add_annotations,
+                max_hits,
+                max_hits_per_contig,
+                max_overlap,
+                max_mode,
+                batch_size,
+                cpu,
+                fasta_type,
+                whole_contig,
+                cds_range,
+                cds_up,
+                cds_down,
+                kb_range,
+                kb_up,
+                kb_down,
+                strand,
+                keep_direction,
+                translate,
+                pad,
+                max_region_overlap,
+                decoys,
+                decoys_file,
+                include_taxids,
+                exclude_taxids,
+                taxonomy_expr,
+                ncbi_taxonomy_path,
                 max_output_gb,
             };
             let mut cfg = match &config_path {
@@ -2001,14 +2146,26 @@ fn dispatch(cli: Cli) -> Result<()> {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
             }
-            let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
-            let output = cfg.output.context("missing required `output` (-o / --output or config)")?;
-            let dbs = domainate::read_hmm_references(&cfg.references).context("reading references")?;
+            let input = cfg
+                .input
+                .context("missing required `input` (-i / --input or config)")?;
+            let output = cfg
+                .output
+                .context("missing required `output` (-o / --output or config)")?;
+            let dbs =
+                domainate::read_hmm_references(&cfg.references).context("reading references")?;
             let range = domainator_core::tools::neighborhood::validate_range(
-                cfg.whole_contig, cfg.kb_range, cfg.kb_up, cfg.kb_down, cfg.cds_range, cfg.cds_up, cfg.cds_down,
+                cfg.whole_contig,
+                cfg.kb_range,
+                cfg.kb_up,
+                cfg.kb_down,
+                cfg.cds_range,
+                cfg.cds_up,
+                cfg.cds_down,
             )
             .map_err(|e| anyhow::anyhow!(e))?;
-            if cfg.translate && !matches!(range, domainator_core::tools::neighborhood::Range::None) {
+            if cfg.translate && !matches!(range, domainator_core::tools::neighborhood::Range::None)
+            {
                 anyhow::bail!("--translate is incompatible with neighborhood extraction (--cds_range/--kb_range/--whole_contig)");
             }
             // Mirrors Python's "Protein sequence output is not compatible with
@@ -2024,7 +2181,9 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => None,
             };
             let allowed_taxids = compile_allowed_taxids(
-                &cfg.include_taxids, &cfg.exclude_taxids, cfg.taxonomy_expr.as_deref(),
+                &cfg.include_taxids,
+                &cfg.exclude_taxids,
+                cfg.taxonomy_expr.as_deref(),
                 cfg.ncbi_taxonomy_path.as_deref(),
             )?;
             let decoys = parse_name_list(&cfg.decoys, cfg.decoys_file.as_deref())?;
@@ -2057,9 +2216,23 @@ fn dispatch(cli: Cli) -> Result<()> {
             println!("wrote {} hit contigs to {}", hits.len(), output);
         }
         Command::Deduplicate {
-            input, output, log, fasta_type, algorithm, bin_path, id, prefix_count, suffix_count,
-            cpu, params, fasta_out, both_strands, cluster_table, cluster_sep,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            log,
+            fasta_type,
+            algorithm,
+            bin_path,
+            id,
+            prefix_count,
+            suffix_count,
+            cpu,
+            params,
+            fasta_out,
+            both_strands,
+            cluster_table,
+            cluster_sep,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::DeduplicateConfig {
                 input: paths_to_strings(&input)?,
@@ -2136,9 +2309,15 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
 
             if cfg.fasta_out {
-                write_fasta_bp_out(&out_records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+                write_fasta_bp_out(
+                    &out_records,
+                    cfg.output.as_ref().map(PathBuf::from).as_ref(),
+                )?;
             } else {
-                write_genbank_out(&out_records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+                write_genbank_out(
+                    &out_records,
+                    cfg.output.as_ref().map(PathBuf::from).as_ref(),
+                )?;
             }
 
             if let Some(table_path) = &cfg.cluster_table {
@@ -2146,19 +2325,29 @@ fn dispatch(cli: Cli) -> Result<()> {
                 let mut t = String::from("representative\tcontigs\n");
                 for (rep, members) in &result.clusters {
                     let rep_name = final_name.get(rep).cloned().unwrap_or_default();
-                    let names: Vec<String> = members.iter().map(|&m| records[m].id.clone()).collect();
+                    let names: Vec<String> =
+                        members.iter().map(|&m| records[m].id.clone()).collect();
                     t.push_str(&format!("{rep_name}\t{}\n", names.join(&sep)));
                 }
                 std::fs::write(table_path, t).context("writing cluster table")?;
             }
 
-            let log_msg = format!("Input  size: {}\nOutput size: {}\n", records.len(), out_records.len());
+            let log_msg = format!(
+                "Input  size: {}\nOutput size: {}\n",
+                records.len(),
+                out_records.len()
+            );
             match &cfg.log {
                 Some(p) => std::fs::write(p, log_msg).context("writing log")?,
                 None => eprint!("{log_msg}"),
             }
         }
-        Command::GenbankToFasta { input, output, config: config_path, print_config: do_print } => {
+        Command::GenbankToFasta {
+            input,
+            output,
+            config: config_path,
+            print_config: do_print,
+        } => {
             let cli = config::GenbankToFastaConfig {
                 input: paths_to_strings(&input)?,
                 output: opt_path(&output)?,
@@ -2176,8 +2365,17 @@ fn dispatch(cli: Cli) -> Result<()> {
             write_fasta_bp_out(&records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
         }
         Command::CleanSequences {
-            input, output, log, fasta_type, fasta_out, clean_name, deduplicate_names, strip,
-            filter_by_aa, config: config_path, print_config: do_print,
+            input,
+            output,
+            log,
+            fasta_type,
+            fasta_out,
+            clean_name,
+            deduplicate_names,
+            strip,
+            filter_by_aa,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::CleanSequencesConfig {
                 input: paths_to_strings(&input)?,
@@ -2240,7 +2438,13 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Command::SortContigs {
-            input, output, max_hits, domains, databases, config: config_path, print_config: do_print,
+            input,
+            output,
+            max_hits,
+            domains,
+            databases,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::SortContigsConfig {
                 input: paths_to_strings(&input)?,
@@ -2264,17 +2468,31 @@ fn dispatch(cli: Cli) -> Result<()> {
                 Some(0) | None => None,
                 Some(n) => Some(n),
             };
-            let domains = if cfg.domains.is_empty() { None } else { Some(cfg.domains.iter().cloned().collect()) };
+            let domains = if cfg.domains.is_empty() {
+                None
+            } else {
+                Some(cfg.domains.iter().cloned().collect())
+            };
             let databases = if domains.is_none() || cfg.databases.is_empty() {
                 None
             } else {
                 Some(cfg.databases.iter().cloned().collect())
             };
-            let opts = sort_contigs::SortContigsOptions { max_hits, domains, databases };
+            let opts = sort_contigs::SortContigsOptions {
+                max_hits,
+                domains,
+                databases,
+            };
             let out = sort_contigs::sort_contigs(records, &opts).map_err(|e| anyhow::anyhow!(e))?;
             write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
         }
-        Command::SelectByCoord { input, output, coords, config: config_path, print_config: do_print } => {
+        Command::SelectByCoord {
+            input,
+            output,
+            coords,
+            config: config_path,
+            print_config: do_print,
+        } => {
             let cli = config::SelectByCoordConfig {
                 input: paths_to_strings(&input)?,
                 output: opt_path(&output)?,
@@ -2289,15 +2507,23 @@ fn dispatch(cli: Cli) -> Result<()> {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
             }
-            let coords_path = cfg.coords.clone().context("missing required `--coords` (-c)")?;
-            let table = std::fs::read_to_string(&coords_path).context("reading coordinate table")?;
+            let coords_path = cfg
+                .coords
+                .clone()
+                .context("missing required `--coords` (-c)")?;
+            let table =
+                std::fs::read_to_string(&coords_path).context("reading coordinate table")?;
             let selections = tools::select_by_coord::parse_coordinate_table(&table)
                 .map_err(|e| anyhow::anyhow!(e))?;
             // Load each input file keeping its basename for the file-column filter.
             let mut records: Vec<(String, SeqRecord)> = Vec::new();
             for p in &cfg.input {
                 let path = PathBuf::from(p);
-                let base = path.file_name().and_then(|s| s.to_str()).unwrap_or(p).to_string();
+                let base = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(p)
+                    .to_string();
                 for rec in load_inputs(std::slice::from_ref(&path))? {
                     records.push((base.clone(), rec));
                 }
@@ -2307,9 +2533,19 @@ fn dispatch(cli: Cli) -> Result<()> {
             write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
         }
         Command::FilterDomains {
-            input, output, evalue, max_overlap, domains, domains_file, databases_keep,
-            databases_filter, annotation_type, contigs, contigs_file,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            evalue,
+            max_overlap,
+            domains,
+            domains_file,
+            databases_keep,
+            databases_filter,
+            annotation_type,
+            contigs,
+            contigs_file,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::FilterDomainsConfig {
                 input: paths_to_strings(&input)?,
@@ -2335,12 +2571,22 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             let mut records = load_inputs_str(&cfg.input)?;
             filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let selected_domains = tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
-            let databases_keep = if cfg.databases_keep.is_empty() { None } else { Some(cfg.databases_keep.iter().cloned().collect()) };
-            let databases_filter = if cfg.databases_filter.is_empty() { None } else { Some(cfg.databases_filter.iter().cloned().collect()) };
+            let selected_domains =
+                tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let databases_keep = if cfg.databases_keep.is_empty() {
+                None
+            } else {
+                Some(cfg.databases_keep.iter().cloned().collect())
+            };
+            let databases_filter = if cfg.databases_filter.is_empty() {
+                None
+            } else {
+                Some(cfg.databases_filter.iter().cloned().collect())
+            };
             let annotation_type = tools::filter_domains::AnnotationType::parse(
                 cfg.annotation_type.as_deref().unwrap_or("all"),
-            ).map_err(|e| anyhow::anyhow!(e))?;
+            )
+            .map_err(|e| anyhow::anyhow!(e))?;
             let opts = tools::filter_domains::FilterDomainsOptions {
                 evalue: cfg.evalue.unwrap_or(100000000.0),
                 max_overlap: cfg.max_overlap.unwrap_or(1.0),
@@ -2353,9 +2599,19 @@ fn dispatch(cli: Cli) -> Result<()> {
             write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
         }
         Command::ColorGenbank {
-            input, output, contigs, contigs_file, color_table, color_table_out,
-            search_hit_color, clear, databases, mode, domain_database,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            contigs,
+            contigs_file,
+            color_table,
+            color_table_out,
+            search_hit_color,
+            clear,
+            databases,
+            mode,
+            domain_database,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::ColorGenbankConfig {
                 input: paths_to_strings(&input)?,
@@ -2382,10 +2638,15 @@ fn dispatch(cli: Cli) -> Result<()> {
             let mut records = load_inputs_str(&cfg.input)?;
             filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
 
-            let targets = tools::color_genbank::ColorTargets::parse(
-                cfg.mode.as_deref().unwrap_or("cdss"),
-            ).map_err(|e| anyhow::anyhow!(e))?;
-            let color_feature = if cfg.domain_database { "database" } else { "name" }.to_string();
+            let targets =
+                tools::color_genbank::ColorTargets::parse(cfg.mode.as_deref().unwrap_or("cdss"))
+                    .map_err(|e| anyhow::anyhow!(e))?;
+            let color_feature = if cfg.domain_database {
+                "database"
+            } else {
+                "name"
+            }
+            .to_string();
 
             let mut color_map = match &cfg.color_table {
                 Some(path) => {
@@ -2430,7 +2691,11 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Command::ColorTableToLegend {
-            input, svg, title, config: config_path, print_config: do_print,
+            input,
+            svg,
+            title,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::ColorTableToLegendConfig {
                 input: paths_to_strings(&input)?,
@@ -2450,11 +2715,14 @@ fn dispatch(cli: Cli) -> Result<()> {
 
             // Read color table(s), merging in order (later files override keys).
             let mut table: Vec<(String, String)> = Vec::new();
-            let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut index: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
             let texts: Vec<String> = if cfg.input.is_empty() {
                 use std::io::Read;
                 let mut buf = String::new();
-                std::io::stdin().read_to_string(&mut buf).context("reading stdin")?;
+                std::io::stdin()
+                    .read_to_string(&mut buf)
+                    .context("reading stdin")?;
                 vec![buf]
             } else {
                 let mut v = Vec::new();
@@ -2464,8 +2732,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 v
             };
             for text in &texts {
-                let entries = tools::color_genbank::read_color_table(text)
-                    .map_err(|e| anyhow::anyhow!(e))?;
+                let entries =
+                    tools::color_genbank::read_color_table(text).map_err(|e| anyhow::anyhow!(e))?;
                 for (k, v) in entries {
                     if let Some(&i) = index.get(&k) {
                         table[i].1 = v;
@@ -2481,15 +2749,38 @@ fn dispatch(cli: Cli) -> Result<()> {
             std::fs::write(svg_path, svg).with_context(|| format!("writing {svg_path}"))?;
         }
         Command::TrimContigs {
-            input, output, kb_both, kb_left, kb_right, cds_both, cds_left, cds_right,
-            domains, domains_file, domain_expr, no_domain, contigs, contigs_file,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            kb_both,
+            kb_left,
+            kb_right,
+            cds_both,
+            cds_left,
+            cds_right,
+            domains,
+            domains_file,
+            domain_expr,
+            no_domain,
+            contigs,
+            contigs_file,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::TrimContigsConfig {
                 input: paths_to_strings(&input)?,
                 output: opt_path(&output)?,
-                kb_both, kb_left, kb_right, cds_both, cds_left, cds_right,
-                domains, domains_file, domain_expr, no_domain, contigs, contigs_file,
+                kb_both,
+                kb_left,
+                kb_right,
+                cds_both,
+                cds_left,
+                cds_right,
+                domains,
+                domains_file,
+                domain_expr,
+                no_domain,
+                contigs,
+                contigs_file,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::TrimContigsConfig>(p)?,
@@ -2503,9 +2794,16 @@ fn dispatch(cli: Cli) -> Result<()> {
             let mut records = load_inputs_str(&cfg.input)?;
             filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
             let (kb_truncation, cds_truncation) = tools::trim_contigs::validate_range(
-                cfg.kb_both, cfg.kb_left, cfg.kb_right, cfg.cds_both, cfg.cds_left, cfg.cds_right,
-            ).map_err(|e| anyhow::anyhow!(e))?;
-            let strip_domains = tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+                cfg.kb_both,
+                cfg.kb_left,
+                cfg.kb_right,
+                cfg.cds_both,
+                cfg.cds_left,
+                cfg.cds_right,
+            )
+            .map_err(|e| anyhow::anyhow!(e))?;
+            let strip_domains =
+                tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
             let opts = tools::trim_contigs::TrimContigsOptions {
                 kb_truncation,
                 cds_truncation,
@@ -2513,20 +2811,49 @@ fn dispatch(cli: Cli) -> Result<()> {
                 domain_expr: cfg.domain_expr.clone(),
                 no_domain: cfg.no_domain,
             };
-            let out = tools::trim_contigs::trim_contigs(records, &opts).map_err(|e| anyhow::anyhow!(e))?;
+            let out = tools::trim_contigs::trim_contigs(records, &opts)
+                .map_err(|e| anyhow::anyhow!(e))?;
             write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
         }
         Command::ExtractDomains {
-            input, output, evalue, score, domains, domains_file, databases, search_hits,
-            pad_up, pad_down, combine, splice, keep_direction, keep_name, fasta_out,
-            contigs, contigs_file, config: config_path, print_config: do_print,
+            input,
+            output,
+            evalue,
+            score,
+            domains,
+            domains_file,
+            databases,
+            search_hits,
+            pad_up,
+            pad_down,
+            combine,
+            splice,
+            keep_direction,
+            keep_name,
+            fasta_out,
+            contigs,
+            contigs_file,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::ExtractDomainsConfig {
                 input: paths_to_strings(&input)?,
                 output: opt_path(&output)?,
-                evalue, score, domains, domains_file, databases, search_hits,
-                pad_up, pad_down, combine, splice, keep_direction, keep_name, fasta_out,
-                contigs, contigs_file,
+                evalue,
+                score,
+                domains,
+                domains_file,
+                databases,
+                search_hits,
+                pad_up,
+                pad_down,
+                combine,
+                splice,
+                keep_direction,
+                keep_name,
+                fasta_out,
+                contigs,
+                contigs_file,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::ExtractDomainsConfig>(p)?,
@@ -2539,8 +2866,13 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             let mut records = load_inputs_str(&cfg.input)?;
             filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let selected_domains = tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
-            let databases = if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) };
+            let selected_domains =
+                tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let databases = if cfg.databases.is_empty() {
+                None
+            } else {
+                Some(cfg.databases.iter().cloned().collect())
+            };
             let opts = tools::extract_domains::ExtractDomainsOptions {
                 evalue: cfg.evalue,
                 score: cfg.score,
@@ -2554,7 +2886,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 databases,
                 splice: cfg.splice,
             };
-            let out = tools::extract_domains::extract_domains(&records, &opts).map_err(|e| anyhow::anyhow!(e))?;
+            let out = tools::extract_domains::extract_domains(&records, &opts)
+                .map_err(|e| anyhow::anyhow!(e))?;
             if cfg.fasta_out {
                 write_fasta_bp_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
             } else {
@@ -2562,16 +2895,44 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Command::ExtractPeptides {
-            input, output, domains, domains_file, databases, unannotated, search_hits, strand,
-            invert, cdss, cdss_file, keep_name, name_field, evalue, fasta_out,
-            contigs, contigs_file, config: config_path, print_config: do_print,
+            input,
+            output,
+            domains,
+            domains_file,
+            databases,
+            unannotated,
+            search_hits,
+            strand,
+            invert,
+            cdss,
+            cdss_file,
+            keep_name,
+            name_field,
+            evalue,
+            fasta_out,
+            contigs,
+            contigs_file,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::ExtractPeptidesConfig {
                 input: paths_to_strings(&input)?,
                 output: opt_path(&output)?,
-                domains, domains_file, databases, unannotated, search_hits, strand,
-                invert, cdss, cdss_file, keep_name, name_field, evalue, fasta_out,
-                contigs, contigs_file,
+                domains,
+                domains_file,
+                databases,
+                unannotated,
+                search_hits,
+                strand,
+                invert,
+                cdss,
+                cdss_file,
+                keep_name,
+                name_field,
+                evalue,
+                fasta_out,
+                contigs,
+                contigs_file,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::ExtractPeptidesConfig>(p)?,
@@ -2584,12 +2945,21 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             let mut records = load_inputs_str(&cfg.input)?;
             filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let target_domains = tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
-            let target_cdss = tools::select_common::parse_name_list(&cfg.cdss, cfg.cdss_file.as_deref())?;
-            let databases = if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) };
+            let target_domains =
+                tools::select_common::parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
+            let target_cdss =
+                tools::select_common::parse_name_list(&cfg.cdss, cfg.cdss_file.as_deref())?;
+            let databases = if cfg.databases.is_empty() {
+                None
+            } else {
+                Some(cfg.databases.iter().cloned().collect())
+            };
             let mut invert = cfg.invert;
             // extract_all when no selection criteria; invert then ignored.
-            let extract_all = target_domains.is_none() && target_cdss.is_none() && !cfg.unannotated && !cfg.search_hits;
+            let extract_all = target_domains.is_none()
+                && target_cdss.is_none()
+                && !cfg.unannotated
+                && !cfg.search_hits;
             if extract_all && invert {
                 eprintln!("Invert supplied with no selection criteria. Invert will be ignored.");
                 invert = false;
@@ -2615,14 +2985,36 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Command::ExtractUnannotated {
-            input, output, evalue, score, databases, search_hits, keep_direction, keep_name,
-            largest, lb, fasta_out, contigs, contigs_file, config: config_path, print_config: do_print,
+            input,
+            output,
+            evalue,
+            score,
+            databases,
+            search_hits,
+            keep_direction,
+            keep_name,
+            largest,
+            lb,
+            fasta_out,
+            contigs,
+            contigs_file,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::ExtractUnannotatedConfig {
                 input: paths_to_strings(&input)?,
                 output: opt_path(&output)?,
-                evalue, score, databases, search_hits, keep_direction, keep_name, largest, lb, fasta_out,
-                contigs, contigs_file,
+                evalue,
+                score,
+                databases,
+                search_hits,
+                keep_direction,
+                keep_name,
+                largest,
+                lb,
+                fasta_out,
+                contigs,
+                contigs_file,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::ExtractUnannotatedConfig>(p)?,
@@ -2635,7 +3027,11 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             let mut records = load_inputs_str(&cfg.input)?;
             filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let databases = if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) };
+            let databases = if cfg.databases.is_empty() {
+                None
+            } else {
+                Some(cfg.databases.iter().cloned().collect())
+            };
             let opts = tools::extract_unannotated::ExtractUnannotatedOptions {
                 evalue: cfg.evalue,
                 score: cfg.score,
@@ -2646,14 +3042,32 @@ fn dispatch(cli: Cli) -> Result<()> {
                 largest: cfg.largest,
                 lb: cfg.lb,
             };
-            let out = tools::extract_unannotated::extract_unannotated(&records, &opts).map_err(|e| anyhow::anyhow!(e))?;
+            let out = tools::extract_unannotated::extract_unannotated(&records, &opts)
+                .map_err(|e| anyhow::anyhow!(e))?;
             if cfg.fasta_out {
                 write_fasta_bp_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
             } else {
                 write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
             }
         }
-        Command::SeqDist { input, reference, dense, dense_text, sparse, algorithm, mode, lb, k, params, mst_knn, knn, cpu, max_output_gb, config: config_path, print_config: do_print } => {
+        Command::SeqDist {
+            input,
+            reference,
+            dense,
+            dense_text,
+            sparse,
+            algorithm,
+            mode,
+            lb,
+            k,
+            params,
+            mst_knn,
+            knn,
+            cpu,
+            max_output_gb,
+            config: config_path,
+            print_config: do_print,
+        } => {
             let cli = config::SeqDistConfig {
                 input: opt_path(&input)?,
                 reference: opt_path(&reference)?,
@@ -2680,17 +3094,21 @@ fn dispatch(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             if cfg.dense.is_none() && cfg.dense_text.is_none() && cfg.sparse.is_none() {
-                anyhow::bail!("no output specified: pass at least one of --dense, --dense_text, --sparse");
+                anyhow::bail!(
+                    "no output specified: pass at least one of --dense, --dense_text, --sparse"
+                );
             }
-            let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
+            let input = cfg
+                .input
+                .context("missing required `input` (-i / --input or config)")?;
             let input_pb = PathBuf::from(&input);
             let input_kind = detect_kind(&input_pb)
                 .with_context(|| format!("could not detect input kind: {input}"))?;
             let ref_pb = cfg.reference.as_ref().map(PathBuf::from);
             let ref_kind = match &ref_pb {
-                Some(p) => Some(
-                    detect_kind(p).with_context(|| format!("could not detect reference kind: {}", p.display()))?,
-                ),
+                Some(p) => Some(detect_kind(p).with_context(|| {
+                    format!("could not detect reference kind: {}", p.display())
+                })?),
                 None => None,
             };
             let opts = SeqDistOptions {
@@ -2700,12 +3118,20 @@ fn dispatch(cli: Cli) -> Result<()> {
                 k: cfg.k,
                 mst_knn: cfg.mst_knn,
                 knn: cfg.knn,
-                params: domainator_core::tools::seq_dist::parse_diamond_params(cfg.params.as_deref().unwrap_or(""))
-                    .map_err(|e| anyhow::anyhow!(e))?,
+                params: domainator_core::tools::seq_dist::parse_diamond_params(
+                    cfg.params.as_deref().unwrap_or(""),
+                )
+                .map_err(|e| anyhow::anyhow!(e))?,
                 cpu: cfg.cpu.unwrap_or(0),
             };
-            let matrix = seq_dist(&input, input_kind, cfg.reference.as_deref(), ref_kind, &opts)
-                .context("running seq_dist")?;
+            let matrix = seq_dist(
+                &input,
+                input_kind,
+                cfg.reference.as_deref(),
+                ref_kind,
+                &opts,
+            )
+            .context("running seq_dist")?;
             // Output-size guardrails: estimate each requested output before writing.
             let max_gb = cfg.max_output_gb.unwrap_or(25.0);
             if let Some(p) = &cfg.dense {
@@ -2728,7 +3154,23 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
         }
-        Command::CompareContigs { input, dense, dense_text, sparse, ji, ai, databases, k, lb, mst_knn, knn, cpu, max_output_gb, config: config_path, print_config: do_print } => {
+        Command::CompareContigs {
+            input,
+            dense,
+            dense_text,
+            sparse,
+            ji,
+            ai,
+            databases,
+            k,
+            lb,
+            mst_knn,
+            knn,
+            cpu,
+            max_output_gb,
+            config: config_path,
+            print_config: do_print,
+        } => {
             let cli = config::CompareContigsConfig {
                 input: paths_to_strings(&input)?,
                 dense: opt_path(&dense)?,
@@ -2754,7 +3196,9 @@ fn dispatch(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             if cfg.dense.is_none() && cfg.dense_text.is_none() && cfg.sparse.is_none() {
-                anyhow::bail!("no output specified: pass at least one of --dense, --dense_text, --sparse");
+                anyhow::bail!(
+                    "no output specified: pass at least one of --dense, --dense_text, --sparse"
+                );
             }
             let ji = cfg.ji.unwrap_or(0.5);
             let ai = cfg.ai.unwrap_or(0.5);
@@ -2764,7 +3208,11 @@ fn dispatch(cli: Cli) -> Result<()> {
             let opts = CompareContigsOptions {
                 ji_weight: ji,
                 ai_weight: ai,
-                databases: if cfg.databases.is_empty() { None } else { Some(cfg.databases.into_iter().collect()) },
+                databases: if cfg.databases.is_empty() {
+                    None
+                } else {
+                    Some(cfg.databases.into_iter().collect())
+                },
                 k: cfg.k,
                 lb: cfg.lb.unwrap_or(0.0),
                 mst_knn: cfg.mst_knn,
@@ -2794,7 +3242,20 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
         }
-        Command::TransformMatrix { input, dense, dense_text, sparse, mode, input_type, lb, mst_knn, knn, max_output_gb, config: config_path, print_config: do_print } => {
+        Command::TransformMatrix {
+            input,
+            dense,
+            dense_text,
+            sparse,
+            mode,
+            input_type,
+            lb,
+            mst_knn,
+            knn,
+            max_output_gb,
+            config: config_path,
+            print_config: do_print,
+        } => {
             let cli = config::TransformMatrixConfig {
                 input: opt_path(&input)?,
                 dense: opt_path(&dense)?,
@@ -2816,15 +3277,22 @@ fn dispatch(cli: Cli) -> Result<()> {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
             }
-            let input = cfg.input.clone().context("missing required `input` (-i / --input or config)")?;
+            let input = cfg
+                .input
+                .clone()
+                .context("missing required `input` (-i / --input or config)")?;
             // Shared config->Options resolution (used by the GUI too, so they can't drift).
             let opts = config::resolve::resolve_transform_matrix(&cfg)?;
             let mode = opts.mode.clone();
             if cfg.dense.is_none() && cfg.dense_text.is_none() && cfg.sparse.is_none() {
-                anyhow::bail!("no output specified: pass at least one of --dense, --dense_text, --sparse");
+                anyhow::bail!(
+                    "no output specified: pass at least one of --dense, --dense_text, --sparse"
+                );
             }
             if cfg.sparse.is_some() && mode == "score_dist" {
-                anyhow::bail!("sparse distance matrices not implemented (--mode score_dist with --sparse)");
+                anyhow::bail!(
+                    "sparse distance matrices not implemented (--mode score_dist with --sparse)"
+                );
             }
             let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
             let matrix = transform_matrix(matrix, &opts).context("running transform_matrix")?;
@@ -2834,7 +3302,13 @@ fn dispatch(cli: Cli) -> Result<()> {
                 enforce_matrix_gb(&matrix, "dense", p, max_gb, "--sparse, --lb, --mst_knn")?;
             }
             if let Some(p) = &cfg.dense_text {
-                enforce_matrix_gb(&matrix, "dense_text", p, max_gb, "--sparse, --lb, --mst_knn")?;
+                enforce_matrix_gb(
+                    &matrix,
+                    "dense_text",
+                    p,
+                    max_gb,
+                    "--sparse, --lb, --mst_knn",
+                )?;
             }
             if let Some(p) = &cfg.sparse {
                 enforce_matrix_gb(&matrix, "sparse", p, max_gb, "--lb, --mst_knn")?;
@@ -2851,9 +3325,25 @@ fn dispatch(cli: Cli) -> Result<()> {
             println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
         }
         Command::BuildSsn {
-            input, xgmml, lb, metadata, subset, subset_file, color_by, color_table,
-            color_table_out, max_color_groups, cluster, cluster_tsv, no_cluster_header,
-            mst, mst_knn, knn, max_output_gb, config: config_path, print_config: do_print,
+            input,
+            xgmml,
+            lb,
+            metadata,
+            subset,
+            subset_file,
+            color_by,
+            color_table,
+            color_table_out,
+            max_color_groups,
+            cluster,
+            cluster_tsv,
+            no_cluster_header,
+            mst,
+            mst_knn,
+            knn,
+            max_output_gb,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::BuildSsnConfig {
                 input: opt_path(&input)?,
@@ -2883,8 +3373,14 @@ fn dispatch(cli: Cli) -> Result<()> {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
             }
-            let input = cfg.input.clone().context("missing required `input` (-i / --input or config)")?;
-            let xgmml = cfg.xgmml.clone().context("missing required `xgmml` (--xgmml or config)")?;
+            let input = cfg
+                .input
+                .clone()
+                .context("missing required `input` (-i / --input or config)")?;
+            let xgmml = cfg
+                .xgmml
+                .clone()
+                .context("missing required `xgmml` (--xgmml or config)")?;
             if cfg.mst && cfg.mst_knn.is_some() {
                 anyhow::bail!("--mst and --mst_knn are mutually exclusive");
             }
@@ -2894,7 +3390,8 @@ fn dispatch(cli: Cli) -> Result<()> {
             let subset_labels = if cfg.subset.is_empty() && cfg.subset_file.is_none() {
                 None
             } else {
-                let mut set: std::collections::HashSet<String> = cfg.subset.iter().cloned().collect();
+                let mut set: std::collections::HashSet<String> =
+                    cfg.subset.iter().cloned().collect();
                 if let Some(f) = &cfg.subset_file {
                     for line in std::fs::read_to_string(f)?.lines() {
                         let l = line.trim();
@@ -2936,7 +3433,10 @@ fn dispatch(cli: Cli) -> Result<()> {
             std::fs::write(&xgmml, &xgmml_buf)?;
 
             if let Some(path) = &cfg.cluster_tsv {
-                let labels = result.cluster_labels.as_ref().expect("cluster labels present");
+                let labels = result
+                    .cluster_labels
+                    .as_ref()
+                    .expect("cluster labels present");
                 let mut out = String::new();
                 if !cfg.no_cluster_header {
                     out.push_str("contig\tcluster\n");
@@ -2965,12 +3465,29 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             }
 
-            println!("wrote {} nodes, {} edges to {}", result.table.names.len(), result.edges.len(), xgmml);
+            println!(
+                "wrote {} nodes, {} edges to {}",
+                result.table.names.len(),
+                result.edges.len(),
+                xgmml
+            );
         }
         Command::BuildSsnViewer {
-            input, output, html, embed_data, name, metadata, subset, subset_file, color_by,
-            label_by, categorical, merge_impact_metric, max_output_gb,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            html,
+            embed_data,
+            name,
+            metadata,
+            subset,
+            subset_file,
+            color_by,
+            label_by,
+            categorical,
+            merge_impact_metric,
+            max_output_gb,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::BuildSsnViewerConfig {
                 input: opt_path(&input)?,
@@ -2998,7 +3515,11 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
 
             let stem = |p: &str| {
-                std::path::Path::new(p).file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()
+                std::path::Path::new(p)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string()
             };
 
             // Arg-combination handling mirrors the Python tool.
@@ -3009,8 +3530,14 @@ fn dispatch(cli: Cli) -> Result<()> {
                 if cfg.embed_data {
                     anyhow::bail!("--embed_data requires -i/--input.");
                 }
-                let html = cfg.html.as_ref().context("when -i/--input is omitted, --html is required")?;
-                let name = cfg.name.clone().unwrap_or_else(|| "Domainator SSN Viewer".to_string());
+                let html = cfg
+                    .html
+                    .as_ref()
+                    .context("when -i/--input is omitted, --html is required")?;
+                let name = cfg
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "Domainator SSN Viewer".to_string());
                 std::fs::write(html, render_html(&name, None))?;
                 println!("wrote standalone HTML viewer to {html}");
                 return Ok(());
@@ -3034,7 +3561,8 @@ fn dispatch(cli: Cli) -> Result<()> {
             let subset_labels = if cfg.subset.is_empty() && cfg.subset_file.is_none() {
                 None
             } else {
-                let mut set: std::collections::HashSet<String> = cfg.subset.iter().cloned().collect();
+                let mut set: std::collections::HashSet<String> =
+                    cfg.subset.iter().cloned().collect();
                 if let Some(f) = &cfg.subset_file {
                     for line in std::fs::read_to_string(f)?.lines() {
                         let l = line.trim();
@@ -3048,7 +3576,8 @@ fn dispatch(cli: Cli) -> Result<()> {
 
             let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
             let opts = config::resolve::resolve_build_ssn_viewer(&cfg, name.clone(), subset_labels);
-            let bundle = build_ssn_viewer_bundle(&matrix, &opts).context("building SSN viewer bundle")?;
+            let bundle =
+                build_ssn_viewer_bundle(&matrix, &opts).context("building SSN viewer bundle")?;
             let compressed = gzip(&serialize_bundle(&bundle));
 
             if let Some(out) = &cfg.output {
@@ -3063,14 +3592,23 @@ fn dispatch(cli: Cli) -> Result<()> {
                 println!("wrote {}-node .dsnv bundle to {out}", matrix.nrows());
             }
             if let Some(html) = &cfg.html {
-                let embed = if cfg.embed_data { Some(compressed.as_slice()) } else { None };
+                let embed = if cfg.embed_data {
+                    Some(compressed.as_slice())
+                } else {
+                    None
+                };
                 std::fs::write(html, render_html(&name, embed))?;
                 println!("wrote HTML viewer to {html}");
             }
         }
         Command::MatrixReport {
-            input, output, json, merge_impact_metric, max_merge_events,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            json,
+            merge_impact_metric,
+            max_merge_events,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::MatrixReportConfig {
                 input: opt_path(&input)?,
@@ -3088,14 +3626,20 @@ fn dispatch(cli: Cli) -> Result<()> {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
             }
-            let input = cfg.input.context("missing required `input` (-i / --input or config)")?;
+            let input = cfg
+                .input
+                .context("missing required `input` (-i / --input or config)")?;
             if cfg.output.is_none() && cfg.json.is_none() {
                 anyhow::bail!("no output specified: pass --output (text) and/or --json");
             }
             let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
-            let metric = cfg.merge_impact_metric.clone().unwrap_or_else(|| "min_child".into());
-            let max_events =
-                cfg.max_merge_events.unwrap_or(config::resolve::DEFAULT_MAX_MERGE_EVENTS);
+            let metric = cfg
+                .merge_impact_metric
+                .clone()
+                .unwrap_or_else(|| "min_child".into());
+            let max_events = cfg
+                .max_merge_events
+                .unwrap_or(config::resolve::DEFAULT_MAX_MERGE_EVENTS);
             let report = matrix_report(&matrix, &metric, max_events);
             if let Some(p) = &cfg.output {
                 std::fs::write(p, render_text(&report))?;
@@ -3103,11 +3647,21 @@ fn dispatch(cli: Cli) -> Result<()> {
             if let Some(p) = &cfg.json {
                 std::fs::write(p, serde_json::to_string_pretty(&to_json(&report))?)?;
             }
-            println!("matrix report: {} nodes, {} edges", report.n_nodes, report.n_edges);
+            println!(
+                "matrix report: {} nodes, {} edges",
+                report.n_nodes, report.n_edges
+            );
         }
         Command::SummaryReport {
-            input, output, json, domains, databases, taxonomy, ncbi_taxonomy_path,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            json,
+            domains,
+            databases,
+            taxonomy,
+            ncbi_taxonomy_path,
+            config: config_path,
+            print_config: do_print,
         } => {
             use domainator_core::tools::summary_report as sr;
             let cli = config::SummaryReportConfig {
@@ -3137,7 +3691,10 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             }
             let tax = if cfg.taxonomy {
-                let p = cfg.ncbi_taxonomy_path.clone().unwrap_or_else(default_ncbi_taxonomy_path);
+                let p = cfg
+                    .ncbi_taxonomy_path
+                    .clone()
+                    .unwrap_or_else(default_ncbi_taxonomy_path);
                 Some(load_taxonomy(&p)?)
             } else {
                 None
@@ -3168,8 +3725,18 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Command::SsnNavigator {
-            input, output, mode, threshold, id, node, min_size, top_n, members,
-            max_merge_events, config: config_path, print_config: do_print,
+            input,
+            output,
+            mode,
+            threshold,
+            id,
+            node,
+            min_size,
+            top_n,
+            members,
+            max_merge_events,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::SsnNavigatorConfig {
                 input: opt_path(&input)?,
@@ -3211,7 +3778,11 @@ fn dispatch(cli: Cli) -> Result<()> {
             println!("{}", schema(&tool)?);
         }
         Command::EnumReport { args } => {
-            let EnumCli { config: cli_cfg, config_path, print_config: do_print } = parse_enum_args(&args)?;
+            let EnumCli {
+                config: cli_cfg,
+                config_path,
+                print_config: do_print,
+            } = parse_enum_args(&args)?;
             // Config file (if any) provides the base; CLI values override/extend.
             let mut cfg = match &config_path {
                 Some(p) => load_config::<EnumConfig>(p)?,
@@ -3223,9 +3794,15 @@ fn dispatch(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             let by = cfg.by_enum()?;
-            let analyses: Vec<Analysis> =
-                cfg.columns.iter().map(|c| c.to_analysis()).collect::<Result<_>>()?;
-            let ncbi_path = cfg.ncbi_taxonomy_path.clone().unwrap_or_else(default_ncbi_taxonomy_path);
+            let analyses: Vec<Analysis> = cfg
+                .columns
+                .iter()
+                .map(|c| c.to_analysis())
+                .collect::<Result<_>>()?;
+            let ncbi_path = cfg
+                .ncbi_taxonomy_path
+                .clone()
+                .unwrap_or_else(default_ncbi_taxonomy_path);
 
             let target_contigs = parse_name_list(&cfg.contigs, cfg.contigs_file.as_deref())?;
             let mut records: Vec<(SeqRecord, String)> = Vec::new();
@@ -3243,9 +3820,16 @@ fn dispatch(cli: Cli) -> Result<()> {
             if let Some(set) = &target_contigs {
                 records.retain(|(r, _)| set.contains(&r.id));
             }
-            let tax = if needs_taxonomy(&analyses) { Some(load_taxonomy(&ncbi_path)?) } else { None };
-            let databases: Option<std::collections::HashSet<String>> =
-                if cfg.databases.is_empty() { None } else { Some(cfg.databases.iter().cloned().collect()) };
+            let tax = if needs_taxonomy(&analyses) {
+                Some(load_taxonomy(&ncbi_path)?)
+            } else {
+                None
+            };
+            let databases: Option<std::collections::HashSet<String>> = if cfg.databases.is_empty() {
+                None
+            } else {
+                Some(cfg.databases.iter().cloned().collect())
+            };
             let col_names = cfg.column_names.as_deref();
             // `-o` is TSV and `--json` is NDJSON; they are independent outputs, so a
             // run can produce both. `--json -` writes to stdout, like Python.
@@ -3260,8 +3844,14 @@ fn dispatch(cli: Cli) -> Result<()> {
                     Some(p) if p != "-" => {
                         let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
                         let r = enum_report::enum_report(
-                            records.clone(), by, &analyses, col_names, tax.as_ref(),
-                            databases.as_ref(), format, &mut f,
+                            records.clone(),
+                            by,
+                            &analyses,
+                            col_names,
+                            tax.as_ref(),
+                            databases.as_ref(),
+                            format,
+                            &mut f,
                         );
                         f.flush()?;
                         r
@@ -3270,8 +3860,14 @@ fn dispatch(cli: Cli) -> Result<()> {
                         let stdout = std::io::stdout();
                         let mut h = stdout.lock();
                         enum_report::enum_report(
-                            records.clone(), by, &analyses, col_names, tax.as_ref(),
-                            databases.as_ref(), format, &mut h,
+                            records.clone(),
+                            by,
+                            &analyses,
+                            col_names,
+                            tax.as_ref(),
+                            databases.as_ref(),
+                            format,
+                            &mut h,
                         )
                     }
                 };
@@ -3279,11 +3875,35 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Command::SelectByCds {
-            input, output, kb_range, kb_up, kb_down, cds_range, cds_up, cds_down, whole_contig,
-            contigs, contigs_file, cds, cds_file, domains, domains_file, domain_expr, databases,
-            strand, unannotated, search_hits, pad, keep_direction, skip_deduplicate,
-            max_region_overlap, evalue, invert, include_nucleic_acids,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            kb_range,
+            kb_up,
+            kb_down,
+            cds_range,
+            cds_up,
+            cds_down,
+            whole_contig,
+            contigs,
+            contigs_file,
+            cds,
+            cds_file,
+            domains,
+            domains_file,
+            domain_expr,
+            databases,
+            strand,
+            unannotated,
+            search_hits,
+            pad,
+            keep_direction,
+            skip_deduplicate,
+            max_region_overlap,
+            evalue,
+            invert,
+            include_nucleic_acids,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::SelectByCdsConfig {
                 input: paths_to_strings(&input)?,
@@ -3331,7 +3951,13 @@ fn dispatch(cli: Cli) -> Result<()> {
             let target_cdss = parse_name_list(&cfg.cds, cfg.cds_file.as_deref())?;
             let target_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
             let range = domainator_core::tools::neighborhood::validate_range(
-                cfg.whole_contig, cfg.kb_range, cfg.kb_up, cfg.kb_down, cfg.cds_range, cfg.cds_up, cfg.cds_down,
+                cfg.whole_contig,
+                cfg.kb_range,
+                cfg.kb_up,
+                cfg.kb_down,
+                cfg.cds_range,
+                cfg.cds_up,
+                cfg.cds_down,
             )
             .map_err(|e| anyhow::anyhow!(e))?;
             let strand = match cfg.strand.as_deref() {
@@ -3351,7 +3977,11 @@ fn dispatch(cli: Cli) -> Result<()> {
                 search_hits: cfg.search_hits,
                 max_region_overlap: cfg.max_region_overlap.unwrap_or(1.0),
                 strand,
-                databases: if cfg.databases.is_empty() { None } else { Some(cfg.databases.into_iter().collect()) },
+                databases: if cfg.databases.is_empty() {
+                    None
+                } else {
+                    Some(cfg.databases.into_iter().collect())
+                },
                 unannotated: cfg.unannotated,
                 include_nucleic_acids: cfg.include_nucleic_acids,
             };
@@ -3368,11 +3998,35 @@ fn dispatch(cli: Cli) -> Result<()> {
             write_genbank_out(&out_records, cfg.output.map(PathBuf::from).as_ref())?;
         }
         Command::SelectByContig {
-            input, output, contigs, contigs_file, contigs_regex, definition_regex, sequence_regex,
-            domains, domains_file, domain_expr, domain_type, databases, unannotated, evalue,
-            fasta_out, include_taxids, exclude_taxids, taxonomy_expr, ncbi_taxonomy_path, first,
-            length_lb, length_ub, cds_count_lb, cds_count_ub, search_score_lb, search_score_ub, invert,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            contigs,
+            contigs_file,
+            contigs_regex,
+            definition_regex,
+            sequence_regex,
+            domains,
+            domains_file,
+            domain_expr,
+            domain_type,
+            databases,
+            unannotated,
+            evalue,
+            fasta_out,
+            include_taxids,
+            exclude_taxids,
+            taxonomy_expr,
+            ncbi_taxonomy_path,
+            first,
+            length_lb,
+            length_ub,
+            cds_count_lb,
+            cds_count_ub,
+            search_score_lb,
+            search_score_ub,
+            invert,
+            config: config_path,
+            print_config: do_print,
         } => {
             let cli = config::SelectByContigConfig {
                 input: paths_to_strings(&input)?,
@@ -3417,9 +4071,16 @@ fn dispatch(cli: Cli) -> Result<()> {
             let target_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
             let needs_tax = !cfg.include_taxids.is_empty()
                 || !cfg.exclude_taxids.is_empty()
-                || cfg.taxonomy_expr.as_deref().is_some_and(|e| !e.trim().is_empty());
+                || cfg
+                    .taxonomy_expr
+                    .as_deref()
+                    .is_some_and(|e| !e.trim().is_empty());
             let tax = if needs_tax {
-                Some(load_taxonomy(&cfg.ncbi_taxonomy_path.clone().unwrap_or_else(default_ncbi_taxonomy_path))?)
+                Some(load_taxonomy(
+                    &cfg.ncbi_taxonomy_path
+                        .clone()
+                        .unwrap_or_else(default_ncbi_taxonomy_path),
+                )?)
             } else {
                 None
             };
@@ -3437,24 +4098,48 @@ fn dispatch(cli: Cli) -> Result<()> {
                 target_contigs,
                 contigs_regex: cfg.contigs_regex,
                 invert: cfg.invert,
-                include_taxids: if cfg.include_taxids.is_empty() { None } else { Some(cfg.include_taxids.into_iter().collect()) },
-                exclude_taxids: if cfg.exclude_taxids.is_empty() { None } else { Some(cfg.exclude_taxids.into_iter().collect()) },
+                include_taxids: if cfg.include_taxids.is_empty() {
+                    None
+                } else {
+                    Some(cfg.include_taxids.into_iter().collect())
+                },
+                exclude_taxids: if cfg.exclude_taxids.is_empty() {
+                    None
+                } else {
+                    Some(cfg.exclude_taxids.into_iter().collect())
+                },
                 taxonomy_expr: cfg.taxonomy_expr,
-                databases: if cfg.databases.is_empty() { None } else { Some(cfg.databases.into_iter().collect()) },
+                databases: if cfg.databases.is_empty() {
+                    None
+                } else {
+                    Some(cfg.databases.into_iter().collect())
+                },
                 unannotated: cfg.unannotated,
                 search_score_lb: cfg.search_score_lb,
                 search_score_ub: cfg.search_score_ub,
                 domain_type: cfg.domain_type.unwrap_or_else(|| "domain".into()),
             };
             let out_path = cfg.output.map(PathBuf::from);
-            let selected = select_by_contig(records, tax.as_ref(), &opts).map_err(|e| anyhow::anyhow!(e))?;
+            let selected =
+                select_by_contig(records, tax.as_ref(), &opts).map_err(|e| anyhow::anyhow!(e))?;
             if cfg.fasta_out {
                 write_fasta_bp_out(&selected, out_path.as_ref())?;
             } else {
                 write_genbank_out(&selected, out_path.as_ref())?;
             }
         }
-        Command::HmmerCompare { input, reference, output, score_cutoff, k, alignments, cpu, max_output_gb, config: config_path, print_config: do_print } => {
+        Command::HmmerCompare {
+            input,
+            reference,
+            output,
+            score_cutoff,
+            k,
+            alignments,
+            cpu,
+            max_output_gb,
+            config: config_path,
+            print_config: do_print,
+        } => {
             let cli = config::HmmerCompareConfig {
                 input: paths_to_strings(&input)?,
                 reference: paths_to_strings(&reference)?,
@@ -3486,20 +4171,25 @@ fn dispatch(cli: Cli) -> Result<()> {
                     // Buffer in memory so a tripped output-size guardrail leaves no
                     // partial file (mirrors the Python tool's temp-file + rename).
                     let mut buf: Vec<u8> = Vec::new();
-                    hmmer_compare(&cfg.input, &cfg.reference, &opts, &mut buf).context("running hmmer_compare")?;
+                    hmmer_compare(&cfg.input, &cfg.reference, &opts, &mut buf)
+                        .context("running hmmer_compare")?;
                     std::fs::write(p, &buf)?;
                 }
                 None => {
                     let stdout = std::io::stdout();
                     let mut h = stdout.lock();
-                    hmmer_compare(&cfg.input, &cfg.reference, &opts, &mut h).context("running hmmer_compare")?;
+                    hmmer_compare(&cfg.input, &cfg.reference, &opts, &mut h)
+                        .context("running hmmer_compare")?;
                 }
             }
         }
         Command::HmmerReport { args } => {
             use domainator_core::tools::hmmer_report as hr;
-            let HmmerReportCli { config: cli_cfg, config_path, print_config: do_print } =
-                parse_hmmer_report_args(&args)?;
+            let HmmerReportCli {
+                config: cli_cfg,
+                config_path,
+                print_config: do_print,
+            } = parse_hmmer_report_args(&args)?;
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::HmmerReportConfig>(p)?,
                 None => config::HmmerReportConfig::default(),
@@ -3509,8 +4199,11 @@ fn dispatch(cli: Cli) -> Result<()> {
                 print!("{}", print_config(&cfg)?);
                 return Ok(());
             }
-            let analyses: Vec<hr::Analysis> =
-                cfg.columns.iter().map(|c| c.to_analysis()).collect::<Result<_>>()?;
+            let analyses: Vec<hr::Analysis> = cfg
+                .columns
+                .iter()
+                .map(|c| c.to_analysis())
+                .collect::<Result<_>>()?;
             if cfg.input.is_empty() {
                 anyhow::bail!("hmmer_report requires at least one -i/--input .hmm file");
             }
@@ -3541,8 +4234,16 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Command::HmmerSelect {
-            input, output, regex, exact, contains, field, case_sensitive, alphabet,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            regex,
+            exact,
+            contains,
+            field,
+            case_sensitive,
+            alphabet,
+            config: config_path,
+            print_config: do_print,
         } => {
             use domainator_core::tools::hmmer_select as hs;
             let cli = config::HmmerSelectConfig {
@@ -3596,8 +4297,16 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Command::HmmerBuild {
-            input, output, name, acc, desc, alphabet, window_length, window_beta,
-            config: config_path, print_config: do_print,
+            input,
+            output,
+            name,
+            acc,
+            desc,
+            alphabet,
+            window_length,
+            window_beta,
+            config: config_path,
+            print_config: do_print,
         } => {
             use domainator_core::tools::hmmer_build as hb;
             let cli = config::HmmerBuildConfig {
@@ -3638,7 +4347,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 })
                 .map_err(|e| anyhow::anyhow!(e))?,
                 None => {
-                    let hmm = hb::hmmer_build(&PathBuf::from(&input), &opts).map_err(|e| anyhow::anyhow!(e))?;
+                    let hmm = hb::hmmer_build(&PathBuf::from(&input), &opts)
+                        .map_err(|e| anyhow::anyhow!(e))?;
                     let stdout = std::io::stdout();
                     let mut h = stdout.lock();
                     hb::write_hmm_out(&hmm, &mut h).map_err(|e| anyhow::anyhow!(e))?;
@@ -3646,8 +4356,15 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Command::HmmerSearch {
-            input, reference, output, score_cutoff, max_hits, cpu, max_output_gb,
-            config: config_path, print_config: do_print,
+            input,
+            reference,
+            output,
+            score_cutoff,
+            max_hits,
+            cpu,
+            max_output_gb,
+            config: config_path,
+            print_config: do_print,
         } => {
             use domainator_core::tools::hmmer_search as hsr;
             let cli = config::HmmerSearchConfig {
@@ -3697,8 +4414,10 @@ fn dispatch(cli: Cli) -> Result<()> {
                 max_output_gb: cfg.max_output_gb,
             };
             let found = match &cfg.output {
-                Some(p) => write_hmm_output(p, |f| hsr::hmmer_search(&cfg.input, &cfg.reference, &opts, f))
-                    .map_err(|e| anyhow::anyhow!(e))?,
+                Some(p) => write_hmm_output(p, |f| {
+                    hsr::hmmer_search(&cfg.input, &cfg.reference, &opts, f)
+                })
+                .map_err(|e| anyhow::anyhow!(e))?,
                 None => {
                     let stdout = std::io::stdout();
                     let mut h = stdout.lock();
@@ -3709,8 +4428,17 @@ fn dispatch(cli: Cli) -> Result<()> {
             eprintln!("Kept {found} query profiles.");
         }
         Command::FormatDb {
-            input, shards, compress, index, output_dir, name, level, force, log,
-            config: config_path, print_config: do_print,
+            input,
+            shards,
+            compress,
+            index,
+            output_dir,
+            name,
+            level,
+            force,
+            log,
+            config: config_path,
+            print_config: do_print,
         } => {
             use domainator_core::tools::format_db as fdb;
             let cli = config::FormatDbConfig {

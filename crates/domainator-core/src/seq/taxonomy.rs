@@ -27,7 +27,9 @@ pub struct NCBITaxonomy {
 /// Split a taxdmp line into fields: strip the trailing `\n|\t` clutter, then
 /// split on `\t|\t` (matching Python's `rstrip("\n|\t").split("\t|\t")`).
 fn split_dmp(line: &str) -> Vec<&str> {
-    line.trim_end_matches(['\n', '|', '\t']).split("\t|\t").collect()
+    line.trim_end_matches(['\n', '|', '\t'])
+        .split("\t|\t")
+        .collect()
 }
 
 impl NCBITaxonomy {
@@ -46,7 +48,11 @@ impl NCBITaxonomy {
             let delnodes = std::fs::read_to_string(&delnodes_p)?;
             return Ok(Self::from_texts(&nodes, &names, &merged, &delnodes));
         }
-        let tar = if dir.is_file() { dir.to_path_buf() } else { dir.join("taxdump.tar.gz") };
+        let tar = if dir.is_file() {
+            dir.to_path_buf()
+        } else {
+            dir.join("taxdump.tar.gz")
+        };
         if tar.exists() {
             let members = read_targz_members(&tar)?;
             let get = |name: &str| -> std::io::Result<String> {
@@ -118,7 +124,12 @@ impl NCBITaxonomy {
                 deleted.insert(tid);
             }
         }
-        NCBITaxonomy { nodes: nodes_tab, names: name_tab, merged: merged_tab, deleted }
+        NCBITaxonomy {
+            nodes: nodes_tab,
+            names: name_tab,
+            merged: merged_tab,
+            deleted,
+        }
     }
 
     pub fn normalized_taxid(&self, tax_id: i64) -> i64 {
@@ -177,7 +188,11 @@ impl NCBITaxonomy {
         p
     }
 
-    fn finalize_allowed(&self, mut allowed: HashSet<i64>, empty_lineage_passes: bool) -> HashSet<i64> {
+    fn finalize_allowed(
+        &self,
+        mut allowed: HashSet<i64>,
+        empty_lineage_passes: bool,
+    ) -> HashSet<i64> {
         let news: Vec<(i64, i64)> = self.merged.iter().map(|(&o, &n)| (o, n)).collect();
         for (old, new) in news {
             if allowed.contains(&new) {
@@ -207,27 +222,28 @@ impl NCBITaxonomy {
         let mut inc_memo: HashMap<i64, bool> = HashMap::new();
         let mut exc_memo: HashMap<i64, bool> = HashMap::new();
 
-        let resolve = |t0: i64, inc_memo: &mut HashMap<i64, bool>, exc_memo: &mut HashMap<i64, bool>| {
-            let mut chain = Vec::new();
-            let mut t = t0;
-            while !inc_memo.contains_key(&t) {
-                let p = self.normalized_parent(t);
-                if p == t {
-                    inc_memo.insert(t, include.map(|s| s.contains(&t)).unwrap_or(false));
-                    exc_memo.insert(t, exclude.map(|s| s.contains(&t)).unwrap_or(false));
-                    break;
+        let resolve =
+            |t0: i64, inc_memo: &mut HashMap<i64, bool>, exc_memo: &mut HashMap<i64, bool>| {
+                let mut chain = Vec::new();
+                let mut t = t0;
+                while !inc_memo.contains_key(&t) {
+                    let p = self.normalized_parent(t);
+                    if p == t {
+                        inc_memo.insert(t, include.map(|s| s.contains(&t)).unwrap_or(false));
+                        exc_memo.insert(t, exclude.map(|s| s.contains(&t)).unwrap_or(false));
+                        break;
+                    }
+                    chain.push(t);
+                    t = p;
                 }
-                chain.push(t);
-                t = p;
-            }
-            for &t in chain.iter().rev() {
-                let p = self.normalized_parent(t);
-                let inc = inc_memo[&p] || include.map(|s| s.contains(&t)).unwrap_or(false);
-                let exc = exc_memo[&p] || exclude.map(|s| s.contains(&t)).unwrap_or(false);
-                inc_memo.insert(t, inc);
-                exc_memo.insert(t, exc);
-            }
-        };
+                for &t in chain.iter().rev() {
+                    let p = self.normalized_parent(t);
+                    let inc = inc_memo[&p] || include.map(|s| s.contains(&t)).unwrap_or(false);
+                    let exc = exc_memo[&p] || exclude.map(|s| s.contains(&t)).unwrap_or(false);
+                    inc_memo.insert(t, inc);
+                    exc_memo.insert(t, exc);
+                }
+            };
 
         let mut allowed = HashSet::new();
         for &tid in self.nodes.keys() {
@@ -249,8 +265,10 @@ impl NCBITaxonomy {
             return None;
         }
         let evaluator = BooleanEvaluator::new(expression);
-        let marker_taxids: HashSet<i64> =
-            evaluator.token_values().filter_map(|t| t.parse::<i64>().ok()).collect();
+        let marker_taxids: HashSet<i64> = evaluator
+            .token_values()
+            .filter_map(|t| t.parse::<i64>().ok())
+            .collect();
 
         // present[t] = sorted set of marker taxids in t's lineage, memoized.
         let mut present: HashMap<i64, Vec<i64>> = HashMap::new();
@@ -317,17 +335,28 @@ impl TaxonomyData {
         let taxid = tax.normalized_taxid(taxid);
         let mut lineage = tax.lineage(taxid);
         lineage.reverse();
-        let ranks: Vec<String> =
-            lineage.iter().map(|&t| tax.rank(t).unwrap_or("").to_lowercase()).collect();
-        let names: Vec<String> =
-            lineage.iter().map(|&t| tax.name(t).unwrap_or("").to_string()).collect();
+        let ranks: Vec<String> = lineage
+            .iter()
+            .map(|&t| tax.rank(t).unwrap_or("").to_lowercase())
+            .collect();
+        let names: Vec<String> = lineage
+            .iter()
+            .map(|&t| tax.name(t).unwrap_or("").to_string())
+            .collect();
         let mut rank_to_name = HashMap::new();
         let mut rank_to_taxid = HashMap::new();
         for (i, r) in ranks.iter().enumerate() {
             rank_to_name.insert(r.clone(), names[i].clone());
             rank_to_taxid.insert(r.clone(), lineage[i]);
         }
-        TaxonomyData { taxid, lineage, ranks, names, rank_to_name, rank_to_taxid }
+        TaxonomyData {
+            taxid,
+            lineage,
+            ranks,
+            names,
+            rank_to_name,
+            rank_to_taxid,
+        }
     }
 
     /// taxid at `rank` ("self" -> lowest/self), or `None` if absent.
@@ -373,7 +402,10 @@ pub fn default_ncbi_taxonomy_path() -> String {
 /// Decompress a gzip member fully via libdeflater (ISIZE from the trailer).
 fn gunzip(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
     if bytes.len() < 18 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "truncated gzip"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "truncated gzip",
+        ));
     }
     let isize = u32::from_le_bytes(bytes[bytes.len() - 4..].try_into().unwrap()) as usize;
     let mut dec = libdeflater::Decompressor::new();
@@ -542,13 +574,19 @@ mod tests {
     #[test]
     fn include_exclude_filters() {
         let t = tax();
-        let inc = t.compile_taxonomy_filter(Some(&[1224].into_iter().collect()), None).unwrap();
-        assert!(inc.contains(&562) && inc.contains(&561) && inc.contains(&1236) && inc.contains(&1224));
+        let inc = t
+            .compile_taxonomy_filter(Some(&[1224].into_iter().collect()), None)
+            .unwrap();
+        assert!(
+            inc.contains(&562) && inc.contains(&561) && inc.contains(&1236) && inc.contains(&1224)
+        );
         assert!(!inc.contains(&2) && !inc.contains(&131567));
         // Merged old-taxid inherits its replacement's verdict.
         assert!(inc.contains(&999000));
 
-        let exc = t.compile_taxonomy_filter(None, Some(&[1224].into_iter().collect())).unwrap();
+        let exc = t
+            .compile_taxonomy_filter(None, Some(&[1224].into_iter().collect()))
+            .unwrap();
         assert!(exc.contains(&2) && exc.contains(&131567));
         assert!(!exc.contains(&562) && !exc.contains(&1224));
     }

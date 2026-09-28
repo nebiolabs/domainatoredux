@@ -81,17 +81,26 @@ impl Status {
 /// `(dir, stem, fmt, comp)` split of a database path (mirrors `db_index._split_db_name`).
 fn split_db_name(path: &Path) -> (PathBuf, String, String, String) {
     let dir = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-    let base = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+    let base = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
     let mut parts: Vec<&str> = base.split('.').collect();
     let mut comp = String::new();
-    if parts.len() >= 2 && COMPRESSION_EXTS.contains(&parts.last().unwrap().to_ascii_lowercase().as_str()) {
+    if parts.len() >= 2
+        && COMPRESSION_EXTS.contains(&parts.last().unwrap().to_ascii_lowercase().as_str())
+    {
         comp = parts.pop().unwrap().to_string();
     }
     let (fmt, stem) = if parts.len() >= 2 {
         let fmt = parts.pop().unwrap().to_string();
         (fmt, parts.join("."))
     } else {
-        (String::new(), parts.first().copied().unwrap_or("").to_string())
+        (
+            String::new(),
+            parts.first().copied().unwrap_or("").to_string(),
+        )
     };
     (dir, stem, fmt, comp)
 }
@@ -118,7 +127,9 @@ fn copy_byte_range(src: &Path, dst: &Path, start: u64, end: u64) -> io::Result<(
 
 /// Decompress a BGZF input to an uncompressed temp file (streamed).
 fn decompress_to_temp(input: &Path, tmp: &Path) -> io::Result<()> {
-    let path = input.to_str().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "non-UTF8 path"))?;
+    let path = input
+        .to_str()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "non-UTF8 path"))?;
     let mut reader = io_bgzf::open_at(path, 0, true)?;
     let mut out = File::create(tmp)?;
     let mut buf = vec![0u8; COPY_CHUNK];
@@ -134,8 +145,12 @@ fn decompress_to_temp(input: &Path, tmp: &Path) -> io::Result<()> {
 
 /// Compress `src` to `dst` as standard BGZF (streamed).
 fn compress_to_bgzf(src: &Path, dst: &Path, level: u8) -> io::Result<()> {
-    let cl = bgzf::CompressionLevel::new(level)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("bad compression level {level}: {e:?}")))?;
+    let cl = bgzf::CompressionLevel::new(level).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("bad compression level {level}: {e:?}"),
+        )
+    })?;
     let out = File::create(dst)?;
     let mut writer = bgzf::Writer::new(io::BufWriter::new(out), cl);
     let mut fh = File::open(src)?;
@@ -169,7 +184,11 @@ fn record_boundaries(num_records: usize, n_shards: usize) -> Vec<(usize, usize)>
 
 /// Write a `.didx` for `final_path` by scanning (or reusing) its offsets.
 fn write_index_for(final_path: &Path, filetype: FileType, out_bgzf: bool) -> Result<(), String> {
-    let compression = if out_bgzf { Compression::Bgzf } else { Compression::None };
+    let compression = if out_bgzf {
+        Compression::Bgzf
+    } else {
+        Compression::None
+    };
     let path = final_path.to_str().ok_or("non-UTF8 output path")?;
     // Scan fresh offsets (bypass any pre-existing .didx by scanning directly is
     // unnecessary here: get_offsets returns a valid index if fresh, else scans).
@@ -212,8 +231,12 @@ fn plan_input(
     tmp_dir: &Path,
     log: &mut dyn Write,
 ) -> Result<(Vec<Task>, Option<PathBuf>), String> {
-    let filetype = detect_filetype(input_path)
-        .ok_or_else(|| format!("Input '{}' is not a GenBank or FASTA file.", input_path.display()))?;
+    let filetype = detect_filetype(input_path).ok_or_else(|| {
+        format!(
+            "Input '{}' is not a GenBank or FASTA file.",
+            input_path.display()
+        )
+    })?;
     let in_comp = detect_compression(input_path);
     if in_comp == Compression::Gzip {
         return Err(format!(
@@ -225,8 +248,15 @@ fn plan_input(
     let out_dir: PathBuf = match &opts.output_dir {
         Some(d) => PathBuf::from(d),
         None => {
-            let p = input_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-            if p.as_os_str().is_empty() { PathBuf::from(".") } else { p }
+            let p = input_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_default();
+            if p.as_os_str().is_empty() {
+                PathBuf::from(".")
+            } else {
+                p
+            }
         }
     };
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("creating output dir: {e}"))?;
@@ -234,7 +264,11 @@ fn plan_input(
     let base = match &opts.name {
         Some(name) => {
             let (_d, _stem, fmt, comp) = split_db_name(input_path);
-            let mut new_basename = if fmt.is_empty() { name.clone() } else { format!("{name}.{fmt}") };
+            let mut new_basename = if fmt.is_empty() {
+                name.clone()
+            } else {
+                format!("{name}.{fmt}")
+            };
             if !comp.is_empty() {
                 new_basename = format!("{new_basename}.{comp}");
             }
@@ -277,11 +311,18 @@ fn plan_input(
         (input_path.to_path_buf(), None)
     } else {
         let tmp = tmp_dir.join("working.plain");
-        writeln!(log, "Decompressing {} -> temporary working file", input_path.display()).ok();
+        writeln!(
+            log,
+            "Decompressing {} -> temporary working file",
+            input_path.display()
+        )
+        .ok();
         decompress_to_temp(input_path, &tmp).map_err(|e| format!("decompressing input: {e}"))?;
         (tmp.clone(), Some(tmp))
     };
-    let working_size = std::fs::metadata(&working).map_err(|e| e.to_string())?.len();
+    let working_size = std::fs::metadata(&working)
+        .map_err(|e| e.to_string())?
+        .len();
 
     let mut tasks = Vec::new();
     match opts.shards {
@@ -306,7 +347,10 @@ fn plan_input(
             let (offsets, _cds) = scan_offsets(working_str, filetype, Compression::None)?;
             let num_records = offsets.len();
             if num_records == 0 {
-                return Err(format!("No sequence records found in '{}'.", input_path.display()));
+                return Err(format!(
+                    "No sequence records found in '{}'.",
+                    input_path.display()
+                ));
             }
             let boundaries = record_boundaries(num_records, shards);
             if boundaries.len() < shards {
@@ -323,7 +367,11 @@ fn plan_input(
             for (i, (start_idx, count)) in boundaries.iter().enumerate() {
                 let b_start = offsets[*start_idx];
                 let end_idx = start_idx + count;
-                let b_end = if end_idx < num_records { offsets[end_idx] } else { working_size };
+                let b_end = if end_idx < num_records {
+                    offsets[end_idx]
+                } else {
+                    working_size
+                };
                 let final_path = shard_path(&base, Some(i), Some(out_bgzf));
                 tasks.push(Task {
                     working: working.clone(),
@@ -339,8 +387,15 @@ fn plan_input(
             // Warn if shards would sit alongside the original with the same stem.
             let (_d, in_stem, _f, _c) = split_db_name(input_path);
             let same_name = opts.name.as_deref().map(|n| n == in_stem).unwrap_or(true);
-            let in_dir = input_path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
-            let in_dir = if in_dir.as_os_str().is_empty() { PathBuf::from(".") } else { in_dir };
+            let in_dir = input_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."));
+            let in_dir = if in_dir.as_os_str().is_empty() {
+                PathBuf::from(".")
+            } else {
+                in_dir
+            };
             if same_name && out_dir == in_dir && input_path.exists() {
                 writeln!(
                     log,
@@ -372,15 +427,24 @@ fn run_task(task: &Task, opts: &FormatDbOptions, log: &mut dyn Write) -> Result<
             let _ = std::fs::remove_file(&plain_tmp);
             r.map_err(|e| format!("compressing {}: {e}", task.final_path.display()))?;
         } else {
-            copy_byte_range(&task.working, &task.final_path, task.byte_start, task.byte_end)
-                .map_err(|e| format!("copying range: {e}"))?;
+            copy_byte_range(
+                &task.working,
+                &task.final_path,
+                task.byte_start,
+                task.byte_end,
+            )
+            .map_err(|e| format!("copying range: {e}"))?;
         }
     }
 
     if task.do_index {
         write_index_for(&task.final_path, task.filetype, task.out_bgzf)?;
     }
-    let status = if task.needs_write { Status::Written } else { Status::Indexed };
+    let status = if task.needs_write {
+        Status::Written
+    } else {
+        Status::Indexed
+    };
     writeln!(log, "{}\t{}", status.as_str(), task.final_path.display()).ok();
     Ok(status)
 }
@@ -408,7 +472,8 @@ pub fn format_db(
         }
     }
 
-    let tmp = crate::tools::external::TempDir::new("domainator_format_db").map_err(|e| e.to_string())?;
+    let tmp =
+        crate::tools::external::TempDir::new("domainator_format_db").map_err(|e| e.to_string())?;
 
     let mut out_paths = Vec::new();
     for input in inputs {
@@ -427,7 +492,9 @@ pub fn format_db(
 
 /// A filesystem-safe token from a path (for temp subdir naming).
 fn sanitize(s: &str) -> String {
-    s.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect()
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
 }
 
 #[cfg(test)]

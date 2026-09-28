@@ -22,7 +22,12 @@ pub struct SortContigsOptions {
 fn feature_score(f: &SeqFeature, record_id: &str) -> Result<f64, String> {
     f.get_first("score")
         .and_then(|s| s.parse::<f64>().ok())
-        .ok_or_else(|| format!("Record {record_id} has a {} feature without a valid score.", f.kind))
+        .ok_or_else(|| {
+            format!(
+                "Record {record_id} has a {} feature without a valid score.",
+                f.kind
+            )
+        })
 }
 
 /// The best score for a record, per the selection rules. Errors when the record
@@ -39,7 +44,10 @@ fn best_score(rec: &SeqRecord, opts: &SortContigsOptions) -> Result<f64, String>
                 best = Some(best.map_or(s, |b| b.max(s)));
             }
             best.ok_or_else(|| {
-                format!("Record {} has no {DOMAIN_SEARCH_BEST_HIT_NAME} features to sort by.", rec.id)
+                format!(
+                    "Record {} has no {DOMAIN_SEARCH_BEST_HIT_NAME} features to sort by.",
+                    rec.id
+                )
             })
         }
         Some(domains) => {
@@ -53,9 +61,9 @@ fn best_score(rec: &SeqRecord, opts: &SortContigsOptions) -> Result<f64, String>
                     (Some(n), Some(d)) => (n, d),
                     _ => {
                         return Err(format!(
-                            "Record {} has a {DOMAIN_FEATURE_NAME} feature missing name or database.",
-                            rec.id
-                        ))
+                        "Record {} has a {DOMAIN_FEATURE_NAME} feature missing name or database.",
+                        rec.id
+                    ))
                     }
                 };
                 if !domains.contains(name) {
@@ -70,7 +78,10 @@ fn best_score(rec: &SeqRecord, opts: &SortContigsOptions) -> Result<f64, String>
                 best = Some(best.map_or(s, |b| b.max(s)));
             }
             best.ok_or_else(|| {
-                format!("Record {} has no matching {DOMAIN_FEATURE_NAME} features.", rec.id)
+                format!(
+                    "Record {} has no matching {DOMAIN_FEATURE_NAME} features.",
+                    rec.id
+                )
             })
         }
     }
@@ -117,13 +128,34 @@ mod tests {
 
     #[test]
     fn sorts_descending_and_truncates() {
-        let recs = vec![rec_with_search("a", 10.0), rec_with_search("b", 30.0), rec_with_search("c", 20.0)];
+        let recs = vec![
+            rec_with_search("a", 10.0),
+            rec_with_search("b", 30.0),
+            rec_with_search("c", 20.0),
+        ];
         let out = sort_contigs(recs, &SortContigsOptions::default()).unwrap();
-        assert_eq!(out.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), vec!["b", "c", "a"]);
+        assert_eq!(
+            out.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            vec!["b", "c", "a"]
+        );
 
-        let recs = vec![rec_with_search("a", 10.0), rec_with_search("b", 30.0), rec_with_search("c", 20.0)];
-        let out = sort_contigs(recs, &SortContigsOptions { max_hits: Some(2), ..Default::default() }).unwrap();
-        assert_eq!(out.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), vec!["b", "c"]);
+        let recs = vec![
+            rec_with_search("a", 10.0),
+            rec_with_search("b", 30.0),
+            rec_with_search("c", 20.0),
+        ];
+        let out = sort_contigs(
+            recs,
+            &SortContigsOptions {
+                max_hits: Some(2),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            out.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            vec!["b", "c"]
+        );
     }
 
     #[test]

@@ -58,7 +58,12 @@ struct WinSpec {
 /// From the async runtime the proxy branch is taken, `Message::CreateWindow` is
 /// handled exactly once at the top of the event loop, and `Context::create_window`
 /// is fire-and-forget (it waits on no channel), so there is nothing to deadlock on.
-fn spawn_window(app: &AppHandle, label: String, title: String, spec: WinSpec) -> Result<(), String> {
+fn spawn_window(
+    app: &AppHandle,
+    label: String,
+    title: String,
+    spec: WinSpec,
+) -> Result<(), String> {
     let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(spec.url.into()))
         .title(title)
         .inner_size(spec.w, spec.h)
@@ -77,7 +82,9 @@ fn spawn_window(app: &AppHandle, label: String, title: String, spec: WinSpec) ->
         );
     }
 
-    let window = builder.build().map_err(|e| format!("opening detached window: {e}"))?;
+    let window = builder
+        .build()
+        .map_err(|e| format!("opening detached window: {e}"))?;
 
     // Drop the window's parameters when it closes. Keeping them until then (rather
     // than removing them on the first `standalone_params` read) means a reload of
@@ -106,7 +113,13 @@ pub async fn open_sequence_window(
         &app,
         label,
         title,
-        WinSpec { url: "index.html?view=contig", w: 1100.0, h: 720.0, min_w: 700.0, min_h: 400.0 },
+        WinSpec {
+            url: "index.html?view=contig",
+            w: 1100.0,
+            h: 720.0,
+            min_w: 700.0,
+            min_h: 400.0,
+        },
     )
 }
 
@@ -126,7 +139,13 @@ pub async fn open_file_window(
         &app,
         label,
         title,
-        WinSpec { url: "index.html?view=file", w: 1200.0, h: 800.0, min_w: 700.0, min_h: 400.0 },
+        WinSpec {
+            url: "index.html?view=file",
+            w: 1200.0,
+            h: 800.0,
+            min_w: 700.0,
+            min_h: 400.0,
+        },
     )
 }
 
@@ -145,7 +164,13 @@ pub async fn open_hmm_logo_window(
         &app,
         label,
         title,
-        WinSpec { url: "index.html?view=hmmlogo", w: 1000.0, h: 520.0, min_w: 500.0, min_h: 300.0 },
+        WinSpec {
+            url: "index.html?view=hmmlogo",
+            w: 1000.0,
+            h: 520.0,
+            min_w: 500.0,
+            min_h: 300.0,
+        },
     )
 }
 

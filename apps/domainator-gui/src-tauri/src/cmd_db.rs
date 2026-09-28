@@ -34,7 +34,11 @@ static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
 
 /// `<app data>/databases.json`.
 pub fn central_registry_path(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(app.path().app_data_dir().map_err(|e| format!("app data dir: {e}"))?.join(REGISTRY_NAME))
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app data dir: {e}"))?
+        .join(REGISTRY_NAME))
 }
 
 /// Load, change and save the central registry under [`REGISTRY_LOCK`].
@@ -111,8 +115,9 @@ pub async fn list_databases(
         if let Some(root) = workspace_root.as_deref().filter(|r| !r.is_empty()) {
             let central = central_registry_path(&app)?;
             let _guard = REGISTRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            migrate_workspace_registry(&central, Path::new(root))
-                .map_err(|e| format!("moving this workspace's databases to the shared list: {e}"))?;
+            migrate_workspace_registry(&central, Path::new(root)).map_err(|e| {
+                format!("moving this workspace's databases to the shared list: {e}")
+            })?;
         }
         let managed: HashMap<String, String> = crate::reference_dbs::load_manifest(&app)
             .databases
@@ -151,9 +156,11 @@ pub async fn register_database(app: AppHandle, path: String) -> Result<DatabaseE
 /// Remove a database from the list. Its files are left alone.
 #[tauri::command]
 pub async fn unregister_database(app: AppHandle, path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || update_registry(&app, |reg| reg.remove(&path)).map(|_| ()))
-        .await
-        .map_err(|e| format!("unregistering database failed: {e}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        update_registry(&app, |reg| reg.remove(&path)).map(|_| ())
+    })
+    .await
+    .map_err(|e| format!("unregistering database failed: {e}"))?
 }
 
 /// The files that make up a database (data or shards, plus `.didx` indexes), so
@@ -161,7 +168,10 @@ pub async fn unregister_database(app: AppHandle, path: String) -> Result<(), Str
 #[tauri::command]
 pub async fn list_database_files(path: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        database_files(Path::new(&path)).into_iter().map(|p| p.to_string_lossy().into_owned()).collect()
+        database_files(Path::new(&path))
+            .into_iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect()
     })
     .await
     .map_err(|e| format!("listing database files failed: {e}"))
@@ -170,7 +180,11 @@ pub async fn list_database_files(path: String) -> Result<Vec<String>, String> {
 /// Rename a database on disk (shards and indexes included) and update its entry.
 /// Refused for managed reference downloads, whose file name the manifest owns.
 #[tauri::command]
-pub async fn rename_database(app: AppHandle, path: String, new_name: String) -> Result<DatabaseEntry, String> {
+pub async fn rename_database(
+    app: AppHandle,
+    path: String,
+    new_name: String,
+) -> Result<DatabaseEntry, String> {
     tauri::async_runtime::spawn_blocking(move || {
         if managed_id(&app, &path).is_some() {
             return Err("a managed reference database cannot be renamed".into());
@@ -217,12 +231,19 @@ pub async fn build_database_index(path: String) -> Result<usize, String> {
         .map_err(|e| format!("indexing failed: {e}"))?
 }
 
-fn index_with(path: &str, launcher: Result<crate::cmd_tools::Launcher, String>) -> Result<usize, String> {
+fn index_with(
+    path: &str,
+    launcher: Result<crate::cmd_tools::Launcher, String>,
+) -> Result<usize, String> {
     // The checks (on disk, not plain gzip) are quick and give the better message.
     let shards = registry::index_targets(Path::new(path))?;
     let indexes: Vec<String> = shards
         .iter()
-        .map(|s| domainator_core::io::didx::index_path_for(Path::new(s)).to_string_lossy().into_owned())
+        .map(|s| {
+            domainator_core::io::didx::index_path_for(Path::new(s))
+                .to_string_lossy()
+                .into_owned()
+        })
         .collect();
     let live = Arc::new(LiveJob::default());
     {
@@ -240,16 +261,26 @@ fn index_with(path: &str, launcher: Result<crate::cmd_tools::Launcher, String>) 
         domainator_core::app_support::provenance::now_ms()
     ));
     let snapshot = job_io::OutputSnapshot::take(&indexes);
-    let ran = std::fs::write(&config, serde_json::json!({"input": shards, "index": true}).to_string())
-        .map_err(|e| format!("writing the indexing config: {e}"))
-        .and(launcher)
-        .and_then(|launcher| {
-            let args = ["format-db".into(), "--config".into(), config.clone().into_os_string()];
-            let cwd = Path::new(path).parent().unwrap_or(Path::new("."));
-            crate::cmd_tools::run_cli_command(&launcher, &args, cwd, None, &live)
-        });
+    let ran = std::fs::write(
+        &config,
+        serde_json::json!({"input": shards, "index": true}).to_string(),
+    )
+    .map_err(|e| format!("writing the indexing config: {e}"))
+    .and(launcher)
+    .and_then(|launcher| {
+        let args = [
+            "format-db".into(),
+            "--config".into(),
+            config.clone().into_os_string(),
+        ];
+        let cwd = Path::new(path).parent().unwrap_or(Path::new("."));
+        crate::cmd_tools::run_cli_command(&launcher, &args, cwd, None, &live)
+    });
     let _ = std::fs::remove_file(&config);
-    INDEXING.lock().unwrap_or_else(|e| e.into_inner()).remove(path);
+    INDEXING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(path);
     if live.is_canceled() {
         // A killed indexer can leave a truncated `.didx`, and one that reads back
         // wrong is worse than none: the database just shows as unindexed again.
@@ -266,7 +297,11 @@ pub const INDEXING_CANCELED: &str = "indexing canceled";
 /// Stop the indexing of `path`, if it is running, and remove the partial indexes.
 #[tauri::command(async)]
 pub fn cancel_database_index(path: String) {
-    let live = INDEXING.lock().unwrap_or_else(|e| e.into_inner()).get(&path).cloned();
+    let live = INDEXING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&path)
+        .cloned();
     if let Some(live) = live {
         live.cancel();
     }
@@ -280,7 +315,9 @@ pub async fn reveal_database(app: AppHandle, path: String) -> Result<(), String>
     use tauri_plugin_opener::OpenerExt;
     let registered = load_central(&app)?.databases.iter().any(|d| d.path == path);
     if !registered {
-        return Err(format!("refusing to reveal {path}: not a registered database"));
+        return Err(format!(
+            "refusing to reveal {path}: not a registered database"
+        ));
     }
     let first = database_files(Path::new(&path))
         .into_iter()
@@ -309,7 +346,13 @@ mod tests {
 
         let n = index_with(&path, Ok(crate::cmd_tools::Launcher::InProcess)).unwrap();
         assert_eq!(n, 1);
-        assert!(domainator_core::io::didx::index_path_for(&db).exists(), "no .didx written");
-        assert!(INDEXING.lock().unwrap().is_empty(), "a finished run stayed registered");
+        assert!(
+            domainator_core::io::didx::index_path_for(&db).exists(),
+            "no .didx written"
+        );
+        assert!(
+            INDEXING.lock().unwrap().is_empty(),
+            "a finished run stayed registered"
+        );
     }
 }

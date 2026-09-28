@@ -130,7 +130,13 @@ mod tests {
     fn round_trip_preserves_the_original_terminator() {
         // The whole point: read then write must reproduce the input byte for byte
         // when nothing was edited.
-        for original in ["a\nb\nc\n", "a\r\nb\r\nc\r\n", "a\rb\rc\r", "no newline", ""] {
+        for original in [
+            "a\nb\nc\n",
+            "a\r\nb\r\nc\r\n",
+            "a\rb\rc\r",
+            "no newline",
+            "",
+        ] {
             let eol = detect_eol(original);
             let lf = to_lf(original);
             let back = from_lf(&lf, eol);
@@ -183,7 +189,10 @@ mod tests {
             let eol = detect_eol(&raw);
             let buffer = to_lf(&raw).into_owned();
             // The editors split and rejoin on LF; nothing else may reach the buffer.
-            assert!(!buffer.contains('\r'), "case {i}: CR survived into the editor buffer");
+            assert!(
+                !buffer.contains('\r'),
+                "case {i}: CR survived into the editor buffer"
+            );
 
             // write_text_file, with nothing edited
             std::fs::write(&path, from_lf(&buffer, eol).as_bytes()).unwrap();

@@ -30,11 +30,21 @@ fn normalize_hex(raw: &str) -> Result<String, String> {
 }
 
 /// Set the `Color` qualifier of one feature (by contig + feature index).
-pub fn set_feature_color(path: &str, contig_index: usize, feat_index: usize, hex: &str) -> Result<(), String> {
+pub fn set_feature_color(
+    path: &str,
+    contig_index: usize,
+    feat_index: usize,
+    hex: &str,
+) -> Result<(), String> {
     let hex = normalize_hex(hex)?;
     let mut records = require_genbank(path)?;
-    let rec = records.get_mut(contig_index).ok_or("contig index out of range")?;
-    let feat = rec.features.get_mut(feat_index).ok_or("feature index out of range")?;
+    let rec = records
+        .get_mut(contig_index)
+        .ok_or("contig index out of range")?;
+    let feat = rec
+        .features
+        .get_mut(feat_index)
+        .ok_or("feature index out of range")?;
     feat.set("Color", hex);
     write_back(path, &records)
 }
@@ -60,7 +70,9 @@ pub fn set_color_by_name(path: &str, name: &str, hex: &str) -> Result<usize, Str
 /// Remove one feature (by contig + feature index).
 pub fn remove_feature(path: &str, contig_index: usize, feat_index: usize) -> Result<(), String> {
     let mut records = require_genbank(path)?;
-    let rec = records.get_mut(contig_index).ok_or("contig index out of range")?;
+    let rec = records
+        .get_mut(contig_index)
+        .ok_or("contig index out of range")?;
     if feat_index >= rec.features.len() {
         return Err("feature index out of range".into());
     }
@@ -83,7 +95,9 @@ pub fn add_feature(
         return Err(format!("invalid coordinates {start}..{end}"));
     }
     let mut records = require_genbank(path)?;
-    let rec = records.get_mut(contig_index).ok_or("contig index out of range")?;
+    let rec = records
+        .get_mut(contig_index)
+        .ok_or("contig index out of range")?;
     let mut feat = SeqFeature::new(kind, Location::range(start, end, strand));
     for (k, v) in qualifiers {
         feat.push(k, v.clone());
@@ -99,8 +113,10 @@ mod tests {
     /// A scratch directory unique to this test binary + name, so the file-writing
     /// tests do not collide with each other or leave anything in the repo.
     fn scratch(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("domainator-contig-edit-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "domainator-contig-edit-{}-{name}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -128,7 +144,12 @@ mod tests {
     }
 
     fn features(path: &str) -> Vec<crate::seq::SeqFeature> {
-        read_genbank(path).unwrap().into_iter().next().unwrap().features
+        read_genbank(path)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap()
+            .features
     }
 
     #[test]
@@ -154,7 +175,10 @@ mod tests {
     fn coloring_by_name_reports_how_many_it_changed() {
         let path = fixture("by-name");
         assert_eq!(set_color_by_name(&path, "alpha", "#00ff00").unwrap(), 1);
-        assert_eq!(set_color_by_name(&path, "nothing-called-this", "#00ff00").unwrap(), 0);
+        assert_eq!(
+            set_color_by_name(&path, "nothing-called-this", "#00ff00").unwrap(),
+            0
+        );
         let feats = features(&path);
         assert_eq!(feats[0].get_first("Color"), Some("#00FF00"));
         assert_eq!(feats[1].get_first("Color"), None);
@@ -163,7 +187,16 @@ mod tests {
     #[test]
     fn features_can_be_added_and_removed() {
         let path = fixture("add-remove");
-        add_feature(&path, 0, "misc_feature", 10, 20, -1, &[("note".into(), "hi".into())]).unwrap();
+        add_feature(
+            &path,
+            0,
+            "misc_feature",
+            10,
+            20,
+            -1,
+            &[("note".into(), "hi".into())],
+        )
+        .unwrap();
         let feats = features(&path);
         assert_eq!(feats.len(), 3);
         let added = feats.iter().find(|f| f.kind == "misc_feature").unwrap();

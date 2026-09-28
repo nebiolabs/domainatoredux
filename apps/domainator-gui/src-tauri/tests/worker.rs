@@ -17,7 +17,10 @@ use domainator_gui::worker::{self, WORKER_FLAG};
 const BIN: &str = env!("CARGO_BIN_EXE_domainator-gui");
 
 fn scratch(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("domainator-gui-worker-{}-{name}", std::process::id()));
+    let d = std::env::temp_dir().join(format!(
+        "domainator-gui-worker-{}-{name}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -49,7 +52,9 @@ fn alive(pid: i32) -> bool {
     }
     match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
         // "<pid> (<comm>) <state> ..." -- the state follows the last ')'.
-        Ok(stat) => stat.rsplit_once(')').is_none_or(|(_, rest)| !rest.trim_start().starts_with('Z')),
+        Ok(stat) => stat
+            .rsplit_once(')')
+            .is_none_or(|(_, rest)| !rest.trim_start().starts_with('Z')),
         Err(_) => true, // no procfs (macOS): kill(0) is all there is
     }
 }
@@ -70,21 +75,42 @@ fn worker_mode_never_starts_tauri() {
         .unwrap();
     let status = within(30, "the worker to exit", || child.try_wait().unwrap());
     let mut err = String::new();
-    child.stderr.take().unwrap().read_to_string(&mut err).unwrap();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut err)
+        .unwrap();
     assert!(status.success(), "worker exited {status:?}: {err}");
 }
 
 /// A worker runs the CLI: its exit code and stderr are the CLI's.
 #[test]
 fn a_worker_reports_cli_errors_like_the_cli() {
-    let w = worker::spawn_exe(Path::new(BIN), &args(&["domainate", "-i", "/nonexistent.gb", "-r", "x.hmm", "-o", "o.gb"]), None, None)
-        .unwrap();
+    let w = worker::spawn_exe(
+        Path::new(BIN),
+        &args(&[
+            "domainate",
+            "-i",
+            "/nonexistent.gb",
+            "-r",
+            "x.hmm",
+            "-o",
+            "o.gb",
+        ]),
+        None,
+        None,
+    )
+    .unwrap();
     let exit = w.wait().unwrap();
     assert_eq!(exit.status.code(), Some(1));
     assert!(exit.stderr.starts_with("Error: "), "{}", exit.stderr);
 
     // A command line clap rejects: its usage error, and its exit code.
-    let exit = worker::spawn_exe(Path::new(BIN), &args(&["no-such-tool"]), None, None).unwrap().wait().unwrap();
+    let exit = worker::spawn_exe(Path::new(BIN), &args(&["no-such-tool"]), None, None)
+        .unwrap()
+        .wait()
+        .unwrap();
     assert_eq!(exit.status.code(), Some(2), "{}", exit.stderr);
 }
 
@@ -93,17 +119,30 @@ fn a_worker_reports_cli_errors_like_the_cli() {
 #[cfg(unix)]
 #[test]
 fn cancel_kills_the_whole_tree() {
-    let w = worker::spawn_exe(Path::new(BIN), &args(&["__sleep-with-child", "60"]), None, None).unwrap();
+    let w = worker::spawn_exe(
+        Path::new(BIN),
+        &args(&["__sleep-with-child", "60"]),
+        None,
+        None,
+    )
+    .unwrap();
     let grandchild: i32 = within(30, "the grandchild's pid", || {
-        w.stdout_so_far().lines().find_map(|l| l.strip_prefix("child ")?.trim().parse().ok())
+        w.stdout_so_far()
+            .lines()
+            .find_map(|l| l.strip_prefix("child ")?.trim().parse().ok())
     });
     assert!(alive(grandchild));
     let started = Instant::now();
     w.killer().kill();
     let exit = w.wait().unwrap();
     assert!(!exit.status.success());
-    assert!(started.elapsed() < Duration::from_secs(10), "the kill did not stop the worker promptly");
-    within(10, "the grandchild to die", || (!alive(grandchild)).then_some(()));
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "the kill did not stop the worker promptly"
+    );
+    within(10, "the grandchild to die", || {
+        (!alive(grandchild)).then_some(())
+    });
 }
 
 /// If the GUI dies, the pipe it held as the worker's stdin closes, and the worker
@@ -127,11 +166,19 @@ fn a_worker_exits_when_its_stdin_closes() {
     while out.read(&mut byte).unwrap() == 1 && byte[0] != b'\n' {
         line.push(byte[0]);
     }
-    let grandchild: i32 = String::from_utf8(line).unwrap().strip_prefix("child ").unwrap().trim().parse().unwrap();
+    let grandchild: i32 = String::from_utf8(line)
+        .unwrap()
+        .strip_prefix("child ")
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
 
     drop(child.stdin.take()); // the "GUI" goes away
     within(10, "the worker to exit", || child.try_wait().unwrap());
-    within(10, "the grandchild to die", || (!alive(grandchild)).then_some(()));
+    within(10, "the grandchild to die", || {
+        (!alive(grandchild)).then_some(())
+    });
 }
 
 /// Windows has no process groups; the worker's Job Object is what reaches the
@@ -154,11 +201,19 @@ fn cancel_kills_the_worker() {
 fn a_workers_output_is_logged() {
     let d = scratch("log");
     let log = d.join("worker.log");
-    let w = worker::spawn_exe(Path::new(BIN), &args(&["domainate", "-i", "/nonexistent.gb", "-r", "x", "-o", "o"]), None, Some(&log))
-        .unwrap();
+    let w = worker::spawn_exe(
+        Path::new(BIN),
+        &args(&["domainate", "-i", "/nonexistent.gb", "-r", "x", "-o", "o"]),
+        None,
+        Some(&log),
+    )
+    .unwrap();
     let exit = w.wait().unwrap();
     let logged = std::fs::read_to_string(&log).unwrap();
-    assert!(!logged.is_empty() && logged.contains(exit.stderr.trim()), "{logged:?}");
+    assert!(
+        !logged.is_empty() && logged.contains(exit.stderr.trim()),
+        "{logged:?}"
+    );
 }
 
 /// A GUI job and a CLI run must produce the same file: the worker is meant to be
@@ -182,7 +237,11 @@ fn a_worker_run_matches_the_cli() {
 
     let exit = worker::spawn_exe(
         Path::new(BIN),
-        &[OsString::from("domainate"), "--config".into(), config.clone().into_os_string()],
+        &[
+            OsString::from("domainate"),
+            "--config".into(),
+            config.clone().into_os_string(),
+        ],
         Some(&d),
         None,
     )
@@ -209,7 +268,12 @@ fn a_worker_run_matches_the_cli() {
     // The LOCUS line carries today's date (UTC); two runs straddling midnight
     // would differ there and nowhere else.
     let body = |p: &Path| -> Vec<String> {
-        std::fs::read_to_string(p).unwrap().lines().filter(|l| !l.starts_with("LOCUS")).map(String::from).collect()
+        std::fs::read_to_string(p)
+            .unwrap()
+            .lines()
+            .filter(|l| !l.starts_with("LOCUS"))
+            .map(String::from)
+            .collect()
     };
     let (a, b) = (body(&via_worker), body(&via_cli));
     assert!(!a.is_empty());

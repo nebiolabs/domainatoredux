@@ -43,14 +43,20 @@ pub struct TransformMatrixOptions {
 /// Transform `m` per `opts` and return the result. Errors mirror the Python
 /// tool: transforms are only supported starting from a `score` matrix, and
 /// `--mst_knn` requires a square matrix.
-pub fn transform_matrix(mut m: DataMatrix, opts: &TransformMatrixOptions) -> io::Result<DataMatrix> {
+pub fn transform_matrix(
+    mut m: DataMatrix,
+    opts: &TransformMatrixOptions,
+) -> io::Result<DataMatrix> {
     // --input_type override of the declared data type.
     if let Some(it) = &opts.input_type {
         m.data_type = it.clone();
     }
 
-    let requested_mode: Option<&str> =
-        if opts.mode == PASS_THROUGH_MODE { None } else { Some(opts.mode.as_str()) };
+    let requested_mode: Option<&str> = if opts.mode == PASS_THROUGH_MODE {
+        None
+    } else {
+        Some(opts.mode.as_str())
+    };
 
     if let Some(mode) = requested_mode {
         if m.data_type.is_empty() {
@@ -79,8 +85,10 @@ pub fn transform_matrix(mut m: DataMatrix, opts: &TransformMatrixOptions) -> io:
             "--mst_knn and --knn are mutually exclusive (--mst_knn k == --mst --knn k).",
         ));
     }
-    if let Some((k, include_mst)) =
-        opts.mst_knn.map(|k| (k, true)).or_else(|| opts.knn.map(|k| (k, false)))
+    if let Some((k, include_mst)) = opts
+        .mst_knn
+        .map(|k| (k, true))
+        .or_else(|| opts.knn.map(|k| (k, false)))
     {
         let option = if include_mst { "--mst_knn" } else { "--knn" };
         if m.nrows() != m.ncols() {

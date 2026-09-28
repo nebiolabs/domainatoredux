@@ -132,7 +132,10 @@ mod tests {
         assert_eq!(hmms[0].cutoff[P7_TC2], 28.80);
         assert_eq!(hmms[0].cutoff[P7_NC1], 28.50);
         assert_eq!(hmms[0].cutoff[P7_NC2], 28.40);
-        assert_eq!(hmms[0].flags & (P7H_GA | P7H_TC | P7H_NC), P7H_GA | P7H_TC | P7H_NC);
+        assert_eq!(
+            hmms[0].flags & (P7H_GA | P7H_TC | P7H_NC),
+            P7H_GA | P7H_TC | P7H_NC
+        );
     }
 
     #[test]
@@ -140,8 +143,14 @@ mod tests {
         let text = "NAME  a\nGA    1.00 2.00\n//\nNAME  b\nGA    3.00 4.00\n//\n";
         let mut hmms = vec![model(), model()];
         repair_cutoffs(text, &mut hmms);
-        assert_eq!((hmms[0].cutoff[P7_GA1], hmms[0].cutoff[P7_GA2]), (1.00, 2.00));
-        assert_eq!((hmms[1].cutoff[P7_GA1], hmms[1].cutoff[P7_GA2]), (3.00, 4.00));
+        assert_eq!(
+            (hmms[0].cutoff[P7_GA1], hmms[0].cutoff[P7_GA2]),
+            (1.00, 2.00)
+        );
+        assert_eq!(
+            (hmms[1].cutoff[P7_GA1], hmms[1].cutoff[P7_GA2]),
+            (3.00, 4.00)
+        );
     }
 
     #[test]
@@ -155,6 +164,9 @@ mod tests {
     fn a_single_value_line_fills_both_halves() {
         let mut hmms = vec![model()];
         repair_cutoffs("TC    12.50\n//\n", &mut hmms);
-        assert_eq!((hmms[0].cutoff[P7_TC1], hmms[0].cutoff[P7_TC2]), (12.50, 12.50));
+        assert_eq!(
+            (hmms[0].cutoff[P7_TC1], hmms[0].cutoff[P7_TC2]),
+            (12.50, 12.50)
+        );
     }
 }

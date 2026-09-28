@@ -15,7 +15,11 @@ pub fn py_float_str(x: f64) -> String {
         return "nan".to_string();
     }
     if x.is_infinite() {
-        return if x < 0.0 { "-inf".to_string() } else { "inf".to_string() };
+        return if x < 0.0 {
+            "-inf".to_string()
+        } else {
+            "inf".to_string()
+        };
     }
     let s = format!("{x}");
     if s.contains('.') || s.contains('e') || s.contains('E') {
@@ -33,9 +37,12 @@ pub fn read_dense_text(path: &str) -> io::Result<DataMatrix> {
     use super::Storage;
     let text = std::fs::read_to_string(path)?;
     let mut lines = text.lines();
-    let header = lines
-        .next()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Dense text matrix file is empty."))?;
+    let header = lines.next().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Dense text matrix file is empty.",
+        )
+    })?;
     let cols: Vec<String> = header.split('\t').skip(1).map(|s| s.to_string()).collect();
 
     let mut rows: Vec<String> = Vec::new();
@@ -51,7 +58,10 @@ pub fn read_dense_text(path: &str) -> io::Result<DataMatrix> {
             let v: f64 = f.trim().parse().map_err(|_| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Dense text matrix values must be numeric (row {})", line_number + 2),
+                    format!(
+                        "Dense text matrix values must be numeric (row {})",
+                        line_number + 2
+                    ),
                 )
             })?;
             data.push(v);

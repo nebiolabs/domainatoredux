@@ -17,7 +17,12 @@ fn main() {
     hmmer_pure_rs::logsum::p7_flogsuminit();
     let hmms = hmmfile_read(hmm_path);
     let records = read_fasta(fasta_path, Some("protein")).unwrap();
-    println!("loaded {} HMM(s), {} sequences; Z={}", hmms.len(), records.len(), z);
+    println!(
+        "loaded {} HMM(s), {} sequences; Z={}",
+        hmms.len(),
+        records.len(),
+        z
+    );
 
     for hmm in &hmms {
         let abc = Alphabet::new(hmm.abc_type);
@@ -43,16 +48,34 @@ fn main() {
             pli.run(&mut gm, &mut om, &bg, hmm, &sq, &mut th);
         }
         th.sort_by_sortkey();
-        println!("\n=== HMM '{}' (m={}) : {} hits ===", hmm_name(hmm), hmm.m, th.hits.len());
+        println!(
+            "\n=== HMM '{}' (m={}) : {} hits ===",
+            hmm_name(hmm),
+            hmm.m,
+            th.hits.len()
+        );
         for hit in th.hits.iter().take(8) {
             let evalue = (hit.lnp.exp()) * z;
-            print!("{:<28} score={:>7.1} evalue={:>10.2e} ndom={}", hit.name, hit.score, evalue, hit.ndom);
+            print!(
+                "{:<28} score={:>7.1} evalue={:>10.2e} ndom={}",
+                hit.name, hit.score, evalue, hit.ndom
+            );
             if let Some(d) = hit.dcl.first() {
                 let dev = d.lnp.exp() * z;
-                print!(" | dom: env[{},{}] ali[{},{}] bits={:.1} i-eval={:.2e}", d.ienv, d.jenv, d.iali, d.jali, d.bitscore, dev);
+                print!(
+                    " | dom: env[{},{}] ali[{},{}] bits={:.1} i-eval={:.2e}",
+                    d.ienv, d.jenv, d.iali, d.jali, d.bitscore, dev
+                );
                 if let Some(ad) = &d.ad {
                     let (matches, total) = identity(&ad.mline);
-                    print!(" hmm[{}-{}] id={:.1}% ({}/{})", ad.hmmfrom, ad.hmmto, 100.0 * matches as f64 / total.max(1) as f64, matches, total);
+                    print!(
+                        " hmm[{}-{}] id={:.1}% ({}/{})",
+                        ad.hmmfrom,
+                        ad.hmmto,
+                        100.0 * matches as f64 / total.max(1) as f64,
+                        matches,
+                        total
+                    );
                 }
             }
             println!();
@@ -62,7 +85,11 @@ fn main() {
 
 /// Identity from the match line: count non-space alignment columns vs all columns.
 fn identity(mline: &str) -> (usize, usize) {
-    let total = mline.chars().filter(|c| !c.is_whitespace()).count().max(mline.len());
+    let total = mline
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .count()
+        .max(mline.len());
     // HMMER's mline: letter = identical, '+' = positive, ' ' = mismatch.
     let matches = mline.chars().filter(|c| c.is_ascii_alphabetic()).count();
     (matches, total)

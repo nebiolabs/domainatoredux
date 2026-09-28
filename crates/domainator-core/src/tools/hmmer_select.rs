@@ -28,11 +28,31 @@ impl Fields {
     /// Fields for a `--field` value (`name` | `desc` | `acc` | `all`).
     pub fn from_field(field: &str) -> Result<Fields, String> {
         Ok(match field {
-            "name" => Fields { name: true, desc: false, acc: false },
-            "desc" => Fields { name: false, desc: true, acc: false },
-            "acc" => Fields { name: false, desc: false, acc: true },
-            "all" => Fields { name: true, desc: true, acc: true },
-            other => return Err(format!("--field must be name, desc, acc, or all, got {other:?}")),
+            "name" => Fields {
+                name: true,
+                desc: false,
+                acc: false,
+            },
+            "desc" => Fields {
+                name: false,
+                desc: true,
+                acc: false,
+            },
+            "acc" => Fields {
+                name: false,
+                desc: false,
+                acc: true,
+            },
+            "all" => Fields {
+                name: true,
+                desc: true,
+                acc: true,
+            },
+            other => {
+                return Err(format!(
+                    "--field must be name, desc, acc, or all, got {other:?}"
+                ))
+            }
         })
     }
 }
@@ -56,7 +76,9 @@ pub fn parse_alphabet(name: Option<&str>) -> Result<Option<AlphabetType>, String
         Some("amino") => Ok(Some(AlphabetType::Amino)),
         Some("dna") => Ok(Some(AlphabetType::Dna)),
         Some("rna") => Ok(Some(AlphabetType::Rna)),
-        Some(other) => Err(format!("Unknown alphabet: {other}. Must be one of: amino, dna, rna.")),
+        Some(other) => Err(format!(
+            "Unknown alphabet: {other}. Must be one of: amino, dna, rna."
+        )),
     }
 }
 
@@ -71,11 +93,7 @@ pub fn alphabet_name(alphabet: AlphabetType) -> &'static str {
 }
 
 /// Whether `hmm` matches any criterion in `opts` on any searched field.
-pub fn profile_matches(
-    hmm: &Hmm,
-    opts: &SelectOptions,
-    regexes: &[regex::Regex],
-) -> bool {
+pub fn profile_matches(hmm: &Hmm, opts: &SelectOptions, regexes: &[regex::Regex]) -> bool {
     let mut name = hmm.name.clone();
     let mut desc = hmm.desc.clone().unwrap_or_default();
     let mut acc = hmm.acc.clone().unwrap_or_default();
@@ -86,8 +104,11 @@ pub fn profile_matches(
     }
 
     // The field values to test (with the field enabled).
-    let fields: [(bool, &str); 3] =
-        [(opts.fields.name, &name), (opts.fields.desc, &desc), (opts.fields.acc, &acc)];
+    let fields: [(bool, &str); 3] = [
+        (opts.fields.name, &name),
+        (opts.fields.desc, &desc),
+        (opts.fields.acc, &acc),
+    ];
 
     // regex: RegexBuilder already folds case when !case_sensitive.
     for re in regexes {
@@ -98,7 +119,11 @@ pub fn profile_matches(
         }
     }
     for target in &opts.exact {
-        let target = if opts.case_sensitive { target.clone() } else { target.to_lowercase() };
+        let target = if opts.case_sensitive {
+            target.clone()
+        } else {
+            target.to_lowercase()
+        };
         for (enabled, val) in &fields {
             if *enabled && **val == target {
                 return true;
@@ -106,7 +131,11 @@ pub fn profile_matches(
         }
     }
     for needle in &opts.contains {
-        let needle = if opts.case_sensitive { needle.clone() } else { needle.to_lowercase() };
+        let needle = if opts.case_sensitive {
+            needle.clone()
+        } else {
+            needle.to_lowercase()
+        };
         for (enabled, val) in &fields {
             if *enabled && val.contains(&needle) {
                 return true;
@@ -161,7 +190,10 @@ pub fn hmmer_select<W: Write>(
         && opts.contains.is_empty()
         && opts.alphabet.is_some();
 
-    let mut summary = SelectSummary { found: 0, skipped_files: 0 };
+    let mut summary = SelectSummary {
+        found: 0,
+        skipped_files: 0,
+    };
     let mut selected = opts.alphabet;
     let mut selected_source = opts.alphabet.map(|_| "--alphabet".to_string());
     for input_file in input_files {
@@ -285,7 +317,10 @@ mod tests {
         let dna = hmm_file(
             &dir,
             "dna",
-            &[typed("dna_1", AlphabetType::Dna, 4), typed("dna_2", AlphabetType::Dna, 4)],
+            &[
+                typed("dna_1", AlphabetType::Dna, 4),
+                typed("dna_2", AlphabetType::Dna, 4),
+            ],
         );
 
         // With no text criteria, --alphabet means "everything in the files that
@@ -319,9 +354,17 @@ mod tests {
     #[test]
     fn alphabet_names_and_parsing() {
         assert_eq!(parse_alphabet(None).unwrap(), None);
-        assert_eq!(parse_alphabet(Some("DNA")).unwrap(), Some(AlphabetType::Dna));
-        assert_eq!(parse_alphabet(Some("rna")).unwrap(), Some(AlphabetType::Rna));
-        assert!(parse_alphabet(Some("protein")).unwrap_err().contains("amino, dna, rna"));
+        assert_eq!(
+            parse_alphabet(Some("DNA")).unwrap(),
+            Some(AlphabetType::Dna)
+        );
+        assert_eq!(
+            parse_alphabet(Some("rna")).unwrap(),
+            Some(AlphabetType::Rna)
+        );
+        assert!(parse_alphabet(Some("protein"))
+            .unwrap_err()
+            .contains("amino, dna, rna"));
         // pyhmmer's Alphabet.type spelling, which the skip message quotes.
         assert_eq!(alphabet_name(AlphabetType::Amino), "amino");
         assert_eq!(alphabet_name(AlphabetType::Dna), "DNA");
@@ -329,9 +372,16 @@ mod tests {
 
     #[test]
     fn regex_all_fields() {
-        let h = hmm("2-oxoacid_dh", Some("PF00198.25"), Some("2-oxoacid dehydrogenases"));
+        let h = hmm(
+            "2-oxoacid_dh",
+            Some("PF00198.25"),
+            Some("2-oxoacid dehydrogenases"),
+        );
         assert!(matches(&h, &opts(&["dehyd.*"], &[], &[], "all", false)));
-        assert!(!matches(&h, &opts(&["notmatching"], &[], &[], "all", false)));
+        assert!(!matches(
+            &h,
+            &opts(&["notmatching"], &[], &[], "all", false)
+        ));
     }
 
     #[test]

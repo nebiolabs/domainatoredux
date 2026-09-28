@@ -128,7 +128,9 @@ fn uniprot_release(text: &str) -> Option<String> {
 fn pfam_release(text: &str) -> Option<String> {
     text.lines().find_map(|line| {
         let (key, value) = line.split_once(':')?;
-        key.trim().eq_ignore_ascii_case("Pfam release").then(|| value.trim().to_string())
+        key.trim()
+            .eq_ignore_ascii_case("Pfam release")
+            .then(|| value.trim().to_string())
     })
 }
 
@@ -138,7 +140,10 @@ fn pfam_release(text: &str) -> Option<String> {
 /// than inferred from the path.
 macro_rules! uniprot {
     ($path:literal) => {
-        concat!("https://ftp.uniprot.org/pub/databases/uniprot/current_release/", $path)
+        concat!(
+            "https://ftp.uniprot.org/pub/databases/uniprot/current_release/",
+            $path
+        )
     };
 }
 
@@ -334,7 +339,8 @@ pub fn remote_version(spec: &DbSpec) -> Result<String, String> {
             .map_err(|e| format!("reading {}: {e}", spec.version_url))?;
         s
     } else {
-        resp.into_string().map_err(|e| format!("reading {}: {e}", spec.version_url))?
+        resp.into_string()
+            .map_err(|e| format!("reading {}: {e}", spec.version_url))?
     };
     (spec.parse_version)(&text)
         .ok_or_else(|| format!("could not find a release version in {}", spec.version_url))
@@ -437,7 +443,9 @@ pub fn free_space(dir: &Path) -> Option<u64> {
 /// peak both exist. Updating TrEMBL in place needs room for two TrEMBLs, and a check
 /// that ignored that would pass and then fill the disk four hours in.
 pub fn required_bytes(spec: &DbSpec, dir: &Path) -> u64 {
-    let existing = std::fs::metadata(dir.join(spec.file_name)).map(|m| m.len()).unwrap_or(0);
+    let existing = std::fs::metadata(dir.join(spec.file_name))
+        .map(|m| m.len())
+        .unwrap_or(0);
     let existing_index = std::fs::metadata(didx_path(&dir.join(spec.file_name)))
         .map(|m| m.len())
         .unwrap_or(0);
@@ -455,7 +463,9 @@ fn didx_path(db: &Path) -> PathBuf {
 /// of space mid-transfer is recoverable — the partial file is cleaned up — but only
 /// after hours of downloading, which is the cost this avoids.
 pub fn check_space(spec: &DbSpec, dir: &Path) -> Result<(), String> {
-    let Some(free) = free_space(dir) else { return Ok(()) };
+    let Some(free) = free_space(dir) else {
+        return Ok(());
+    };
     let need = required_bytes(spec, dir);
     if free >= need {
         return Ok(());
@@ -513,7 +523,9 @@ pub fn install(
     let part = dir.join(format!("{}.part", spec.file_name));
     let _ = std::fs::remove_file(&part);
 
-    let resp = ureq::get(spec.url).call().map_err(|e| format!("downloading {}: {e}", spec.url))?;
+    let resp = ureq::get(spec.url)
+        .call()
+        .map_err(|e| format!("downloading {}: {e}", spec.url))?;
     let total = resp
         .header("Content-Length")
         .and_then(|v| v.parse::<u64>().ok())
@@ -551,7 +563,10 @@ pub fn install(
     if spec.kind == DbKind::Fasta {
         report("indexing", 0, 0);
         let path = final_path.to_string_lossy().into_owned();
-        let opts = FormatDbOptions { index: true, ..Default::default() };
+        let opts = FormatDbOptions {
+            index: true,
+            ..Default::default()
+        };
         // format_db's index-only fast path recognizes that the single output *is*
         // the input and writes the `.didx` in place -- no copy of a 40 GB file.
         format_db(&[path], &opts, &mut std::io::sink())
@@ -591,7 +606,8 @@ fn write_payload<R: Read>(
     stream: R,
     dest: &Path,
 ) -> Result<(), String> {
-    let out = std::fs::File::create(dest).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+    let out =
+        std::fs::File::create(dest).map_err(|e| format!("writing {}: {e}", dest.display()))?;
     let mut out = std::io::BufWriter::with_capacity(1 << 20, out);
 
     // Decoded bytes, whatever the asset arrived as. Multi-member, because BGZF is a
@@ -616,7 +632,9 @@ fn write_payload<R: Read>(
                 .map_err(|e| format!("bad compression level: {e:?}"))?;
             let mut writer = bgzf::Writer::new(out, level);
             std::io::copy(&mut decode(stream), &mut writer).map_err(|e| format!("writing: {e}"))?;
-            let mut inner = writer.finish().map_err(|e| format!("finishing BGZF: {e}"))?;
+            let mut inner = writer
+                .finish()
+                .map_err(|e| format!("finishing BGZF: {e}"))?;
             return inner.flush().map_err(|e| format!("writing: {e}"));
         }
         // Plain gzip is the storage format, so EBI's (and NCBI's) file is kept as
@@ -716,7 +734,10 @@ mod tests {
         // A path that does not exist yields no figure, and no refusal.
         let gone = dir.join("no-such-directory");
         assert!(free_space(&gone).is_none());
-        assert!(check_space(&huge, &gone).is_ok(), "an unknown must never block a download");
+        assert!(
+            check_space(&huge, &gone).is_ok(),
+            "an unknown must never block a download"
+        );
     }
 
     /// The figures in these messages are the ones a user decides on, so the
@@ -748,8 +769,8 @@ mod tests {
     #[ignore = "hits the real UniProt and EBI servers"]
     fn refs_are_live() {
         for spec in specs() {
-            let version = remote_version(&spec)
-                .unwrap_or_else(|e| panic!("{}: version: {e}", spec.id));
+            let version =
+                remote_version(&spec).unwrap_or_else(|e| panic!("{}: version: {e}", spec.id));
             assert!(!version.is_empty(), "{}: empty version", spec.id);
 
             let resp = ureq::head(spec.url)
@@ -791,9 +812,21 @@ mod tests {
         assert_eq!(names.len(), n, "two databases claim the same file name");
 
         for s in &specs {
-            assert!(s.url.starts_with("https://"), "{}: downloads must be https", s.id);
-            assert!(s.version_url.starts_with("https://"), "{}: version URL must be https", s.id);
-            assert!(s.disk_bytes > 0 && s.download_bytes > 0, "{}: sizes are advisory but must be set", s.id);
+            assert!(
+                s.url.starts_with("https://"),
+                "{}: downloads must be https",
+                s.id
+            );
+            assert!(
+                s.version_url.starts_with("https://"),
+                "{}: version URL must be https",
+                s.id
+            );
+            assert!(
+                s.disk_bytes > 0 && s.download_bytes > 0,
+                "{}: sizes are advisory but must be set",
+                s.id
+            );
         }
     }
 
@@ -807,7 +840,11 @@ mod tests {
         for s in specs() {
             match s.kind {
                 DbKind::Fasta => {
-                    assert!(s.file_name.ends_with(".bgz"), "{} must be stored BGZF", s.id);
+                    assert!(
+                        s.file_name.ends_with(".bgz"),
+                        "{} must be stored BGZF",
+                        s.id
+                    );
                     assert!(
                         s.file_name.contains(".fasta."),
                         "{}: the reader picks the format off the name",
@@ -815,16 +852,21 @@ mod tests {
                     );
                 }
                 DbKind::Hmm => {
-                    assert!(s.file_name.ends_with(".hmm.gz"), "{} must be stored as plain gzip", s.id);
+                    assert!(
+                        s.file_name.ends_with(".hmm.gz"),
+                        "{} must be stored as plain gzip",
+                        s.id
+                    );
                 }
                 // `NCBITaxonomy::load` looks for exactly this name inside a directory.
                 DbKind::Taxonomy => assert_eq!(s.file_name, "taxdump.tar.gz", "{}", s.id),
             }
             // Whatever the name, the app's own classifier has to agree it is a
             // database of that kind -- this is what the Databases panel will run.
-            let classified = domainator_core::app_support::registry::classify_database(
-                &format!("/nonexistent/{}", s.file_name),
-            )
+            let classified = domainator_core::app_support::registry::classify_database(&format!(
+                "/nonexistent/{}",
+                s.file_name
+            ))
             .map(|e| e.format);
             assert_eq!(classified.as_deref(), Ok(s.kind.as_str()), "{}", s.id);
         }
@@ -852,7 +894,10 @@ mod tests {
         let reldate = "UniProt Knowledgebase Release 2026_03 consists of:\n\
                        UniProtKB/Swiss-Prot Release 2026_03 of 02-Sep-2026\n";
         assert_eq!(uniprot_release(reldate).as_deref(), Some("2026_03"));
-        assert_eq!(uniprot_release("UniProt Release 2026_03\n").as_deref(), Some("2026_03"));
+        assert_eq!(
+            uniprot_release("UniProt Release 2026_03\n").as_deref(),
+            Some("2026_03")
+        );
         assert_eq!(uniprot_release("nothing useful here\n"), None);
 
         let pfam = "Pfam release       : 38.2\n\
@@ -908,7 +953,10 @@ mod tests {
         assert_eq!(head, data[..18]);
 
         let mut rest = Vec::new();
-        std::io::Cursor::new(head).chain(src).read_to_end(&mut rest).unwrap();
+        std::io::Cursor::new(head)
+            .chain(src)
+            .read_to_end(&mut rest)
+            .unwrap();
         assert_eq!(rest, data, "the peeked bytes must be put back in front");
 
         // A stream shorter than the peek is truncated, not an error.
@@ -917,8 +965,8 @@ mod tests {
     }
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("domainator-refdb-{}-{name}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("domainator-refdb-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -964,14 +1012,21 @@ MSDKIIHLTD
         let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
         enc.write_all(records.as_bytes()).unwrap();
         let gz = enc.finish().unwrap();
-        assert_eq!(sniff(&gz), Compression::Gzip, "the fixture must be plain gzip, as UniProt's is");
+        assert_eq!(
+            sniff(&gz),
+            Compression::Gzip,
+            "the fixture must be plain gzip, as UniProt's is"
+        );
 
         let spec = fasta_spec("test.fasta.bgz");
         let dest = dir.join(spec.file_name);
         write_payload(&spec, Compression::Gzip, std::io::Cursor::new(gz), &dest).unwrap();
 
         // Seekable, which plain gzip is not -- this is the point of recompressing.
-        assert_eq!(detect_compression(&dest), domainator_core::io::Compression::Bgzf);
+        assert_eq!(
+            detect_compression(&dest),
+            domainator_core::io::Compression::Bgzf
+        );
 
         // And it still gunzips to exactly the published bytes.
         let mut back = String::new();
@@ -982,11 +1037,22 @@ MSDKIIHLTD
 
         // The index step `install` runs. It must write the sidecar in place rather
         // than copying a (potentially 40 GB) file to a new name.
-        let opts = FormatDbOptions { index: true, ..Default::default() };
-        format_db(&[dest.to_string_lossy().into_owned()], &opts, &mut std::io::sink()).unwrap();
+        let opts = FormatDbOptions {
+            index: true,
+            ..Default::default()
+        };
+        format_db(
+            &[dest.to_string_lossy().into_owned()],
+            &opts,
+            &mut std::io::sink(),
+        )
+        .unwrap();
         let idx = didx::index_path_for(&dest);
         assert!(idx.is_file(), "format_db wrote no .didx");
-        assert!(dest.is_file(), "the database itself must stay where it was indexed");
+        assert!(
+            dest.is_file(),
+            "the database itself must stay where it was indexed"
+        );
 
         // The index has to agree with the file: one offset per record, each of which
         // really is where that record starts.
@@ -1009,7 +1075,10 @@ MSDKIIHLTD
                 None,
             )
             .unwrap();
-            assert_eq!(recs[0].id, format!("sp|P0000{}|{}", i + 1, ["A", "B", "C"][i]));
+            assert_eq!(
+                recs[0].id,
+                format!("sp|P0000{}|{}", i + 1, ["A", "B", "C"][i])
+            );
         }
     }
 
@@ -1025,18 +1094,38 @@ MSDKIIHLTD
         enc.write_all(profile.as_bytes()).unwrap();
         let gz = enc.finish().unwrap();
 
-        let spec = DbSpec { kind: DbKind::Hmm, file_name: "test.hmm.gz", ..fasta_spec("test.hmm.gz") };
+        let spec = DbSpec {
+            kind: DbKind::Hmm,
+            file_name: "test.hmm.gz",
+            ..fasta_spec("test.hmm.gz")
+        };
         let dest = dir.join(spec.file_name);
-        write_payload(&spec, Compression::Gzip, std::io::Cursor::new(gz.clone()), &dest).unwrap();
+        write_payload(
+            &spec,
+            Compression::Gzip,
+            std::io::Cursor::new(gz.clone()),
+            &dest,
+        )
+        .unwrap();
 
         assert_eq!(std::fs::read(&dest).unwrap(), gz);
         let entry =
             domainator_core::app_support::registry::classify_database(dest.to_str().unwrap())
                 .unwrap();
-        assert_eq!((entry.format.as_str(), entry.molecule.as_str()), ("hmm", "protein"));
-        assert_eq!(entry.name, "test", "the name annotations get, not `test.hmm`");
-        let index = domainator_core::app_support::hmm_logo::index_hmm_file(dest.to_str().unwrap()).unwrap();
-        assert_eq!(index.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["PF00001"]);
+        assert_eq!(
+            (entry.format.as_str(), entry.molecule.as_str()),
+            ("hmm", "protein")
+        );
+        assert_eq!(
+            entry.name, "test",
+            "the name annotations get, not `test.hmm`"
+        );
+        let index =
+            domainator_core::app_support::hmm_logo::index_hmm_file(dest.to_str().unwrap()).unwrap();
+        assert_eq!(
+            index.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+            ["PF00001"]
+        );
     }
 
     /// NCBI's taxdump is kept as served, and the stored file must be what every
@@ -1058,7 +1147,9 @@ MSDKIIHLTD
             header.set_size(body.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
-            builder.append_data(&mut header, name, body.as_bytes()).unwrap();
+            builder
+                .append_data(&mut header, name, body.as_bytes())
+                .unwrap();
         }
         let tarball = builder.into_inner().unwrap();
         let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
@@ -1067,19 +1158,37 @@ MSDKIIHLTD
 
         let spec = spec("ncbi_taxonomy").unwrap();
         let dest = dir.join(spec.file_name);
-        write_payload(&spec, Compression::Gzip, std::io::Cursor::new(gz.clone()), &dest).unwrap();
-        assert_eq!(std::fs::read(&dest).unwrap(), gz, "NCBI's gzip is the storage format");
+        write_payload(
+            &spec,
+            Compression::Gzip,
+            std::io::Cursor::new(gz.clone()),
+            &dest,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(&dest).unwrap(),
+            gz,
+            "NCBI's gzip is the storage format"
+        );
 
         let entry =
-            domainator_core::app_support::registry::classify_database(dest.to_str().unwrap()).unwrap();
+            domainator_core::app_support::registry::classify_database(dest.to_str().unwrap())
+                .unwrap();
         assert_eq!(entry.format, "taxonomy");
-        let tax = domainator_core::seq::taxonomy::NCBITaxonomy::load(Path::new(&entry.path)).unwrap();
+        let tax =
+            domainator_core::seq::taxonomy::NCBITaxonomy::load(Path::new(&entry.path)).unwrap();
         assert_eq!(tax.name(562), Some("Escherichia coli"));
 
         // An uncompressed tarball is gzipped on the way in, as one member.
         let plain = dir.join("plain").join(spec.file_name);
         std::fs::create_dir_all(plain.parent().unwrap()).unwrap();
-        write_payload(&spec, Compression::None, std::io::Cursor::new(tarball), &plain).unwrap();
+        write_payload(
+            &spec,
+            Compression::None,
+            std::io::Cursor::new(tarball),
+            &plain,
+        )
+        .unwrap();
         let tax = domainator_core::seq::taxonomy::NCBITaxonomy::load(&plain).unwrap();
         assert_eq!(tax.name(562), Some("Escherichia coli"));
     }
@@ -1097,16 +1206,23 @@ MSDKIIHLTD
             w.write_all(profile).unwrap();
             w.finish().unwrap();
         }
-        let spec = DbSpec { kind: DbKind::Hmm, file_name: "n.hmm.gz", ..fasta_spec("n.hmm.gz") };
-        for (tag, compression, bytes) in
-            [("bgzf", Compression::Bgzf, bgzf_bytes), ("plain", Compression::None, profile.to_vec())]
-        {
+        let spec = DbSpec {
+            kind: DbKind::Hmm,
+            file_name: "n.hmm.gz",
+            ..fasta_spec("n.hmm.gz")
+        };
+        for (tag, compression, bytes) in [
+            ("bgzf", Compression::Bgzf, bgzf_bytes),
+            ("plain", Compression::None, profile.to_vec()),
+        ] {
             let dest = dir.join(format!("{tag}.hmm.gz"));
             write_payload(&spec, compression, std::io::Cursor::new(bytes), &dest).unwrap();
             let stored = std::fs::read(&dest).unwrap();
             assert_eq!(sniff(&stored), Compression::Gzip, "{tag}");
             let mut text = Vec::new();
-            flate2::read::GzDecoder::new(stored.as_slice()).read_to_end(&mut text).unwrap();
+            flate2::read::GzDecoder::new(stored.as_slice())
+                .read_to_end(&mut text)
+                .unwrap();
             assert_eq!(text, profile, "{tag}");
         }
     }
@@ -1143,7 +1259,13 @@ MSDKIIHLTD
 
         let spec = fasta_spec("passthrough.fasta.bgz");
         let dest = dir.join(spec.file_name);
-        write_payload(&spec, Compression::Bgzf, std::io::Cursor::new(buf.clone()), &dest).unwrap();
+        write_payload(
+            &spec,
+            Compression::Bgzf,
+            std::io::Cursor::new(buf.clone()),
+            &dest,
+        )
+        .unwrap();
         assert_eq!(std::fs::read(&dest).unwrap(), buf);
     }
 
@@ -1167,7 +1289,11 @@ MSDKIIHLTD
 
         cancel.store(true, Ordering::Relaxed);
         let err = r.read(&mut buf).unwrap_err();
-        assert_ne!(err.kind(), std::io::ErrorKind::Interrupted, "io::copy would retry this");
+        assert_ne!(
+            err.kind(),
+            std::io::ErrorKind::Interrupted,
+            "io::copy would retry this"
+        );
         assert!(err.to_string().contains("canceled"));
 
         // And the error is what a copy of the whole stream surfaces.

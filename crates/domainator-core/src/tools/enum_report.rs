@@ -84,10 +84,17 @@ enum Kind {
 /// Build a static (no-argument) analysis from its flag name. Returns `None`
 /// for an unknown name.
 pub fn static_analysis(name: &str) -> Option<Analysis> {
-    let one = |n: &str, t: ColType, k: Kind| Analysis { columns: vec![(n.to_string(), t)], kind: k };
+    let one = |n: &str, t: ColType, k: Kind| Analysis {
+        columns: vec![(n.to_string(), t)],
+        kind: k,
+    };
     Some(match name {
         "domains" => one("domains", ColType::Str, Kind::Domains),
-        "domain_descriptions" => one("domain_descriptions", ColType::Str, Kind::DomainDescriptions),
+        "domain_descriptions" => one(
+            "domain_descriptions",
+            ColType::Str,
+            Kind::DomainDescriptions,
+        ),
         "sequence" => one("sequence", ColType::Str, Kind::Sequence),
         "start" => one("start", ColType::Int, Kind::Start),
         "end" => one("end", ColType::Int, Kind::End),
@@ -95,7 +102,11 @@ pub fn static_analysis(name: &str) -> Option<Analysis> {
         "length" => one("length", ColType::Int, Kind::Length),
         "topology" => one("topology", ColType::Str, Kind::Topology),
         "architecture" => one("architecture", ColType::Str, Kind::Architecture),
-        "architecture_detailed" => one("architecture_detailed", ColType::Str, Kind::ArchitectureDetailed),
+        "architecture_detailed" => one(
+            "architecture_detailed",
+            ColType::Str,
+            Kind::ArchitectureDetailed,
+        ),
         "score" => one("score", ColType::Float, Kind::Score),
         "identity" => one("identity", ColType::Float, Kind::Identity),
         "definition" => one("definition", ColType::Str, Kind::Definition),
@@ -130,12 +141,24 @@ pub fn static_analysis(name: &str) -> Option<Analysis> {
 }
 
 pub fn taxid_analysis(ranks: Vec<String>) -> Analysis {
-    let columns = ranks.iter().map(|r| (format!("taxid_{r}"), ColType::Int)).collect();
-    Analysis { columns, kind: Kind::Taxid(ranks) }
+    let columns = ranks
+        .iter()
+        .map(|r| (format!("taxid_{r}"), ColType::Int))
+        .collect();
+    Analysis {
+        columns,
+        kind: Kind::Taxid(ranks),
+    }
 }
 pub fn taxname_analysis(ranks: Vec<String>) -> Analysis {
-    let columns = ranks.iter().map(|r| (format!("taxname_{r}"), ColType::Str)).collect();
-    Analysis { columns, kind: Kind::Taxname(ranks) }
+    let columns = ranks
+        .iter()
+        .map(|r| (format!("taxname_{r}"), ColType::Str))
+        .collect();
+    Analysis {
+        columns,
+        kind: Kind::Taxname(ranks),
+    }
 }
 pub fn qualifier_analysis(ftype: String, qual: String) -> Analysis {
     Analysis {
@@ -144,31 +167,64 @@ pub fn qualifier_analysis(ftype: String, qual: String) -> Analysis {
     }
 }
 pub fn feature_count_analysis(ftype: String) -> Analysis {
-    Analysis { columns: vec![(format!("{ftype}_count"), ColType::Int)], kind: Kind::FeatureCount(ftype) }
+    Analysis {
+        columns: vec![(format!("{ftype}_count"), ColType::Int)],
+        kind: Kind::FeatureCount(ftype),
+    }
 }
 pub fn append_analysis(name: String, ctype: &str, value: &str) -> Result<Analysis, String> {
     let (t, v) = match ctype {
-        "int" => (ColType::Int, Value::Int(value.parse().map_err(|_| format!("append int value {value:?}"))?)),
-        "float" => (ColType::Float, Value::Float(value.parse().map_err(|_| format!("append float value {value:?}"))?)),
+        "int" => (
+            ColType::Int,
+            Value::Int(
+                value
+                    .parse()
+                    .map_err(|_| format!("append int value {value:?}"))?,
+            ),
+        ),
+        "float" => (
+            ColType::Float,
+            Value::Float(
+                value
+                    .parse()
+                    .map_err(|_| format!("append float value {value:?}"))?,
+            ),
+        ),
         "str" => (ColType::Str, Value::Str(value.to_string())),
         _ => return Err("append spec must be one of int, float, str".into()),
     };
-    Ok(Analysis { columns: vec![(name, t)], kind: Kind::Append(v) })
+    Ok(Analysis {
+        columns: vec![(name, t)],
+        kind: Kind::Append(v),
+    })
 }
 pub fn motif_count_analysis(pattern: String) -> Analysis {
     let safe = pattern
         .replace('-', "_")
         .replace(['[', ']', '{', '}', '(', ')'], "")
         .replace(',', "_");
-    Analysis { columns: vec![(format!("motif_count_{safe}"), ColType::Int)], kind: Kind::MotifCount(pattern) }
+    Analysis {
+        columns: vec![(format!("motif_count_{safe}"), ColType::Int)],
+        kind: Kind::MotifCount(pattern),
+    }
 }
 pub fn net_charge_analysis(ph_str: &str) -> Result<Analysis, String> {
-    let ph: f64 = ph_str.parse().map_err(|_| format!("net_charge pH {ph_str:?}"))?;
-    Ok(Analysis { columns: vec![(format!("net_charge_{ph_str}"), ColType::Float)], kind: Kind::NetCharge(ph) })
+    let ph: f64 = ph_str
+        .parse()
+        .map_err(|_| format!("net_charge pH {ph_str:?}"))?;
+    Ok(Analysis {
+        columns: vec![(format!("net_charge_{ph_str}"), ColType::Float)],
+        kind: Kind::NetCharge(ph),
+    })
 }
 pub fn repeat_count_analysis(min_len_str: &str) -> Result<Analysis, String> {
-    let n: i64 = min_len_str.parse().map_err(|_| format!("repeat_count length {min_len_str:?}"))?;
-    Ok(Analysis { columns: vec![(format!("repeat_count_{n}"), ColType::Int)], kind: Kind::RepeatCount(n) })
+    let n: i64 = min_len_str
+        .parse()
+        .map_err(|_| format!("repeat_count length {min_len_str:?}"))?;
+    Ok(Analysis {
+        columns: vec![(format!("repeat_count_{n}"), ColType::Int)],
+        kind: Kind::RepeatCount(n),
+    })
 }
 pub fn named_domain_count_analysis(domain: String) -> Analysis {
     let mut safe: String = domain
@@ -180,7 +236,11 @@ pub fn named_domain_count_analysis(domain: String) -> Analysis {
         safe = safe.replace("__", "_");
     }
     let safe = safe.trim_matches('_').to_string();
-    let safe = if safe.is_empty() { "domain".to_string() } else { safe };
+    let safe = if safe.is_empty() {
+        "domain".to_string()
+    } else {
+        safe
+    };
     Analysis {
         columns: vec![(format!("named_domain_count_{safe}"), ColType::Int)],
         kind: Kind::NamedDomainCount(domain),
@@ -190,7 +250,9 @@ pub fn named_domain_count_analysis(domain: String) -> Analysis {
 // --- per-record computation helpers ----------------------------------------
 
 fn feat_f64(f: &SeqFeature, key: &str, default: f64) -> f64 {
-    f.get_first(key).and_then(|v| v.parse().ok()).unwrap_or(default)
+    f.get_first(key)
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 fn get_strand(loc: &Location) -> &'static str {
@@ -235,25 +297,40 @@ fn get_domain_content(rec: &SeqRecord) -> (String, String) {
 
 /// `get_domain_architecture`: Domainator names in ascending location-start order.
 fn get_domain_architecture(rec: &SeqRecord) -> String {
-    let mut feats: Vec<&SeqFeature> =
-        rec.features.iter().filter(|f| f.kind == DOMAIN_FEATURE_NAME).collect();
+    let mut feats: Vec<&SeqFeature> = rec
+        .features
+        .iter()
+        .filter(|f| f.kind == DOMAIN_FEATURE_NAME)
+        .collect();
     feats.sort_by_key(|f| f.location.start());
-    feats.iter().map(|f| f.get_first("name").unwrap_or("").to_string()).collect::<Vec<_>>().join("; ")
+    feats
+        .iter()
+        .map(|f| f.get_first("name").unwrap_or("").to_string())
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn get_domain_architecture_detailed(rec: &SeqRecord) -> String {
     let no_domains = "no_domains";
     if rec.is_protein() {
-        let mut feats: Vec<&SeqFeature> =
-            rec.features.iter().filter(|f| f.kind == DOMAIN_FEATURE_NAME).collect();
+        let mut feats: Vec<&SeqFeature> = rec
+            .features
+            .iter()
+            .filter(|f| f.kind == DOMAIN_FEATURE_NAME)
+            .collect();
         if feats.is_empty() {
             return no_domains.to_string();
         }
         feats.sort_by_key(|f| f.location.start());
-        return feats.iter().map(|f| f.get_first("name").unwrap_or("")).collect::<Vec<_>>().join("/");
+        return feats
+            .iter()
+            .map(|f| f.get_first("name").unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("/");
     }
     // nucleic acid
-    let mut cdss = DomainatorCds::list_from_contig(rec, f64::INFINITY, f64::NEG_INFINITY, true, None, true);
+    let mut cdss =
+        DomainatorCds::list_from_contig(rec, f64::INFINITY, f64::NEG_INFINITY, true, None, true);
     cdss.sort_by_key(|c| stranded_start_loc(&c.feature.location, rec.seq.len() as i64));
     let mut parts: Vec<String> = Vec::new();
     for cds in &cdss {
@@ -266,7 +343,10 @@ fn get_domain_architecture_detailed(rec: &SeqRecord) -> String {
                 dom.reverse();
             }
             parts.push(
-                dom.iter().map(|f| f.get_first("name").unwrap_or("")).collect::<Vec<_>>().join("/"),
+                dom.iter()
+                    .map(|f| f.get_first("name").unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join("/"),
             );
         }
     }
@@ -299,7 +379,8 @@ fn single_protein_sequence(rec: &SeqRecord) -> Option<Vec<u8>> {
         }
         return Some(s);
     }
-    let cdss = DomainatorCds::list_from_contig(rec, f64::INFINITY, f64::NEG_INFINITY, true, None, false);
+    let cdss =
+        DomainatorCds::list_from_contig(rec, f64::INFINITY, f64::NEG_INFINITY, true, None, false);
     if cdss.len() == 1 {
         let cds = &cdss[0];
         let pep = match cds.feature.get_first("translation") {
@@ -337,10 +418,21 @@ fn slice_loc_from(loc: &Location) -> SliceLoc {
         .iter()
         .map(|&(s, e, strand, _, _)| {
             let (lo, hi) = if s <= e { (s, e) } else { (e, s) };
-            crate::tools::neighborhood::Env { start: lo, end: hi, strand }
+            crate::tools::neighborhood::Env {
+                start: lo,
+                end: hi,
+                strand,
+            }
         })
         .collect();
-    SliceLoc { parts, name_start: 0, name_end: 0, overall_strand: loc.strand(), dist_to_start: 0, dist_to_end: 0 }
+    SliceLoc {
+        parts,
+        name_start: 0,
+        name_end: 0,
+        overall_strand: loc.strand(),
+        dist_to_start: 0,
+        dist_to_end: 0,
+    }
 }
 
 struct Ctx<'a> {
@@ -389,10 +481,14 @@ impl Analysis {
                 t.lineage.iter().skip(1).map(|x| x.to_string()).collect()
             }))],
             Kind::TaxnameLineage => {
-                vec![Value::Str(lineage_str(ctx.tax, |t| t.names.iter().skip(1).cloned().collect()))]
+                vec![Value::Str(lineage_str(ctx.tax, |t| {
+                    t.names.iter().skip(1).cloned().collect()
+                }))]
             }
             Kind::RankLineage => {
-                vec![Value::Str(lineage_str(ctx.tax, |t| t.ranks.iter().skip(1).cloned().collect()))]
+                vec![Value::Str(lineage_str(ctx.tax, |t| {
+                    t.ranks.iter().skip(1).cloned().collect()
+                }))]
             }
             Kind::TaxidSelf => vec![Value::Int(record_taxid(rec))],
             Kind::TaxnameSelf => vec![match &rec.annotations.organism {
@@ -452,7 +548,9 @@ impl Analysis {
                 let n = rec
                     .features
                     .iter()
-                    .filter(|f| f.kind == DOMAIN_FEATURE_NAME && f.get_first("name") == Some(domain))
+                    .filter(|f| {
+                        f.kind == DOMAIN_FEATURE_NAME && f.get_first("name") == Some(domain)
+                    })
                     .count() as i64;
                 vec![Value::Int(n)]
             }
@@ -464,7 +562,12 @@ impl Analysis {
                 _ => vec![Value::Null],
             },
             Kind::StartsWith => {
-                vec![Value::Str(rec.seq.first().map(|b| (*b as char).to_string()).unwrap_or_default())]
+                vec![Value::Str(
+                    rec.seq
+                        .first()
+                        .map(|b| (*b as char).to_string())
+                        .unwrap_or_default(),
+                )]
             }
             Kind::MolecularWeight => {
                 if rec.seq.is_empty() {
@@ -575,8 +678,14 @@ fn process_record(
     } else {
         let sources: Vec<SeqFeature> = get_sources(rec).into_iter().cloned().collect();
         if !rec.is_protein() {
-            let mut cdss =
-                DomainatorCds::list_from_contig(rec, f64::INFINITY, f64::NEG_INFINITY, false, None, true);
+            let mut cdss = DomainatorCds::list_from_contig(
+                rec,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                false,
+                None,
+                true,
+            );
             cdss.sort_by_key(|c| stranded_start_loc(&c.feature.location, rec.seq.len() as i64));
             for cds in &cdss {
                 if by == By::Cds {
@@ -633,7 +742,11 @@ fn process_record(
             }
         }
         let tax_data = ncbi_taxonomy.map(|t| TaxonomyData::new(t, record_taxid(sub_rec)));
-        let ctx = Ctx { loc: locs[i].clone(), tax: tax_data.as_ref(), filename };
+        let ctx = Ctx {
+            loc: locs[i].clone(),
+            tax: tax_data.as_ref(),
+            filename,
+        };
         for analysis in analyses {
             row.extend(analysis.compute(sub_rec, &ctx));
         }
@@ -682,7 +795,9 @@ fn json_value(v: &Value, ctype: ColType) -> serde_json::Value {
                 J::Number((*f as i64).into())
             } else {
                 let f = if *f == 0.0 { 0.0 } else { *f };
-                serde_json::Number::from_f64(f).map(J::Number).unwrap_or(J::Null)
+                serde_json::Number::from_f64(f)
+                    .map(J::Number)
+                    .unwrap_or(J::Null)
             }
         }
     }
@@ -742,8 +857,11 @@ pub fn enum_report<W: Write>(
         OutputFormat::Tsv => {
             writeln!(out, "{}", headers.join("\t")).map_err(|e| e.to_string())?;
             for row in &rows {
-                let cells: Vec<String> =
-                    row.iter().enumerate().map(|(i, v)| format_value(v, types[i])).collect();
+                let cells: Vec<String> = row
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| format_value(v, types[i]))
+                    .collect();
                 writeln!(out, "{}", cells.join("\t")).map_err(|e| e.to_string())?;
             }
         }
@@ -816,7 +934,14 @@ mod tests {
 
     #[test]
     fn domain_content_is_alphabetical_and_unique() {
-        let r = rec(b"M", vec![dom("Zed", "z", 200), dom("Abe", "a", 50), dom("Abe", "a", 90)]);
+        let r = rec(
+            b"M",
+            vec![
+                dom("Zed", "z", 200),
+                dom("Abe", "a", 50),
+                dom("Abe", "a", 90),
+            ],
+        );
         let (names, descs) = get_domain_content(&r);
         assert_eq!(names, "Abe; Zed");
         assert_eq!(descs, "a; z");
@@ -839,15 +964,30 @@ mod tests {
 
     #[test]
     fn safe_column_names() {
-        assert_eq!(named_domain_count_analysis("foo-bar!".into()).columns[0].0, "named_domain_count_foo_bar");
-        assert_eq!(named_domain_count_analysis("***".into()).columns[0].0, "named_domain_count_domain");
-        assert_eq!(motif_count_analysis("[AG]-x-[DE]".into()).columns[0].0, "motif_count_AG_x_DE");
+        assert_eq!(
+            named_domain_count_analysis("foo-bar!".into()).columns[0].0,
+            "named_domain_count_foo_bar"
+        );
+        assert_eq!(
+            named_domain_count_analysis("***".into()).columns[0].0,
+            "named_domain_count_domain"
+        );
+        assert_eq!(
+            motif_count_analysis("[AG]-x-[DE]".into()).columns[0].0,
+            "motif_count_AG_x_DE"
+        );
     }
 
     #[test]
     fn append_typing() {
-        assert!(matches!(append_analysis("n".into(), "int", "1").unwrap().columns[0].1, ColType::Int));
-        assert!(matches!(append_analysis("n".into(), "float", "2.0").unwrap().columns[0].1, ColType::Float));
+        assert!(matches!(
+            append_analysis("n".into(), "int", "1").unwrap().columns[0].1,
+            ColType::Int
+        ));
+        assert!(matches!(
+            append_analysis("n".into(), "float", "2.0").unwrap().columns[0].1,
+            ColType::Float
+        ));
         assert!(append_analysis("n".into(), "bogus", "x").is_err());
     }
 }

@@ -68,7 +68,10 @@ pub struct DedupResult {
 
 /// Cluster `records` and return which are representatives. Does no I/O on the
 /// records themselves (naming / writing is the caller's job).
-pub fn deduplicate(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupResult, String> {
+pub fn deduplicate(
+    records: &[SeqRecord],
+    opts: &DeduplicateOptions,
+) -> Result<DedupResult, String> {
     if opts.both_strands && opts.fasta_type != "nucleotide" {
         return Err("--both_strands is only supported for nucleotide input.".into());
     }
@@ -93,13 +96,19 @@ pub fn deduplicate(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<D
 fn hash_key(seq: &[u8]) -> Vec<u8> {
     let upper: Vec<u8> = seq.iter().map(|b| b.to_ascii_uppercase()).collect();
     let start = upper.iter().position(|&b| b != b'*').unwrap_or(upper.len());
-    let end = upper.iter().rposition(|&b| b != b'*').map_or(start, |i| i + 1);
+    let end = upper
+        .iter()
+        .rposition(|&b| b != b'*')
+        .map_or(start, |i| i + 1);
     upper[start..end].to_vec()
 }
 
 fn hash_dedup(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupResult, String> {
     if opts.id != 1.0 {
-        return Err(format!("hash algorithm only valid for id = 1, not {}.", opts.id));
+        return Err(format!(
+            "hash algorithm only valid for id = 1, not {}.",
+            opts.id
+        ));
     }
     // Sequence key -> representative index. For both_strands a record registers
     // its forward, complement, and reverse-complement keys (mirroring Python).
@@ -164,7 +173,9 @@ enum ExternalTool {
     Usearch,
     /// `force_est` is set when the caller asked for `cd-hit-est` by name; otherwise
     /// the choice follows the input's molecule type.
-    CdHit { force_est: bool },
+    CdHit {
+        force_est: bool,
+    },
 }
 
 fn external_dedup(
@@ -194,7 +205,11 @@ fn external_dedup(
                 .iter()
                 .map(|b| {
                     let u = b.to_ascii_uppercase();
-                    if u == b'*' { b'f' } else { u }
+                    if u == b'*' {
+                        b'f'
+                    } else {
+                        u
+                    }
                 })
                 .collect();
             (i.to_string(), seq)
@@ -207,9 +222,13 @@ fn external_dedup(
         ExternalTool::Diamond => run_diamond(opts, &tmp, &input_fasta, cpus)?,
         ExternalTool::Usearch => run_usearch(opts, &tmp, &input_fasta, cpus, records)?,
         // Python substitutes cd-hit-est for cd-hit whenever the input is not protein.
-        ExternalTool::CdHit { force_est } => {
-            run_cdhit(opts, &tmp, &input_fasta, cpus, force_est || seqtype != "protein")?
-        }
+        ExternalTool::CdHit { force_est } => run_cdhit(
+            opts,
+            &tmp,
+            &input_fasta,
+            cpus,
+            force_est || seqtype != "protein",
+        )?,
     };
 
     // Map str-index cluster keys back to numeric indices, keeping the tool's own
@@ -221,7 +240,10 @@ fn external_dedup(
         let rep_i: usize = rep.parse().map_err(|_| format!("bad cluster id {rep:?}"))?;
         let mem_i: Vec<usize> = mem
             .iter()
-            .map(|m| m.parse::<usize>().map_err(|_| format!("bad member id {m:?}")))
+            .map(|m| {
+                m.parse::<usize>()
+                    .map_err(|_| format!("bad member id {m:?}"))
+            })
             .collect::<Result<_, _>>()?;
         order.push(rep_i);
         members.insert(rep_i, mem_i);
@@ -234,15 +256,15 @@ fn external_dedup(
 /// `order` is the order the clustering reported its clusters in, which the
 /// `--cluster_table` follows; the representatives are sorted independently
 /// because records are always *emitted* in input order.
-fn finalize(
-    order: Vec<usize>,
-    members: HashMap<usize, Vec<usize>>,
-) -> Result<DedupResult, String> {
+fn finalize(order: Vec<usize>, members: HashMap<usize, Vec<usize>>) -> Result<DedupResult, String> {
     let clusters: Vec<(usize, Vec<usize>)> =
         order.iter().map(|&r| (r, members[&r].clone())).collect();
     let mut reps: Vec<usize> = order;
     reps.sort_unstable();
-    Ok(DedupResult { representatives: reps, clusters })
+    Ok(DedupResult {
+        representatives: reps,
+        clusters,
+    })
 }
 
 fn run_diamond(
@@ -268,9 +290,9 @@ fn run_diamond(
         .arg("--threads")
         .arg(cpus.to_string());
     append_params(&mut cmd, &opts.params);
-    let out = cmd
-        .output()
-        .map_err(|e| spawn_error(e, &bin, "Install diamond or set $DOMAINATOR_DIAMOND.").to_string())?;
+    let out = cmd.output().map_err(|e| {
+        spawn_error(e, &bin, "Install diamond or set $DOMAINATOR_DIAMOND.").to_string()
+    })?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         // Before MIN_DIAMOND_VERSION the cluster writer crashed when the whole input
@@ -278,7 +300,10 @@ fn run_diamond(
         // clustering itself had succeeded. Upstream dropped its longest-sequence
         // fallback when it raised the prereq; name the version here so a user on an
         // older diamond gets an actionable error rather than a bare crash message.
-        if ["max_oid not set", "Record count not set"].iter().any(|e| stderr.contains(e)) {
+        if ["max_oid not set", "Record count not set"]
+            .iter()
+            .any(|e| stderr.contains(e))
+        {
             return Err(format!(
                 "diamond cluster failed on an input that collapses into a single cluster. \
                  This is a bug in diamond before {MIN_DIAMOND_VERSION}; upgrade diamond \
@@ -323,7 +348,10 @@ fn parse_diamond_tsv(path: &Path) -> Result<Vec<(String, Vec<String>)>, String> 
             mem.insert(0, rep.clone());
         }
     }
-    Ok(order.into_iter().map(|r| (r.clone(), map.remove(&r).unwrap())).collect())
+    Ok(order
+        .into_iter()
+        .map(|r| (r.clone(), map.remove(&r).unwrap()))
+        .collect())
 }
 
 /// cd-hit's `-n` word size, which Python derives from the identity threshold
@@ -479,16 +507,20 @@ fn parse_clstr(path: &Path) -> Result<Vec<(String, Vec<String>)>, String> {
     let mut members: Vec<String> = Vec::new();
     // Python would silently key a cluster on `None`; a cluster with no `*` means the
     // file is malformed, and saying so beats emitting a nonsense representative.
-    let mut flush = |center: &mut Option<String>, members: &mut Vec<String>| -> Result<(), String> {
-        if members.is_empty() {
-            return Ok(());
-        }
-        let c = center.take().ok_or_else(|| {
-            format!("{}: cluster with no representative ('*') entry", path.display())
-        })?;
-        clusters.push((c, std::mem::take(members)));
-        Ok(())
-    };
+    let mut flush =
+        |center: &mut Option<String>, members: &mut Vec<String>| -> Result<(), String> {
+            if members.is_empty() {
+                return Ok(());
+            }
+            let c = center.take().ok_or_else(|| {
+                format!(
+                    "{}: cluster with no representative ('*') entry",
+                    path.display()
+                )
+            })?;
+            clusters.push((c, std::mem::take(members)));
+            Ok(())
+        };
 
     for line in std::io::BufReader::new(file).lines() {
         let line = line.map_err(|e| format!("{}: {e}", path.display()))?;
@@ -501,7 +533,10 @@ fn parse_clstr(path: &Path) -> Result<Vec<(String, Vec<String>)>, String> {
         }
         let fields: Vec<&str> = line.split_whitespace().collect();
         if fields.len() < 4 {
-            return Err(format!("{}: malformed cluster line {line:?}", path.display()));
+            return Err(format!(
+                "{}: malformed cluster line {line:?}",
+                path.display()
+            ));
         }
         // Exactly one leading `>` and exactly one trailing `...` (Python's
         // `parts[2][1:-3]`) -- trimming greedily would eat a dot that is part of an
@@ -553,11 +588,14 @@ fn run_usearch(
         params.push(("-strand".into(), Some("both".into())));
     }
     append_params(&mut cmd, &params);
-    let out = cmd
-        .output()
-        .map_err(|e| spawn_error(e, &bin, "Install usearch or set $DOMAINATOR_USEARCH.").to_string())?;
+    let out = cmd.output().map_err(|e| {
+        spawn_error(e, &bin, "Install usearch or set $DOMAINATOR_USEARCH.").to_string()
+    })?;
     if !out.status.success() {
-        return Err(format!("usearch failed:\n{}", String::from_utf8_lossy(&out.stderr)));
+        return Err(format!(
+            "usearch failed:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
     }
     parse_uc(&uc)
 }
@@ -593,7 +631,10 @@ fn parse_uc(path: &Path) -> Result<Vec<(String, Vec<String>)>, String> {
             _ => {}
         }
     }
-    Ok(order.into_iter().map(|c| (c.clone(), map.remove(&c).unwrap())).collect())
+    Ok(order
+        .into_iter()
+        .map(|c| (c.clone(), map.remove(&c).unwrap()))
+        .collect())
 }
 
 fn append_params(cmd: &mut Command, params: &[(String, Option<String>)]) {
@@ -605,9 +646,10 @@ fn append_params(cmd: &mut Command, params: &[(String, Option<String>)]) {
     }
 }
 
-
 fn num_cpus() -> usize {
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
 }
 
 #[cfg(test)]
@@ -636,7 +678,10 @@ mod tests {
     fn cluster_order_is_the_tools_and_representatives_are_input_order() {
         let members = HashMap::from([(5, vec![5, 7]), (1, vec![1]), (3, vec![3, 4])]);
         let r = finalize(vec![5, 1, 3], members).unwrap();
-        assert_eq!(r.clusters, vec![(5, vec![5, 7]), (1, vec![1]), (3, vec![3, 4])]);
+        assert_eq!(
+            r.clusters,
+            vec![(5, vec![5, 7]), (1, vec![1]), (3, vec![3, 4])]
+        );
         assert_eq!(r.representatives, vec![1, 3, 5]);
     }
 
@@ -720,10 +765,27 @@ mod tests {
     /// threshold silently changes cd-hit's seeding and its clustering with it.
     #[test]
     fn cdhit_word_size_matches_the_upstream_tables() {
-        for (id, want) in [(1.0, 5), (0.71, 5), (0.7, 4), (0.61, 4), (0.6, 3), (0.51, 3), (0.5, 2), (0.4, 2)] {
+        for (id, want) in [
+            (1.0, 5),
+            (0.71, 5),
+            (0.7, 4),
+            (0.61, 4),
+            (0.6, 3),
+            (0.51, 3),
+            (0.5, 2),
+            (0.4, 2),
+        ] {
             assert_eq!(cdhit_word_size(id, false).unwrap(), want, "protein id {id}");
         }
-        for (id, want) in [(1.0, 10), (0.96, 10), (0.95, 9), (0.9, 7), (0.88, 6), (0.85, 5), (0.8, 5)] {
+        for (id, want) in [
+            (1.0, 10),
+            (0.96, 10),
+            (0.95, 9),
+            (0.9, 7),
+            (0.88, 6),
+            (0.85, 5),
+            (0.8, 5),
+        ] {
             assert_eq!(cdhit_word_size(id, true).unwrap(), want, "est id {id}");
         }
         assert!(cdhit_word_size(0.39, false).unwrap_err().contains(">= 0.4"));
@@ -737,12 +799,18 @@ mod tests {
     fn cdhit_command_only_prefixes_the_multiplexer() {
         let go = |p: &str, est: bool| cdhit_command(Path::new(p), est).unwrap();
         assert_eq!(go("cdhit", false), (PathBuf::from("cdhit"), Some("cd-hit")));
-        assert_eq!(go("cdhit", true), (PathBuf::from("cdhit"), Some("cd-hit-est")));
+        assert_eq!(
+            go("cdhit", true),
+            (PathBuf::from("cdhit"), Some("cd-hit-est"))
+        );
         assert_eq!(
             go(r"C:\tools\cdhit.exe", true),
             (PathBuf::from(r"C:\tools\cdhit.exe"), Some("cd-hit-est"))
         );
-        assert_eq!(go("/usr/bin/cd-hit", false), (PathBuf::from("/usr/bin/cd-hit"), None));
+        assert_eq!(
+            go("/usr/bin/cd-hit", false),
+            (PathBuf::from("/usr/bin/cd-hit"), None)
+        );
         assert_eq!(
             go("/opt/conda/bin/cd-hit-est", true),
             (PathBuf::from("/opt/conda/bin/cd-hit-est"), None)
@@ -777,18 +845,30 @@ mod tests {
     #[test]
     fn cdhit_rejects_an_identity_below_the_table_without_running_anything() {
         let recs = vec![rec("a", b"ACDEF", "protein")];
-        let opts = DeduplicateOptions { algorithm: "cd-hit".into(), id: 0.3, ..Default::default() };
-        let Err(err) = deduplicate(&recs, &opts) else { panic!("id 0.3 should be rejected") };
+        let opts = DeduplicateOptions {
+            algorithm: "cd-hit".into(),
+            id: 0.3,
+            ..Default::default()
+        };
+        let Err(err) = deduplicate(&recs, &opts) else {
+            panic!("id 0.3 should be rejected")
+        };
         assert!(err.contains(">= 0.4"), "{err}");
     }
 
     #[test]
     fn hash_requires_id_one_and_both_strands_needs_nucleotide() {
         let recs = vec![rec("a", b"ACDEF", "protein")];
-        let bad_id = DeduplicateOptions { id: 0.9, ..Default::default() };
+        let bad_id = DeduplicateOptions {
+            id: 0.9,
+            ..Default::default()
+        };
         assert!(deduplicate(&recs, &bad_id).is_err());
-        let bad_strand =
-            DeduplicateOptions { both_strands: true, fasta_type: "protein".into(), ..Default::default() };
+        let bad_strand = DeduplicateOptions {
+            both_strands: true,
+            fasta_type: "protein".into(),
+            ..Default::default()
+        };
         assert!(deduplicate(&recs, &bad_strand).is_err());
     }
 }

@@ -27,7 +27,13 @@ pub struct HmmerCompareOptions {
 
 impl Default for HmmerCompareOptions {
     fn default() -> Self {
-        HmmerCompareOptions { score_cutoff: 0.0, alignments: false, k: None, cpu: 0, max_output_gb: None }
+        HmmerCompareOptions {
+            score_cutoff: 0.0,
+            alignments: false,
+            k: None,
+            cpu: 0,
+            max_output_gb: None,
+        }
     }
 }
 
@@ -80,20 +86,22 @@ pub fn hmmer_compare<W: Write>(
     // Output-size guardrail (uncompressed TSV bytes; default via caller, 0/None disables).
     let max_bytes: Option<u64> = match opts.max_output_gb {
         Some(gb) if gb < 0.0 => {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "--max_output_gb must be >= 0."));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "--max_output_gb must be >= 0.",
+            ));
         }
         Some(gb) if gb > 0.0 => Some((gb * 1_000_000_000.0) as u64),
         _ => None,
     };
     let over_limit = |projected: u64, max: u64| -> io::Error {
         io::Error::other(format!(
-                "Projected hmmer_compare TSV output size is {:.2} GB, which exceeds the configured \
+            "Projected hmmer_compare TSV output size is {:.2} GB, which exceeds the configured \
                  limit of {:.2} GB. Reduce the projected output size or raise the limit with \
                  --max_output_gb. Relevant options: -k, --score_cutoff, --alignments.",
-                projected as f64 / 1_000_000_000.0,
-                max as f64 / 1_000_000_000.0
-            ),
-        )
+            projected as f64 / 1_000_000_000.0,
+            max as f64 / 1_000_000_000.0
+        ))
     };
 
     let header = "query\treference\tscore\n";

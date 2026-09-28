@@ -44,7 +44,8 @@ pub struct DatabaseRegistry {
 impl DatabaseRegistry {
     /// Add `entry`, replacing any entry at the same path and any at `replaces`.
     pub fn upsert(&mut self, entry: DatabaseEntry, replaces: &[String]) {
-        self.databases.retain(|d| d.path != entry.path && !replaces.contains(&d.path));
+        self.databases
+            .retain(|d| d.path != entry.path && !replaces.contains(&d.path));
         self.databases.push(entry);
     }
 
@@ -146,8 +147,14 @@ pub fn rename_database(path: &Path, new_name: &str) -> Result<PathBuf, String> {
     let new_path = dir.join(clean);
     let (_, new_stem, new_fmt, new_comp) = split_db_name(&new_path);
     if !new_fmt.eq_ignore_ascii_case(&old_fmt) || !new_comp.eq_ignore_ascii_case(&old_comp) {
-        let suffix = if old_comp.is_empty() { format!(".{old_fmt}") } else { format!(".{old_fmt}.{old_comp}") };
-        return Err(format!("a database keeps its format when renamed: the new name must end in {suffix}"));
+        let suffix = if old_comp.is_empty() {
+            format!(".{old_fmt}")
+        } else {
+            format!(".{old_fmt}.{old_comp}")
+        };
+        return Err(format!(
+            "a database keeps its format when renamed: the new name must end in {suffix}"
+        ));
     }
     if new_stem.is_empty() {
         return Err("invalid file name".into());
@@ -159,7 +166,10 @@ pub fn rename_database(path: &Path, new_name: &str) -> Result<PathBuf, String> {
     }
     let mut moves = Vec::with_capacity(files.len());
     for from in files {
-        let name = from.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        let name = from
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
         let rest = name
             .strip_prefix(old_stem.as_str())
             .ok_or_else(|| format!("{} does not start with {old_stem}", from.display()))?;
@@ -210,7 +220,9 @@ fn seq_filetype(format: &str) -> Option<FileType> {
 /// The index status of the database at `path` with registry `format`. Reads only
 /// each shard's first bytes and its index header, so it is cheap on any size.
 pub fn index_status(path: &Path, format: &str) -> IndexStatus {
-    let Some(filetype) = seq_filetype(format) else { return IndexStatus::NotApplicable };
+    let Some(filetype) = seq_filetype(format) else {
+        return IndexStatus::NotApplicable;
+    };
     let shards: Vec<PathBuf> = resolve_database_shards(path)
         .unwrap_or_else(|_| vec![path.to_path_buf()])
         .into_iter()
@@ -228,7 +240,10 @@ pub fn index_status(path: &Path, format: &str) -> IndexStatus {
         if index_path_for(shard).is_file() {
             present += 1;
         }
-        if matches!(crate::io::didx::read_total_cds(shard, filetype, compression), Ok(Some(_))) {
+        if matches!(
+            crate::io::didx::read_total_cds(shard, filetype, compression),
+            Ok(Some(_))
+        ) {
             fresh += 1;
         }
     }
@@ -246,10 +261,17 @@ pub fn index_status(path: &Path, format: &str) -> IndexStatus {
 /// than copying it (a 40 GB FASTA stays one file). Returns how many were written.
 pub fn build_database_index(path: &Path) -> Result<usize, String> {
     let shards = index_targets(path)?;
-    let opts = crate::tools::format_db::FormatDbOptions { index: true, ..Default::default() };
+    let opts = crate::tools::format_db::FormatDbOptions {
+        index: true,
+        ..Default::default()
+    };
     for shard in &shards {
-        crate::tools::format_db::format_db(std::slice::from_ref(shard), &opts, &mut std::io::sink())
-            .map_err(|e| format!("indexing {shard}: {e}"))?;
+        crate::tools::format_db::format_db(
+            std::slice::from_ref(shard),
+            &opts,
+            &mut std::io::sink(),
+        )
+        .map_err(|e| format!("indexing {shard}: {e}"))?;
     }
     Ok(shards.len())
 }
@@ -267,8 +289,13 @@ pub fn index_targets(path: &Path) -> Result<Vec<String>, String> {
     if shards.is_empty() {
         return Err(format!("{} is not on disk", path.display()));
     }
-    if shards.iter().any(|s| detect_compression(Path::new(s)) == Compression::Gzip) {
-        return Err("plain gzip cannot be indexed; recompress it as BGZF with format-db --compress".into());
+    if shards
+        .iter()
+        .any(|s| detect_compression(Path::new(s)) == Compression::Gzip)
+    {
+        return Err(
+            "plain gzip cannot be indexed; recompress it as BGZF with format-db --compress".into(),
+        );
     }
     Ok(shards)
 }
@@ -290,7 +317,10 @@ fn looks_nucleic(seq: &[u8]) -> bool {
     for &b in seq.iter().take(2000) {
         if b.is_ascii_alphabetic() {
             total += 1;
-            if matches!(b.to_ascii_uppercase(), b'A' | b'C' | b'G' | b'T' | b'U' | b'N') {
+            if matches!(
+                b.to_ascii_uppercase(),
+                b'A' | b'C' | b'G' | b'T' | b'U' | b'N'
+            ) {
                 n += 1;
             }
         }
@@ -309,7 +339,9 @@ fn looks_nucleic(seq: &[u8]) -> bool {
 /// A gzipped library is read through the decompressor (the managed Pfam download
 /// stays `.hmm.gz`); only the header block is ever inflated.
 fn hmm_molecule(path: &str) -> String {
-    let Ok(fh) = crate::io::open_decompressed(Path::new(path)) else { return "unknown".into() };
+    let Ok(fh) = crate::io::open_decompressed(Path::new(path)) else {
+        return "unknown".into();
+    };
     let mut reader = std::io::BufReader::new(fh);
     let mut line = String::new();
     let mut saw_header = false;
@@ -338,7 +370,11 @@ fn hmm_molecule(path: &str) -> String {
             break;
         }
     }
-    if saw_header { "protein".into() } else { "unknown".into() }
+    if saw_header {
+        "protein".into()
+    } else {
+        "unknown".into()
+    }
 }
 
 /// Whether `path` names an NCBI taxdump archive (`taxdump.tar.gz`, as NCBI
@@ -346,7 +382,11 @@ fn hmm_molecule(path: &str) -> String {
 /// `NCBITaxonomy::load` reads directly. By name alone: the archive is ~65 MB and
 /// only a full decompression could see inside it.
 pub fn is_taxdump_archive(path: &Path) -> bool {
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_ascii_lowercase();
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     name.starts_with("taxdump") && (name.ends_with(".tar.gz") || name.ends_with(".tgz"))
 }
 
@@ -373,7 +413,10 @@ pub fn classify_database(path: &str) -> Result<DatabaseEntry, String> {
     let format = classify_file(p).ok_or_else(|| format!("unrecognized database type: {path}"))?;
 
     let shards = resolve_database_shards(p).unwrap_or_else(|_| vec![p.to_path_buf()]);
-    let first = shards.first().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string());
+    let first = shards
+        .first()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string());
 
     // Only ever read the FIRST record, and only through a reader that understands
     // the file's compression. A formatted database is routinely tens of gigabytes
@@ -401,7 +444,13 @@ pub fn classify_database(path: &str) -> Result<DatabaseEntry, String> {
                 .and_then(|c| crate::io::genbank::GenbankReader::open(&first, 0, c, None).ok())
                 .and_then(|mut recs| recs.next())
                 .and_then(|r| r.ok())
-                .map(|r| if r.is_protein() { "protein".to_string() } else { "nucleic".to_string() })
+                .map(|r| {
+                    if r.is_protein() {
+                        "protein".to_string()
+                    } else {
+                        "nucleic".to_string()
+                    }
+                })
                 .unwrap_or_else(|| "unknown".into());
             ("genbank".to_string(), mol)
         }
@@ -409,14 +458,26 @@ pub fn classify_database(path: &str) -> Result<DatabaseEntry, String> {
             let mol = compressed
                 .and_then(|c| crate::io::fasta::read_fasta_partition(&first, 0, c, 1, None).ok())
                 .and_then(|recs| recs.into_iter().next())
-                .map(|r| if looks_nucleic(&r.seq) { "nucleic".to_string() } else { "protein".to_string() })
+                .map(|r| {
+                    if looks_nucleic(&r.seq) {
+                        "nucleic".to_string()
+                    } else {
+                        "protein".to_string()
+                    }
+                })
                 .unwrap_or_else(|| "unknown".into());
             ("fasta".to_string(), mol)
         }
         other => return Err(format!("{other} files are not databases")),
     };
 
-    Ok(DatabaseEntry { path: path.to_string(), name, format, molecule, shards: shards.len() })
+    Ok(DatabaseEntry {
+        path: path.to_string(),
+        name,
+        format,
+        molecule,
+        shards: shards.len(),
+    })
 }
 
 #[cfg(test)]
@@ -461,13 +522,19 @@ mod tests {
         let root = workspace("fasta");
         let dna = write(&root, "d.fasta", ">a\nACGTACGTACGT\n");
         let entry = classify_database(&dna).unwrap();
-        assert_eq!((entry.format.as_str(), entry.molecule.as_str()), ("fasta", "nucleic"));
+        assert_eq!(
+            (entry.format.as_str(), entry.molecule.as_str()),
+            ("fasta", "nucleic")
+        );
         assert_eq!(entry.name, "d");
         assert_eq!(entry.shards, 1);
 
         let prot = write(&root, "p.faa", ">a\nMKVLAWIYPQRSTHDEF\n");
         let entry = classify_database(&prot).unwrap();
-        assert_eq!((entry.format.as_str(), entry.molecule.as_str()), ("fasta", "protein"));
+        assert_eq!(
+            (entry.format.as_str(), entry.molecule.as_str()),
+            ("fasta", "protein")
+        );
     }
 
     /// A formatted database is normally BGZF, and the molecule sniff has to read it
@@ -480,12 +547,18 @@ mod tests {
         let root = workspace("bgzf");
         let path = root.join("d.fasta.bgz");
         let out = fs::File::create(&path).unwrap();
-        let mut w = bgzf::Writer::new(std::io::BufWriter::new(out), bgzf::CompressionLevel::new(6).unwrap());
+        let mut w = bgzf::Writer::new(
+            std::io::BufWriter::new(out),
+            bgzf::CompressionLevel::new(6).unwrap(),
+        );
         std::io::Write::write_all(&mut w, b">a desc\nACGTACGTACGTACGT\n").unwrap();
         std::io::Write::flush(&mut w.finish().unwrap()).unwrap();
 
         let entry = classify_database(path.to_str().unwrap()).unwrap();
-        assert_eq!((entry.format.as_str(), entry.molecule.as_str()), ("fasta", "nucleic"));
+        assert_eq!(
+            (entry.format.as_str(), entry.molecule.as_str()),
+            ("fasta", "nucleic")
+        );
 
         // Plain (non-BGZF) gzip is not seekable, so nothing can read record one --
         // but it is still a fasta database by name, and must classify as one. The
@@ -494,7 +567,10 @@ mod tests {
         // the molecule is reported unknown rather than sniffed out of the bytes.
         let gz = write(&root, "g.fasta.gz", ">a\nACGTACGTACGT\n");
         let entry = classify_database(&gz).unwrap();
-        assert_eq!((entry.format.as_str(), entry.molecule.as_str()), ("fasta", "unknown"));
+        assert_eq!(
+            (entry.format.as_str(), entry.molecule.as_str()),
+            ("fasta", "unknown")
+        );
     }
 
     /// The alphabet comes out of the first profile's header block alone. Pfam-A is
@@ -505,21 +581,36 @@ mod tests {
     fn an_hmm_database_is_classified_from_the_first_header_alone() {
         let root = workspace("hmm");
 
-        let amino = write(&root, "p.hmm", "HMMER3/f [3.4]\nNAME  x\nLENG  10\nALPH  amino\nHMM  A C D\n");
+        let amino = write(
+            &root,
+            "p.hmm",
+            "HMMER3/f [3.4]\nNAME  x\nLENG  10\nALPH  amino\nHMM  A C D\n",
+        );
         assert_eq!(classify_database(&amino).unwrap().molecule, "protein");
 
-        let dna = write(&root, "n.hmm", "HMMER3/f [3.4]\nNAME  x\nALPH  DNA\nHMM  A C G T\n");
+        let dna = write(
+            &root,
+            "n.hmm",
+            "HMMER3/f [3.4]\nNAME  x\nALPH  DNA\nHMM  A C G T\n",
+        );
         assert_eq!(classify_database(&dna).unwrap().molecule, "nucleic");
 
         // HMMER defaults to amino when a profile declares no ALPH.
-        let bare = write(&root, "b.hmm", "HMMER3/f [3.4]\nNAME  x\nHMM  A C D\nsomething\n");
+        let bare = write(
+            &root,
+            "b.hmm",
+            "HMMER3/f [3.4]\nNAME  x\nHMM  A C D\nsomething\n",
+        );
         assert_eq!(classify_database(&bare).unwrap().molecule, "protein");
 
         // Not an HMM at all, and a file that does not exist: both `unknown`, never
         // a guess and never a panic.
         let junk = write(&root, "j.hmm", "this is not a profile\n");
         assert_eq!(classify_database(&junk).unwrap().molecule, "unknown");
-        assert_eq!(classify_database("/nonexistent/x.hmm").unwrap().molecule, "unknown");
+        assert_eq!(
+            classify_database("/nonexistent/x.hmm").unwrap().molecule,
+            "unknown"
+        );
     }
 
     #[test]
@@ -527,7 +618,10 @@ mod tests {
         for name in ["taxdump.tar.gz", "taxdump_2026-09.tgz", "TAXDUMP.TAR.GZ"] {
             let entry = classify_database(&format!("/somewhere/{name}")).unwrap();
             assert_eq!(entry.format, "taxonomy", "{name}");
-            assert_eq!(index_status(Path::new(&entry.path), &entry.format), IndexStatus::NotApplicable);
+            assert_eq!(
+                index_status(Path::new(&entry.path), &entry.format),
+                IndexStatus::NotApplicable
+            );
         }
         // Any other tarball is not one.
         assert!(!is_taxdump_archive(Path::new("/x/backup.tar.gz")));
@@ -541,20 +635,32 @@ mod tests {
         let root = workspace("unknown");
         let mystery = write(&root, "db.zzz", "hello");
         assert!(
-            classify_database(&mystery).unwrap_err().contains("unrecognized database type"),
+            classify_database(&mystery)
+                .unwrap_err()
+                .contains("unrecognized database type"),
             "an unknown extension should say so"
         );
 
-        for (name, kind) in [("notes.txt", "text"), ("d.hdf5", "hdf5"), ("c.tsv", "table")] {
+        for (name, kind) in [
+            ("notes.txt", "text"),
+            ("d.hdf5", "hdf5"),
+            ("c.tsv", "table"),
+        ] {
             let p = write(&root, name, "x");
             let err = classify_database(&p).unwrap_err();
-            assert!(err.contains(kind) && err.contains("not databases"), "{name}: {err}");
+            assert!(
+                err.contains(kind) && err.contains("not databases"),
+                "{name}: {err}"
+            );
         }
 
         // A recognized extension that does not exist on disk still classifies --
         // the molecule is simply unknown. It must not panic.
         let entry = classify_database("/nonexistent/x.fasta").unwrap();
-        assert_eq!((entry.format.as_str(), entry.molecule.as_str()), ("fasta", "unknown"));
+        assert_eq!(
+            (entry.format.as_str(), entry.molecule.as_str()),
+            ("fasta", "unknown")
+        );
     }
 
     /// The central registry must survive a round trip; a missing or corrupt file
@@ -574,7 +680,10 @@ mod tests {
         assert_eq!(loaded.databases[0].format, "hmm");
 
         fs::write(&file, b"{ not json").unwrap();
-        assert!(load_registry_file(&file).databases.is_empty(), "corrupt registry reads as empty");
+        assert!(
+            load_registry_file(&file).databases.is_empty(),
+            "corrupt registry reads as empty"
+        );
     }
 
     fn entry(path: &str, shards: usize) -> DatabaseEntry {
@@ -616,17 +725,30 @@ mod tests {
         save_registry_file(&workspace_registry_path(&root), &legacy).unwrap();
 
         assert_eq!(migrate_workspace_registry(&central, &root).unwrap(), 1);
-        let paths: Vec<String> =
-            load_registry_file(&central).databases.into_iter().map(|d| d.path).collect();
+        let paths: Vec<String> = load_registry_file(&central)
+            .databases
+            .into_iter()
+            .map(|d| d.path)
+            .collect();
         assert_eq!(paths, vec!["/shared.hmm", "/only-here.hmm"]);
-        assert!(!workspace_registry_path(&root).exists(), "the legacy list must be retired");
-        assert!(dot_dir(&root).join(MIGRATED_NAME).exists(), "and kept for the record");
+        assert!(
+            !workspace_registry_path(&root).exists(),
+            "the legacy list must be retired"
+        );
+        assert!(
+            dot_dir(&root).join(MIGRATED_NAME).exists(),
+            "and kept for the record"
+        );
 
         let mut c = load_registry_file(&central);
         c.remove("/only-here.hmm");
         save_registry_file(&central, &c).unwrap();
         assert_eq!(migrate_workspace_registry(&central, &root).unwrap(), 0);
-        assert_eq!(load_registry_file(&central).databases.len(), 1, "a removed database came back");
+        assert_eq!(
+            load_registry_file(&central).databases.len(),
+            1,
+            "a removed database came back"
+        );
     }
 
     /// Renaming moves every shard and every index together and keeps the shard
@@ -649,7 +771,10 @@ mod tests {
         }
         let err = rename_database(&root2.join("db.fasta"), "nr.fasta").unwrap_err();
         assert!(err.contains("already exists"), "{err}");
-        assert!(root2.join("db.0.fasta").exists(), "a refused rename must move nothing");
+        assert!(
+            root2.join("db.0.fasta").exists(),
+            "a refused rename must move nothing"
+        );
 
         let root3 = workspace("rename-ok");
         for n in ["db.0.fasta", "db.1.fasta", "db.1.fasta.didx", "dbx.fasta"] {
@@ -674,7 +799,11 @@ mod tests {
 
         assert_eq!(build_database_index(&db).unwrap(), 1);
         assert_eq!(index_status(&db, "fasta"), IndexStatus::Indexed);
-        assert_eq!(database_files(&db).len(), 2, "the index is a sidecar, not a copy");
+        assert_eq!(
+            database_files(&db).len(),
+            2,
+            "the index is a sidecar, not a copy"
+        );
 
         fs::write(&db, ">a\nMKV\n>b\nMKL\n>c\nMKA\n").unwrap();
         assert_eq!(index_status(&db, "fasta"), IndexStatus::Stale);
@@ -686,7 +815,10 @@ mod tests {
         assert_eq!(index_status(&gz, "fasta"), IndexStatus::Unindexable);
         assert!(build_database_index(&gz).unwrap_err().contains("BGZF"));
 
-        assert_eq!(index_status(&root.join("p.hmm"), "hmm"), IndexStatus::NotApplicable);
+        assert_eq!(
+            index_status(&root.join("p.hmm"), "hmm"),
+            IndexStatus::NotApplicable
+        );
     }
 
     #[test]

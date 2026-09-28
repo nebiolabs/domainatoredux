@@ -5,8 +5,8 @@
 
 use serde::Serialize;
 
-use crate::seq::SeqRecord;
 use crate::seq::taxonomy::NCBITaxonomy;
+use crate::seq::SeqRecord;
 use crate::DOMAIN_FEATURE_NAME;
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,10 +40,17 @@ impl TaxBuilder {
         }
     }
     fn freeze(self, name: String) -> TaxNode {
-        let mut children: Vec<TaxNode> =
-            self.children.into_iter().map(|(n, b)| b.freeze(n)).collect();
+        let mut children: Vec<TaxNode> = self
+            .children
+            .into_iter()
+            .map(|(n, b)| b.freeze(n))
+            .collect();
         children.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
-        TaxNode { name, count: self.count, children }
+        TaxNode {
+            name,
+            count: self.count,
+            children,
+        }
     }
 }
 
@@ -93,12 +100,19 @@ fn histogram(vals: &[usize], bins: usize) -> Vec<[f64; 2]> {
         }
         counts[idx] += 1;
     }
-    counts.iter().enumerate().map(|(i, &c)| [min + i as f64 * width, c as f64]).collect()
+    counts
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| [min + i as f64 * width, c as f64])
+        .collect()
 }
 
 /// Sort a `(name -> count)` map into a descending, truncated `NameCount` list.
 fn top_counts(map: std::collections::HashMap<String, usize>, limit: usize) -> Vec<NameCount> {
-    let mut v: Vec<NameCount> = map.into_iter().map(|(name, count)| NameCount { name, count }).collect();
+    let mut v: Vec<NameCount> = map
+        .into_iter()
+        .map(|(name, count)| NameCount { name, count })
+        .collect();
     v.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
     v.truncate(limit);
     v
@@ -108,14 +122,21 @@ pub fn summarize(records: &[SeqRecord]) -> SummaryStats {
     summarize_with_taxonomy(records, None)
 }
 
-pub fn summarize_with_taxonomy(records: &[SeqRecord], taxonomy: Option<&NCBITaxonomy>) -> SummaryStats {
+pub fn summarize_with_taxonomy(
+    records: &[SeqRecord],
+    taxonomy: Option<&NCBITaxonomy>,
+) -> SummaryStats {
     use std::collections::HashMap;
 
     let lengths: Vec<usize> = records.iter().map(|r| r.len()).collect();
     let total_residues: u64 = lengths.iter().map(|&l| l as u64).sum();
     let length_min = lengths.iter().copied().min().unwrap_or(0);
     let length_max = lengths.iter().copied().max().unwrap_or(0);
-    let length_mean = if lengths.is_empty() { 0.0 } else { total_residues as f64 / lengths.len() as f64 };
+    let length_mean = if lengths.is_empty() {
+        0.0
+    } else {
+        total_residues as f64 / lengths.len() as f64
+    };
     let mut sorted = lengths.clone();
     sorted.sort_unstable();
     let length_median = sorted.get(sorted.len() / 2).copied().unwrap_or(0);
@@ -129,7 +150,13 @@ pub fn summarize_with_taxonomy(records: &[SeqRecord], taxonomy: Option<&NCBITaxo
     let mut tax = TaxBuilder::default();
 
     for rec in records {
-        let mut path: Vec<String> = rec.annotations.taxonomy.iter().filter(|s| !s.is_empty()).cloned().collect();
+        let mut path: Vec<String> = rec
+            .annotations
+            .taxonomy
+            .iter()
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .collect();
         if let Some(org) = &rec.annotations.organism {
             if path.last() != Some(org) {
                 path.push(org.clone());
@@ -138,8 +165,15 @@ pub fn summarize_with_taxonomy(records: &[SeqRecord], taxonomy: Option<&NCBITaxo
         if let Some(tax) = taxonomy {
             let lineage = tax.lineage(crate::seq::taxid::record_taxid(rec));
             if !lineage.is_empty() {
-                path = lineage.into_iter().rev().filter(|&id| id != 1)
-                    .map(|id| tax.name(id).map(str::to_string).unwrap_or_else(|| id.to_string()))
+                path = lineage
+                    .into_iter()
+                    .rev()
+                    .filter(|&id| id != 1)
+                    .map(|id| {
+                        tax.name(id)
+                            .map(str::to_string)
+                            .unwrap_or_else(|| id.to_string())
+                    })
                     .collect();
             }
         }
@@ -219,7 +253,11 @@ mod tests {
 
     #[test]
     fn lengths_and_totals() {
-        let stats = summarize(&[rec("a", 10, None, &[]), rec("b", 30, None, &[]), rec("c", 20, None, &[])]);
+        let stats = summarize(&[
+            rec("a", 10, None, &[]),
+            rec("b", 30, None, &[]),
+            rec("c", 20, None, &[]),
+        ]);
         assert_eq!(stats.n_contigs, 3);
         assert_eq!(stats.total_residues, 60);
         assert_eq!((stats.length_min, stats.length_max), (10, 30));
@@ -252,10 +290,14 @@ mod tests {
     /// records all the same length, would otherwise divide by a zero-width bin.
     #[test]
     fn a_histogram_needs_two_distinct_lengths() {
-        assert!(summarize(&[rec("a", 10, None, &[])]).length_histogram.is_empty());
-        assert!(summarize(&[rec("a", 10, None, &[]), rec("b", 10, None, &[])])
+        assert!(summarize(&[rec("a", 10, None, &[])])
             .length_histogram
             .is_empty());
+        assert!(
+            summarize(&[rec("a", 10, None, &[]), rec("b", 10, None, &[])])
+                .length_histogram
+                .is_empty()
+        );
 
         let stats = summarize(&[rec("a", 0, None, &[]), rec("b", 30, None, &[])]);
         assert_eq!(stats.length_histogram.len(), 30);
@@ -283,11 +325,18 @@ mod tests {
         let names: Vec<&str> = stats.top_domains.iter().map(|n| n.name.as_str()).collect();
         assert_eq!(names, vec!["A", "B"]);
         assert_eq!(stats.top_domains[0].count, 2);
-        let dbs: Vec<(&str, usize)> =
-            stats.databases.iter().map(|n| (n.name.as_str(), n.count)).collect();
+        let dbs: Vec<(&str, usize)> = stats
+            .databases
+            .iter()
+            .map(|n| (n.name.as_str(), n.count))
+            .collect();
         assert_eq!(dbs, vec![("pfam", 3)]);
         // Every feature kind is counted, not just Domainator ones.
-        let kinds: Vec<&str> = stats.feature_kinds.iter().map(|n| n.name.as_str()).collect();
+        let kinds: Vec<&str> = stats
+            .feature_kinds
+            .iter()
+            .map(|n| n.name.as_str())
+            .collect();
         assert_eq!(kinds, vec![crate::DOMAIN_FEATURE_NAME, "CDS"]);
     }
 
@@ -306,11 +355,17 @@ mod tests {
 
         let bacteria = &stats.taxonomy.children[0];
         assert_eq!((bacteria.name.as_str(), bacteria.count), ("Bacteria", 3));
-        let phyla: Vec<(&str, usize)> =
-            bacteria.children.iter().map(|c| (c.name.as_str(), c.count)).collect();
+        let phyla: Vec<(&str, usize)> = bacteria
+            .children
+            .iter()
+            .map(|c| (c.name.as_str(), c.count))
+            .collect();
         assert_eq!(phyla, vec![("Proteobacteria", 2), ("Firmicutes", 1)]);
-        let leaves: Vec<&str> =
-            bacteria.children[0].children.iter().map(|c| c.name.as_str()).collect();
+        let leaves: Vec<&str> = bacteria.children[0]
+            .children
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
         assert_eq!(leaves, vec!["E. coli", "Salmonella"]);
     }
 
@@ -325,7 +380,8 @@ mod tests {
 
     #[test]
     fn taxid_only_record_uses_registered_taxonomy() {
-        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test/data/taxdmp");
+        let fixture =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test/data/taxdmp");
         let taxonomy = NCBITaxonomy::load(&fixture).unwrap();
         let mut record = rec("a", 10, None, &[]);
         let mut source = SeqFeature::new("source", Location::range(0, 10, 1));
@@ -343,7 +399,8 @@ mod tests {
     fn gui_taxonomy_matches_summary_report_taxid_priority() {
         use crate::tools::summary_report::{summary_report, SummaryReportOptions};
 
-        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test/data/taxdmp");
+        let fixture =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test/data/taxdmp");
         let taxonomy = NCBITaxonomy::load(&fixture).unwrap();
         let mut with_ox = rec("ox", 20, None, &[]);
         with_ox.description = "protein OX=562 TaxID=2".into();
@@ -364,7 +421,10 @@ mod tests {
         for (record, expected_taxid) in [(with_ox, 562), (with_taxid, 562), (longest_source, 2)] {
             let report = summary_report(
                 std::slice::from_ref(&record),
-                &SummaryReportOptions { report_taxonomy: true, ..Default::default() },
+                &SummaryReportOptions {
+                    report_taxonomy: true,
+                    ..Default::default()
+                },
                 Some(&taxonomy),
             );
             assert_eq!(report.taxonomy[0].taxid, expected_taxid);
@@ -373,7 +433,11 @@ mod tests {
             let lineage = taxonomy.lineage(expected_taxid);
             let mut node = &stats.taxonomy;
             for taxid in lineage.into_iter().rev().filter(|&taxid| taxid != 1) {
-                node = node.children.iter().find(|child| child.name == taxonomy.name(taxid).unwrap()).unwrap();
+                node = node
+                    .children
+                    .iter()
+                    .find(|child| child.name == taxonomy.name(taxid).unwrap())
+                    .unwrap();
             }
             assert_eq!(node.count, 1);
         }

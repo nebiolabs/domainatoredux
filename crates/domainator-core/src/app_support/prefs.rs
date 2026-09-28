@@ -132,7 +132,11 @@ impl Prefs {
     /// deleting it from the list the one time you launched without that drive
     /// mounted would be the wrong call.
     pub fn existing_recent(&self) -> Vec<PathBuf> {
-        self.recent_workspaces.iter().filter(|p| p.is_dir()).cloned().collect()
+        self.recent_workspaces
+            .iter()
+            .filter(|p| p.is_dir())
+            .cloned()
+            .collect()
     }
 
     /// The workspace to reopen at launch, if any.
@@ -180,7 +184,10 @@ pub fn apply_patch(p: &mut Prefs, patch: &PrefsPatch) {
 /// Read the preferences at `path`. A missing, unreadable or malformed file yields
 /// defaults — see the module note on best-effort behavior.
 pub fn load_prefs(path: &Path) -> Prefs {
-    fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
 }
 
 /// Write the preferences to `path`, creating the parent directory if needed.
@@ -207,7 +214,9 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     let tmp = dir.join(format!(
         ".{}.tmp",
-        path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "prefs".into())
+        path.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "prefs".into())
     ));
     fs::write(&tmp, bytes)?;
     fs::rename(&tmp, path)
@@ -234,7 +243,11 @@ mod tests {
         .unwrap();
 
         let p = load_prefs(&path);
-        assert_eq!(p.recent_workspaces, vec![PathBuf::from("/tmp")], "recent list survived");
+        assert_eq!(
+            p.recent_workspaces,
+            vec![PathBuf::from("/tmp")],
+            "recent list survived"
+        );
         assert!(!p.reopen_last_workspace, "existing field kept its value");
         assert_eq!(p.theme, Theme::System);
         assert_eq!(p.default_cpu, 0);
@@ -247,7 +260,11 @@ mod tests {
 
     #[test]
     fn an_empty_patch_changes_nothing() {
-        let mut p = Prefs { default_cpu: 8, theme: Theme::Dark, ..Default::default() };
+        let mut p = Prefs {
+            default_cpu: 8,
+            theme: Theme::Dark,
+            ..Default::default()
+        };
         p.push_recent("/a");
         let before = format!("{p:?}");
         apply_patch(&mut p, &PrefsPatch::default());
@@ -256,11 +273,23 @@ mod tests {
 
     #[test]
     fn a_patch_sets_only_the_fields_it_names() {
-        let mut p = Prefs { default_cpu: 8, ..Default::default() };
-        apply_patch(&mut p, &PrefsPatch { theme: Some(Theme::Dark), ..Default::default() });
+        let mut p = Prefs {
+            default_cpu: 8,
+            ..Default::default()
+        };
+        apply_patch(
+            &mut p,
+            &PrefsPatch {
+                theme: Some(Theme::Dark),
+                ..Default::default()
+            },
+        );
         assert_eq!(p.theme, Theme::Dark);
         assert_eq!(p.default_cpu, 8, "an unnamed field is untouched");
-        assert!(p.reopen_last_workspace, "an unnamed bool is not reset to false");
+        assert!(
+            p.reopen_last_workspace,
+            "an unnamed bool is not reset to false"
+        );
     }
 
     /// The patch has no field for it, but it is worth pinning: losing the recent
@@ -287,14 +316,23 @@ mod tests {
     #[test]
     fn max_concurrent_jobs_is_at_least_one() {
         let mut p = Prefs::default();
-        apply_patch(&mut p, &PrefsPatch { max_concurrent_jobs: Some(0), ..Default::default() });
+        apply_patch(
+            &mut p,
+            &PrefsPatch {
+                max_concurrent_jobs: Some(0),
+                ..Default::default()
+            },
+        );
         assert_eq!(p.max_concurrent_jobs, 1);
     }
 
     #[test]
     fn theme_round_trips_as_lowercase_json() {
         assert_eq!(serde_json::to_string(&Theme::Dark).unwrap(), "\"dark\"");
-        assert_eq!(serde_json::from_str::<Theme>("\"system\"").unwrap(), Theme::System);
+        assert_eq!(
+            serde_json::from_str::<Theme>("\"system\"").unwrap(),
+            Theme::System
+        );
     }
     use super::*;
 

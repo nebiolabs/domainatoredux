@@ -112,12 +112,20 @@ struct NameIndex {
 /// Clone a [`NameIndex`] (used for the symmetric `input == reference` case, where
 /// the column axis is the same as the row axis).
 fn clone_index(src: &NameIndex) -> NameIndex {
-    NameIndex { idx: src.idx.clone(), names: src.names.clone(), lens: src.lens.clone() }
+    NameIndex {
+        idx: src.idx.clone(),
+        names: src.names.clone(),
+        lens: src.lens.clone(),
+    }
 }
 
 impl NameIndex {
     fn new() -> Self {
-        NameIndex { idx: HashMap::new(), names: Vec::new(), lens: Vec::new() }
+        NameIndex {
+            idx: HashMap::new(),
+            names: Vec::new(),
+            lens: Vec::new(),
+        }
     }
     fn push(&mut self, name: String, len: i64) {
         if self.idx.contains_key(&name) {
@@ -227,8 +235,13 @@ pub fn seq_dist(
                 format!(
                     "{} is only supported with --mode {:?} (modes that normalize \
                      against global matrix maxima cannot be pruned per edge); got '{}'",
-                    if opts.knn.is_some() { "--knn" } else { "--mst_knn" },
-                    MST_KNN_STREAMABLE_MODES, opts.mode
+                    if opts.knn.is_some() {
+                        "--knn"
+                    } else {
+                        "--mst_knn"
+                    },
+                    MST_KNN_STREAMABLE_MODES,
+                    opts.mode
                 ),
             ));
         }
@@ -238,7 +251,11 @@ pub fn seq_dist(
                 format!(
                     "{} requires a square, symmetric comparison (reference must be the \
                      same file as input)",
-                    if opts.knn.is_some() { "--knn" } else { "--mst_knn" }
+                    if opts.knn.is_some() {
+                        "--knn"
+                    } else {
+                        "--mst_knn"
+                    }
                 ),
             ));
         }
@@ -297,7 +314,14 @@ pub fn seq_dist(
     let (cells, row_index, col_index): (HashMap<(i64, i64), f64>, NameIndex, NameIndex) =
         match algorithm {
             Algorithm::Diamond(sensitivity) => run_diamond(
-                input, input_kind, ref_path, ref_kind, same, sensitivity, opts, bool_mode,
+                input,
+                input_kind,
+                ref_path,
+                ref_kind,
+                same,
+                sensitivity,
+                opts,
+                bool_mode,
             )?,
             _ => crate::parallel::with_threads(opts.cpu, || -> std::io::Result<_> {
                 let (results, row_index, col_index): (Vec<CmpResult>, NameIndex, NameIndex) =
@@ -341,7 +365,9 @@ pub fn seq_dist(
                         continue;
                     };
                     let v = if bool_mode { 1.0 } else { r.score };
-                    let e = cells.entry((ri as i64, ci as i64)).or_insert(f64::NEG_INFINITY);
+                    let e = cells
+                        .entry((ri as i64, ci as i64))
+                        .or_insert(f64::NEG_INFINITY);
                     if v > *e {
                         *e = v;
                     }
@@ -359,7 +385,10 @@ pub fn seq_dist(
     // `--mst_knn` bypasses per-row top-k so the pruning sees the full candidate
     // set (matching the Python streaming path's `k=None`). The diamond path
     // already capped targets per query via `--max-target-seqs`.
-    let k = if opts.mst_knn.is_some() || opts.knn.is_some() || matches!(algorithm, Algorithm::Diamond(_)) {
+    let k = if opts.mst_knn.is_some()
+        || opts.knn.is_some()
+        || matches!(algorithm, Algorithm::Diamond(_))
+    {
         None
     } else {
         opts.k
@@ -404,8 +433,10 @@ pub fn seq_dist(
     // Prune to MST ∪ OR-symmetric kNN. The raw-score lower bound was already
     // applied during scoring (`opts.lb`), so the pruning runs at lower_bound=0
     // on the post-mode values (matching the Python streaming path).
-    if let Some((k, include_mst)) =
-        opts.mst_knn.map(|k| (k, true)).or_else(|| opts.knn.map(|k| (k, false)))
+    if let Some((k, include_mst)) = opts
+        .mst_knn
+        .map(|k| (k, true))
+        .or_else(|| opts.knn.map(|k| (k, false)))
     {
         matrix = apply_mst_knn(&matrix, k, 0.0, include_mst);
     }
@@ -420,8 +451,14 @@ pub const RESERVED_DIAMOND_PARAMS: [(&str, &str); 21] = [
     ("--query", "-i/--input"),
     ("-d", "-r/--reference"),
     ("--db", "-r/--reference"),
-    ("-f", "the fixed tabular output format required to parse the result stream"),
-    ("--outfmt", "the fixed tabular output format required to parse the result stream"),
+    (
+        "-f",
+        "the fixed tabular output format required to parse the result stream",
+    ),
+    (
+        "--outfmt",
+        "the fixed tabular output format required to parse the result stream",
+    ),
     ("-p", "--cpu"),
     ("--threads", "--cpu"),
     ("-k", "-k"),
@@ -435,8 +472,14 @@ pub const RESERVED_DIAMOND_PARAMS: [(&str, &str); 21] = [
     ("--more-sensitive", "--algorithm"),
     ("--very-sensitive", "--algorithm"),
     ("--ultra-sensitive", "--algorithm"),
-    ("--algo", "seq_dist (overridable: pass it in --params to replace the default)"),
-    ("--tmpdir", "seq_dist (overridable: pass it in --params to replace the default)"),
+    (
+        "--algo",
+        "seq_dist (overridable: pass it in --params to replace the default)",
+    ),
+    (
+        "--tmpdir",
+        "seq_dist (overridable: pass it in --params to replace the default)",
+    ),
 ];
 
 /// Parse a `--params` string into ordered `(flag, value)` pairs.
@@ -523,7 +566,8 @@ fn run_diamond(
     let dbpath = tmp.path().join("db");
     let mut makedb_cmd = Command::new(&diamond_bin);
     super::external::hide_console(&mut makedb_cmd);
-    let makedb = makedb_cmd.arg("makedb")
+    let makedb = makedb_cmd
+        .arg("makedb")
         .arg("--in")
         .arg(&ref_fasta)
         .arg("-d")
@@ -533,20 +577,28 @@ fn run_diamond(
         .output()
         .map_err(|e| diamond_spawn_error(e, &diamond_bin))?;
     if !makedb.status.success() {
-        return Err(std::io::Error::other(format!("diamond makedb failed:\n{}", String::from_utf8_lossy(&makedb.stderr)),
-        ));
+        return Err(std::io::Error::other(format!(
+            "diamond makedb failed:\n{}",
+            String::from_utf8_lossy(&makedb.stderr)
+        )));
     }
 
     // `--cpu 0` means "all cores"; resolve to a concrete count for diamond `-p`.
     let threads = if opts.cpu > 0 {
         opts.cpu
     } else {
-        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
     };
     // `--mst_knn` prunes after scoring, so it must see every candidate edge (-k is
     // ignored, matching the hmmer path); otherwise cap targets per query at -k.
     // `--max-target-seqs 0` means "report all targets".
-    let max_target_seqs = if opts.mst_knn.is_some() { 0 } else { opts.k.unwrap_or(0) };
+    let max_target_seqs = if opts.mst_knn.is_some() {
+        0
+    } else {
+        opts.k.unwrap_or(0)
+    };
 
     let mut cmd = Command::new(&diamond_bin);
     super::external::hide_console(&mut cmd);
@@ -575,9 +627,10 @@ fn run_diamond(
     // Defaults --params may replace. --tmpdir defaults into the managed temp dir so
     // diamond's unlinked scratch lands beside the db rather than in the cwd.
     let tmpdir = dbpath.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-    for (flag, default) in
-        [("--algo", "0".to_string()), ("--tmpdir", tmpdir.to_string_lossy().into_owned())]
-    {
+    for (flag, default) in [
+        ("--algo", "0".to_string()),
+        ("--tmpdir", tmpdir.to_string_lossy().into_owned()),
+    ] {
         if !opts.params.iter().any(|(f, _)| f == flag) {
             cmd.arg(flag).arg(default);
         }
@@ -592,11 +645,16 @@ fn run_diamond(
     eprintln!(
         "diamond command: {} {}",
         diamond_bin.display(),
-        cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>().join(" ")
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(" ")
     );
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| diamond_spawn_error(e, &diamond_bin))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| diamond_spawn_error(e, &diamond_bin))?;
     let stdout = child.stdout.take().expect("diamond stdout is piped");
     let stderr = child.stderr.take().expect("diamond stderr is piped");
     // Drain stderr on a side thread so a full stderr pipe can't deadlock stdout.
@@ -614,8 +672,7 @@ fn run_diamond(
         let line = line?;
         let mut it = line.split('\t');
         // Require exactly three fields (matches the Python `len(parts) == 3` gate).
-        let (Some(q), Some(s), Some(b), None) = (it.next(), it.next(), it.next(), it.next())
-        else {
+        let (Some(q), Some(s), Some(b), None) = (it.next(), it.next(), it.next(), it.next()) else {
             continue;
         };
         let Ok(score) = b.trim().parse::<f64>() else {
@@ -628,7 +685,9 @@ fn run_diamond(
             continue;
         };
         let v = if bool_mode { 1.0 } else { score };
-        let e = cells.entry((ri as i64, ci as i64)).or_insert(f64::NEG_INFINITY);
+        let e = cells
+            .entry((ri as i64, ci as i64))
+            .or_insert(f64::NEG_INFINITY);
         if v > *e {
             *e = v;
         }
@@ -637,8 +696,9 @@ fn run_diamond(
     let status = child.wait()?;
     let stderr_text = stderr_handle.join().unwrap_or_default();
     if !status.success() {
-        return Err(std::io::Error::other(format!("diamond blastp failed:\n{stderr_text}"),
-        ));
+        return Err(std::io::Error::other(format!(
+            "diamond blastp failed:\n{stderr_text}"
+        )));
     }
 
     Ok((cells, row_index, col_index))

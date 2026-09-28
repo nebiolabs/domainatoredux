@@ -37,13 +37,18 @@ fn lock(reg: &MenuRegistry) -> std::sync::MutexGuard<'_, Registry> {
 }
 
 fn spec(id: &str) -> &'static crate::menu_ids::MenuCommandSpec {
-    COMMANDS.iter().find(|c| c.id == id).expect("LAYOUT references an id not in COMMANDS")
+    COMMANDS
+        .iter()
+        .find(|c| c.id == id)
+        .expect("LAYOUT references an id not in COMMANDS")
 }
 
 /// The recent-workspace list, filtered to what still exists — the same source the
 /// welcome screen uses, so the two cannot disagree.
 fn recent_workspaces(app: &AppHandle) -> Vec<String> {
-    let Ok(path) = crate::cmd_prefs::prefs_path(app) else { return Vec::new() };
+    let Ok(path) = crate::cmd_prefs::prefs_path(app) else {
+        return Vec::new();
+    };
     domainator_core::app_support::prefs::load_prefs(&path)
         .existing_recent()
         .into_iter()
@@ -53,7 +58,10 @@ fn recent_workspaces(app: &AppHandle) -> Vec<String> {
 
 /// Last path component, for a menu label.
 fn short_name(path: &str) -> String {
-    path.rsplit(['/', '\\']).find(|s| !s.is_empty()).unwrap_or(path).to_string()
+    path.rsplit(['/', '\\'])
+        .find(|s| !s.is_empty())
+        .unwrap_or(path)
+        .to_string()
 }
 
 /// File → Open Recent, from the same prefs list the welcome screen shows.
@@ -62,7 +70,9 @@ fn open_recent_submenu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
     let mut rs = SubmenuBuilder::new(app, "Open Recent");
     if recent.is_empty() {
         rs = rs.item(
-            &MenuItemBuilder::with_id("file.open_recent:", "(none)").enabled(false).build(app)?,
+            &MenuItemBuilder::with_id("file.open_recent:", "(none)")
+                .enabled(false)
+                .build(app)?,
         );
     } else {
         for path in &recent {
@@ -92,7 +102,11 @@ pub fn build_main(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     {
         let app_name = app.package_info().name.clone();
         let sub = SubmenuBuilder::new(app, &app_name)
-            .item(&PredefinedMenuItem::about(app, Some("About Domainator"), None)?)
+            .item(&PredefinedMenuItem::about(
+                app,
+                Some("About Domainator"),
+                None,
+            )?)
             .separator()
             .services()
             .separator()
@@ -106,7 +120,11 @@ pub fn build_main(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     }
 
     // macOS keeps Quit in the app submenu above; elsewhere it is ours, in File.
-    let hidden: &[&str] = if cfg!(target_os = "macos") { MACOS_HIDDEN } else { &[] };
+    let hidden: &[&str] = if cfg!(target_os = "macos") {
+        MACOS_HIDDEN
+    } else {
+        &[]
+    };
 
     for (title, items) in LAYOUT {
         let mut sub = SubmenuBuilder::new(app, *title);

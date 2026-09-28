@@ -42,7 +42,9 @@ fn read_err<E: std::fmt::Debug>(e: E) -> io::Error {
 
 fn attr_string(attrs: &std::collections::HashMap<String, AttrValue>, key: &str) -> Option<String> {
     match attrs.get(key)? {
-        AttrValue::VarLenUtf8(s) | AttrValue::String(s) | AttrValue::AsciiString(s) => Some(s.clone()),
+        AttrValue::VarLenUtf8(s) | AttrValue::String(s) | AttrValue::AsciiString(s) => {
+            Some(s.clone())
+        }
         _ => None,
     }
 }
@@ -59,7 +61,11 @@ pub fn read(path: &str) -> io::Result<DataMatrix> {
         .ok_or_else(|| read_err(format!("missing required attribute '{ARRAY_TYPE_ATTR}'")))?;
     let data_type = attr_string(&attrs, DATA_TYPE_ATTR).unwrap_or_default();
 
-    let rows = reader.dataset(ROW_LABELS).map_err(read_err)?.read_string().map_err(read_err)?;
+    let rows = reader
+        .dataset(ROW_LABELS)
+        .map_err(read_err)?
+        .read_string()
+        .map_err(read_err)?;
     let row_lengths = match reader.dataset(ROW_LENGTHS) {
         Ok(ds) => Some(ds.read_i64().map_err(read_err)?),
         Err(_) => None,
@@ -83,7 +89,11 @@ pub fn read(path: &str) -> io::Result<DataMatrix> {
     let (nr, nc) = (rows.len(), cols.len());
     let storage = match array_type.as_str() {
         DENSE => {
-            let flat = reader.dataset(DENSE_DATA).map_err(read_err)?.read_f64().map_err(read_err)?;
+            let flat = reader
+                .dataset(DENSE_DATA)
+                .map_err(read_err)?
+                .read_f64()
+                .map_err(read_err)?;
             if flat.len() != nr * nc {
                 return Err(read_err(format!(
                     "DENSE_DATA length {} != nrows*ncols {}",
@@ -94,19 +104,34 @@ pub fn read(path: &str) -> io::Result<DataMatrix> {
             Storage::Dense(flat)
         }
         SPARSE_CSR => {
-            let values = reader.dataset(SPARSE_VALUES).map_err(read_err)?.read_f64().map_err(read_err)?;
+            let values = reader
+                .dataset(SPARSE_VALUES)
+                .map_err(read_err)?
+                .read_f64()
+                .map_err(read_err)?;
             // Index width is not fixed by the format: upstream narrows to int32 on write
             // when the matrix can be addressed by it, but a file derived from a large
             // int64-indexed matrix keeps int64. Readers must accept either
             // (docs/file_formats.md), so read both as i64 and narrow here.
             let indices = read_index_array(&reader, SPARSE_CSR_INDICES)?;
             let indptr = read_index_array(&reader, SPARSE_CSR_INDPTR)?;
-            Storage::Sparse { values, indices, indptr }
+            Storage::Sparse {
+                values,
+                indices,
+                indptr,
+            }
         }
         other => return Err(read_err(format!("unknown ARRAY_TYPE '{other}'"))),
     };
 
-    Ok(DataMatrix { rows, cols, row_lengths, col_lengths, data_type, storage })
+    Ok(DataMatrix {
+        rows,
+        cols,
+        row_lengths,
+        col_lengths,
+        data_type,
+        storage,
+    })
 }
 
 /// Read a CSR index dataset written at either int32 or int64 width.
@@ -116,7 +141,11 @@ pub fn read(path: &str) -> io::Result<DataMatrix> {
 /// indices genuinely exceed i32 is larger than anything this representation can hold,
 /// so that is reported rather than silently truncated.
 fn read_index_array(reader: &File, name: &str) -> io::Result<Vec<i32>> {
-    let wide = reader.dataset(name).map_err(read_err)?.read_i64().map_err(read_err)?;
+    let wide = reader
+        .dataset(name)
+        .map_err(read_err)?
+        .read_i64()
+        .map_err(read_err)?;
     wide.into_iter()
         .map(|v| {
             i32::try_from(v).map_err(|_| {
@@ -131,13 +160,17 @@ fn read_index_array(reader: &File, name: &str) -> io::Result<Vec<i32>> {
 
 fn add_labels_and_lengths(builder: &mut FileBuilder, m: &DataMatrix, symmetric: bool) {
     let row_refs: Vec<&str> = m.rows.iter().map(String::as_str).collect();
-    builder.create_dataset(ROW_LABELS).with_vlen_strings(&row_refs);
+    builder
+        .create_dataset(ROW_LABELS)
+        .with_vlen_strings(&row_refs);
     if let Some(rl) = &m.row_lengths {
         builder.create_dataset(ROW_LENGTHS).with_i64_data(rl);
     }
     if !symmetric {
         let col_refs: Vec<&str> = m.cols.iter().map(String::as_str).collect();
-        builder.create_dataset(COL_LABELS).with_vlen_strings(&col_refs);
+        builder
+            .create_dataset(COL_LABELS)
+            .with_vlen_strings(&col_refs);
         if let Some(cl) = &m.col_lengths {
             builder.create_dataset(COL_LENGTHS).with_i64_data(cl);
         }
@@ -152,7 +185,10 @@ pub fn write_dense(path: &str, m: &DataMatrix) -> io::Result<()> {
     let symmetric = m.symmetric_labels();
 
     let mut builder = FileBuilder::new();
-    builder.set_attr(MATRIX_FILE_VERSION_ATTR, AttrValue::VarLenUtf8(MATRIX_FILE_VERSION.into()));
+    builder.set_attr(
+        MATRIX_FILE_VERSION_ATTR,
+        AttrValue::VarLenUtf8(MATRIX_FILE_VERSION.into()),
+    );
     builder.set_attr(ARRAY_TYPE_ATTR, AttrValue::VarLenUtf8(DENSE.into()));
     builder
         .create_dataset(DENSE_DATA)
@@ -170,7 +206,11 @@ pub fn write_sparse(path: &str, m: &DataMatrix) -> io::Result<()> {
     let symmetric = m.symmetric_labels();
     // Obtain canonical CSR arrays (densify->rebuild if currently dense).
     let (values, indices, indptr) = match &m.storage {
-        Storage::Sparse { values, indices, indptr } => (values.clone(), indices.clone(), indptr.clone()),
+        Storage::Sparse {
+            values,
+            indices,
+            indptr,
+        } => (values.clone(), indices.clone(), indptr.clone()),
         Storage::Dense(d) => {
             let (nr, nc) = (m.nrows(), m.ncols());
             let mut values = Vec::new();
@@ -191,11 +231,18 @@ pub fn write_sparse(path: &str, m: &DataMatrix) -> io::Result<()> {
     };
 
     let mut builder = FileBuilder::new();
-    builder.set_attr(MATRIX_FILE_VERSION_ATTR, AttrValue::VarLenUtf8(MATRIX_FILE_VERSION.into()));
+    builder.set_attr(
+        MATRIX_FILE_VERSION_ATTR,
+        AttrValue::VarLenUtf8(MATRIX_FILE_VERSION.into()),
+    );
     builder.set_attr(ARRAY_TYPE_ATTR, AttrValue::VarLenUtf8(SPARSE_CSR.into()));
     builder.create_dataset(SPARSE_VALUES).with_f64_data(&values);
-    builder.create_dataset(SPARSE_CSR_INDICES).with_i32_data(&indices);
-    builder.create_dataset(SPARSE_CSR_INDPTR).with_i32_data(&indptr);
+    builder
+        .create_dataset(SPARSE_CSR_INDICES)
+        .with_i32_data(&indices);
+    builder
+        .create_dataset(SPARSE_CSR_INDPTR)
+        .with_i32_data(&indptr);
     add_labels_and_lengths(&mut builder, m, symmetric);
     builder.set_attr(SYMMETRIC_LABELS_ATTR, AttrValue::I64(symmetric as i64));
     builder.set_attr(DATA_TYPE_ATTR, AttrValue::VarLenUtf8(m.data_type.clone()));

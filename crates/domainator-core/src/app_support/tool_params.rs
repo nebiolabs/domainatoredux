@@ -16,10 +16,16 @@ pub fn apply_default_cpu(params: &mut Value, schema: &Value, default_cpu: usize)
     if default_cpu == 0 {
         return;
     }
-    if !schema.get("properties").and_then(|p| p.get("cpu")).is_some() {
+    if !schema
+        .get("properties")
+        .and_then(|p| p.get("cpu"))
+        .is_some()
+    {
         return;
     }
-    let Some(obj) = params.as_object_mut() else { return };
+    let Some(obj) = params.as_object_mut() else {
+        return;
+    };
     // An explicit value in the dialog always wins over the preference.
     if obj.contains_key("cpu") {
         return;

@@ -35,17 +35,20 @@ pub fn parse_strand(value: Option<&str>, row_number: usize) -> Result<i32, Strin
     match v.as_str() {
         "+" | "1" | "f" | "forward" => Ok(1),
         "-" | "-1" | "r" | "reverse" => Ok(-1),
-        _ => Err(format!("Invalid strand value on row {row_number}: {value:?}")),
+        _ => Err(format!(
+            "Invalid strand value on row {row_number}: {value:?}"
+        )),
     }
 }
 
 fn parse_coordinate(value: &str, column: &str, row_number: usize) -> Result<i64, String> {
-    let parsed: i64 = value
-        .trim()
-        .parse()
-        .map_err(|_| format!("Column '{column}' must contain integers. Row {row_number}: {value}"))?;
+    let parsed: i64 = value.trim().parse().map_err(|_| {
+        format!("Column '{column}' must contain integers. Row {row_number}: {value}")
+    })?;
     if parsed < 1 {
-        return Err(format!("Column '{column}' must be >= 1. Row {row_number}: {parsed}"));
+        return Err(format!(
+            "Column '{column}' must be >= 1. Row {row_number}: {parsed}"
+        ));
     }
     Ok(parsed)
 }
@@ -60,7 +63,9 @@ pub fn parse_coordinate_table(text: &str) -> Result<Vec<CoordinateSelection>, St
         return Err("Coordinate table is empty.".into());
     }
     let mut lines = text.lines();
-    let header_line = lines.next().ok_or("Coordinate table must include a header row.")?;
+    let header_line = lines
+        .next()
+        .ok_or("Coordinate table must include a header row.")?;
     let delim = sniff_delimiter(header_line);
 
     let fieldnames: Vec<String> = header_line
@@ -85,7 +90,11 @@ pub fn parse_coordinate_table(text: &str) -> Result<Vec<CoordinateSelection>, St
         }
     }
     let idx = |name: &str| fieldnames.iter().position(|n| n == name);
-    let (ci, si, ei) = (idx("contig").unwrap(), idx("start").unwrap(), idx("end").unwrap());
+    let (ci, si, ei) = (
+        idx("contig").unwrap(),
+        idx("start").unwrap(),
+        idx("end").unwrap(),
+    );
     let sti = idx("strand");
     let fi = idx("file");
 
@@ -94,7 +103,9 @@ pub fn parse_coordinate_table(text: &str) -> Result<Vec<CoordinateSelection>, St
         let row_number = offset + 2;
         let cells: Vec<&str> = line.split(delim).collect();
         if cells.len() > fieldnames.len() {
-            return Err(format!("Row {row_number} has more fields than the header defines."));
+            return Err(format!(
+                "Row {row_number} has more fields than the header defines."
+            ));
         }
         // Skip fully-blank rows.
         if cells.iter().all(|c| c.trim().is_empty()) {
@@ -103,13 +114,24 @@ pub fn parse_coordinate_table(text: &str) -> Result<Vec<CoordinateSelection>, St
         let get = |i: usize| cells.get(i).copied();
         let contig = get(ci).unwrap_or("").trim().to_string();
         if contig.is_empty() {
-            return Err(format!("Column 'contig' must not be blank. Row {row_number}"));
+            return Err(format!(
+                "Column 'contig' must not be blank. Row {row_number}"
+            ));
         }
-        let file = fi.and_then(get).map(|s| s.trim()).filter(|s| !s.is_empty()).map(|s| s.to_string());
+        let file = fi
+            .and_then(get)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
         if let Some(f) = &file {
-            let base = std::path::Path::new(f).file_name().and_then(|s| s.to_str()).unwrap_or("");
+            let base = std::path::Path::new(f)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
             if base != f {
-                return Err(format!("Column 'file' must contain basenames only. Row {row_number}: {f}"));
+                return Err(format!(
+                    "Column 'file' must contain basenames only. Row {row_number}: {f}"
+                ));
             }
         }
         selections.push(CoordinateSelection {
@@ -168,9 +190,31 @@ pub fn extract_coordinate_region(
         //   forward: [start, L), [0, end)
         //   reverse: [0, end), [start, L)
         if strand == -1 {
-            vec![Env { start: 0, end, strand }, Env { start, end: contig_length, strand }]
+            vec![
+                Env {
+                    start: 0,
+                    end,
+                    strand,
+                },
+                Env {
+                    start,
+                    end: contig_length,
+                    strand,
+                },
+            ]
         } else {
-            vec![Env { start, end: contig_length, strand }, Env { start: 0, end, strand }]
+            vec![
+                Env {
+                    start,
+                    end: contig_length,
+                    strand,
+                },
+                Env {
+                    start: 0,
+                    end,
+                    strand,
+                },
+            ]
         }
     };
 
@@ -231,7 +275,7 @@ pub fn select_by_coord(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::seq::{Annotations, SeqFeature, Location, Topology};
+    use crate::seq::{Annotations, Location, SeqFeature, Topology};
 
     fn rec(name: &str, seq: &[u8], topology: Topology) -> SeqRecord {
         SeqRecord {
@@ -242,7 +286,10 @@ mod tests {
             molecule_type: Some("DNA".into()),
             topology,
             annotations: Annotations::default(),
-            features: vec![SeqFeature::new("source", Location::range(0, seq.len() as i64, 1))],
+            features: vec![SeqFeature::new(
+                "source",
+                Location::range(0, seq.len() as i64, 1),
+            )],
         }
     }
 
@@ -264,7 +311,16 @@ mod tests {
         let t = "contig\tstart\tend\nc1\t2\t6\nc2\t1\t3\n";
         let s = parse_coordinate_table(t).unwrap();
         assert_eq!(s.len(), 2);
-        assert_eq!(s[0], CoordinateSelection { contig: "c1".into(), start: 2, end: 6, strand: 1, file: None });
+        assert_eq!(
+            s[0],
+            CoordinateSelection {
+                contig: "c1".into(),
+                start: 2,
+                end: 6,
+                strand: 1,
+                file: None
+            }
+        );
         // missing required column
         assert!(parse_coordinate_table("contig\tstart\nc\t1\n").is_err());
         // unexpected column
@@ -283,7 +339,13 @@ mod tests {
     #[test]
     fn forward_region_seq() {
         let r = rec("c", b"AACCGGTT", Topology::Linear);
-        let sel = CoordinateSelection { contig: "c".into(), start: 2, end: 6, strand: 1, file: None };
+        let sel = CoordinateSelection {
+            contig: "c".into(),
+            start: 2,
+            end: 6,
+            strand: 1,
+            file: None,
+        };
         let out = extract_coordinate_region(&r, &sel).unwrap();
         assert_eq!(out.seq, b"ACCGG");
         assert_eq!(out.name, "c_2:6");
@@ -292,7 +354,13 @@ mod tests {
     #[test]
     fn reverse_region_rc_suffix() {
         let r = rec("c", b"AACCGGTT", Topology::Linear);
-        let sel = CoordinateSelection { contig: "c".into(), start: 1, end: 4, strand: -1, file: None };
+        let sel = CoordinateSelection {
+            contig: "c".into(),
+            start: 1,
+            end: 4,
+            strand: -1,
+            file: None,
+        };
         let out = extract_coordinate_region(&r, &sel).unwrap();
         // seq[0:4] = "AACC"; revcomp -> "GGTT"
         assert_eq!(out.seq, b"GGTT");
@@ -303,7 +371,13 @@ mod tests {
     fn circular_wraparound() {
         let r = rec("c", b"AACCGGTT", Topology::Circular);
         // start=7 end=2 -> seq[6:8] + seq[0:2] = "TT" + "AA" = "TTAA"
-        let sel = CoordinateSelection { contig: "c".into(), start: 7, end: 2, strand: 1, file: None };
+        let sel = CoordinateSelection {
+            contig: "c".into(),
+            start: 7,
+            end: 2,
+            strand: 1,
+            file: None,
+        };
         let out = extract_coordinate_region(&r, &sel).unwrap();
         assert_eq!(out.seq, b"TTAA");
         assert_eq!(out.name, "c_7:2");
@@ -312,7 +386,13 @@ mod tests {
     #[test]
     fn linear_wraparound_errors() {
         let r = rec("c", b"AACCGGTT", Topology::Linear);
-        let sel = CoordinateSelection { contig: "c".into(), start: 7, end: 2, strand: 1, file: None };
+        let sel = CoordinateSelection {
+            contig: "c".into(),
+            start: 7,
+            end: 2,
+            strand: 1,
+            file: None,
+        };
         assert!(extract_coordinate_region(&r, &sel).is_err());
     }
 }

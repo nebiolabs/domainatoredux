@@ -37,7 +37,10 @@ pub struct UpdateCheck {
 /// the app must never nag because a tag was unparseable.
 pub fn parse_version(s: &str) -> Option<(u64, u64, u64, Option<String>)> {
     let s = s.trim();
-    let s = s.strip_prefix('v').or_else(|| s.strip_prefix('V')).unwrap_or(s);
+    let s = s
+        .strip_prefix('v')
+        .or_else(|| s.strip_prefix('V'))
+        .unwrap_or(s);
     // Build metadata (`+…`) is not ordering-significant; drop it.
     let s = s.split('+').next()?;
     let (core, pre) = match s.split_once('-') {
@@ -85,13 +88,23 @@ pub fn pick_latest_release(body: &serde_json::Value) -> Option<ReleaseInfo> {
         if v.get("draft").and_then(|d| d.as_bool()).unwrap_or(false) {
             return None;
         }
-        if v.get("prerelease").and_then(|d| d.as_bool()).unwrap_or(false) {
+        if v.get("prerelease")
+            .and_then(|d| d.as_bool())
+            .unwrap_or(false)
+        {
             return None;
         }
         Some(ReleaseInfo {
             tag: v.get("tag_name")?.as_str()?.to_string(),
-            url: v.get("html_url").and_then(|u| u.as_str()).unwrap_or_default().to_string(),
-            published: v.get("published_at").and_then(|u| u.as_str()).map(|s| s.to_string()),
+            url: v
+                .get("html_url")
+                .and_then(|u| u.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            published: v
+                .get("published_at")
+                .and_then(|u| u.as_str())
+                .map(|s| s.to_string()),
         })
     };
 
@@ -129,14 +142,25 @@ mod tests {
         assert_eq!(parse_version("1.2.3"), Some((1, 2, 3, None)));
         assert_eq!(parse_version("v1.2.3"), Some((1, 2, 3, None)));
         assert_eq!(parse_version(" 0.1.0 "), Some((0, 1, 0, None)));
-        assert_eq!(parse_version("1.0.0-rc.1"), Some((1, 0, 0, Some("rc.1".into()))));
+        assert_eq!(
+            parse_version("1.0.0-rc.1"),
+            Some((1, 0, 0, Some("rc.1".into())))
+        );
         assert_eq!(parse_version("1.2"), Some((1, 2, 0, None)));
         assert_eq!(parse_version("1.2.3+build7"), Some((1, 2, 3, None)));
     }
 
     #[test]
     fn refuses_what_it_cannot_understand() {
-        for bad in ["", "latest", "v", "1.2.3.4", "1.x.3", "nightly-2026", "1.0.0-"] {
+        for bad in [
+            "",
+            "latest",
+            "v",
+            "1.2.3.4",
+            "1.x.3",
+            "nightly-2026",
+            "1.0.0-",
+        ] {
             assert_eq!(parse_version(bad), None, "should not have parsed {bad:?}");
         }
     }
@@ -148,7 +172,10 @@ mod tests {
         assert!(is_newer("2.0.0", "1.9.9"));
         assert!(!is_newer("1.0.0", "1.0.0"));
         assert!(!is_newer("1.0.0", "1.0.1"));
-        assert!(!is_newer("v0.1.0", "0.1.0"), "a leading v is not a version bump");
+        assert!(
+            !is_newer("v0.1.0", "0.1.0"),
+            "a leading v is not a version bump"
+        );
     }
 
     #[test]
@@ -203,9 +230,21 @@ mod tests {
     fn backs_off_between_checks() {
         const HOUR: u64 = 60 * 60 * 1000;
         let now = 100 * HOUR;
-        assert!(should_check_now(None, now, DEFAULT_INTERVAL_MS), "never checked");
-        assert!(!should_check_now(Some(now - HOUR), now, DEFAULT_INTERVAL_MS), "an hour ago");
-        assert!(should_check_now(Some(now - 25 * HOUR), now, DEFAULT_INTERVAL_MS), "yesterday");
-        assert!(should_check_now(Some(now + HOUR), now, DEFAULT_INTERVAL_MS), "clock went back");
+        assert!(
+            should_check_now(None, now, DEFAULT_INTERVAL_MS),
+            "never checked"
+        );
+        assert!(
+            !should_check_now(Some(now - HOUR), now, DEFAULT_INTERVAL_MS),
+            "an hour ago"
+        );
+        assert!(
+            should_check_now(Some(now - 25 * HOUR), now, DEFAULT_INTERVAL_MS),
+            "yesterday"
+        );
+        assert!(
+            should_check_now(Some(now + HOUR), now, DEFAULT_INTERVAL_MS),
+            "clock went back"
+        );
     }
 }

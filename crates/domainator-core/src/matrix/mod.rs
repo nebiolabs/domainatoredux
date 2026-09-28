@@ -69,7 +69,11 @@ impl DataMatrix {
         let (nr, nc) = (self.nrows(), self.ncols());
         match &self.storage {
             Storage::Dense(d) => d.clone(),
-            Storage::Sparse { values, indices, indptr } => {
+            Storage::Sparse {
+                values,
+                indices,
+                indptr,
+            } => {
                 let mut out = vec![0.0; nr * nc];
                 for r in 0..nr {
                     let (s, e) = (indptr[r] as usize, indptr[r + 1] as usize);
@@ -107,7 +111,11 @@ pub fn build_sparse_max(
 ) -> Storage {
     let _ = ncols;
     if vals.is_empty() {
-        return Storage::Sparse { values: Vec::new(), indices: Vec::new(), indptr: vec![0; nrows + 1] };
+        return Storage::Sparse {
+            values: Vec::new(),
+            indices: Vec::new(),
+            indptr: vec![0; nrows + 1],
+        };
     }
 
     // Sort entries by (row, col) — np.lexsort((col, row)).
@@ -144,7 +152,11 @@ pub fn build_sparse_max(
         indptr[r + 1] += indptr[r];
     }
     let indices: Vec<i32> = d_cols.iter().map(|&c| c as i32).collect();
-    Storage::Sparse { values: d_vals, indices, indptr }
+    Storage::Sparse {
+        values: d_vals,
+        indices,
+        indptr,
+    }
 }
 
 #[cfg(test)]

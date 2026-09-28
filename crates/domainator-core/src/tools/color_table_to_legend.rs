@@ -36,12 +36,18 @@ pub fn color_table_to_legend(table: &[(String, String)], title: &str) -> String 
     let box_width = box_height; // int
     let text_offset_y = box_height as f64 / 2.0; // float (Python `/`)
 
-    let longest_key = table.iter().map(|(k, _)| k.chars().count()).max().unwrap_or(0) as i64;
+    let longest_key = table
+        .iter()
+        .map(|(k, _)| k.chars().count())
+        .max()
+        .unwrap_or(0) as i64;
 
     let text_offset_x = box_width + padding * 2; // int
     let total_height = title_space + table.len() as i64 * box_height + 2 * padding; // int
-    // Both branches of max() involve `/` -> float.
-    let total_width = (box_width as f64 + (padding * 3) as f64 + (longest_key * item_font_size) as f64 / 2.0)
+                                                                                    // Both branches of max() involve `/` -> float.
+    let total_width = (box_width as f64
+        + (padding * 3) as f64
+        + (longest_key * item_font_size) as f64 / 2.0)
         .max((padding * 3) as f64 + (title.chars().count() as i64 * title_font_size) as f64 / 2.0);
     let total_width = py_float_str(total_width);
 

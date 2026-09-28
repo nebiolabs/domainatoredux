@@ -59,7 +59,13 @@ pub fn platform_key() -> &'static str {
 
 /// The registry of managed tools, with assets resolved for the current platform.
 pub fn specs() -> Vec<ToolSpec> {
-    let exe = |n: &str| if cfg!(windows) { format!("{n}.exe") } else { n.to_string() };
+    let exe = |n: &str| {
+        if cfg!(windows) {
+            format!("{n}.exe")
+        } else {
+            n.to_string()
+        }
+    };
 
     // Prebuilt binaries for Linux, macOS, and Windows. The version must be at least
     // `MIN_DIAMOND_VERSION` -- `deduplicate --algorithm diamond` fails outright on an
@@ -118,8 +124,11 @@ pub fn specs() -> Vec<ToolSpec> {
         "windows-x64" => Some("https://github.com/rcedgar/usearch12/releases/download/v12.0-beta1/usearch_win_12.0-beta.exe"),
         _ => None,
     };
-    let usearch_asset =
-        usearch_url.map(|url| Asset { url, archive: Archive::Raw, member: "" });
+    let usearch_asset = usearch_url.map(|url| Asset {
+        url,
+        archive: Archive::Raw,
+        member: "",
+    });
 
     vec![
         ToolSpec {
@@ -135,7 +144,8 @@ pub fn specs() -> Vec<ToolSpec> {
             bin_name: exe(CDHIT_BIN_NAME),
             env_var: CDHIT_ENV_VAR,
             version: "0.1.0",
-            description: "cd-hit (Rust port) — sequence clustering, for deduplicate --algorithm cd-hit.",
+            description:
+                "cd-hit (Rust port) — sequence clustering, for deduplicate --algorithm cd-hit.",
             asset: cdhit_asset,
         },
         ToolSpec {
@@ -185,7 +195,9 @@ pub fn download(app: &AppHandle, spec: &ToolSpec) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("{} has no prebuilt binary for {}", spec.id, platform_key()))?;
     let dest = managed_dir(app)?.join(&spec.bin_name);
 
-    let resp = ureq::get(asset.url).call().map_err(|e| format!("downloading {}: {e}", asset.url))?;
+    let resp = ureq::get(asset.url)
+        .call()
+        .map_err(|e| format!("downloading {}: {e}", asset.url))?;
     let mut reader = resp.into_reader();
 
     match asset.archive {
@@ -197,7 +209,9 @@ pub fn download(app: &AppHandle, spec: &ToolSpec) -> Result<PathBuf, String> {
         Archive::Zip => {
             // ZipArchive needs Read + Seek, so buffer the (small) archive first.
             let mut buf = Vec::new();
-            reader.read_to_end(&mut buf).map_err(|e| format!("downloading: {e}"))?;
+            reader
+                .read_to_end(&mut buf)
+                .map_err(|e| format!("downloading: {e}"))?;
             extract_zip_member(&buf, asset.member, &dest)?;
         }
     }
@@ -205,7 +219,9 @@ pub fn download(app: &AppHandle, spec: &ToolSpec) -> Result<PathBuf, String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&dest).map_err(|e| e.to_string())?.permissions();
+        let mut perms = std::fs::metadata(&dest)
+            .map_err(|e| e.to_string())?
+            .permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&dest, perms).map_err(|e| format!("chmod: {e}"))?;
     }
@@ -223,7 +239,8 @@ fn extract_targz_member(reader: impl Read, member: &str, dest: &Path) -> Result<
         let mut entry = entry.map_err(|e| format!("reading archive: {e}"))?;
         let path = entry.path().map_err(|e| format!("archive entry: {e}"))?;
         if path.file_name().and_then(|n| n.to_str()) == Some(member) {
-            let mut out = std::fs::File::create(dest).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+            let mut out = std::fs::File::create(dest)
+                .map_err(|e| format!("writing {}: {e}", dest.display()))?;
             std::io::copy(&mut entry, &mut out).map_err(|e| format!("extracting: {e}"))?;
             return Ok(());
         }
@@ -233,12 +250,14 @@ fn extract_targz_member(reader: impl Read, member: &str, dest: &Path) -> Result<
 
 /// Extract the archive member whose file name is `member` from a `.zip`.
 fn extract_zip_member(bytes: &[u8], member: &str, dest: &Path) -> Result<(), String> {
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| format!("opening zip: {e}"))?;
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes))
+        .map_err(|e| format!("opening zip: {e}"))?;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| format!("zip entry: {e}"))?;
         let name = entry.name().to_string();
         if Path::new(&name).file_name().and_then(|n| n.to_str()) == Some(member) {
-            let mut out = std::fs::File::create(dest).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+            let mut out = std::fs::File::create(dest)
+                .map_err(|e| format!("writing {}: {e}", dest.display()))?;
             std::io::copy(&mut entry, &mut out).map_err(|e| format!("extracting: {e}"))?;
             return Ok(());
         }
@@ -262,7 +281,10 @@ mod tests {
     #[test]
     fn the_managed_diamond_is_new_enough_for_deduplicate() {
         let min = domainator_core::tools::deduplicate_genbank::MIN_DIAMOND_VERSION;
-        let spec = specs().into_iter().find(|s| s.id == "diamond").expect("diamond spec");
+        let spec = specs()
+            .into_iter()
+            .find(|s| s.id == "diamond")
+            .expect("diamond spec");
         assert!(
             parts(spec.version) >= parts(min),
             "the managed diamond is {} but deduplicate needs >= {min}",
@@ -277,7 +299,13 @@ mod tests {
     /// reports "not found" right after the app says it installed it.
     #[test]
     fn managed_tools_match_the_core_locator() {
-        let exe = |n: &str| if cfg!(windows) { format!("{n}.exe") } else { n.to_string() };
+        let exe = |n: &str| {
+            if cfg!(windows) {
+                format!("{n}.exe")
+            } else {
+                n.to_string()
+            }
+        };
         let want = [
             ("diamond", DIAMOND_BIN_NAME, DIAMOND_ENV_VAR),
             ("cdhit", CDHIT_BIN_NAME, CDHIT_ENV_VAR),
@@ -285,7 +313,10 @@ mod tests {
         ];
         let specs = specs();
         for (id, bin, env) in want {
-            let spec = specs.iter().find(|s| s.id == id).unwrap_or_else(|| panic!("no {id} spec"));
+            let spec = specs
+                .iter()
+                .find(|s| s.id == id)
+                .unwrap_or_else(|| panic!("no {id} spec"));
             assert_eq!(spec.bin_name, exe(bin), "{id} bin_name");
             assert_eq!(spec.env_var, env, "{id} env_var");
         }
@@ -304,7 +335,11 @@ mod tests {
                 asset.url,
                 spec.version
             );
-            assert!(asset.url.starts_with("https://"), "{}: downloads must be https", spec.id);
+            assert!(
+                asset.url.starts_with("https://"),
+                "{}: downloads must be https",
+                spec.id
+            );
             match asset.archive {
                 Archive::TarGz => assert!(asset.url.ends_with(".tar.gz"), "{}", spec.id),
                 Archive::Zip => assert!(asset.url.ends_with(".zip"), "{}", spec.id),
@@ -318,8 +353,17 @@ mod tests {
     #[test]
     fn binary_names_carry_the_platform_suffix() {
         for spec in specs() {
-            assert_eq!(spec.bin_name.ends_with(".exe"), cfg!(windows), "{}", spec.id);
-            assert!(!spec.env_var.is_empty(), "{} has no locator env var", spec.id);
+            assert_eq!(
+                spec.bin_name.ends_with(".exe"),
+                cfg!(windows),
+                "{}",
+                spec.id
+            );
+            assert!(
+                !spec.env_var.is_empty(),
+                "{} has no locator env var",
+                spec.id
+            );
             if let Some(asset) = &spec.asset {
                 if !matches!(asset.archive, Archive::Raw) {
                     assert_eq!(asset.member.ends_with(".exe"), cfg!(windows), "{}", spec.id);
@@ -335,7 +379,14 @@ mod tests {
         // someone else's binary.
         let key = platform_key();
         assert!(
-            ["linux-x64", "macos-arm64", "macos-x64", "windows-x64", "unsupported"].contains(&key),
+            [
+                "linux-x64",
+                "macos-arm64",
+                "macos-x64",
+                "windows-x64",
+                "unsupported"
+            ]
+            .contains(&key),
             "unexpected platform key {key:?}"
         );
         if key == "unsupported" {

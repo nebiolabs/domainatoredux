@@ -50,8 +50,11 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
             Some(&prec_owned),
             false, // no nucleic-acid annotations
         );
-        let source_features: Vec<&SeqFeature> =
-            contig.features.iter().filter(|f| f.kind == "source").collect();
+        let source_features: Vec<&SeqFeature> = contig
+            .features
+            .iter()
+            .filter(|f| f.kind == "source")
+            .collect();
 
         for cds in &cdss {
             let mut keep = false;
@@ -65,14 +68,22 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
                 }
             }
             if let Some(td) = &opts.target_domains {
-                if td.intersection(&cds.get_domain_names(opts.databases.as_ref(), None)).next().is_some() {
+                if td
+                    .intersection(&cds.get_domain_names(opts.databases.as_ref(), None))
+                    .next()
+                    .is_some()
+                {
                     keep = true;
                 }
             }
             if opts.search_hits && cds.domain_search_feature.is_some() {
                 keep = true;
             }
-            if opts.unannotated && cds.get_domain_names(opts.databases.as_ref(), None).is_empty() {
+            if opts.unannotated
+                && cds
+                    .get_domain_names(opts.databases.as_ref(), None)
+                    .is_empty()
+            {
                 keep = true;
             }
 
@@ -134,7 +145,11 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
 
             // Name: the CDS name (or the contig name with --keep_name). Peptide has
             // no carried accession identity.
-            let new_name = if opts.keep_name { contig.id.clone() } else { cds.name.clone() };
+            let new_name = if opts.keep_name {
+                contig.id.clone()
+            } else {
+                cds.name.clone()
+            };
             region.id = new_name.clone();
             region.name = new_name;
             region.description = contig.description.clone();
@@ -190,7 +205,11 @@ mod tests {
     fn extract_all_translates_cds() {
         // 6 nt CDS -> 2 aa. ATG GCT -> M A
         let r = contig(b"ATGGCT", vec![cds("C1", "geneA", 0, 6, 1)]);
-        let opts = ExtractPeptidesOptions { evalue: 1e8, extract_all: true, ..Default::default() };
+        let opts = ExtractPeptidesOptions {
+            evalue: 1e8,
+            extract_all: true,
+            ..Default::default()
+        };
         let out = extract_peptides(&[r], &opts);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].seq, b"MA");
@@ -201,7 +220,10 @@ mod tests {
     #[test]
     fn target_domain_selection_and_peptide_coords() {
         // CDS [0,9), domain [0,6) at nt -> peptide coords [0,2)
-        let r = contig(b"ATGGCTTAA", vec![cds("C1", "geneA", 0, 9, 1), dom("C1", "D1", 0, 6)]);
+        let r = contig(
+            b"ATGGCTTAA",
+            vec![cds("C1", "geneA", 0, 9, 1), dom("C1", "D1", 0, 6)],
+        );
         let opts = ExtractPeptidesOptions {
             evalue: 1e8,
             target_domains: Some(["D1".to_string()].into_iter().collect()),
@@ -210,7 +232,11 @@ mod tests {
         let out = extract_peptides(&[r], &opts);
         assert_eq!(out.len(), 1);
         // domain feature remapped to peptide coords
-        let dfeat = out[0].features.iter().find(|f| f.kind == DOMAIN_FEATURE_NAME).unwrap();
+        let dfeat = out[0]
+            .features
+            .iter()
+            .find(|f| f.kind == DOMAIN_FEATURE_NAME)
+            .unwrap();
         assert_eq!(dfeat.location.parts[0].0, 0);
         assert_eq!(dfeat.location.parts[0].1, 2);
         // no match for a different domain
@@ -219,7 +245,14 @@ mod tests {
             target_domains: Some(["OTHER".to_string()].into_iter().collect()),
             ..Default::default()
         };
-        assert!(extract_peptides(&[contig(b"ATGGCTTAA", vec![cds("C1", "geneA", 0, 9, 1), dom("C1", "D1", 0, 6)])], &opts2).is_empty());
+        assert!(extract_peptides(
+            &[contig(
+                b"ATGGCTTAA",
+                vec![cds("C1", "geneA", 0, 9, 1), dom("C1", "D1", 0, 6)]
+            )],
+            &opts2
+        )
+        .is_empty());
         let _ = out;
     }
 
@@ -243,7 +276,12 @@ mod tests {
     #[test]
     fn keep_name_uses_contig() {
         let r = contig(b"ATGGCT", vec![cds("C1", "geneA", 0, 6, 1)]);
-        let opts = ExtractPeptidesOptions { evalue: 1e8, extract_all: true, keep_name: true, ..Default::default() };
+        let opts = ExtractPeptidesOptions {
+            evalue: 1e8,
+            extract_all: true,
+            keep_name: true,
+            ..Default::default()
+        };
         let out = extract_peptides(&[r], &opts);
         assert_eq!(out[0].id, "ctg");
     }

@@ -87,16 +87,24 @@ fn alphabet_from_name(name: &str) -> Result<Alphabet, String> {
         "amino" => Ok(Alphabet::amino()),
         "dna" => Ok(Alphabet::dna()),
         "rna" => Ok(Alphabet::rna()),
-        other => Err(format!("--alphabet must be amino, dna, or rna, got {other:?}")),
+        other => Err(format!(
+            "--alphabet must be amino, dna, or rna, got {other:?}"
+        )),
     }
 }
 
 /// Build an HMM from the first alignment in the Stockholm file at `path`.
 pub fn hmmer_build(path: &std::path::Path, opts: &HmmerBuildOptions) -> Result<Hmm, String> {
     let msas = read_stockholm(path).map_err(|e| {
-        format!("reading Stockholm MSA {}: {e:?} (only Stockholm-format MSAs are supported)", path.display())
+        format!(
+            "reading Stockholm MSA {}: {e:?} (only Stockholm-format MSAs are supported)",
+            path.display()
+        )
     })?;
-    let msa = msas.into_iter().next().ok_or("no alignment found in the input MSA")?;
+    let msa = msas
+        .into_iter()
+        .next()
+        .ok_or("no alignment found in the input MSA")?;
     if msa.nseq == 0 {
         return Err("the input alignment has no sequences".into());
     }
@@ -160,7 +168,10 @@ fn build_from(msa: &Msa, abc: &Alphabet, bg: &Bg) -> Hmm {
         0.5,
         false,
         hmmer_pure_rs::builder::RelativeWeighting::PositionBased,
-        hmmer_pure_rs::builder::EffectiveSeqNumber::Entropy { target_re: None, target_sigma: None },
+        hmmer_pure_rs::builder::EffectiveSeqNumber::Entropy {
+            target_re: None,
+            target_sigma: None,
+        },
         hmmer_pure_rs::builder::DEFAULT_BUILDER_SEED,
     )
 }

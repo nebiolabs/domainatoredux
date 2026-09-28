@@ -54,9 +54,20 @@ impl SearchResult {
     /// the caller (e.g. `0_1_{len}` for a protein contig). `feature_type` is
     /// `DOMAIN_FEATURE_NAME` or `DOMAIN_SEARCH_BEST_HIT_NAME`.
     pub fn to_feature(&self, feature_type: &str, cds_id: &str) -> SeqFeature {
-        let desc = if self.desc.trim().is_empty() { "." } else { self.desc.as_str() };
-        let acc = if self.acc.trim().is_empty() { "." } else { self.acc.as_str() };
-        let mut f = SeqFeature::new(feature_type, Location::range(self.start, self.end, self.strand));
+        let desc = if self.desc.trim().is_empty() {
+            "."
+        } else {
+            self.desc.as_str()
+        };
+        let acc = if self.acc.trim().is_empty() {
+            "."
+        } else {
+            self.acc.as_str()
+        };
+        let mut f = SeqFeature::new(
+            feature_type,
+            Location::range(self.start, self.end, self.strand),
+        );
         f.push("program", self.program.clone());
         f.push("database", self.database.clone());
         f.push("description", desc);
@@ -71,9 +82,12 @@ impl SearchResult {
         f.push("rlen", self.rlen.to_string());
         // Structural metrics, when the aligner computed them. Absent for every
         // sequence-based backend, which is what keeps their output unchanged.
-        for (key, value) in
-            [("tmscore", self.tmscore), ("lddt", self.lddt), ("rmsd", self.rmsd), ("prob", self.prob)]
-        {
+        for (key, value) in [
+            ("tmscore", self.tmscore),
+            ("lddt", self.lddt),
+            ("rmsd", self.rmsd),
+            ("prob", self.prob),
+        ] {
             if let Some(v) = value {
                 f.push(key, format!("{v:.3}"));
             }

@@ -29,7 +29,9 @@ impl AnnotationType {
         match self {
             AnnotationType::Domainator => kind == DOMAIN_FEATURE_NAME,
             AnnotationType::DomainSearch => kind == DOMAIN_SEARCH_BEST_HIT_NAME,
-            AnnotationType::All => kind == DOMAIN_FEATURE_NAME || kind == DOMAIN_SEARCH_BEST_HIT_NAME,
+            AnnotationType::All => {
+                kind == DOMAIN_FEATURE_NAME || kind == DOMAIN_SEARCH_BEST_HIT_NAME
+            }
         }
     }
 }
@@ -45,7 +47,9 @@ pub struct FilterDomainsOptions {
 }
 
 fn feature_score(f: &SeqFeature) -> f64 {
-    f.get_first("score").and_then(|v| v.parse().ok()).unwrap_or(f64::NEG_INFINITY)
+    f.get_first("score")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(f64::NEG_INFINITY)
 }
 
 /// Total overlap (bp) between two single-or-compound feature locations.
@@ -85,7 +89,8 @@ fn domain_overlap(feats: &[&SeqFeature], indices: &[usize], allowed: f64) -> Vec
         for &k in &kept {
             let denom = location_len(&feats[i].location);
             if denom > 0
-                && overlap_size(&feats[i].location, &feats[k].location) as f64 / denom as f64 > allowed
+                && overlap_size(&feats[i].location, &feats[k].location) as f64 / denom as f64
+                    > allowed
             {
                 overlaps = true;
                 break;
@@ -143,8 +148,10 @@ pub fn filter_record(rec: &mut SeqRecord, opts: &FilterDomainsOptions) {
             }
         }
 
-        let annot_evalue: f64 =
-            feat.get_first("evalue").and_then(|v| v.parse().ok()).unwrap_or(f64::INFINITY);
+        let annot_evalue: f64 = feat
+            .get_first("evalue")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(f64::INFINITY);
         if annot_evalue > opts.evalue {
             continue;
         }
@@ -194,7 +201,15 @@ mod tests {
     use super::*;
     use crate::seq::{Annotations, Location, Topology};
 
-    fn dom(cds: &str, name: &str, start: i64, end: i64, score: f64, evalue: &str, db: &str) -> SeqFeature {
+    fn dom(
+        cds: &str,
+        name: &str,
+        start: i64,
+        end: i64,
+        score: f64,
+        evalue: &str,
+        db: &str,
+    ) -> SeqFeature {
         let mut f = SeqFeature::new(DOMAIN_FEATURE_NAME, Location::range(start, end, 1));
         f.set("cds_id", cds);
         f.set("name", name);
@@ -218,8 +233,11 @@ mod tests {
     }
 
     fn names(rec: &SeqRecord) -> Vec<String> {
-        rec.features.iter().filter(|f| f.kind == DOMAIN_FEATURE_NAME)
-            .map(|f| f.get_first("name").unwrap().to_string()).collect()
+        rec.features
+            .iter()
+            .filter(|f| f.kind == DOMAIN_FEATURE_NAME)
+            .map(|f| f.get_first("name").unwrap().to_string())
+            .collect()
     }
 
     #[test]
@@ -228,10 +246,17 @@ mod tests {
             dom("C1", "A", 0, 100, 10.0, "1e-9", "db"),
             dom("C1", "B", 200, 300, 5.0, "1e-2", "db"),
         ]);
-        let out = filter_domains(vec![rec], &FilterDomainsOptions {
-            evalue: 1e-5, max_overlap: 1.0, databases_keep: None, databases_filter: None,
-            selected_domains: None, annotation_type: AnnotationType::All,
-        });
+        let out = filter_domains(
+            vec![rec],
+            &FilterDomainsOptions {
+                evalue: 1e-5,
+                max_overlap: 1.0,
+                databases_keep: None,
+                databases_filter: None,
+                selected_domains: None,
+                annotation_type: AnnotationType::All,
+            },
+        );
         assert_eq!(names(&out[0]), vec!["A"]);
     }
 
@@ -242,10 +267,17 @@ mod tests {
             dom("C1", "low", 0, 100, 5.0, "1e-9", "db"),
             dom("C1", "high", 10, 110, 20.0, "1e-9", "db"),
         ]);
-        let out = filter_domains(vec![rec], &FilterDomainsOptions {
-            evalue: 100.0, max_overlap: 0.5, databases_keep: None, databases_filter: None,
-            selected_domains: None, annotation_type: AnnotationType::All,
-        });
+        let out = filter_domains(
+            vec![rec],
+            &FilterDomainsOptions {
+                evalue: 100.0,
+                max_overlap: 0.5,
+                databases_keep: None,
+                databases_filter: None,
+                selected_domains: None,
+                annotation_type: AnnotationType::All,
+            },
+        );
         assert_eq!(names(&out[0]), vec!["high"]);
     }
 
@@ -257,10 +289,17 @@ mod tests {
         ]);
         let mut keep = HashSet::new();
         keep.insert("keep".to_string());
-        let out = filter_domains(vec![rec], &FilterDomainsOptions {
-            evalue: 100.0, max_overlap: 1.0, databases_keep: Some(keep), databases_filter: None,
-            selected_domains: None, annotation_type: AnnotationType::All,
-        });
+        let out = filter_domains(
+            vec![rec],
+            &FilterDomainsOptions {
+                evalue: 100.0,
+                max_overlap: 1.0,
+                databases_keep: Some(keep),
+                databases_filter: None,
+                selected_domains: None,
+                annotation_type: AnnotationType::All,
+            },
+        );
         assert_eq!(names(&out[0]), vec!["A"]);
     }
 
@@ -273,10 +312,17 @@ mod tests {
         ]);
         let mut filt = HashSet::new();
         filt.insert("filtered".to_string());
-        let out = filter_domains(vec![rec], &FilterDomainsOptions {
-            evalue: 1e-5, max_overlap: 1.0, databases_keep: None, databases_filter: Some(filt),
-            selected_domains: None, annotation_type: AnnotationType::All,
-        });
+        let out = filter_domains(
+            vec![rec],
+            &FilterDomainsOptions {
+                evalue: 1e-5,
+                max_overlap: 1.0,
+                databases_keep: None,
+                databases_filter: Some(filt),
+                selected_domains: None,
+                annotation_type: AnnotationType::All,
+            },
+        );
         // A dropped by evalue, B kept because its db is not being filtered.
         assert_eq!(names(&out[0]), vec!["B"]);
     }
@@ -289,10 +335,17 @@ mod tests {
         ]);
         let mut sel = HashSet::new();
         sel.insert("B".to_string());
-        let out = filter_domains(vec![rec], &FilterDomainsOptions {
-            evalue: 100.0, max_overlap: 1.0, databases_keep: None, databases_filter: None,
-            selected_domains: Some(sel), annotation_type: AnnotationType::All,
-        });
+        let out = filter_domains(
+            vec![rec],
+            &FilterDomainsOptions {
+                evalue: 100.0,
+                max_overlap: 1.0,
+                databases_keep: None,
+                databases_filter: None,
+                selected_domains: Some(sel),
+                annotation_type: AnnotationType::All,
+            },
+        );
         assert_eq!(names(&out[0]), vec!["B"]);
     }
 }

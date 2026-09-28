@@ -26,12 +26,12 @@
 
 use std::io::{self, Write};
 
-use hmmer_pure_rs::hmm::{
-    Hmm, NTRANSITIONS, P7H_CHKSUM, P7H_COMPO, P7H_CONS, P7H_CS, P7H_GA, P7H_MAP, P7H_MMASK,
-    P7H_NC, P7H_RF, P7H_STATS, P7H_TC, P7_FLAMBDA, P7_FTAU, P7_GA1, P7_GA2, P7_MLAMBDA, P7_MMU,
-    P7_NC1, P7_NC2, P7_TC1, P7_TC2, P7_VLAMBDA, P7_VMU,
-};
 use hmmer_pure_rs::alphabet::{Alphabet, AlphabetType};
+use hmmer_pure_rs::hmm::{
+    Hmm, NTRANSITIONS, P7H_CHKSUM, P7H_COMPO, P7H_CONS, P7H_CS, P7H_GA, P7H_MAP, P7H_MMASK, P7H_NC,
+    P7H_RF, P7H_STATS, P7H_TC, P7_FLAMBDA, P7_FTAU, P7_GA1, P7_GA2, P7_MLAMBDA, P7_MMU, P7_NC1,
+    P7_NC2, P7_TC1, P7_TC2, P7_VLAMBDA, P7_VMU,
+};
 
 /// The format revision and writing-program stamp on line 1.
 ///
@@ -190,7 +190,10 @@ pub fn write_hmm<W: Write>(w: &mut W, hmm: &Hmm) -> io::Result<()> {
         // *stores* it when the flag is set, so omitting it shifts every later
         // column and makes the file unreadable).
         let at = |v: &Option<Vec<u8>>| v.as_ref().map_or('-', |s| s[node] as char);
-        let map = hmm.map.as_ref().map_or_else(|| "-".to_string(), |m| m[node].to_string());
+        let map = hmm
+            .map
+            .as_ref()
+            .map_or_else(|| "-".to_string(), |m| m[node].to_string());
         write!(
             w,
             " {:>6} {} {} {} {}",
@@ -258,11 +261,16 @@ impl HmmOutput {
         check_writable_hmm_path(path)?;
         let file = std::fs::File::create(path).map_err(|e| format!("creating {path}: {e}"))?;
         let w = io::BufWriter::new(file);
-        Ok(if crate::io::is_compressed_path(std::path::Path::new(path)) {
-            HmmOutput::Gzip(flate2::write::GzEncoder::new(w, flate2::Compression::default()))
-        } else {
-            HmmOutput::Plain(w)
-        })
+        Ok(
+            if crate::io::is_compressed_path(std::path::Path::new(path)) {
+                HmmOutput::Gzip(flate2::write::GzEncoder::new(
+                    w,
+                    flate2::Compression::default(),
+                ))
+            } else {
+                HmmOutput::Plain(w)
+            },
+        )
     }
 
     /// Flush everything (and the gzip trailer) to disk.
@@ -284,8 +292,11 @@ pub fn write_hmm_output<T>(
     write: impl FnOnce(&mut HmmOutput) -> Result<T, String>,
 ) -> Result<T, String> {
     let mut out = HmmOutput::create(path)?;
-    let result = write(&mut out)
-        .and_then(|v| out.finish().map(|_| v).map_err(|e| format!("writing {path}: {e}")));
+    let result = write(&mut out).and_then(|v| {
+        out.finish()
+            .map(|_| v)
+            .map_err(|e| format!("writing {path}: {e}"))
+    });
     if result.is_err() {
         let _ = std::fs::remove_file(path);
     }
@@ -327,7 +338,8 @@ mod tests {
     }
 
     fn scratch(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("domainator_hmm_gz_{tag}_{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("domainator_hmm_gz_{tag}_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -350,7 +362,11 @@ mod tests {
     }
 
     fn names(path: &std::path::Path) -> Vec<String> {
-        crate::search::hmm_read::read_hmm_file(path).unwrap().into_iter().map(|h| h.name).collect()
+        crate::search::hmm_read::read_hmm_file(path)
+            .unwrap()
+            .into_iter()
+            .map(|h| h.name)
+            .collect()
     }
 
     /// `-o x.hmm.gz` is plain gzip (one member, no BGZF `BC` extra field), and its
@@ -367,9 +383,14 @@ mod tests {
         }
         let gz = std::fs::read(dir.join("x.hmm.gz")).unwrap();
         assert_eq!(&gz[..3], &[0x1f, 0x8b, 0x08]);
-        assert_eq!(gz[3] & 0x04, 0, "FEXTRA set: that is a BGZF header, which easel rejects");
+        assert_eq!(
+            gz[3] & 0x04,
+            0,
+            "FEXTRA set: that is a BGZF header, which easel rejects"
+        );
         let mut back = Vec::new();
-        std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(gz.as_slice()), &mut back).unwrap();
+        std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(gz.as_slice()), &mut back)
+            .unwrap();
         assert_eq!(back, std::fs::read(dir.join("x.hmm")).unwrap());
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -441,7 +462,11 @@ mod tests {
     fn render(hmm: &Hmm) -> Vec<String> {
         let mut out = Vec::new();
         write_hmm(&mut out, hmm).unwrap();
-        String::from_utf8(out).unwrap().lines().map(str::to_string).collect()
+        String::from_utf8(out)
+            .unwrap()
+            .lines()
+            .map(str::to_string)
+            .collect()
     }
 
     /// Column positions read off `test/data/pdonr_hmms.hmm`, which `hmmbuild`
@@ -459,10 +484,7 @@ mod tests {
         for line in [match_line, ins_line] {
             // Where each emission value starts. The node index on a match line is
             // not one of them, so key on the decimal point.
-            let starts: Vec<usize> = line
-                .match_indices('.')
-                .map(|(i, _)| i - 1)
-                .collect();
+            let starts: Vec<usize> = line.match_indices('.').map(|(i, _)| i - 1).collect();
             // First value at 10, then every nine columns.
             assert_eq!(starts, vec![10, 19, 28, 37], "line: {line:?}");
         }
@@ -480,9 +502,18 @@ mod tests {
         hmm.cutoff = [28.60, 28.60, 28.60, 28.80, 28.50, 28.40];
         hmm.flags |= P7H_GA | P7H_TC | P7H_NC;
         let lines = render(&hmm);
-        assert!(lines.contains(&"GA    28.60 28.60".to_string()), "{lines:?}");
-        assert!(lines.contains(&"TC    28.60 28.80".to_string()), "{lines:?}");
-        assert!(lines.contains(&"NC    28.50 28.40".to_string()), "{lines:?}");
+        assert!(
+            lines.contains(&"GA    28.60 28.60".to_string()),
+            "{lines:?}"
+        );
+        assert!(
+            lines.contains(&"TC    28.60 28.80".to_string()),
+            "{lines:?}"
+        );
+        assert!(
+            lines.contains(&"NC    28.50 28.40".to_string()),
+            "{lines:?}"
+        );
     }
 
     #[test]
@@ -490,7 +521,9 @@ mod tests {
         let mut hmm = model();
         hmm.cutoff = [CUTOFF_UNSET; 6];
         let lines = render(&hmm);
-        assert!(!lines.iter().any(|l| l.starts_with("GA ") || l.starts_with("TC ")));
+        assert!(!lines
+            .iter()
+            .any(|l| l.starts_with("GA ") || l.starts_with("TC ")));
     }
 
     /// `STATS LOCAL <label> <mu> <lambda>`: the label is left-justified in seven
@@ -516,7 +549,13 @@ mod tests {
         let mut hmm = model();
         hmm.comlog = Some("first --run\nsecond --run".into());
         let lines = render(&hmm);
-        assert!(lines.contains(&"COM   [1] first --run".to_string()), "{lines:?}");
-        assert!(lines.contains(&"COM   [2] second --run".to_string()), "{lines:?}");
+        assert!(
+            lines.contains(&"COM   [1] first --run".to_string()),
+            "{lines:?}"
+        );
+        assert!(
+            lines.contains(&"COM   [2] second --run".to_string()),
+            "{lines:?}"
+        );
     }
 }

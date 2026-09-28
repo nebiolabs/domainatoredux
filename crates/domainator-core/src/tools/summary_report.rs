@@ -122,7 +122,8 @@ pub fn summary_report(
         if opts.report_taxonomy {
             if let Some(tax) = taxonomy {
                 let taxid = tax.normalized_taxid(contig_taxid(contig));
-                if taxa_counts.insert(taxid, taxa_counts.get(&taxid).copied().unwrap_or(0) + 1)
+                if taxa_counts
+                    .insert(taxid, taxa_counts.get(&taxid).copied().unwrap_or(0) + 1)
                     .is_none()
                 {
                     taxa_order.push(taxid);
@@ -147,8 +148,9 @@ pub fn summary_report(
             }
             let name = qualifier(feature, "name").unwrap_or_default();
             let description = qualifier(feature, "description").unwrap_or_default();
-            let score: f64 =
-                qualifier(feature, "score").and_then(|s| s.parse().ok()).unwrap_or(0.0);
+            let score: f64 = qualifier(feature, "score")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
 
             contig_domains.insert(name.clone());
             if !domains.contains_key(&name) {
@@ -195,8 +197,12 @@ pub fn summary_report(
     // Co-occurrence, as a percentage of the contigs carrying the row domain.
     let mut cooccurrence: BTreeMap<String, BTreeMap<String, f64>> = BTreeMap::new();
     for focus in &opts.focus_domains {
-        let Some(acc) = domains.get(focus) else { continue };
-        let Some(&self_count) = acc.correlations.get(focus) else { continue };
+        let Some(acc) = domains.get(focus) else {
+            continue;
+        };
+        let Some(&self_count) = acc.correlations.get(focus) else {
+            continue;
+        };
         if self_count == 0 {
             continue;
         }
@@ -237,7 +243,12 @@ pub fn summary_report(
                     )
                 })
                 .unwrap_or_default();
-            TaxonRow { taxid, name, rank, count: taxa_counts[&taxid] }
+            TaxonRow {
+                taxid,
+                name,
+                rank,
+                count: taxa_counts[&taxid],
+            }
         })
         .collect();
 
@@ -373,8 +384,13 @@ pub fn render_text(r: &SummaryReport) -> String {
             "Domain Co-occurence (what percent of the time when the row-domain occurs \
              does the column domain occur on the same contig)\n",
         );
-        let cols: Vec<&String> =
-            r.cooccurrence.values().flat_map(|m| m.keys()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+        let cols: Vec<&String> = r
+            .cooccurrence
+            .values()
+            .flat_map(|m| m.keys())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
         s.push_str(&format!("{:<24}", ""));
         for c in &cols {
             s.push_str(&format!("{c:>14}"));
@@ -395,7 +411,10 @@ pub fn render_text(r: &SummaryReport) -> String {
 
     if !r.taxonomy.is_empty() {
         s.push_str("Taxonomy\n");
-        s.push_str(&format!("{:<10} {:<34} {:<14} {:>7}\n", "taxid", "name", "rank", "count"));
+        s.push_str(&format!(
+            "{:<10} {:<34} {:<14} {:>7}\n",
+            "taxid", "name", "rank", "count"
+        ));
         for t in &r.taxonomy {
             s.push_str(&format!(
                 "{:<10} {:<34} {:<14} {:>7}\n",

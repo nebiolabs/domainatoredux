@@ -40,9 +40,12 @@ pub fn detect_compression(path: &Path) -> Compression {
         // Only the fixed-size header is needed, not the whole file.
         if let Ok(bytes) = read_prefix(path, 18) {
             if bytes.len() >= 18
-                && bytes[0] == 0x1f && bytes[1] == 0x8b && bytes[2] == 0x08
+                && bytes[0] == 0x1f
+                && bytes[1] == 0x8b
+                && bytes[2] == 0x08
                 && (bytes[3] & 0x04) != 0
-                && bytes[12] == b'B' && bytes[13] == b'C'
+                && bytes[12] == b'B'
+                && bytes[13] == b'C'
             {
                 return Compression::Bgzf;
             }
@@ -61,7 +64,9 @@ const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 fn read_prefix(path: &Path, n: usize) -> std::io::Result<Vec<u8>> {
     use std::io::Read;
     let mut buf = Vec::with_capacity(n);
-    std::fs::File::open(path)?.take(n as u64).read_to_end(&mut buf)?;
+    std::fs::File::open(path)?
+        .take(n as u64)
+        .read_to_end(&mut buf)?;
     Ok(buf)
 }
 
@@ -89,7 +94,9 @@ pub fn is_compressed_path(path: &Path) -> bool {
 pub fn open_decompressed(path: &Path) -> std::io::Result<Box<dyn std::io::Read>> {
     let file = std::fs::File::open(path)?;
     if has_gzip_magic(path) {
-        Ok(Box::new(flate2::read::MultiGzDecoder::new(std::io::BufReader::new(file))))
+        Ok(Box::new(flate2::read::MultiGzDecoder::new(
+            std::io::BufReader::new(file),
+        )))
     } else {
         Ok(Box::new(file))
     }
@@ -107,7 +114,10 @@ pub fn db_name_from_path(path: &str) -> String {
         .and_then(|s| s.to_str())
         .unwrap_or(path);
     let stem = if is_compressed_path(Path::new(base)) {
-        Path::new(base).file_stem().and_then(|s| s.to_str()).unwrap_or(base)
+        Path::new(base)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(base)
     } else {
         base
     };

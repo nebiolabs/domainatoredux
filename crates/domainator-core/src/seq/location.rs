@@ -36,7 +36,11 @@ pub struct Location {
 impl Location {
     /// Single ungapped span.
     pub fn range(start: i64, end: i64, strand: i32) -> Self {
-        Location { operator: None, between: false, parts: vec![(start, end, strand, false, false)] }
+        Location {
+            operator: None,
+            between: false,
+            parts: vec![(start, end, strand, false, false)],
+        }
     }
 
     /// Overall start = min part start. Returns 0 for an empty location.
@@ -120,7 +124,10 @@ fn parse_span(s: &str, strand: i32) -> Option<Part> {
 
 fn parse_loc(s: &str, strand: i32) -> Option<Location> {
     let s = s.trim();
-    if let Some(inner) = s.strip_prefix("complement(").and_then(|x| x.strip_suffix(')')) {
+    if let Some(inner) = s
+        .strip_prefix("complement(")
+        .and_then(|x| x.strip_suffix(')'))
+    {
         return parse_loc(inner, -strand);
     }
     for (kw, op) in [("join(", CompoundOp::Join), ("order(", CompoundOp::Order)] {
@@ -133,21 +140,32 @@ fn parse_loc(s: &str, strand: i32) -> Option<Location> {
                 groups.reverse();
             }
             let between = false;
-            return Some(Location { operator: Some(op), between, parts: groups.into_iter().flatten().collect() });
+            return Some(Location {
+                operator: Some(op),
+                between,
+                parts: groups.into_iter().flatten().collect(),
+            });
         }
     }
     let between = s.contains('^');
     let part = parse_span(s, strand)?;
-    Some(Location { operator: None, between, parts: vec![part] })
+    Some(Location {
+        operator: None,
+        between,
+        parts: vec![part],
+    })
 }
 
 /// Parse a GenBank location string (e.g. `complement(join(1..2,4..5))`) into our
 /// lean model. Falls back to an empty single-point location on parse failure
 /// (the reader never rejects a record over a location it can't read — plan E4).
 pub fn parse_location(s: &str) -> Location {
-    parse_loc(s, 1).unwrap_or(Location { operator: None, between: false, parts: vec![(0, 0, 1, false, false)] })
+    parse_loc(s, 1).unwrap_or(Location {
+        operator: None,
+        between: false,
+        parts: vec![(0, 0, 1, false, false)],
+    })
 }
-
 
 #[cfg(test)]
 mod tests {

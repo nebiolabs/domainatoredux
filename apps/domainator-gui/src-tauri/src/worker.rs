@@ -67,7 +67,9 @@ fn run_worker(args: Vec<OsString>) -> i32 {
         return code;
     }
     watch_lifeline();
-    let argv = std::iter::once(OsString::from("domainator")).chain(args).collect();
+    let argv = std::iter::once(OsString::from("domainator"))
+        .chain(args)
+        .collect();
     match run_cli(argv) {
         Ok(()) => 0,
         Err(e) => match domainator_cli::clap_error(&e) {
@@ -154,7 +156,11 @@ fn orphaned_exit() -> ! {
 #[cfg(debug_assertions)]
 fn test_command(args: &[OsString]) -> Option<i32> {
     let name = args.first()?.to_str()?;
-    let secs: f64 = args.get(1).and_then(|s| s.to_str()).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+    let secs: f64 = args
+        .get(1)
+        .and_then(|s| s.to_str())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.0);
     let sleep = || std::thread::sleep(std::time::Duration::from_secs_f64(secs));
     match name {
         "__sleep" => {
@@ -215,9 +221,18 @@ pub fn spawn(args: &[OsString], cwd: Option<&Path>, log: Option<&Path>) -> std::
 /// Start `exe --domainator-worker <args>` in its own process tree, with stdin
 /// piped as the lifeline and stdout/stderr copied to `log` (when given) and kept
 /// in memory, last [`TAIL_BYTES`] of each.
-pub fn spawn_exe(exe: &Path, args: &[OsString], cwd: Option<&Path>, log: Option<&Path>) -> std::io::Result<Worker> {
+pub fn spawn_exe(
+    exe: &Path,
+    args: &[OsString],
+    cwd: Option<&Path>,
+    log: Option<&Path>,
+) -> std::io::Result<Worker> {
     let mut cmd = Command::new(exe);
-    cmd.arg(WORKER_FLAG).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.arg(WORKER_FLAG)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
@@ -259,7 +274,14 @@ pub fn spawn_exe(exe: &Path, args: &[OsString], cwd: Option<&Path>, log: Option<
         readers.push(copy_stream(err, log_file.clone(), stderr.clone()));
     }
     let lifeline = child.stdin.take();
-    Ok(Worker { child: Some(child), lifeline, killer, readers, stdout, stderr })
+    Ok(Worker {
+        child: Some(child),
+        lifeline,
+        killer,
+        readers,
+        stdout,
+        stderr,
+    })
 }
 
 fn copy_stream(
@@ -372,7 +394,10 @@ impl Killer {
     fn for_child(child: &Child) -> std::io::Result<Killer> {
         let pgid = libc::pid_t::try_from(child.id())
             .map_err(|_| std::io::Error::other("worker pid out of range"))?;
-        Ok(Killer(Arc::new(KillerInner { alive: Mutex::new(true), pgid })))
+        Ok(Killer(Arc::new(KillerInner {
+            alive: Mutex::new(true),
+            pgid,
+        })))
     }
 
     #[cfg(windows)]
@@ -380,12 +405,17 @@ impl Killer {
         use std::os::windows::io::AsRawHandle;
         let job = win::JobHandle::new()?;
         job.assign(child.as_raw_handle())?;
-        Ok(Killer(Arc::new(KillerInner { alive: Mutex::new(true), job })))
+        Ok(Killer(Arc::new(KillerInner {
+            alive: Mutex::new(true),
+            job,
+        })))
     }
 
     #[cfg(not(any(unix, windows)))]
     fn for_child(_child: &Child) -> std::io::Result<Killer> {
-        Err(std::io::Error::other("worker processes are not supported on this platform"))
+        Err(std::io::Error::other(
+            "worker processes are not supported on this platform",
+        ))
     }
 
     /// Kill the whole tree now. A no-op once the worker has been reaped.

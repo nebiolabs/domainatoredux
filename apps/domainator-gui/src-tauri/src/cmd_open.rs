@@ -23,9 +23,13 @@ use tauri_plugin_opener::OpenerExt;
 #[tauri::command]
 pub async fn open_external_url(app: AppHandle, url: String) -> Result<(), String> {
     if !about::is_allowed_url(&url) {
-        return Err(format!("refusing to open {url}: not a Domainator project link"));
+        return Err(format!(
+            "refusing to open {url}: not a Domainator project link"
+        ));
     }
-    app.opener().open_url(url, None::<&str>).map_err(|e| format!("opening link: {e}"))
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| format!("opening link: {e}"))
 }
 
 /// Show `path` in the OS file manager, selected.
@@ -49,7 +53,9 @@ pub async fn reveal_in_file_manager(
         .as_deref()
         .map(std::path::Path::new)
         .is_some_and(|root| workspace::is_within(root, target));
-    let in_app_data = app_data.as_deref().is_some_and(|d| workspace::is_within(d, target));
+    let in_app_data = app_data
+        .as_deref()
+        .is_some_and(|d| workspace::is_within(d, target));
 
     if !in_workspace && !in_app_data {
         return Err(format!("refusing to reveal {path}: outside the workspace"));
@@ -65,7 +71,10 @@ pub async fn reveal_in_file_manager(
 /// Reveal the app's own data directory (Preferences → Locations, About).
 #[tauri::command]
 pub async fn open_app_data_dir(app: AppHandle) -> Result<(), String> {
-    let dir = app.path().app_data_dir().map_err(|e| format!("app data dir: {e}"))?;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app data dir: {e}"))?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
     app.opener()
         .reveal_item_in_dir(&dir)

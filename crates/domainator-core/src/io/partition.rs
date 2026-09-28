@@ -64,7 +64,13 @@ pub fn partition_seqfile(
         running += cds_counts[i];
         recs_in_buffer += 1;
         if running >= cdss_per_partition {
-            out.push(Partition { path: path.to_string(), offset: next_offset, n_records: recs_in_buffer, filetype, compressed });
+            out.push(Partition {
+                path: path.to_string(),
+                offset: next_offset,
+                n_records: recs_in_buffer,
+                filetype,
+                compressed,
+            });
             running = 0;
             recs_in_buffer = 0;
             if i + 1 < offsets.len() {
@@ -73,7 +79,13 @@ pub fn partition_seqfile(
         }
     }
     if recs_in_buffer > 0 {
-        out.push(Partition { path: path.to_string(), offset: next_offset, n_records: recs_in_buffer, filetype, compressed });
+        out.push(Partition {
+            path: path.to_string(),
+            offset: next_offset,
+            n_records: recs_in_buffer,
+            filetype,
+            compressed,
+        });
     }
     Ok((total, out))
 }

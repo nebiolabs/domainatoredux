@@ -41,7 +41,9 @@ const ALLOWED_HOSTS: &[&str] = &["github.com", "api.github.com"];
 /// embedded credentials, and no control characters — a newline in a URL handed to
 /// a platform opener is an argument-injection primitive on more than one OS.
 pub fn is_allowed_url(url: &str) -> bool {
-    let Some(rest) = url.strip_prefix("https://") else { return false };
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
     if url.chars().any(|c| c.is_control() || c == '"' || c == '\'') {
         return false;
     }
@@ -100,7 +102,10 @@ pub fn render_diagnostics(d: &Diagnostics) -> String {
     s.push_str(&format!("license:      {LICENSE}\n"));
     s.push_str(&format!("tauri:        {}\n", d.tauri_version));
     s.push_str(&format!("webview:      {}\n", d.webview_version));
-    s.push_str(&format!("platform:     {} {} ({})\n", d.os, d.arch, d.profile));
+    s.push_str(&format!(
+        "platform:     {} {} ({})\n",
+        d.os, d.arch, d.profile
+    ));
     s.push_str(&format!("app data:     {}\n", d.app_data_dir));
     s.push_str(&format!("preferences:  {}\n", d.prefs_path));
     s.push_str(&format!("managed bins: {}\n", d.managed_tools_dir));
@@ -109,7 +114,11 @@ pub fn render_diagnostics(d: &Diagnostics) -> String {
         s.push_str("  (none)\n");
     }
     for t in &d.external_tools {
-        let state = if t.installed { "installed" } else { "not installed" };
+        let state = if t.installed {
+            "installed"
+        } else {
+            "not installed"
+        };
         s.push_str(&format!("  {} {} — {}\n", t.name, t.version, state));
     }
     s.push_str(&format!("project:      {PROJECT_URL}\n"));
@@ -146,8 +155,13 @@ mod tests {
     fn allowed_urls_are_https_on_a_known_host() {
         assert!(is_allowed_url(PROJECT_URL));
         assert!(is_allowed_url(RELEASES_URL));
-        assert!(is_allowed_url("https://github.com/nebiolabs/domainatoredux/releases/tag/v1.2"));
-        assert!(is_allowed_url("https://GitHub.com/x"), "host match is case-insensitive");
+        assert!(is_allowed_url(
+            "https://github.com/nebiolabs/domainatoredux/releases/tag/v1.2"
+        ));
+        assert!(
+            is_allowed_url("https://GitHub.com/x"),
+            "host match is case-insensitive"
+        );
     }
 
     /// Each of these was a real way to turn "open our project page" into "open
@@ -155,16 +169,16 @@ mod tests {
     #[test]
     fn everything_else_is_refused() {
         for bad in [
-            "http://github.com/x",                 // downgraded scheme
-            "file:///etc/passwd",                  // local file
-            "javascript:alert(1)",                 // script URL
-            "https://evil.example/x",              // unknown host
-            "https://github.com.evil.example/x",   // host is a *prefix*, not ours
-            "https://evilgithub.com/x",            // ours is a suffix of theirs
-            "https://user@github.com/x",           // embedded credentials
-            "https://github.com/x\nmalicious",     // control character
-            "https:///x",                          // empty authority
-            "github.com/x",                        // no scheme
+            "http://github.com/x",               // downgraded scheme
+            "file:///etc/passwd",                // local file
+            "javascript:alert(1)",               // script URL
+            "https://evil.example/x",            // unknown host
+            "https://github.com.evil.example/x", // host is a *prefix*, not ours
+            "https://evilgithub.com/x",          // ours is a suffix of theirs
+            "https://user@github.com/x",         // embedded credentials
+            "https://github.com/x\nmalicious",   // control character
+            "https:///x",                        // empty authority
+            "github.com/x",                      // no scheme
             "",
         ] {
             assert!(!is_allowed_url(bad), "should have refused {bad:?}");
@@ -185,9 +199,23 @@ mod tests {
         let d = sample();
         let out = render_diagnostics(&d);
         for needle in [
-            "Domainator", "1.0.0", "0.11.0", "9c70934", "MIT", "2.11.4", "120.0", "linux", "x86_64", "release",
-            &d.app_data_dir, &d.prefs_path, &d.managed_tools_dir, "diamond", "2.2.5",
-            "installed", PROJECT_URL,
+            "Domainator",
+            "1.0.0",
+            "0.11.0",
+            "9c70934",
+            "MIT",
+            "2.11.4",
+            "120.0",
+            "linux",
+            "x86_64",
+            "release",
+            &d.app_data_dir,
+            &d.prefs_path,
+            &d.managed_tools_dir,
+            "diamond",
+            "2.2.5",
+            "installed",
+            PROJECT_URL,
         ] {
             assert!(out.contains(needle), "diagnostics lost {needle:?}:\n{out}");
         }

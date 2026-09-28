@@ -25,7 +25,10 @@ fn split_taxonomy(value: &str) -> Vec<String> {
     if body.trim().is_empty() {
         return Vec::new();
     }
-    body.split(';').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+    body.split(';')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 const MONTHS: [&str; 12] = [
@@ -71,7 +74,11 @@ fn parse_locus(line: &str) -> Locus {
                 topology = Some(Topology::Circular);
             } else if looks_like_date(tok) {
                 date = Some(tok.to_string());
-            } else if tok.len() == 3 && tok.chars().all(|c| c.is_ascii_uppercase()) && division.is_none() && molecule_type.is_some() {
+            } else if tok.len() == 3
+                && tok.chars().all(|c| c.is_ascii_uppercase())
+                && division.is_none()
+                && molecule_type.is_some()
+            {
                 division = Some(tok.to_string());
             } else if molecule_type.is_none() && !is_aa {
                 molecule_type = Some(tok.to_string());
@@ -83,7 +90,14 @@ fn parse_locus(line: &str) -> Locus {
     if is_aa {
         molecule_type = Some("protein".to_string());
     }
-    Locus { name, molecule_type, topology, division, date, is_aa }
+    Locus {
+        name,
+        molecule_type,
+        topology,
+        division,
+        date,
+        is_aa,
+    }
 }
 
 /// One framed header section: the 12-col keyword and its (joined) lines.
@@ -110,7 +124,10 @@ pub fn record_identity(header_lines: &[String]) -> (String, String) {
     for line in header_lines {
         if is_section_start(line) {
             let keyword = line.split_whitespace().next().unwrap_or("").to_string();
-            sections.push(Section { keyword, lines: vec![line.clone()] });
+            sections.push(Section {
+                keyword,
+                lines: vec![line.clone()],
+            });
         } else if let Some(last) = sections.last_mut() {
             last.lines.push(line.clone());
         }
@@ -139,7 +156,9 @@ pub fn record_identity(header_lines: &[String]) -> (String, String) {
             _ => {}
         }
     }
-    let accession = version_token.or(first_accession).unwrap_or_else(|| name.clone());
+    let accession = version_token
+        .or(first_accession)
+        .unwrap_or_else(|| name.clone());
     (name, accession)
 }
 
@@ -156,7 +175,10 @@ pub fn parse_record(
     for line in header_lines {
         if is_section_start(line) {
             let keyword = line.split_whitespace().next().unwrap_or("").to_string();
-            sections.push(Section { keyword, lines: vec![line.clone()] });
+            sections.push(Section {
+                keyword,
+                lines: vec![line.clone()],
+            });
         } else if let Some(last) = sections.last_mut() {
             last.lines.push(line.clone());
         }
@@ -166,7 +188,11 @@ pub fn parse_record(
         id: String::new(),
         name: String::new(),
         description: String::new(),
-        seq: if had_origin { residues.to_ascii_uppercase() } else { Vec::new() },
+        seq: if had_origin {
+            residues.to_ascii_uppercase()
+        } else {
+            Vec::new()
+        },
         molecule_type: None,
         topology: Topology::Linear,
         annotations: Annotations::default(),
@@ -182,7 +208,13 @@ pub fn parse_record(
                 rec.molecule_type = locus
                     .molecule_type
                     .or_else(|| default_molecule_type.map(str::to_string))
-                    .or_else(|| if locus.is_aa { Some("protein".into()) } else { Some("DNA".into()) });
+                    .or_else(|| {
+                        if locus.is_aa {
+                            Some("protein".into())
+                        } else {
+                            Some("DNA".into())
+                        }
+                    });
                 rec.annotations.topology = locus.topology;
                 if let Some(t) = locus.topology {
                     rec.topology = t;
@@ -201,8 +233,7 @@ pub fn parse_record(
             }
             "ACCESSION" => {
                 let val = join_section_value(sec, "ACCESSION");
-                rec.annotations.accessions =
-                    val.split_whitespace().map(str::to_string).collect();
+                rec.annotations.accessions = val.split_whitespace().map(str::to_string).collect();
             }
             "VERSION" => {
                 let val = join_section_value(sec, "VERSION");
@@ -219,7 +250,13 @@ pub fn parse_record(
                     .lines
                     .iter()
                     .enumerate()
-                    .map(|(i, l)| if i == 0 { l["DBLINK".len()..].trim() } else { l.trim() })
+                    .map(|(i, l)| {
+                        if i == 0 {
+                            l["DBLINK".len()..].trim()
+                        } else {
+                            l.trim()
+                        }
+                    })
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string())
                     .collect();
@@ -228,7 +265,8 @@ pub fn parse_record(
                 rec.annotations.db_source = Some(join_section_value(sec, "DBSOURCE"));
             }
             "KEYWORDS" => {
-                rec.annotations.keywords = split_semicolon_keywords(&join_section_value(sec, "KEYWORDS"));
+                rec.annotations.keywords =
+                    split_semicolon_keywords(&join_section_value(sec, "KEYWORDS"));
             }
             "SOURCE" => {
                 parse_source(sec, &mut rec.annotations);
@@ -256,7 +294,12 @@ pub fn parse_record(
         }
     }
     if rec.name.is_empty() {
-        rec.name = rec.annotations.accessions.first().cloned().unwrap_or_else(|| rec.id.clone());
+        rec.name = rec
+            .annotations
+            .accessions
+            .first()
+            .cloned()
+            .unwrap_or_else(|| rec.id.clone());
     }
     rec
 }
@@ -330,9 +373,11 @@ fn parse_reference(sec: &Section) -> Reference {
     let mut order: Vec<String> = Vec::new();
     for line in &sec.lines[1..] {
         let trimmed = line.trim_start();
-        let sub = ["AUTHORS", "CONSRTM", "TITLE", "JOURNAL", "PUBMED", "MEDLINE", "REMARK"]
-            .iter()
-            .find(|kw| trimmed.starts_with(**kw));
+        let sub = [
+            "AUTHORS", "CONSRTM", "TITLE", "JOURNAL", "PUBMED", "MEDLINE", "REMARK",
+        ]
+        .iter()
+        .find(|kw| trimmed.starts_with(**kw));
         if let Some(kw) = sub {
             let val = trimmed[kw.len()..].trim().to_string();
             order.push(kw.to_string());
@@ -366,14 +411,21 @@ fn parse_comment(sec: &Section, ann: &mut Annotations) {
     // "##<Name>-START##" / "##<Name>-END##" with "key :: value" lines between.
     let mut raw: Vec<String> = Vec::new();
     for (i, line) in sec.lines.iter().enumerate() {
-        let text = if i == 0 { line["COMMENT".len()..].trim_start() } else { line.trim_start() };
+        let text = if i == 0 {
+            line["COMMENT".len()..].trim_start()
+        } else {
+            line.trim_start()
+        };
         raw.push(text.to_string());
     }
     let mut free: Vec<String> = Vec::new();
     let mut i = 0;
     while i < raw.len() {
         let line = &raw[i];
-        if let Some(name) = line.strip_prefix("##").and_then(|s| s.strip_suffix("-START##")) {
+        if let Some(name) = line
+            .strip_prefix("##")
+            .and_then(|s| s.strip_suffix("-START##"))
+        {
             let mut entries: Vec<(String, String)> = Vec::new();
             i += 1;
             while i < raw.len() {
@@ -407,7 +459,11 @@ fn parse_features(lines: &[String]) -> Vec<SeqFeature> {
         let line = &lines[i];
         // A feature line: 5-space indent, key starts at col 5, location at col 21.
         if line.len() > 5 && line.as_bytes()[5] != b' ' && line.starts_with("     ") {
-            let kind = line[5..].split_whitespace().next().unwrap_or("").to_string();
+            let kind = line[5..]
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
             let mut loc_text = line[5 + kind.len()..].trim().to_string();
             // Location may continue on following indented (col 21) lines until a
             // qualifier (/) or the next feature.
@@ -424,7 +480,11 @@ fn parse_features(lines: &[String]) -> Vec<SeqFeature> {
             }
             let location = parse_location(&loc_text);
             let (quals, next) = parse_qualifiers(lines, j);
-            features.push(SeqFeature { kind, location, qualifiers: quals });
+            features.push(SeqFeature {
+                kind,
+                location,
+                qualifiers: quals,
+            });
             i = next;
         } else {
             i += 1;
@@ -492,7 +552,12 @@ fn parse_qualifiers(lines: &[String], start: usize) -> (Vec<(String, Vec<String>
     (quals, i)
 }
 
-fn push_qualifier(quals: &mut Vec<(String, Vec<String>)>, key: &str, value: String, _has_value: bool) {
+fn push_qualifier(
+    quals: &mut Vec<(String, Vec<String>)>,
+    key: &str,
+    value: String,
+    _has_value: bool,
+) {
     if let Some((_, vs)) = quals.iter_mut().find(|(k, _)| k == key) {
         vs.push(value);
     } else {
@@ -510,7 +575,13 @@ mod tests {
 
     fn source_of(section: &str) -> Option<String> {
         let mut ann = Annotations::default();
-        parse_source(&Section { keyword: "SOURCE".into(), lines: lines(section) }, &mut ann);
+        parse_source(
+            &Section {
+                keyword: "SOURCE".into(),
+                lines: lines(section),
+            },
+            &mut ann,
+        );
         ann.source
     }
 
@@ -525,7 +596,10 @@ mod tests {
             Some("Escherichia coli")
         );
         // Only one, and only at the end.
-        assert_eq!(source_of("SOURCE      E. coli..").as_deref(), Some("E. coli."));
+        assert_eq!(
+            source_of("SOURCE      E. coli..").as_deref(),
+            Some("E. coli.")
+        );
         assert_eq!(source_of("SOURCE      E. coli").as_deref(), Some("E. coli"));
     }
 
@@ -550,9 +624,8 @@ mod tests {
         assert_eq!(name, "ACC001");
 
         // Neither VERSION nor ACCESSION → id falls back to the LOCUS name.
-        let (id, name) = record_identity(&lines(
-            "LOCUS       onlyName             12 aa    linear",
-        ));
+        let (id, name) =
+            record_identity(&lines("LOCUS       onlyName             12 aa    linear"));
         assert_eq!(name, "onlyName");
         assert_eq!(id, "onlyName");
     }

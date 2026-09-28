@@ -133,7 +133,10 @@ fn infer_meta_type(present: &[&str]) -> &'static str {
 
 /// Build the `metadata` payload (`{columns:[{name,type}], rows:[[...]]}`) for the
 /// given node order.
-fn metadata_payload(names: &[String], metadata_files: &[String]) -> io::Result<(Value, Vec<String>)> {
+fn metadata_payload(
+    names: &[String],
+    metadata_files: &[String],
+) -> io::Result<(Value, Vec<String>)> {
     let mut columns: Vec<Value> = Vec::new();
     let mut col_names: Vec<String> = Vec::new();
     // Per-column per-node normalized cell values.
@@ -142,8 +145,10 @@ fn metadata_payload(names: &[String], metadata_files: &[String]) -> io::Result<(
     for path in metadata_files {
         let (mcols, map) = read_metadata(path)?;
         for (ci, col) in mcols.iter().enumerate() {
-            let per_node: Vec<Option<String>> =
-                names.iter().map(|nm| map.get(nm).and_then(|v| v[ci].clone())).collect();
+            let per_node: Vec<Option<String>> = names
+                .iter()
+                .map(|nm| map.get(nm).and_then(|v| v[ci].clone()))
+                .collect();
             let present: Vec<&str> = per_node.iter().filter_map(|v| v.as_deref()).collect();
             let ty = infer_meta_type(&present);
             columns.push(json!({"name": col, "type": ty}));
@@ -176,7 +181,10 @@ fn metadata_payload(names: &[String], metadata_files: &[String]) -> io::Result<(
 /// Build the SSN viewer bundle as a JSON value. Errors if the matrix (after
 /// subsetting) is not symmetric or if `color_by`/`label_by` name a missing
 /// metadata column.
-pub fn build_ssn_viewer_bundle(matrix: &DataMatrix, opts: &BuildSsnViewerOptions) -> io::Result<Value> {
+pub fn build_ssn_viewer_bundle(
+    matrix: &DataMatrix,
+    opts: &BuildSsnViewerOptions,
+) -> io::Result<Value> {
     let matrix = subset_matrix(matrix, &opts.subset_labels);
     if !matrix.symmetric_labels() {
         return Err(io::Error::new(
@@ -215,8 +223,7 @@ pub fn build_ssn_viewer_bundle(matrix: &DataMatrix, opts: &BuildSsnViewerOptions
     let tree = MaxTree::from_matrix(&matrix);
     let hierarchy = build_mst_component_hierarchy(&tree);
 
-    let mst_edges: Vec<Value> =
-        tree.mst_edges().map(|(i, j, w)| json!([i, j, w])).collect();
+    let mst_edges: Vec<Value> = tree.mst_edges().map(|(i, j, w)| json!([i, j, w])).collect();
     let hier_nodes: Vec<Value> = hierarchy.nodes.iter().map(hier_node_json).collect();
 
     let hierarchy_json = json!({
@@ -245,7 +252,10 @@ pub fn build_ssn_viewer_bundle(matrix: &DataMatrix, opts: &BuildSsnViewerOptions
     bundle.insert("name".into(), json!(opts.name));
     // Upstream's meaning of this key is "which domainator release wrote it"; the
     // viewer shell writes the same value into the bundles it extracts.
-    bundle.insert("domainator_version".into(), json!(crate::version::UPSTREAM_VERSION));
+    bundle.insert(
+        "domainator_version".into(),
+        json!(crate::version::UPSTREAM_VERSION),
+    );
     bundle.insert("graph".into(), graph);
     bundle.insert("metadata".into(), metadata);
     bundle.insert(
@@ -299,7 +309,9 @@ pub fn viewer_heading(network_name: &str) -> String {
 }
 
 fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -313,8 +325,16 @@ fn base64_encode(data: &[u8]) -> String {
         let n = (b0 << 16) | (b1 << 8) | b2;
         out.push(B64[(n >> 18 & 63) as usize] as char);
         out.push(B64[(n >> 12 & 63) as usize] as char);
-        out.push(if chunk.len() > 1 { B64[(n >> 6 & 63) as usize] as char } else { '=' });
-        out.push(if chunk.len() > 2 { B64[(n & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            B64[(n >> 6 & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            B64[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -326,7 +346,10 @@ pub fn render_html(title: &str, embedded_bundle_gzip: Option<&[u8]>) -> String {
     const SHELL: &str = include_str!("../../assets/ssn_viewer_shell.html");
     let mut html = SHELL
         .replace("@@SSN_VIEWER_TITLE@@", &html_escape(title))
-        .replace("@@SSN_VIEWER_HEADING@@", &html_escape(&viewer_heading(title)));
+        .replace(
+            "@@SSN_VIEWER_HEADING@@",
+            &html_escape(&viewer_heading(title)),
+        );
     if let Some(gz) = embedded_bundle_gzip {
         let b64 = base64_encode(gz);
         html = html.replace(
@@ -367,7 +390,10 @@ mod tests {
         for generic in ["", "  ", "Domainator SSN Viewer", VIEWER_APP_NAME] {
             assert_eq!(viewer_heading(generic), VIEWER_APP_NAME);
         }
-        assert_eq!(viewer_heading("FeSOD"), "Domainator Similarity Network Viewer: FeSOD");
+        assert_eq!(
+            viewer_heading("FeSOD"),
+            "Domainator Similarity Network Viewer: FeSOD"
+        );
 
         let html2 = render_html("x", Some(b"gzipbytes"));
         assert!(html2.contains("const EMBEDDED_BUNDLE_BASE64 = \""));

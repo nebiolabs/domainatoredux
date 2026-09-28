@@ -140,7 +140,11 @@ fn build_charge_state(seq: &[u8]) -> ChargeState {
         (idx(b'C'), 9.0),
         (idx(b'Y'), 10.0),
     ];
-    ChargeState { counts, pos_pks, neg_pks }
+    ChargeState {
+        counts,
+        pos_pks,
+        neg_pks,
+    }
 }
 
 impl ChargeState {
@@ -262,7 +266,10 @@ pub fn prosite_to_regex(pattern: &str) -> String {
 /// Invalid patterns yield 0 (Python warns and returns no matches).
 pub fn motif_count(sequence: &str, pattern: &str) -> i64 {
     let regex_pattern = prosite_to_regex(pattern);
-    let re = match RegexBuilder::new(&regex_pattern).case_insensitive(true).build() {
+    let re = match RegexBuilder::new(&regex_pattern)
+        .case_insensitive(true)
+        .build()
+    {
         Ok(re) => re,
         Err(_) => return 0,
     };
@@ -282,9 +289,21 @@ mod tests {
     #[test]
     fn molecular_weight_matches_biopython() {
         // Values from BioPython's SeqUtils.molecular_weight docstring.
-        assert!(close(molecular_weight(b"AGC", SeqType::Dna).unwrap(), 949.61, 0.01));
-        assert!(close(molecular_weight(b"AGC", SeqType::Rna).unwrap(), 997.61, 0.01));
-        assert!(close(molecular_weight(b"AGC", SeqType::Protein).unwrap(), 249.29, 0.01));
+        assert!(close(
+            molecular_weight(b"AGC", SeqType::Dna).unwrap(),
+            949.61,
+            0.01
+        ));
+        assert!(close(
+            molecular_weight(b"AGC", SeqType::Rna).unwrap(),
+            997.61,
+            0.01
+        ));
+        assert!(close(
+            molecular_weight(b"AGC", SeqType::Protein).unwrap(),
+            249.29,
+            0.01
+        ));
         // Ambiguous letters are rejected (DNA table has no N).
         assert!(molecular_weight(b"AGCN", SeqType::Dna).is_none());
     }

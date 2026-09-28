@@ -121,7 +121,13 @@ pub struct ToolMeta {
 }
 
 /// Every `role` [`ToolDialog.svelte`] can render. See [`ToolField`].
-pub const ROLES: [&str; 5] = ["input_file", "input_files", "output_file", "param", "columns"];
+pub const ROLES: [&str; 5] = [
+    "input_file",
+    "input_files",
+    "output_file",
+    "param",
+    "columns",
+];
 
 /// The Tools menu's groups, in the order they appear. Mirrors the grouping in the
 /// repository's CLAUDE.md so the menu and the docs agree.
@@ -148,7 +154,10 @@ pub async fn list_tools() -> Vec<ToolMeta> {
     // category is kept. A category outside TOOL_CATEGORIES is a test failure; in a
     // release build the tool still shows, last, rather than vanishing.
     tools.sort_by_key(|t| {
-        TOOL_CATEGORIES.iter().position(|c| *c == t.category).unwrap_or(usize::MAX)
+        TOOL_CATEGORIES
+            .iter()
+            .position(|c| *c == t.category)
+            .unwrap_or(usize::MAX)
     });
     tools
 }
@@ -199,7 +208,6 @@ pub async fn tool_schema(tool: String) -> Result<String, String> {
     schema(&tool).map_err(|e| e.to_string())
 }
 
-
 #[derive(Serialize, Debug)]
 pub struct RunResult {
     pub job_id: String,
@@ -244,7 +252,8 @@ impl LiveJob {
 }
 
 /// How many jobs may run at once when the preference is unreadable.
-const DEFAULT_MAX_CONCURRENT_JOBS: usize = domainator_core::app_support::prefs::DEFAULT_MAX_CONCURRENT_JOBS;
+const DEFAULT_MAX_CONCURRENT_JOBS: usize =
+    domainator_core::app_support::prefs::DEFAULT_MAX_CONCURRENT_JOBS;
 
 /// First come, first served, at most `max` running.
 ///
@@ -332,7 +341,9 @@ pub(crate) fn launcher() -> Result<Launcher, String> {
     if std::env::var(INPROCESS_ENV).is_ok_and(|v| v == "1") {
         return Ok(Launcher::InProcess);
     }
-    worker::worker_exe().map(Launcher::Worker).map_err(|e| format!("locating this executable: {e}"))
+    worker::worker_exe()
+        .map(Launcher::Worker)
+        .map_err(|e| format!("locating this executable: {e}"))
 }
 
 /// The result the caller awaits; also mirrored into the `JobRegistry` and emitted
@@ -381,10 +392,19 @@ pub async fn run_tool(
     };
     let live = Arc::new(LiveJob::default());
     reg_lock(&registry.live).insert(job_id.clone(), live.clone());
-    set_job(&registry, &app, job_info("queued", String::new(), Vec::new()));
+    set_job(
+        &registry,
+        &app,
+        job_info("queued", String::new(), Vec::new()),
+    );
 
-    let (app_c, jid, tool_c, params_c, live_c) =
-        (app.clone(), job_id.clone(), tool.clone(), params.clone(), live.clone());
+    let (app_c, jid, tool_c, params_c, live_c) = (
+        app.clone(),
+        job_id.clone(),
+        tool.clone(),
+        params.clone(),
+        live.clone(),
+    );
     let root = PathBuf::from(&workspace_root);
     // A panic here surfaces as a `JoinError`. It must still reach a terminal state
     // below: returning early left the row at `running` (or `canceling`) for the
@@ -402,7 +422,13 @@ pub async fn run_tool(
         };
         mark_running(&registry, &app_c, &jid);
         let launcher = launcher().map_err(JobFailure::Failed)?;
-        let job = Job { tool: &tool_c, params: &params_c, root: &root, job_id: &jid, started };
+        let job = Job {
+            tool: &tool_c,
+            params: &params_c,
+            root: &root,
+            job_id: &jid,
+            started,
+        };
         run_one(&job, &launcher, &live_c)
     })
     .await
@@ -411,7 +437,11 @@ pub async fn run_tool(
     reg_lock(&registry.live).remove(&job_id);
     match outcome {
         Ok(r) => {
-            set_job(&registry, &app, job_info("completed", r.message.clone(), r.outputs.clone()));
+            set_job(
+                &registry,
+                &app,
+                job_info("completed", r.message.clone(), r.outputs.clone()),
+            );
             Ok(r)
         }
         Err(JobFailure::Canceled(message)) => {
@@ -419,7 +449,11 @@ pub async fn run_tool(
             Err("job canceled".into())
         }
         Err(JobFailure::Failed(message)) => {
-            set_job(&registry, &app, job_info("failed", message.clone(), Vec::new()));
+            set_job(
+                &registry,
+                &app,
+                job_info("failed", message.clone(), Vec::new()),
+            );
             Err(message)
         }
     }
@@ -454,7 +488,9 @@ fn jobs_file(root: &str) -> std::path::PathBuf {
 /// Write the current job history to `.domainator/jobs.json` (newest first, capped).
 /// Best-effort: no-op until a workspace root is known; failures are ignored.
 fn persist_jobs(registry: &JobRegistry) {
-    let Some(root) = reg_lock(&registry.root).clone() else { return };
+    let Some(root) = reg_lock(&registry.root).clone() else {
+        return;
+    };
     let mut list: Vec<JobInfo> = reg_lock(&registry.jobs).values().cloned().collect();
     list.sort_by_key(|b| std::cmp::Reverse(job_ms(b)));
     list.truncate(MAX_PERSISTED_JOBS);
@@ -616,23 +652,39 @@ fn run_one(job: &Job, launcher: &Launcher, live: &LiveJob) -> Result<RunResult, 
     let spec = crate::tool_specs::specs()
         .iter()
         .find(|s| s.id == job.tool)
-        .ok_or_else(|| JobFailure::Failed(format!("tool not runnable from the GUI: {}", job.tool)))?;
+        .ok_or_else(|| {
+            JobFailure::Failed(format!("tool not runnable from the GUI: {}", job.tool))
+        })?;
     let missing = job_io::missing_required_inputs(spec, job.params);
     if !missing.is_empty() {
-        return Err(JobFailure::Failed(format!("missing required input: {}", missing.join(", "))));
+        return Err(JobFailure::Failed(format!(
+            "missing required input: {}",
+            missing.join(", ")
+        )));
     }
     preflight(job.tool, job.params).map_err(JobFailure::Failed)?;
 
     let dir = dot_dir(job.root).join("jobs").join(job.job_id);
     let config = dir.join("worker-config.json");
     std::fs::create_dir_all(&dir)
-        .and_then(|()| std::fs::write(&config, serde_json::to_vec_pretty(job.params).unwrap_or_default()))
+        .and_then(|()| {
+            std::fs::write(
+                &config,
+                serde_json::to_vec_pretty(job.params).unwrap_or_default(),
+            )
+        })
         .map_err(|e| JobFailure::Failed(format!("writing the job's config: {e}")))?;
 
     let outputs = job_io::declared_outputs(spec, job.params);
     let snapshot = job_io::OutputSnapshot::take(&outputs);
     let args: Vec<OsString> = vec![job.tool.into(), "--config".into(), config.into_os_string()];
-    let ran = run_cli_command(launcher, &args, job.root, Some(&dir.join("worker.log")), live);
+    let ran = run_cli_command(
+        launcher,
+        &args,
+        job.root,
+        Some(&dir.join("worker.log")),
+        live,
+    );
     if live.is_canceled() {
         let cleanup = snapshot.remove_changed();
         return Err(JobFailure::Canceled(job_io::canceled_message(&cleanup)));
@@ -668,26 +720,41 @@ fn run_one(job: &Job, launcher: &Launcher, live: &LiveJob) -> Result<RunResult, 
 /// and fail there with a file-not-found. The GUI knows the database can be
 /// installed from its Reference Databases panel, so it says that instead.
 fn preflight(tool: &str, params: &Value) -> Result<(), String> {
-    let blank = |key: &str| params.get(key).and_then(Value::as_str).is_none_or(|s| s.trim().is_empty());
+    let blank = |key: &str| {
+        params
+            .get(key)
+            .and_then(Value::as_str)
+            .is_none_or(|s| s.trim().is_empty())
+    };
     if tool == "enum-report" && blank("ncbi_taxonomy_path") {
         if let Ok(cfg) = serde_json::from_value::<domainator_config::EnumConfig>(params.clone()) {
-            let analyses: Vec<_> = cfg.columns.iter().filter_map(|c| c.to_analysis().ok()).collect();
+            let analyses: Vec<_> = cfg
+                .columns
+                .iter()
+                .filter_map(|c| c.to_analysis().ok())
+                .collect();
             if domainator_core::tools::enum_report::needs_taxonomy(&analyses) {
-                return Err("the taxonomy columns need a taxonomy database: install NCBI Taxonomy \
+                return Err(
+                    "the taxonomy columns need a taxonomy database: install NCBI Taxonomy \
                             from Reference Databases, or choose one"
-                    .into());
+                        .into(),
+                );
             }
         }
     }
-    let filters = ["include_taxids", "exclude_taxids", "taxonomy_expr"].iter().any(|k| match params.get(*k) {
-        Some(Value::Array(a)) => !a.is_empty(),
-        Some(Value::String(s)) => !s.trim().is_empty(),
-        _ => false,
-    });
+    let filters = ["include_taxids", "exclude_taxids", "taxonomy_expr"]
+        .iter()
+        .any(|k| match params.get(*k) {
+            Some(Value::Array(a)) => !a.is_empty(),
+            Some(Value::String(s)) => !s.trim().is_empty(),
+            _ => false,
+        });
     if filters && blank("ncbi_taxonomy_path") {
-        return Err("taxonomy filters need a taxonomy database: install NCBI Taxonomy from \
+        return Err(
+            "taxonomy filters need a taxonomy database: install NCBI Taxonomy from \
                     Reference Databases, or choose one"
-            .into());
+                .into(),
+        );
     }
     Ok(())
 }
@@ -707,7 +774,13 @@ pub(crate) fn run_cli_command(
     }
 }
 
-fn run_in_worker(exe: &Path, args: &[OsString], cwd: &Path, log: Option<&Path>, live: &LiveJob) -> Result<String, String> {
+fn run_in_worker(
+    exe: &Path,
+    args: &[OsString],
+    cwd: &Path,
+    log: Option<&Path>,
+    live: &LiveJob,
+) -> Result<String, String> {
     let w = worker::spawn_exe(exe, args, Some(cwd), log)
         .map_err(|e| format!("starting the worker process: {e}"))?;
     live.attach(w.killer());
@@ -717,14 +790,21 @@ fn run_in_worker(exe: &Path, args: &[OsString], cwd: &Path, log: Option<&Path>, 
     if exit.status.success() {
         Ok(job_io::success_message(&exit.stdout, &exit.stderr))
     } else {
-        Err(job_io::failure_message(&exit.stderr, &job_io::describe_exit(&exit.status)))
+        Err(job_io::failure_message(
+            &exit.stderr,
+            &job_io::describe_exit(&exit.status),
+        ))
     }
 }
 
 /// The [`Launcher::InProcess`] path.
 fn run_in_process(args: &[OsString]) -> Result<String, String> {
-    let argv: Vec<OsString> = std::iter::once(OsString::from("domainator")).chain(args.iter().cloned()).collect();
-    worker::run_cli(argv).map(|()| "completed".to_string()).map_err(|e| format!("{e:#}"))
+    let argv: Vec<OsString> = std::iter::once(OsString::from("domainator"))
+        .chain(args.iter().cloned())
+        .collect();
+    worker::run_cli(argv)
+        .map(|()| "completed".to_string())
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[cfg(test)]
@@ -747,7 +827,13 @@ pub(crate) mod tests {
     }
 
     fn run_in_process_job(tool: &str, params: Value, root: &Path) -> Result<RunResult, JobFailure> {
-        let job = Job { tool, params: &params, root, job_id: "job_test", started: 0 };
+        let job = Job {
+            tool,
+            params: &params,
+            root,
+            job_id: "job_test",
+            started: 0,
+        };
         run_one(&job, &Launcher::InProcess, &not_canceled())
     }
 
@@ -758,7 +844,13 @@ pub(crate) mod tests {
     fn cli_accepts(dir: &Path, tool: &str, params: &Value) -> Result<(), String> {
         let path = dir.join(format!("{tool}.json"));
         std::fs::write(&path, serde_json::to_vec(params).unwrap()).unwrap();
-        let args = ["domainator", tool, "--config", &path.to_string_lossy(), "--print_config"];
+        let args = [
+            "domainator",
+            tool,
+            "--config",
+            &path.to_string_lossy(),
+            "--print_config",
+        ];
         worker::run_cli(args.map(OsString::from).to_vec()).map_err(|e| format!("{e:#}"))
     }
 
@@ -785,7 +877,10 @@ pub(crate) mod tests {
                 );
             }
             if let Err(e) = cli_accepts(&dir, &tool.id, &serde_json::json!({})) {
-                panic!("{} is offered in the menu but the CLI rejects `{} --config`: {e}", tool.id, tool.id);
+                panic!(
+                    "{} is offered in the menu but the CLI rejects `{} --config`: {e}",
+                    tool.id, tool.id
+                );
             }
         }
     }
@@ -819,23 +914,31 @@ pub(crate) mod tests {
         let dir = scratch("dialog-params");
         for spec in crate::tool_specs::specs() {
             let mut params = dialog_params(spec);
-            let schema: Value = serde_json::from_str(&domainator_config::schema(&spec.id).unwrap()).unwrap();
+            let schema: Value =
+                serde_json::from_str(&domainator_config::schema(&spec.id).unwrap()).unwrap();
             domainator_core::app_support::tool_params::apply_default_cpu(&mut params, &schema, 4);
             if let Err(e) = cli_accepts(&dir, &spec.id, &params) {
-                panic!("{}: the CLI rejects the dialog's params {params}: {e}", spec.id);
+                panic!(
+                    "{}: the CLI rejects the dialog's params {params}: {e}",
+                    spec.id
+                );
             }
             match spec.id.as_str() {
                 "enum-report" => {
-                    let cfg: domainator_config::EnumConfig = serde_json::from_value(params.clone()).unwrap();
+                    let cfg: domainator_config::EnumConfig =
+                        serde_json::from_value(params.clone()).unwrap();
                     cfg.by_enum().unwrap();
                     for c in &cfg.columns {
-                        c.to_analysis().unwrap_or_else(|e| panic!("enum-report column {c:?}: {e}"));
+                        c.to_analysis()
+                            .unwrap_or_else(|e| panic!("enum-report column {c:?}: {e}"));
                     }
                 }
                 "hmmer-report" => {
-                    let cfg: domainator_config::HmmerReportConfig = serde_json::from_value(params.clone()).unwrap();
+                    let cfg: domainator_config::HmmerReportConfig =
+                        serde_json::from_value(params.clone()).unwrap();
                     for c in &cfg.columns {
-                        c.to_analysis().unwrap_or_else(|e| panic!("hmmer-report column {c:?}: {e}"));
+                        c.to_analysis()
+                            .unwrap_or_else(|e| panic!("hmmer-report column {c:?}: {e}"));
                     }
                 }
                 _ => {}
@@ -865,7 +968,10 @@ pub(crate) mod tests {
                 tool.id
             );
             if let Err(e) = cli_accepts(&dir, &tool.id, &params) {
-                panic!("{}: injecting cpu made the config be rejected: {e}", tool.id);
+                panic!(
+                    "{}: injecting cpu made the config be rejected: {e}",
+                    tool.id
+                );
             }
         }
     }
@@ -920,15 +1026,25 @@ pub(crate) mod tests {
     fn derived_provenance_roles_match_the_golden_table() {
         let mut derived: HashMap<(String, String), String> = HashMap::new();
         for spec in crate::tool_specs::specs() {
-            for f in spec.fields.iter().filter(|f| matches!(f.role.as_str(), "input_file" | "input_files")) {
+            for f in spec
+                .fields
+                .iter()
+                .filter(|f| matches!(f.role.as_str(), "input_file" | "input_files"))
+            {
                 derived.insert((spec.id.clone(), f.name.clone()), job_io::input_role(f));
             }
         }
         for (tool, field, role) in GOLDEN_INPUT_ROLES {
             let got = derived.remove(&(tool.to_string(), field.to_string()));
-            assert_eq!(got.as_deref(), Some(*role), "{tool}.{field}: derived role differs from the old runner's");
+            assert_eq!(
+                got.as_deref(),
+                Some(*role),
+                "{tool}.{field}: derived role differs from the old runner's"
+            );
         }
-        use domainator_core::app_support::provenance::{FOLLOWED_INPUT_ROLES, SEQUENCE_SOURCE_ROLES};
+        use domainator_core::app_support::provenance::{
+            FOLLOWED_INPUT_ROLES, SEQUENCE_SOURCE_ROLES,
+        };
         for ((tool, field), role) in derived {
             let r = role.as_str();
             assert!(
@@ -937,14 +1053,30 @@ pub(crate) mod tests {
             );
         }
         // And the derivation reads the params the dialog sends.
-        let spec = crate::tool_specs::specs().iter().find(|s| s.id == "domainate").unwrap();
+        let spec = crate::tool_specs::specs()
+            .iter()
+            .find(|s| s.id == "domainate")
+            .unwrap();
         let io = job_io::declared_inputs(
             spec,
             &serde_json::json!({"input": "contigs.gb", "references": ["a.hmm", "b.hmm"], "output": "o.gb"}),
         );
-        let roles: Vec<(&str, &str)> = io.iter().map(|i| (i.path.as_str(), i.role.as_str())).collect();
-        assert_eq!(roles, vec![("contigs.gb", "sequence"), ("a.hmm", "reference"), ("b.hmm", "reference")]);
-        assert_eq!(job_io::declared_outputs(spec, &serde_json::json!({"output": "o.gb"})), vec!["o.gb"]);
+        let roles: Vec<(&str, &str)> = io
+            .iter()
+            .map(|i| (i.path.as_str(), i.role.as_str()))
+            .collect();
+        assert_eq!(
+            roles,
+            vec![
+                ("contigs.gb", "sequence"),
+                ("a.hmm", "reference"),
+                ("b.hmm", "reference")
+            ]
+        );
+        assert_eq!(
+            job_io::declared_outputs(spec, &serde_json::json!({"output": "o.gb"})),
+            vec!["o.gb"]
+        );
     }
 
     /// Every tool must land in a known group. One outside `TOOL_CATEGORIES` is
@@ -970,7 +1102,10 @@ pub(crate) mod tests {
         let used: std::collections::HashSet<String> =
             tools().into_iter().map(|t| t.category).collect();
         for cat in TOOL_CATEGORIES {
-            assert!(used.contains(cat), "no tool uses category {cat:?}; its submenu would be empty");
+            assert!(
+                used.contains(cat),
+                "no tool uses category {cat:?}; its submenu would be empty"
+            );
         }
     }
 
@@ -1011,9 +1146,17 @@ pub(crate) mod tests {
     fn list_tools_is_in_category_order() {
         let order: Vec<usize> = tools()
             .iter()
-            .map(|t| TOOL_CATEGORIES.iter().position(|c| *c == t.category).unwrap_or(usize::MAX))
+            .map(|t| {
+                TOOL_CATEGORIES
+                    .iter()
+                    .position(|c| *c == t.category)
+                    .unwrap_or(usize::MAX)
+            })
             .collect();
-        assert!(order.windows(2).all(|w| w[0] <= w[1]), "list_tools is not grouped: {order:?}");
+        assert!(
+            order.windows(2).all(|w| w[0] <= w[1]),
+            "list_tools is not grouped: {order:?}"
+        );
     }
 
     /// A job canceled before it starts must not run its tool at all -- a queued
@@ -1025,11 +1168,22 @@ pub(crate) mod tests {
         let canceled = LiveJob::default();
         canceled.cancel();
         let params = serde_json::json!({});
-        let job = Job { tool: "not-a-tool", params: &params, root: &root, job_id: "j", started: 0 };
+        let job = Job {
+            tool: "not-a-tool",
+            params: &params,
+            root: &root,
+            job_id: "j",
+            started: 0,
+        };
         let err = run_one(&job, &Launcher::InProcess, &canceled);
-        let Err(JobFailure::Canceled(msg)) = err else { panic!("a canceled job must not run: {err:?}") };
+        let Err(JobFailure::Canceled(msg)) = err else {
+            panic!("a canceled job must not run: {err:?}")
+        };
         assert!(msg.contains("canceled"), "{msg}");
-        assert!(!dot_dir(&root).join("jobs").join("j").exists(), "a canceled job wrote its config");
+        assert!(
+            !dot_dir(&root).join("jobs").join("j").exists(),
+            "a canceled job wrote its config"
+        );
     }
 
     #[test]
@@ -1047,11 +1201,15 @@ pub(crate) mod tests {
     #[test]
     fn a_missing_required_input_is_refused_before_launch() {
         let root = scratch("missing-input");
-        let err = match run_in_process_job("domainate", serde_json::json!({"output": "o.gb"}), &root) {
-            Err(JobFailure::Failed(e)) => e,
-            other => panic!("a job with no input must not run: {other:?}"),
-        };
-        assert!(err.contains("missing required input") && err.contains("Input sequences"), "{err}");
+        let err =
+            match run_in_process_job("domainate", serde_json::json!({"output": "o.gb"}), &root) {
+                Err(JobFailure::Failed(e)) => e,
+                other => panic!("a job with no input must not run: {other:?}"),
+            };
+        assert!(
+            err.contains("missing required input") && err.contains("Input sequences"),
+            "{err}"
+        );
     }
 
     /// The queue runs jobs first come, first served, never more than `max` at
@@ -1068,10 +1226,17 @@ pub(crate) mod tests {
                 q.acquire("c", &c, || 1).map(|_slot| "c ran")
             });
             std::thread::sleep(Duration::from_millis(150));
-            assert_eq!(reg_lock(&q.state).running, 1, "a second job started past max = 1");
+            assert_eq!(
+                reg_lock(&q.state).running,
+                1,
+                "a second job started past max = 1"
+            );
             c.cancel();
             q.wake_all();
-            assert!(canceled.join().unwrap().is_none(), "a canceled queued job ran");
+            assert!(
+                canceled.join().unwrap().is_none(),
+                "a canceled queued job ran"
+            );
             drop(slot_a);
             assert_eq!(waiter.join().unwrap(), Some("b ran"));
         });
@@ -1148,9 +1313,18 @@ ORIGIN
             "rec1\tc1\t12\twidget\tEscherichia coli\tEscherichia\t2\tsuperkingdom; genus; species\t7"
         );
         let job = domainator_core::app_support::provenance::load_job(&root, "job_test").unwrap();
-        let inputs: Vec<(&str, &str)> = job.inputs.iter().map(|i| (i.path.as_str(), i.role.as_str())).collect();
-        assert!(inputs.contains(&(&*gb.to_string_lossy(), "sequence")), "{inputs:?}");
-        assert!(dot_dir(&root).join("jobs/job_test/worker-config.json").exists());
+        let inputs: Vec<(&str, &str)> = job
+            .inputs
+            .iter()
+            .map(|i| (i.path.as_str(), i.role.as_str()))
+            .collect();
+        assert!(
+            inputs.contains(&(&*gb.to_string_lossy(), "sequence")),
+            "{inputs:?}"
+        );
+        assert!(dot_dir(&root)
+            .join("jobs/job_test/worker-config.json")
+            .exists());
     }
 
     /// Asking for a taxonomy column with no taxonomy database is refused up front
@@ -1176,18 +1350,30 @@ ORIGIN
     #[test]
     fn every_tool_declares_its_files() {
         for tool in tools() {
-            assert!(!tool.label.is_empty() && !tool.description.is_empty(), "{}", tool.id);
+            assert!(
+                !tool.label.is_empty() && !tool.description.is_empty(),
+                "{}",
+                tool.id
+            );
             let roles: Vec<&str> = tool.fields.iter().map(|f| f.role.as_str()).collect();
             assert!(
                 roles.contains(&"input_file") || roles.contains(&"input_files"),
                 "{} declares no input",
                 tool.id
             );
-            assert!(roles.contains(&"output_file"), "{} declares no output", tool.id);
+            assert!(
+                roles.contains(&"output_file"),
+                "{} declares no output",
+                tool.id
+            );
             // The two report tools build their output columns in the dialog, so
             // that field is the tool -- losing it leaves an empty report.
             if matches!(tool.id.as_str(), "hmmer-report" | "enum-report") {
-                assert!(roles.contains(&"columns"), "{} lost its column builder", tool.id);
+                assert!(
+                    roles.contains(&"columns"),
+                    "{} lost its column builder",
+                    tool.id
+                );
             }
             for f in &tool.fields {
                 // A role ToolDialog.svelte does not handle renders as nothing, so

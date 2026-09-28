@@ -214,9 +214,11 @@ pub fn read_hmm_byte_ranges(path: &str, ranges: &[(u64, u64)]) -> Result<Vec<Vec
         return ranges
             .iter()
             .map(|&(start, end)| {
-                f.seek(SeekFrom::Start(start)).map_err(|e| format!("seeking {path}: {e}"))?;
+                f.seek(SeekFrom::Start(start))
+                    .map_err(|e| format!("seeking {path}: {e}"))?;
                 let mut buf = vec![0u8; end.saturating_sub(start) as usize];
-                f.read_exact(&mut buf).map_err(|e| format!("reading {path}: {e}"))?;
+                f.read_exact(&mut buf)
+                    .map_err(|e| format!("reading {path}: {e}"))?;
                 Ok(buf)
             })
             .collect();
@@ -233,13 +235,18 @@ pub fn read_hmm_byte_ranges(path: &str, ranges: &[(u64, u64)]) -> Result<Vec<Vec
         let (start, end) = ranges[i];
         let end = end.max(start);
         if start < window_start {
-            return Err(format!("reading {path}: range {start}..{end} precedes the stream"));
+            return Err(format!(
+                "reading {path}: range {start}..{end} precedes the stream"
+            ));
         }
         let window_end = window_start + window.len() as u64;
         if start >= window_end {
             // Skip to the range, dropping everything before it.
-            std::io::copy(&mut (&mut reader).take(start - window_end), &mut std::io::sink())
-                .map_err(|e| format!("reading {path}: {e}"))?;
+            std::io::copy(
+                &mut (&mut reader).take(start - window_end),
+                &mut std::io::sink(),
+            )
+            .map_err(|e| format!("reading {path}: {e}"))?;
             window.clear();
             window_start = start;
         } else {
@@ -255,7 +262,9 @@ pub fn read_hmm_byte_ranges(path: &str, ranges: &[(u64, u64)]) -> Result<Vec<Vec
                 .read_to_end(&mut window)
                 .map_err(|e| format!("reading {path}: {e}"))?;
             if window.len() - before < want {
-                return Err(format!("reading {path}: range {start}..{end} runs past the end"));
+                return Err(format!(
+                    "reading {path}: range {start}..{end} runs past the end"
+                ));
             }
         }
         out[i] = window[..(end - start) as usize].to_vec();
@@ -267,7 +276,8 @@ pub fn read_hmm_byte_ranges(path: &str, ranges: &[(u64, u64)]) -> Result<Vec<Vec
 /// file via an [`HmmEntry`] byte range). Keeps `hmmer_pure_rs` inside core.
 pub fn logo_from_hmm_bytes(bytes: &[u8]) -> Result<HmmLogo, String> {
     let reader = std::io::BufReader::new(bytes);
-    let hmms = hmmer_pure_rs::hmmfile::read_hmms(reader).map_err(|e| format!("reading HMM: {e:?}"))?;
+    let hmms =
+        hmmer_pure_rs::hmmfile::read_hmms(reader).map_err(|e| format!("reading HMM: {e:?}"))?;
     let hmm = hmms.first().ok_or("no HMM in profile block")?;
     Ok(build_logo(hmm))
 }
@@ -282,11 +292,13 @@ pub fn extract_hmms_to_file(source: &str, indices: &[usize], out_path: &str) -> 
     let mut n = 0usize;
     for &i in indices {
         if let Some(h) = hmms.get(i) {
-            crate::search::hmm_write::write_hmm(&mut w, h).map_err(|e| format!("writing HMM: {e:?}"))?;
+            crate::search::hmm_write::write_hmm(&mut w, h)
+                .map_err(|e| format!("writing HMM: {e:?}"))?;
             n += 1;
         }
     }
-    w.finish().map_err(|e| format!("flushing {out_path}: {e}"))?;
+    w.finish()
+        .map_err(|e| format!("flushing {out_path}: {e}"))?;
     if n == 0 {
         return Err("no profiles selected".to_string());
     }
@@ -346,7 +358,11 @@ pub fn build_logo(hmm: &hmmer_pure_rs::Hmm) -> HmmLogo {
             occupancy: mocc[node].clamp(0.0, 1.0),
             insert_prob: t[MI] as f64,
             delete_prob: t[MD] as f64,
-            insert_length: if ii < 1.0 { 1.0 / (1.0 - ii) } else { f64::INFINITY },
+            insert_length: if ii < 1.0 {
+                1.0 / (1.0 - ii)
+            } else {
+                f64::INFINITY
+            },
             letters: ls,
         });
     }
@@ -405,18 +421,34 @@ mod tests {
         let (plain, packed) = (plain.to_str().unwrap(), packed.to_str().unwrap());
         let index = index_hmm_file(plain).unwrap();
         let packed_index = index_hmm_file(packed).unwrap();
-        let spans = |ix: &[HmmEntry]| ix.iter().map(|e| (e.byte_start, e.byte_end)).collect::<Vec<_>>();
+        let spans = |ix: &[HmmEntry]| {
+            ix.iter()
+                .map(|e| (e.byte_start, e.byte_end))
+                .collect::<Vec<_>>()
+        };
         assert_eq!(spans(&index), spans(&packed_index));
-        assert_eq!(packed_index.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["alpha", "beta", "gamma"]);
+        assert_eq!(
+            packed_index
+                .iter()
+                .map(|e| e.name.as_str())
+                .collect::<Vec<_>>(),
+            ["alpha", "beta", "gamma"]
+        );
 
         // Out of order, and with a repeat: the single forward pass must still serve both.
         let wanted = [2usize, 0, 2, 1];
-        let ranges: Vec<(u64, u64)> = wanted.iter().map(|&i| (index[i].byte_start, index[i].byte_end)).collect();
+        let ranges: Vec<(u64, u64)> = wanted
+            .iter()
+            .map(|&i| (index[i].byte_start, index[i].byte_end))
+            .collect();
         let from_plain = read_hmm_byte_ranges(plain, &ranges).unwrap();
         let from_packed = read_hmm_byte_ranges(packed, &ranges).unwrap();
         assert_eq!(from_plain, from_packed);
         for (bytes, &i) in from_packed.iter().zip(&wanted) {
-            assert_eq!(bytes.as_slice(), &text[index[i].byte_start as usize..index[i].byte_end as usize]);
+            assert_eq!(
+                bytes.as_slice(),
+                &text[index[i].byte_start as usize..index[i].byte_end as usize]
+            );
         }
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -430,7 +462,11 @@ mod tests {
         assert_eq!(logo.alphabet, "dna");
         assert_eq!(logo.length, 2);
         assert_eq!(logo.max_height_bits, 2.0);
-        assert!(logo.positions[0].total_ic.abs() < 1e-9, "{}", logo.positions[0].total_ic);
+        assert!(
+            logo.positions[0].total_ic.abs() < 1e-9,
+            "{}",
+            logo.positions[0].total_ic
+        );
         assert!((logo.positions[1].total_ic - 2.0).abs() < 1e-9);
     }
 
@@ -442,7 +478,11 @@ mod tests {
         let pos = &logo.positions[0];
         // f32 emissions widened to f64, so they sum to 1 only to f32 precision.
         let stack: f64 = pos.letters.iter().map(|l| l.height).sum();
-        assert!((stack - pos.total_ic).abs() < 1e-6, "{stack} vs {}", pos.total_ic);
+        assert!(
+            (stack - pos.total_ic).abs() < 1e-6,
+            "{stack} vs {}",
+            pos.total_ic
+        );
         assert!(pos.total_ic > 0.0 && pos.total_ic < 2.0);
     }
 

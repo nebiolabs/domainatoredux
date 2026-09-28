@@ -31,9 +31,18 @@ impl ColorTargets {
     /// Parse the `--mode` value into targets. `domains` | `cdss` | `domains_and_cdss`.
     pub fn parse(mode: &str) -> Result<Self, String> {
         match mode {
-            "domains" => Ok(ColorTargets { domains: true, cdss: false }),
-            "cdss" => Ok(ColorTargets { domains: false, cdss: true }),
-            "domains_and_cdss" => Ok(ColorTargets { domains: true, cdss: true }),
+            "domains" => Ok(ColorTargets {
+                domains: true,
+                cdss: false,
+            }),
+            "cdss" => Ok(ColorTargets {
+                domains: false,
+                cdss: true,
+            }),
+            "domains_and_cdss" => Ok(ColorTargets {
+                domains: true,
+                cdss: true,
+            }),
             _ => Err(format!("Invalid color mode: {mode}")),
         }
     }
@@ -44,11 +53,10 @@ impl ColorTargets {
 /// MT19937). Hardcoded because the palette is a deterministic constant. See the
 /// module docs for the parity caveat.
 const AUTO_PALETTE: [&str; 30] = [
-    "#3BA3EC", "#38A9C5", "#34AF8C", "#AE9D31", "#F77468", "#B287F4", "#39A7D5",
-    "#DC8932", "#37AAB9", "#9591F4", "#BB9832", "#F560E4", "#F37A32", "#77AB31",
-    "#50B131", "#E866F4", "#9FA131", "#35AE99", "#F66AB7", "#F66DA2", "#CC7AF4",
-    "#F77189", "#33B07A", "#CA9232", "#32B25C", "#F565CC", "#36ACAE", "#6E9BF4",
-    "#8EA631", "#36ADA4",
+    "#3BA3EC", "#38A9C5", "#34AF8C", "#AE9D31", "#F77468", "#B287F4", "#39A7D5", "#DC8932",
+    "#37AAB9", "#9591F4", "#BB9832", "#F560E4", "#F37A32", "#77AB31", "#50B131", "#E866F4",
+    "#9FA131", "#35AE99", "#F66AB7", "#F66DA2", "#CC7AF4", "#F77189", "#33B07A", "#CA9232",
+    "#32B25C", "#F565CC", "#36ACAE", "#6E9BF4", "#8EA631", "#36ADA4",
 ];
 
 /// Normalize a hex color string. Accepts `(#?)([a-fA-F0-9]{6})`; returns
@@ -79,12 +87,21 @@ pub struct ColorMap {
 impl ColorMap {
     /// A fixed table from `read_color_table` (color-table path).
     pub fn from_table(table: Vec<(String, String)>) -> Self {
-        ColorMap { entries: table, auto: false, next_color: 0 }
+        ColorMap {
+            entries: table,
+            auto: false,
+            next_color: 0,
+        }
     }
 
     /// The auto-generating map (`AutoColormap`).
     pub fn auto() -> Self {
-        ColorMap { entries: Vec::new(), auto: false, next_color: 0 }.with_auto()
+        ColorMap {
+            entries: Vec::new(),
+            auto: false,
+            next_color: 0,
+        }
+        .with_auto()
     }
 
     fn with_auto(mut self) -> Self {
@@ -93,7 +110,10 @@ impl ColorMap {
     }
 
     fn find(&self, key: &str) -> Option<&str> {
-        self.entries.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        self.entries
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     /// Look up (and, for the auto map, lazily assign) a color for `key`. Returns
@@ -133,7 +153,10 @@ pub fn read_color_table(text: &str) -> Result<Vec<(String, String)>, String> {
             return Err(format!("badly formatted line in color table: {line}"));
         }
         if seen.contains(parts[0]) {
-            return Err(format!("domain specified multiple times in color table: {}", parts[0]));
+            return Err(format!(
+                "domain specified multiple times in color table: {}",
+                parts[0]
+            ));
         }
         seen.insert(parts[0].to_string());
         out.push((parts[0].to_string(), normalize_color_hex(parts[1])?));
@@ -192,8 +215,10 @@ pub fn color_seqrecord_by_domain(
                 if opts.targets.cdss {
                     if let Some(cds_id) = feature.get_first("cds_id") {
                         let cds_id = cds_id.to_string();
-                        let score: f64 =
-                            feature.get_first("score").and_then(|v| v.parse().ok()).unwrap_or(ninf);
+                        let score: f64 = feature
+                            .get_first("score")
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(ninf);
                         if score > *new_cds_bitscores.get(&cds_id).unwrap_or(&ninf) {
                             new_cds_bitscores.insert(cds_id.clone(), score);
                             new_cds_colors.insert(cds_id, color);
@@ -319,7 +344,10 @@ mod tests {
             ("high".into(), "#222222".into()),
         ]);
         let opts = ColorGenbankOptions {
-            targets: ColorTargets { domains: true, cdss: true },
+            targets: ColorTargets {
+                domains: true,
+                cdss: true,
+            },
             search_hit_color: None,
             clear: false,
             databases: None,
@@ -339,7 +367,10 @@ mod tests {
         let mut r = rec(vec![d]);
         let mut map = ColorMap::from_table(vec![]); // empty table -> no new colors
         let opts = ColorGenbankOptions {
-            targets: ColorTargets { domains: true, cdss: false },
+            targets: ColorTargets {
+                domains: true,
+                cdss: false,
+            },
             search_hit_color: None,
             clear: true,
             databases: None,
@@ -365,7 +396,10 @@ mod tests {
         let mut dbs = HashSet::new();
         dbs.insert("keep".to_string());
         let opts = ColorGenbankOptions {
-            targets: ColorTargets { domains: true, cdss: true },
+            targets: ColorTargets {
+                domains: true,
+                cdss: true,
+            },
             search_hit_color: None,
             clear: false,
             databases: Some(dbs),

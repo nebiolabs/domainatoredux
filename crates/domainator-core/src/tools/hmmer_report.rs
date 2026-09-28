@@ -47,16 +47,36 @@ enum Kind {
 /// for an unknown name.
 pub fn static_analysis(name: &str) -> Option<Analysis> {
     Some(match name {
-        "source" => Analysis { column: "source".into(), col_type: ColType::Str, kind: Kind::Source },
-        "acc" => Analysis { column: "acc".into(), col_type: ColType::Str, kind: Kind::Acc },
-        "desc" => Analysis { column: "desc".into(), col_type: ColType::Str, kind: Kind::Desc },
-        "length" => Analysis { column: "length".into(), col_type: ColType::Int, kind: Kind::Length },
-        "consensus" => {
-            Analysis { column: "consensus".into(), col_type: ColType::Str, kind: Kind::Consensus }
-        }
-        "alphabet" => {
-            Analysis { column: "alphabet".into(), col_type: ColType::Str, kind: Kind::Alphabet }
-        }
+        "source" => Analysis {
+            column: "source".into(),
+            col_type: ColType::Str,
+            kind: Kind::Source,
+        },
+        "acc" => Analysis {
+            column: "acc".into(),
+            col_type: ColType::Str,
+            kind: Kind::Acc,
+        },
+        "desc" => Analysis {
+            column: "desc".into(),
+            col_type: ColType::Str,
+            kind: Kind::Desc,
+        },
+        "length" => Analysis {
+            column: "length".into(),
+            col_type: ColType::Int,
+            kind: Kind::Length,
+        },
+        "consensus" => Analysis {
+            column: "consensus".into(),
+            col_type: ColType::Str,
+            kind: Kind::Consensus,
+        },
+        "alphabet" => Analysis {
+            column: "alphabet".into(),
+            col_type: ColType::Str,
+            kind: Kind::Alphabet,
+        },
         _ => return None,
     })
 }
@@ -66,16 +86,28 @@ pub fn append_analysis(name: String, ctype: &str, value: &str) -> Result<Analysi
     let (t, v) = match ctype {
         "int" => (
             ColType::Int,
-            Value::Int(value.parse().map_err(|_| format!("append int value {value:?}"))?),
+            Value::Int(
+                value
+                    .parse()
+                    .map_err(|_| format!("append int value {value:?}"))?,
+            ),
         ),
         "float" => (
             ColType::Float,
-            Value::Float(value.parse().map_err(|_| format!("append float value {value:?}"))?),
+            Value::Float(
+                value
+                    .parse()
+                    .map_err(|_| format!("append float value {value:?}"))?,
+            ),
         ),
         "str" => (ColType::Str, Value::Str(value.to_string())),
         _ => return Err("append spec must be one of int, float, str".into()),
     };
-    Ok(Analysis { column: name, col_type: t, kind: Kind::Append(v) })
+    Ok(Analysis {
+        column: name,
+        col_type: t,
+        kind: Kind::Append(v),
+    })
 }
 
 /// The profile name (`NAME` line) as a string.
@@ -98,9 +130,7 @@ fn alphabet_name(hmm: &Hmm) -> &'static str {
 /// The consensus residue line (nodes 1..=M), matching pyhmmer's `rec.consensus`.
 fn consensus_str(hmm: &Hmm) -> String {
     match &hmm.consensus {
-        Some(c) if c.len() > hmm.m => {
-            String::from_utf8_lossy(&c[1..=hmm.m]).into_owned()
-        }
+        Some(c) if c.len() > hmm.m => String::from_utf8_lossy(&c[1..=hmm.m]).into_owned(),
         _ => String::new(),
     }
 }
@@ -154,7 +184,9 @@ fn json_value(v: &Value) -> serde_json::Value {
     match v {
         Value::Str(s) => J::String(s.clone()),
         Value::Int(i) => J::Number((*i).into()),
-        Value::Float(f) => serde_json::Number::from_f64(*f).map(J::Number).unwrap_or(J::Null),
+        Value::Float(f) => serde_json::Number::from_f64(*f)
+            .map(J::Number)
+            .unwrap_or(J::Null),
     }
 }
 
@@ -239,12 +271,20 @@ mod tests {
 
     #[test]
     fn append_typing() {
-        assert!(matches!(append_analysis("n".into(), "int", "1").unwrap().col_type, ColType::Int));
         assert!(matches!(
-            append_analysis("n".into(), "float", "2.0").unwrap().col_type,
+            append_analysis("n".into(), "int", "1").unwrap().col_type,
+            ColType::Int
+        ));
+        assert!(matches!(
+            append_analysis("n".into(), "float", "2.0")
+                .unwrap()
+                .col_type,
             ColType::Float
         ));
-        assert!(matches!(append_analysis("n".into(), "str", "x").unwrap().col_type, ColType::Str));
+        assert!(matches!(
+            append_analysis("n".into(), "str", "x").unwrap().col_type,
+            ColType::Str
+        ));
         assert!(append_analysis("n".into(), "bogus", "x").is_err());
         assert!(append_analysis("n".into(), "int", "notanint").is_err());
     }
@@ -255,7 +295,10 @@ mod tests {
         assert_eq!(static_analysis("acc").unwrap().column, "acc");
         assert_eq!(static_analysis("desc").unwrap().column, "desc");
         assert_eq!(static_analysis("length").unwrap().column, "length");
-        assert!(matches!(static_analysis("length").unwrap().col_type, ColType::Int));
+        assert!(matches!(
+            static_analysis("length").unwrap().col_type,
+            ColType::Int
+        ));
         assert_eq!(static_analysis("consensus").unwrap().column, "consensus");
         assert!(static_analysis("bogus").is_none());
     }

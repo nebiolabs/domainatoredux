@@ -109,7 +109,10 @@ fn for_each_block<F: FnMut(u64, &[u8])>(path: &str, mut f: F) -> io::Result<()> 
             return Err(err("truncated BGZF block body"));
         }
         let isize_dec = u32::from_le_bytes([
-            block[block_size - 4], block[block_size - 3], block[block_size - 2], block[block_size - 1],
+            block[block_size - 4],
+            block[block_size - 3],
+            block[block_size - 2],
+            block[block_size - 1],
         ]) as usize;
         if isize_dec == 0 {
             block_start += block_size as u64;

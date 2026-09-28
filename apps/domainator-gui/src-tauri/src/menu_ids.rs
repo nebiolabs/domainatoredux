@@ -57,36 +57,106 @@ const fn cmd(
     accel: Option<&'static str>,
     needs: Needs,
 ) -> MenuCommandSpec {
-    MenuCommandSpec { id, label, accel, needs }
+    MenuCommandSpec {
+        id,
+        label,
+        accel,
+        needs,
+    }
 }
 
 /// Every statically-known command the menu can emit.
 pub const COMMANDS: &[MenuCommandSpec] = &[
     // File
-    cmd("file.new_file", "New File…", Some("CmdOrCtrl+N"), Needs::Folder),
-    cmd("file.new_folder", "New Folder…", Some("CmdOrCtrl+Shift+N"), Needs::Workspace),
-    cmd("file.open_workspace", "Open Workspace…", Some("CmdOrCtrl+O"), Needs::Nothing),
-    cmd("file.import", "Import Files…", Some("CmdOrCtrl+I"), Needs::Folder),
+    cmd(
+        "file.new_file",
+        "New File…",
+        Some("CmdOrCtrl+N"),
+        Needs::Folder,
+    ),
+    cmd(
+        "file.new_folder",
+        "New Folder…",
+        Some("CmdOrCtrl+Shift+N"),
+        Needs::Workspace,
+    ),
+    cmd(
+        "file.open_workspace",
+        "Open Workspace…",
+        Some("CmdOrCtrl+O"),
+        Needs::Nothing,
+    ),
+    cmd(
+        "file.import",
+        "Import Files…",
+        Some("CmdOrCtrl+I"),
+        Needs::Folder,
+    ),
     cmd("file.save", "Save", Some("CmdOrCtrl+S"), Needs::Savable),
-    cmd("file.close_tab", "Close Tab", Some("CmdOrCtrl+W"), Needs::Tab),
-    cmd("file.reopen_tab", "Reopen Closed Tab", Some("CmdOrCtrl+Shift+T"), Needs::ClosedTab),
+    cmd(
+        "file.close_tab",
+        "Close Tab",
+        Some("CmdOrCtrl+W"),
+        Needs::Tab,
+    ),
+    cmd(
+        "file.reopen_tab",
+        "Reopen Closed Tab",
+        Some("CmdOrCtrl+Shift+T"),
+        Needs::ClosedTab,
+    ),
     // Our own item rather than `PredefinedMenuItem::quit`: on Windows that one is
     // a bare `PostQuitMessage`, which ends the event loop without any window
     // seeing a close request -- so it skipped the unsaved-changes prompt.
     cmd("file.quit", "Quit", Some("CmdOrCtrl+Q"), Needs::Nothing),
     // Edit (clipboard items are predefined and carry no id)
-    cmd("edit.preferences", "Preferences…", Some("CmdOrCtrl+Comma"), Needs::Nothing),
+    cmd(
+        "edit.preferences",
+        "Preferences…",
+        Some("CmdOrCtrl+Comma"),
+        Needs::Nothing,
+    ),
     // View
     cmd("view.refresh", "Refresh Folder", Some("F5"), Needs::Folder),
-    cmd("view.toggle_sidebar", "Show Sidebar", Some("CmdOrCtrl+1"), Needs::Nothing),
-    cmd("view.toggle_table", "Show File Table", Some("CmdOrCtrl+2"), Needs::Nothing),
+    cmd(
+        "view.toggle_sidebar",
+        "Show Sidebar",
+        Some("CmdOrCtrl+1"),
+        Needs::Nothing,
+    ),
+    cmd(
+        "view.toggle_table",
+        "Show File Table",
+        Some("CmdOrCtrl+2"),
+        Needs::Nothing,
+    ),
     // Tools
-    cmd("tools.databases", "Manage Databases…", None, Needs::Workspace),
-    cmd("tools.reference_dbs", "Reference Databases…", None, Needs::Nothing),
+    cmd(
+        "tools.databases",
+        "Manage Databases…",
+        None,
+        Needs::Workspace,
+    ),
+    cmd(
+        "tools.reference_dbs",
+        "Reference Databases…",
+        None,
+        Needs::Nothing,
+    ),
     cmd("tools.external", "External Tools…", None, Needs::Nothing),
-    cmd("tools.clear_jobs", "Clear Job History…", None, Needs::Workspace),
+    cmd(
+        "tools.clear_jobs",
+        "Clear Job History…",
+        None,
+        Needs::Workspace,
+    ),
     // Help
-    cmd("help.check_updates", "Check for Updates…", None, Needs::Nothing),
+    cmd(
+        "help.check_updates",
+        "Check for Updates…",
+        None,
+        Needs::Nothing,
+    ),
     cmd("help.about", "About Domainator", None, Needs::Nothing),
     cmd("help.project", "Project on GitHub", None, Needs::Nothing),
     cmd("help.issues", "Report an Issue", None, Needs::Nothing),
@@ -125,12 +195,36 @@ pub const LAYOUT: &[(&str, &[&str])] = &[
         ],
     ),
     ("Edit", &["edit.preferences"]),
-    ("View", &["view.refresh", SEPARATOR, "view.toggle_sidebar", "view.toggle_table"]),
+    (
+        "View",
+        &[
+            "view.refresh",
+            SEPARATOR,
+            "view.toggle_sidebar",
+            "view.toggle_table",
+        ],
+    ),
     (
         "Tools",
-        &["tools.databases", "tools.reference_dbs", "tools.external", SEPARATOR, "tools.clear_jobs"],
+        &[
+            "tools.databases",
+            "tools.reference_dbs",
+            "tools.external",
+            SEPARATOR,
+            "tools.clear_jobs",
+        ],
     ),
-    ("Help", &["help.check_updates", SEPARATOR, "help.about", SEPARATOR, "help.project", "help.issues"]),
+    (
+        "Help",
+        &[
+            "help.check_updates",
+            SEPARATOR,
+            "help.about",
+            SEPARATOR,
+            "help.project",
+            "help.issues",
+        ],
+    ),
 ];
 
 /// Ids left out of the menu on macOS, where the app submenu already carries the
@@ -164,10 +258,14 @@ impl MenuCommand {
     /// Split a raw muda id into `(id, arg)`.
     pub fn parse(raw: &str) -> Self {
         match raw.split_once(':') {
-            Some((id, arg)) => {
-                Self { id: id.to_string(), arg: Some(arg.to_string()) }
-            }
-            None => Self { id: raw.to_string(), arg: None },
+            Some((id, arg)) => Self {
+                id: id.to_string(),
+                arg: Some(arg.to_string()),
+            },
+            None => Self {
+                id: raw.to_string(),
+                arg: None,
+            },
         }
     }
 }
@@ -184,7 +282,9 @@ mod tests {
     /// re-runs this test, and it is independent of the working directory.
     fn frontend_ids() -> HashSet<String> {
         const TS: &str = include_str!("../../src/lib/menuIds.ts");
-        let start = TS.find("MENU_IDS = [").expect("menuIds.ts has no `MENU_IDS = [`");
+        let start = TS
+            .find("MENU_IDS = [")
+            .expect("menuIds.ts has no `MENU_IDS = [`");
         let rest = &TS[start..];
         let end = rest.find(']').expect("menuIds.ts has no closing `]`");
         rest[..end]
@@ -250,7 +350,10 @@ mod tests {
             })
             .filter(|f| !f.is_empty() && f != "svelte")
             .collect();
-        assert!(!written.is_empty(), "found no `ui.` writes in menu.ts; has the store moved?");
+        assert!(
+            !written.is_empty(),
+            "found no `ui.` writes in menu.ts; has the store moved?"
+        );
 
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
         let mut others = String::new();
@@ -394,9 +497,9 @@ mod tests {
                 "{:?} contains ':', which is reserved as the argument separator",
                 c.id
             );
-            let (prefix, rest) = c.id.split_once('.').unwrap_or_else(|| {
-                panic!("{:?} is not `<group>.<name>`", c.id)
-            });
+            let (prefix, rest) =
+                c.id.split_once('.')
+                    .unwrap_or_else(|| panic!("{:?} is not `<group>.<name>`", c.id));
             assert!(
                 !prefix.is_empty() && prefix.chars().all(|ch| ch.is_ascii_lowercase()),
                 "{:?} has a non-lowercase group",
@@ -404,7 +507,9 @@ mod tests {
             );
             assert!(
                 !rest.is_empty()
-                    && rest.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_'),
+                    && rest
+                        .chars()
+                        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_'),
                 "{:?} has a malformed name",
                 c.id
             );
@@ -420,7 +525,10 @@ mod tests {
         let mut seen = HashSet::new();
         for p in DYNAMIC_PREFIXES {
             assert!(seen.insert(p), "duplicate dynamic prefix {p:?}");
-            assert!(!p.contains(':'), "dynamic prefix {p:?} must not contain ':'");
+            assert!(
+                !p.contains(':'),
+                "dynamic prefix {p:?} must not contain ':'"
+            );
             assert!(
                 !statics.contains(p),
                 "{p:?} is both a dynamic prefix and a static id"
@@ -469,20 +577,47 @@ mod tests {
     /// silently dropping the item.
     #[test]
     fn menu_accelerators_are_well_formed() {
-        const MODS: &[&str] = &["CmdOrCtrl", "Cmd", "Command", "Ctrl", "Control", "Alt", "Shift", "Super"];
+        const MODS: &[&str] = &[
+            "CmdOrCtrl",
+            "Cmd",
+            "Command",
+            "Ctrl",
+            "Control",
+            "Alt",
+            "Shift",
+            "Super",
+        ];
         for c in COMMANDS {
             let Some(a) = c.accel else { continue };
             let parts: Vec<&str> = a.split('+').collect();
             assert!(!parts.is_empty(), "{:?} has an empty accelerator", c.id);
             let (key, mods) = parts.split_last().unwrap();
             for m in mods {
-                assert!(MODS.contains(m), "{:?}: {m:?} is not a modifier (in {a:?})", c.id);
+                assert!(
+                    MODS.contains(m),
+                    "{:?}: {m:?} is not a modifier (in {a:?})",
+                    c.id
+                );
             }
             let ok = (key.len() == 1
-                && key.chars().next().is_some_and(|k| k.is_ascii_alphanumeric()))
-                || (key.starts_with('F') && key[1..].parse::<u8>().is_ok_and(|n| (1..=24).contains(&n)))
-                || ["Plus", "Minus", "Equal", "Comma", "Period", "Space", "Enter", "Delete", "Backspace"]
-                    .contains(key);
+                && key
+                    .chars()
+                    .next()
+                    .is_some_and(|k| k.is_ascii_alphanumeric()))
+                || (key.starts_with('F')
+                    && key[1..].parse::<u8>().is_ok_and(|n| (1..=24).contains(&n)))
+                || [
+                    "Plus",
+                    "Minus",
+                    "Equal",
+                    "Comma",
+                    "Period",
+                    "Space",
+                    "Enter",
+                    "Delete",
+                    "Backspace",
+                ]
+                .contains(key);
             assert!(ok, "{:?}: {key:?} is not a recognized key (in {a:?})", c.id);
         }
     }
@@ -501,13 +636,23 @@ mod tests {
             }
         }
         let placed_set: HashSet<&str> = placed.iter().copied().collect();
-        assert_eq!(placed.len(), placed_set.len(), "an id appears in two submenus: {placed:?}");
+        assert_eq!(
+            placed.len(),
+            placed_set.len(),
+            "an id appears in two submenus: {placed:?}"
+        );
 
         let declared: HashSet<&str> = COMMANDS.iter().map(|c| c.id).collect();
         let unreachable: Vec<_> = declared.difference(&placed_set).collect();
-        assert!(unreachable.is_empty(), "declared but in no submenu: {unreachable:?}");
+        assert!(
+            unreachable.is_empty(),
+            "declared but in no submenu: {unreachable:?}"
+        );
         let unknown: Vec<_> = placed_set.difference(&declared).collect();
-        assert!(unknown.is_empty(), "in a submenu but not declared in COMMANDS: {unknown:?}");
+        assert!(
+            unknown.is_empty(),
+            "in a submenu but not declared in COMMANDS: {unknown:?}"
+        );
     }
 
     /// A stray separator at the top or bottom of a menu, or two in a row, is the
@@ -516,8 +661,16 @@ mod tests {
     fn no_submenu_is_empty_or_has_a_dangling_separator() {
         for (title, items) in LAYOUT {
             assert!(!items.is_empty(), "submenu {title:?} is empty");
-            assert_ne!(items.first(), Some(&SEPARATOR), "{title:?} starts with a separator");
-            assert_ne!(items.last(), Some(&SEPARATOR), "{title:?} ends with a separator");
+            assert_ne!(
+                items.first(),
+                Some(&SEPARATOR),
+                "{title:?} starts with a separator"
+            );
+            assert_ne!(
+                items.last(),
+                Some(&SEPARATOR),
+                "{title:?} ends with a separator"
+            );
             for w in items.windows(2) {
                 assert!(
                     !(w[0] == SEPARATOR && w[1] == SEPARATOR),
@@ -534,15 +687,31 @@ mod tests {
         for (title, items) in LAYOUT {
             let shown = visible_items(items, MACOS_HIDDEN);
             assert!(!shown.is_empty(), "{title:?} is empty on macOS");
-            assert_ne!(shown.first(), Some(&SEPARATOR), "{title:?} starts with a separator on macOS");
-            assert_ne!(shown.last(), Some(&SEPARATOR), "{title:?} ends with a separator on macOS");
-            assert!(shown.windows(2).all(|w| !(w[0] == SEPARATOR && w[1] == SEPARATOR)));
+            assert_ne!(
+                shown.first(),
+                Some(&SEPARATOR),
+                "{title:?} starts with a separator on macOS"
+            );
+            assert_ne!(
+                shown.last(),
+                Some(&SEPARATOR),
+                "{title:?} ends with a separator on macOS"
+            );
+            assert!(shown
+                .windows(2)
+                .all(|w| !(w[0] == SEPARATOR && w[1] == SEPARATOR)));
             assert!(shown.iter().all(|it| !MACOS_HIDDEN.contains(it)));
         }
         assert_eq!(visible_items(&["a", SEPARATOR, "b"], &["b"]), vec!["a"]);
-        assert_eq!(visible_items(&["a", SEPARATOR, "b", SEPARATOR, "c"], &["b"]), vec!["a", SEPARATOR, "c"]);
+        assert_eq!(
+            visible_items(&["a", SEPARATOR, "b", SEPARATOR, "c"], &["b"]),
+            vec!["a", SEPARATOR, "c"]
+        );
         for id in MACOS_HIDDEN {
-            assert!(COMMANDS.iter().any(|c| c.id == *id), "MACOS_HIDDEN names unknown id {id:?}");
+            assert!(
+                COMMANDS.iter().any(|c| c.id == *id),
+                "MACOS_HIDDEN names unknown id {id:?}"
+            );
         }
     }
 

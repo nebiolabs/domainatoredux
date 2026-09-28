@@ -112,7 +112,11 @@ fn for_each_offdiag(m: &DataMatrix, mut f: impl FnMut(usize, usize, f64)) {
                 }
             }
         }
-        Storage::Sparse { values, indices, indptr } => {
+        Storage::Sparse {
+            values,
+            indices,
+            indptr,
+        } => {
             for r in 0..m.nrows() {
                 let (s, e) = (indptr[r] as usize, indptr[r + 1] as usize);
                 for k in s..e {
@@ -372,9 +376,11 @@ impl MaxTree {
 /// the `edge_table.score` array used by `matrix_report` for its summary stats and
 /// histogram.
 pub fn edge_scores_desc(m: &DataMatrix) -> Vec<f64> {
-    symmetric_edges_desc(m).into_iter().map(|(s, _, _)| s).collect()
+    symmetric_edges_desc(m)
+        .into_iter()
+        .map(|(s, _, _)| s)
+        .collect()
 }
-
 
 /// MST ∪ OR-symmetric kNN edges as canonical `(a, b, symmetric_score)` with
 /// `a < b`. Mirrors `ssn_edges.mst_knn_edge_index_dict` — the same selection the
@@ -386,7 +392,9 @@ pub fn mst_knn_edge_list(
     include_mst: bool,
 ) -> Vec<(usize, usize, f64)> {
     let (kept, sym) = super::mst_knn::mst_knn_kept(m, k, lower_bound, include_mst);
-    kept.into_iter().map(|(a, b)| (a, b, sym[&(a, b)])).collect()
+    kept.into_iter()
+        .map(|(a, b)| (a, b, sym[&(a, b)]))
+        .collect()
 }
 
 // --- Component-size summary / merge events (ssn_hierarchy) ---
@@ -420,7 +428,10 @@ fn uf_find(parent: &mut [usize], mut x: usize) -> usize {
 /// larger than either — so the largest size is monotonically non-decreasing and nothing
 /// ever has to be removed. (Upstream carried a lazy-deletion max-heap here until
 /// `34c4b88`, which is the same answer at more cost.)
-pub fn component_size_summary_by_threshold(tree: &MaxTree, merge_impact_metric: &str) -> Vec<[f64; 6]> {
+pub fn component_size_summary_by_threshold(
+    tree: &MaxTree,
+    merge_impact_metric: &str,
+) -> Vec<[f64; 6]> {
     if tree.n_nodes == 0 {
         return Vec::new();
     }
@@ -555,13 +566,18 @@ pub fn threshold_merge_event_rows(summary: &[[f64; 6]]) -> Vec<MergeEvent> {
         let mut merge_count: u64 = 0;
         let mut largest_merge = 0.0f64;
         let mut last_row = summary[row_idx];
-        while row_idx < summary.len() && summary[row_idx][COMPONENT_THRESHOLD_COL] == threshold_value {
+        while row_idx < summary.len()
+            && summary[row_idx][COMPONENT_THRESHOLD_COL] == threshold_value
+        {
             let row_impact = summary[row_idx][COMPONENT_MERGE_IMPACT_COL];
             merge_impact += row_impact;
             if row_impact > 0.0 {
                 // A zero impact means the edge's endpoints were already in one
                 // component, so it joined nothing and is not a merge.
-                match merge_size_counts.iter_mut().find(|(size, _)| *size == row_impact) {
+                match merge_size_counts
+                    .iter_mut()
+                    .find(|(size, _)| *size == row_impact)
+                {
                     Some((_, count)) => *count += 1,
                     None => merge_size_counts.push((row_impact, 1)),
                 }
@@ -590,7 +606,8 @@ pub fn threshold_merge_event_rows(summary: &[[f64; 6]]) -> Vec<MergeEvent> {
             merge_size_counts,
             largest_merge,
             merge_count,
-            delta_largest: (last_row[COMPONENT_LARGEST_COL] - previous_row[COMPONENT_LARGEST_COL]).abs(),
+            delta_largest: (last_row[COMPONENT_LARGEST_COL] - previous_row[COMPONENT_LARGEST_COL])
+                .abs(),
             delta_avg_non_singleton: (last_row[COMPONENT_AVG_NON_SINGLETON_COL]
                 - previous_row[COMPONENT_AVG_NON_SINGLETON_COL])
                 .abs(),
@@ -607,7 +624,10 @@ fn merge_event_rank_cmp(a: &MergeEvent, b: &MergeEvent) -> std::cmp::Ordering {
     b.merge_impact
         .total_cmp(&a.merge_impact)
         .then(b.delta_largest.total_cmp(&a.delta_largest))
-        .then(b.delta_avg_non_singleton.total_cmp(&a.delta_avg_non_singleton))
+        .then(
+            b.delta_avg_non_singleton
+                .total_cmp(&a.delta_avg_non_singleton),
+        )
         .then(a.edge_index.cmp(&b.edge_index))
 }
 
@@ -684,8 +704,11 @@ pub fn filter_merge_event_rows_binned(
     // the whole ranking and skip what is already in.
     let mut selected: std::collections::HashSet<usize> = kept.iter().copied().collect();
 
-    let finite: Vec<f64> =
-        events.iter().map(|e| e.threshold_value).filter(|v| v.is_finite()).collect();
+    let finite: Vec<f64> = events
+        .iter()
+        .map(|e| e.threshold_value)
+        .filter(|v| v.is_finite())
+        .collect();
     if !finite.is_empty() && density_bins > 0 {
         let lo = finite.iter().cloned().fold(f64::INFINITY, f64::min);
         let hi = finite.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -712,7 +735,10 @@ pub fn filter_merge_event_rows_binned(
 
     if let Some(pinned) = pinned_threshold.filter(|p| p.is_finite()) {
         if !kept.iter().any(|&i| events[i].threshold_value == pinned) {
-            if let Some(&i) = ranked.iter().find(|&&i| events[i].threshold_value == pinned) {
+            if let Some(&i) = ranked
+                .iter()
+                .find(|&&i| events[i].threshold_value == pinned)
+            {
                 kept.push(i);
             }
         }
@@ -724,7 +750,13 @@ pub fn filter_merge_event_rows_binned(
 
 /// Back-compat wrapper: the default band count, the whole axis, nothing pinned.
 pub fn filter_merge_event_rows(events: &[MergeEvent], max_merge_events: usize) -> Vec<MergeEvent> {
-    filter_merge_event_rows_binned(events, max_merge_events, MERGE_EVENT_DENSITY_BINS, None, None)
+    filter_merge_event_rows_binned(
+        events,
+        max_merge_events,
+        MERGE_EVENT_DENSITY_BINS,
+        None,
+        None,
+    )
 }
 
 /// A centered moving sum of `merge_impact` over the plotted threshold range.
@@ -965,7 +997,9 @@ pub fn build_mst_component_hierarchy(tree: &MaxTree) -> Hierarchy {
         }
         let mut left_component_id = component_id_by_root[&left_root];
         let mut right_component_id = component_id_by_root[&right_root];
-        if component_min_leaf_by_id[&left_component_id] > component_min_leaf_by_id[&right_component_id] {
+        if component_min_leaf_by_id[&left_component_id]
+            > component_min_leaf_by_id[&right_component_id]
+        {
             std::mem::swap(&mut left_component_id, &mut right_component_id);
         }
         let merged_size =
@@ -1015,18 +1049,28 @@ pub fn build_mst_component_hierarchy(tree: &MaxTree) -> Hierarchy {
             continue;
         }
         if visited {
-            let (left, right) = (nodes[component_id].left.unwrap(), nodes[component_id].right.unwrap());
+            let (left, right) = (
+                nodes[component_id].left.unwrap(),
+                nodes[component_id].right.unwrap(),
+            );
             nodes[component_id].leaf_start = nodes[left].leaf_start;
             nodes[component_id].leaf_count = nodes[left].leaf_count + nodes[right].leaf_count;
             continue;
         }
-        let (left, right) = (nodes[component_id].left.unwrap(), nodes[component_id].right.unwrap());
+        let (left, right) = (
+            nodes[component_id].left.unwrap(),
+            nodes[component_id].right.unwrap(),
+        );
         stack.push((component_id, true));
         stack.push((right, false));
         stack.push((left, false));
     }
 
-    Hierarchy { nodes, roots, leaf_order }
+    Hierarchy {
+        nodes,
+        roots,
+        leaf_order,
+    }
 }
 
 #[cfg(test)]
@@ -1093,7 +1137,10 @@ mod tests {
         assert_eq!(tree.thresholds(), &[5.0, 0.0]);
         assert_eq!(tree.edges_above_threshold(), &[0, 4]);
         assert_eq!(tree.mst_edges_above_threshold(), &[0, 3]);
-        assert_eq!(tree.cluster_count_by_threshold(), vec![(5.0, 4.0), (0.0, 1.0)]);
+        assert_eq!(
+            tree.cluster_count_by_threshold(),
+            vec![(5.0, 4.0), (0.0, 1.0)]
+        );
     }
 
     #[test]
@@ -1161,7 +1208,7 @@ mod tests {
         let tree = MaxTree::from_matrix(&m);
         let summary = component_size_summary_by_threshold(&tree, MERGE_IMPACT_MIN_CHILD);
         assert_eq!(summary.len(), 4); // inf + 3 edges
-        // Start: largest = 1.
+                                      // Start: largest = 1.
         assert_eq!(summary[0][COMPONENT_LARGEST_COL], 1.0);
         // After first merge (10): largest = 2, min_child impact = 1.
         assert_eq!(summary[1][COMPONENT_LARGEST_COL], 2.0);
@@ -1186,7 +1233,10 @@ mod tests {
         let rows = threshold_merge_event_rows(&summary);
         assert_eq!(rows.len(), 3);
         // edge_index comes from the FIRST row of the tie group, so the first event is -1.
-        assert_eq!(rows.iter().map(|e| e.edge_index).collect::<Vec<_>>(), vec![-1, 0, 1]);
+        assert_eq!(
+            rows.iter().map(|e| e.edge_index).collect::<Vec<_>>(),
+            vec![-1, 0, 1]
+        );
         assert_eq!(rows[0].merge_size_counts, vec![(1.0, 1)]);
         assert_eq!(rows[2].merge_size_counts, vec![(2.0, 1)]);
         assert_eq!(rows[2].largest_merge, 2.0);
@@ -1205,18 +1255,24 @@ mod tests {
         // running maximum replace the lazy-deletion heap upstream carried until
         // `34c4b88`. Six nodes whose three strongest edges all tie at 10.0; expected
         // column from Python's component_size_summary_by_threshold at that commit.
-        let m = sym_matrix(6, &[
-            (0, 1, 10.0),
-            (2, 3, 10.0),
-            (4, 5, 10.0),
-            (1, 2, 5.0),
-            (3, 4, 3.0),
-        ]);
+        let m = sym_matrix(
+            6,
+            &[
+                (0, 1, 10.0),
+                (2, 3, 10.0),
+                (4, 5, 10.0),
+                (1, 2, 5.0),
+                (3, 4, 3.0),
+            ],
+        );
         let tree = MaxTree::from_matrix(&m);
         let summary = component_size_summary_by_threshold(&tree, MERGE_IMPACT_MIN_CHILD);
         let largest: Vec<f64> = summary.iter().map(|r| r[COMPONENT_LARGEST_COL]).collect();
         assert_eq!(largest, vec![1.0, 2.0, 2.0, 2.0, 4.0, 6.0]);
-        assert!(largest.windows(2).all(|w| w[0] <= w[1]), "must never decrease");
+        assert!(
+            largest.windows(2).all(|w| w[0] <= w[1]),
+            "must never decrease"
+        );
         // And the running maximum is the real maximum, not just the last merge's size:
         // row 3 holds 2.0 while three separate 2-node components exist.
         assert_eq!(summary[3][COMPONENT_LARGEST_COL], 2.0);
@@ -1247,7 +1303,7 @@ mod tests {
         let ms = merge_event_moving_sum(&rows, MOVING_SUM_WINDOW_FRACTION, MOVING_SUM_GRID_POINTS);
         assert_eq!(ms.x.len(), MOVING_SUM_GRID_POINTS);
         assert_eq!(ms.window, 0.25); // 5% of the 5.0 threshold range
-        // The grid spans [min, max] with the last point pinned exactly to `hi`.
+                                     // The grid spans [min, max] with the last point pinned exactly to `hi`.
         assert_eq!(ms.x[0], 5.0);
         assert_eq!(ms.x[MOVING_SUM_GRID_POINTS - 1], 10.0);
         assert_eq!(ms.y[0], 2.0);
@@ -1263,7 +1319,9 @@ mod tests {
         let rows = threshold_merge_event_rows(&summary);
         let ms = merge_event_moving_sum(&rows, MOVING_SUM_WINDOW_FRACTION, MOVING_SUM_GRID_POINTS);
         assert_eq!(ms, MovingSum::default());
-        assert!(merge_event_moving_sum(&[], MOVING_SUM_WINDOW_FRACTION, 800).x.is_empty());
+        assert!(merge_event_moving_sum(&[], MOVING_SUM_WINDOW_FRACTION, 800)
+            .x
+            .is_empty());
     }
 
     #[test]
@@ -1271,7 +1329,7 @@ mod tests {
         assert_eq!(floor_threshold_value(5.0, 9.0), 4.96); // 1% of the 4.0 span
         assert_eq!(floor_threshold_value(5.0, 5.0), 4.95); // no span -> 1% of |lowest|
         assert_eq!(floor_threshold_value(0.0, 0.0), -1.0); // and no magnitude either
-        // A negative-scoring network must still be cleared, which a floor of 0 would not do.
+                                                           // A negative-scoring network must still be cleared, which a floor of 0 would not do.
         assert!(floor_threshold_value(-10.0, -2.0) < -10.0);
     }
 
@@ -1284,7 +1342,13 @@ mod tests {
         let stops = threshold_slider_stops(&rows, Some(&tree), true);
         let shape: Vec<(i64, i64, &str)> = stops
             .iter()
-            .map(|s| (s.edge_index, s.threshold_index.unwrap(), s.threshold_label.as_str()))
+            .map(|s| {
+                (
+                    s.edge_index,
+                    s.threshold_index.unwrap(),
+                    s.threshold_label.as_str(),
+                )
+            })
             .collect();
         // Reference from Python threshold_slider_stops at upstream 896a0c8. Note the
         // first event stop also carries edge_index -1, colliding with the inf stop --
@@ -1390,18 +1454,26 @@ mod tests {
         // alone. Expected values from Python's filter_merge_event_rows at upstream
         // d34ea4c on the same synthetic rows.
         let events = banded_events();
-        assert_eq!(kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, None, None)), vec![
-            0, 18, 39
-        ]);
+        assert_eq!(
+            kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, None, None)),
+            vec![0, 18, 39]
+        );
         // Zoomed into 15..25, the same three slots are re-spent on that stretch: the
         // small events a whole-range ranking buries become the selection.
         let window = Some((15.0, 25.0));
-        assert_eq!(kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, window, None)), vec![
-            18, 20, 22
-        ]);
+        assert_eq!(
+            kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, window, None)),
+            vec![18, 20, 22]
+        );
         // An inverted window means the same range.
         assert_eq!(
-            kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, Some((25.0, 15.0)), None)),
+            kept_indices(&filter_merge_event_rows_binned(
+                &events,
+                3,
+                0,
+                Some((25.0, 15.0)),
+                None
+            )),
             vec![18, 20, 22]
         );
     }
@@ -1420,10 +1492,19 @@ mod tests {
         );
         let bands: std::collections::HashSet<i64> = kept
             .iter()
-            .map(|e| merge_event_density_bin(e.threshold_value, 0.0, 39.0, MERGE_EVENT_DENSITY_BINS))
+            .map(|e| {
+                merge_event_density_bin(e.threshold_value, 0.0, 39.0, MERGE_EVENT_DENSITY_BINS)
+            })
             .collect();
-        assert_eq!(bands.len(), MERGE_EVENT_DENSITY_BINS, "every band must keep a stop");
-        assert!(kept.iter().any(|e| e.edge_index == 0), "a band below the window still counts");
+        assert_eq!(
+            bands.len(),
+            MERGE_EVENT_DENSITY_BINS,
+            "every band must keep a stop"
+        );
+        assert!(
+            kept.iter().any(|e| e.edge_index == 0),
+            "a band below the window still counts"
+        );
         assert!(kept.iter().any(|e| e.edge_index == 39), "and one above it");
         // Still bounded, and still ordered by edge_index.
         assert!(kept.len() <= 3 + MERGE_EVENT_DENSITY_BINS);
@@ -1438,18 +1519,36 @@ mod tests {
         let events = banded_events();
         let window = Some((15.0, 25.0));
         assert_eq!(
-            kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, window, Some(39.0))),
+            kept_indices(&filter_merge_event_rows_binned(
+                &events,
+                3,
+                0,
+                window,
+                Some(39.0)
+            )),
             vec![18, 20, 22, 39]
         );
         // A pin already in the selection is a no-op, not a duplicate.
         assert_eq!(
-            kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, window, Some(18.0))),
+            kept_indices(&filter_merge_event_rows_binned(
+                &events,
+                3,
+                0,
+                window,
+                Some(18.0)
+            )),
             vec![18, 20, 22]
         );
         // A pin naming no event, and a non-finite one, are both ignored.
         for pin in [1234.5, f64::INFINITY, f64::NAN] {
             assert_eq!(
-                kept_indices(&filter_merge_event_rows_binned(&events, 3, 0, window, Some(pin))),
+                kept_indices(&filter_merge_event_rows_binned(
+                    &events,
+                    3,
+                    0,
+                    window,
+                    Some(pin)
+                )),
                 vec![18, 20, 22],
                 "pin {pin} should change nothing"
             );
@@ -1485,14 +1584,17 @@ mod tests {
         // What ssn_bundle does with a .dsnv: the split events, their moving sum and the
         // slider cuts are a pure function of (n_nodes, mst_edges, metric), so a tree
         // carrying only those must reproduce what the matrix-built tree gives.
-        let m = sym_matrix(6, &[
-            (0, 1, 10.0),
-            (2, 3, 9.0),
-            (1, 2, 5.0),
-            (4, 5, 8.0),
-            (3, 4, 4.0),
-            (0, 5, 2.0),
-        ]);
+        let m = sym_matrix(
+            6,
+            &[
+                (0, 1, 10.0),
+                (2, 3, 9.0),
+                (1, 2, 5.0),
+                (4, 5, 8.0),
+                (3, 4, 4.0),
+                (0, 5, 2.0),
+            ],
+        );
         let full = MaxTree::from_matrix(&m);
         let stored: Vec<(usize, usize, f64)> = full.mst_edges().collect();
         let rebuilt = MaxTree::from_mst_edges(full.n_nodes, &stored);
@@ -1506,8 +1608,12 @@ mod tests {
         let a = rows_of(&full);
         let b = rows_of(&rebuilt);
         assert_eq!(
-            a.iter().map(|e| (e.edge_index, e.threshold_value, e.merge_impact)).collect::<Vec<_>>(),
-            b.iter().map(|e| (e.edge_index, e.threshold_value, e.merge_impact)).collect::<Vec<_>>()
+            a.iter()
+                .map(|e| (e.edge_index, e.threshold_value, e.merge_impact))
+                .collect::<Vec<_>>(),
+            b.iter()
+                .map(|e| (e.edge_index, e.threshold_value, e.merge_impact))
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             merge_event_moving_sum(&a, MOVING_SUM_WINDOW_FRACTION, MOVING_SUM_GRID_POINTS),

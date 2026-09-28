@@ -34,7 +34,11 @@ fn for_each_entry(m: &DataMatrix, mut f: impl FnMut(usize, usize, f64)) {
                 }
             }
         }
-        Storage::Sparse { values, indices, indptr } => {
+        Storage::Sparse {
+            values,
+            indices,
+            indptr,
+        } => {
             for r in 0..m.nrows() {
                 let (s, e) = (indptr[r] as usize, indptr[r + 1] as usize);
                 for k in s..e {
@@ -53,7 +57,9 @@ pub(crate) struct UnionFind {
 
 impl UnionFind {
     pub(crate) fn new(n: usize) -> Self {
-        UnionFind { parent: (0..n).collect() }
+        UnionFind {
+            parent: (0..n).collect(),
+        }
     }
     pub(crate) fn find(&mut self, mut x: usize) -> usize {
         let mut root = x;
@@ -119,22 +125,22 @@ pub(crate) fn mst_knn_kept(
     // Skipped entirely for a pure `--knn` graph, which therefore does NOT preserve
     // the connected components of the input.
     if include_mst {
-    // Sort descending by score, ties broken by (larger index, smaller index)
-    // ascending — replicating `sorted_undirected_edges` (a stable `-score` sort
-    // over lower-triangular, row-major edges).
-    let mut candidates: Vec<(f64, usize, usize)> =
-        sym.iter().map(|(&(a, b), &s)| (s, b, a)).collect(); // (score, larger=b, smaller=a)
-    candidates.sort_by(|x, y| y.0.total_cmp(&x.0).then(x.1.cmp(&y.1)).then(x.2.cmp(&y.2)));
+        // Sort descending by score, ties broken by (larger index, smaller index)
+        // ascending — replicating `sorted_undirected_edges` (a stable `-score` sort
+        // over lower-triangular, row-major edges).
+        let mut candidates: Vec<(f64, usize, usize)> =
+            sym.iter().map(|(&(a, b), &s)| (s, b, a)).collect(); // (score, larger=b, smaller=a)
+        candidates.sort_by(|x, y| y.0.total_cmp(&x.0).then(x.1.cmp(&y.1)).then(x.2.cmp(&y.2)));
 
-    let mut uf = UnionFind::new(n);
-    for &(score, larger, smaller) in &candidates {
-        // The forest is built over all nonzero edges; an MST edge is emitted
-        // only when it also passes the lower bound (matching the batch path,
-        // which filters MST edges by `lower_bound` after building the tree).
-        if uf.union(larger, smaller) && passes_lb(score, lower_bound) {
-            kept.insert((smaller, larger));
+        let mut uf = UnionFind::new(n);
+        for &(score, larger, smaller) in &candidates {
+            // The forest is built over all nonzero edges; an MST edge is emitted
+            // only when it also passes the lower bound (matching the batch path,
+            // which filters MST edges by `lower_bound` after building the tree).
+            if uf.union(larger, smaller) && passes_lb(score, lower_bound) {
+                kept.insert((smaller, larger));
+            }
         }
-    }
     }
 
     // --- OR-symmetric kNN ---
@@ -154,7 +160,11 @@ pub(crate) fn mst_knn_kept(
             if !passes_lb(score, lower_bound) {
                 break;
             }
-            let edge = if node < neighbor { (node, neighbor) } else { (neighbor, node) };
+            let edge = if node < neighbor {
+                (node, neighbor)
+            } else {
+                (neighbor, node)
+            };
             kept.insert(edge);
             selected += 1;
             if selected >= k {
@@ -175,12 +185,7 @@ pub(crate) fn mst_knn_kept(
 /// `max(M[i,j], M[j,i])`, the same score the kNN ranking and the spanning tree select
 /// on. The output is therefore symmetric, and the batch and streaming paths now agree
 /// on values, not just on which edges are kept.
-pub fn apply_mst_knn(
-    m: &DataMatrix,
-    k: usize,
-    lower_bound: f64,
-    include_mst: bool,
-) -> DataMatrix {
+pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64, include_mst: bool) -> DataMatrix {
     let n = m.nrows();
 
     // Directional off-diagonal values and the diagonal (random-access lookups).

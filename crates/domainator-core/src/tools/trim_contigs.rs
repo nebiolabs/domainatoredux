@@ -142,8 +142,14 @@ fn trim_contig(
     }
 
     // DomainatorCDS list, sorted by feature.location.start.
-    let mut cdss =
-        DomainatorCds::list_from_contig(record, f64::INFINITY, f64::NEG_INFINITY, false, None, false);
+    let mut cdss = DomainatorCds::list_from_contig(
+        record,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        false,
+        None,
+        false,
+    );
     cdss.sort_by_key(|c| c.feature.location.start());
 
     let mut left_cds = 0i64;
@@ -166,7 +172,14 @@ fn trim_contig(
 
         if opts.strip_domains.is_some() || opts.domain_expr.is_some() || opts.no_domain {
             let strip = empty_strip.unwrap_or_default();
-            match strip_domains_from_ends(&cdss, left_cds, right_cds, &strip, domain_expr, opts.no_domain) {
+            match strip_domains_from_ends(
+                &cdss,
+                left_cds,
+                right_cds,
+                &strip,
+                domain_expr,
+                opts.no_domain,
+            ) {
                 Ok((dl, dr)) => {
                     if dl > left_cds {
                         left_cds = dl;
@@ -245,10 +258,18 @@ fn slice_forward(record: &SeqRecord, left: i64, right: i64) -> SeqRecord {
             continue;
         }
         parts.sort_by_key(|p| p.0);
-        let operator = if parts.len() > 1 { f.location.operator.or(Some(CompoundOp::Join)) } else { None };
+        let operator = if parts.len() > 1 {
+            f.location.operator.or(Some(CompoundOp::Join))
+        } else {
+            None
+        };
         features.push(SeqFeature {
             kind: f.kind.clone(),
-            location: Location { operator, between: false, parts },
+            location: Location {
+                operator,
+                between: false,
+                parts,
+            },
             qualifiers: f.qualifiers.clone(),
         });
     }
@@ -261,7 +282,10 @@ fn slice_forward(record: &SeqRecord, left: i64, right: i64) -> SeqRecord {
 }
 
 /// Trim all records.
-pub fn trim_contigs(records: Vec<SeqRecord>, opts: &TrimContigsOptions) -> Result<Vec<SeqRecord>, String> {
+pub fn trim_contigs(
+    records: Vec<SeqRecord>,
+    opts: &TrimContigsOptions,
+) -> Result<Vec<SeqRecord>, String> {
     let expr = opts.domain_expr.as_deref().map(BooleanEvaluator::new);
     let mut out = Vec::new();
     for record in records {
@@ -282,10 +306,22 @@ mod tests {
 
     #[test]
     fn validate_range_both_and_conflicts() {
-        assert_eq!(validate_range(Some(1.0), None, None, None, None, None).unwrap(), (Some((1.0, 1.0)), None));
-        assert_eq!(validate_range(None, Some(0.5), None, None, None, None).unwrap(), (Some((0.5, 0.0)), None));
-        assert_eq!(validate_range(None, None, None, Some(2), None, None).unwrap(), (None, Some((2, 2))));
-        assert_eq!(validate_range(None, None, None, None, Some(1), None).unwrap(), (None, Some((1, 0))));
+        assert_eq!(
+            validate_range(Some(1.0), None, None, None, None, None).unwrap(),
+            (Some((1.0, 1.0)), None)
+        );
+        assert_eq!(
+            validate_range(None, Some(0.5), None, None, None, None).unwrap(),
+            (Some((0.5, 0.0)), None)
+        );
+        assert_eq!(
+            validate_range(None, None, None, Some(2), None, None).unwrap(),
+            (None, Some((2, 2)))
+        );
+        assert_eq!(
+            validate_range(None, None, None, None, Some(1), None).unwrap(),
+            (None, Some((1, 0)))
+        );
         // Conflicts.
         assert!(validate_range(None, None, None, Some(2), Some(1), None).is_err());
         assert!(validate_range(Some(1.0), None, None, Some(2), None, None).is_err());
@@ -329,7 +365,10 @@ mod tests {
     #[test]
     fn cds_trimming() {
         // 3 CDSs; trim 1 from each side -> keep only the middle CDS bounds.
-        let r = rec(vec![cds("a", 100, 200), cds("b", 300, 400), cds("c", 500, 600)], 700);
+        let r = rec(
+            vec![cds("a", 100, 200), cds("b", 300, 400), cds("c", 500, 600)],
+            700,
+        );
         let opts = TrimContigsOptions {
             kb_truncation: None,
             cds_truncation: Some((1, 1)),

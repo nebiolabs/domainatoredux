@@ -19,8 +19,8 @@ use serde_json::{json, Map, Value};
 use crate::matrix::ssn::{MergeEvent, SliderStop, DEFAULT_MAX_MERGE_EVENTS};
 
 use super::ssn_bundle::{
-    cluster_for_node, clusters_at_threshold, coarsest_threshold, component_members,
-    component_size, merge_event_rows, merge_event_series, node_index_by_name, slider_stops,
+    cluster_for_node, clusters_at_threshold, coarsest_threshold, component_members, component_size,
+    merge_event_rows, merge_event_series, node_index_by_name, slider_stops,
     summarize_cluster_metadata,
 };
 
@@ -94,7 +94,8 @@ fn resolve_threshold(threshold: Option<&str>, hierarchy: &Value) -> Result<f64, 
             if matches!(t.to_lowercase().as_str(), "inf" | "infinity" | "∞") {
                 return Ok(f64::INFINITY);
             }
-            t.parse::<f64>().map_err(|_| format!("Could not parse --threshold '{s}' as a number."))
+            t.parse::<f64>()
+                .map_err(|_| format!("Could not parse --threshold '{s}' as a number."))
         }
     }
 }
@@ -146,7 +147,8 @@ struct Derived {
 
 impl Derived {
     fn rows(&mut self, bundle: &Value) -> &[MergeEvent] {
-        self.rows.get_or_insert_with(|| merge_event_rows(bundle, None))
+        self.rows
+            .get_or_insert_with(|| merge_event_rows(bundle, None))
     }
 
     /// Run `f` over the cached rows without cloning them: a `MergeEvent` owns two
@@ -154,7 +156,10 @@ impl Derived {
     /// the obvious `self.rows(bundle).to_vec()` would copy all of that twice per query
     /// just to satisfy the borrow checker.
     fn with_rows<T>(&mut self, bundle: &Value, f: impl FnOnce(&[MergeEvent]) -> T) -> T {
-        let rows = self.rows.take().unwrap_or_else(|| merge_event_rows(bundle, None));
+        let rows = self
+            .rows
+            .take()
+            .unwrap_or_else(|| merge_event_rows(bundle, None));
         let out = f(&rows);
         self.rows = Some(rows);
         out
@@ -162,19 +167,18 @@ impl Derived {
 
     fn selected(&mut self, bundle: &Value, max_merge_events: usize) -> &[MergeEvent] {
         if self.selected.is_none() {
-            self.selected =
-                Some(self.with_rows(bundle, |rows| {
-                    merge_event_series(bundle, max_merge_events, Some(rows))
-                }));
+            self.selected = Some(self.with_rows(bundle, |rows| {
+                merge_event_series(bundle, max_merge_events, Some(rows))
+            }));
         }
         self.selected.as_deref().unwrap()
     }
 
     fn stops(&mut self, bundle: &Value, max_merge_events: usize) -> &[SliderStop] {
         if self.stops.is_none() {
-            self.stops = Some(
-                self.with_rows(bundle, |rows| slider_stops(bundle, max_merge_events, Some(rows))),
-            );
+            self.stops = Some(self.with_rows(bundle, |rows| {
+                slider_stops(bundle, max_merge_events, Some(rows))
+            }));
         }
         self.stops.as_deref().unwrap()
     }
@@ -195,21 +199,33 @@ fn cluster_records(hierarchy: &Value, active: &[usize], min_size: usize) -> Vec<
         .filter(|&(_, size)| size >= min_size)
         .collect();
     records.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    records.into_iter().map(|(id, size)| json!({"id": id, "size": size})).collect()
+    records
+        .into_iter()
+        .map(|(id, size)| json!({"id": id, "size": size}))
+        .collect()
 }
 
 fn metadata_row(bundle: &Value, node_index: usize) -> Value {
     let empty = Vec::new();
     let metadata = bundle.get("metadata").cloned().unwrap_or(Value::Null);
-    let columns = metadata.get("columns").and_then(Value::as_array).unwrap_or(&empty);
-    let rows = metadata.get("rows").and_then(Value::as_array).unwrap_or(&empty);
+    let columns = metadata
+        .get("columns")
+        .and_then(Value::as_array)
+        .unwrap_or(&empty);
+    let rows = metadata
+        .get("rows")
+        .and_then(Value::as_array)
+        .unwrap_or(&empty);
     let Some(row) = rows.get(node_index).and_then(Value::as_array) else {
         return Value::Object(Map::new());
     };
     let mut out = Map::new();
     for (idx, column) in columns.iter().enumerate() {
         let name = column.get("name").and_then(Value::as_str).unwrap_or("");
-        out.insert(name.to_string(), row.get(idx).cloned().unwrap_or(Value::Null));
+        out.insert(
+            name.to_string(),
+            row.get(idx).cloned().unwrap_or(Value::Null),
+        );
     }
     Value::Object(out)
 }
@@ -217,28 +233,45 @@ fn metadata_row(bundle: &Value, node_index: usize) -> Value {
 /// Answer a single navigation query against a loaded `.dsnv` bundle.
 pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value, String> {
     let graph = bundle.get("graph").ok_or("bundle has no 'graph' section")?;
-    let hierarchy = graph.get("hierarchy").ok_or("bundle graph has no 'hierarchy'")?;
+    let hierarchy = graph
+        .get("hierarchy")
+        .ok_or("bundle graph has no 'hierarchy'")?;
     let empty = Vec::new();
-    let node_names = graph.get("nodes").and_then(Value::as_array).unwrap_or(&empty);
+    let node_names = graph
+        .get("nodes")
+        .and_then(Value::as_array)
+        .unwrap_or(&empty);
     let threshold = resolve_threshold(opts.threshold.as_deref(), hierarchy)?;
     let mut derived = Derived::default();
 
     match opts.mode {
         NavMode::Overview => {
             let mut out = Map::new();
-            out.insert("name".into(), bundle.get("name").cloned().unwrap_or(Value::Null));
+            out.insert(
+                "name".into(),
+                bundle.get("name").cloned().unwrap_or(Value::Null),
+            );
             out.insert(
                 "domainator_version".into(),
-                bundle.get("domainator_version").cloned().unwrap_or(Value::Null),
+                bundle
+                    .get("domainator_version")
+                    .cloned()
+                    .unwrap_or(Value::Null),
             );
             out.insert("nodes".into(), json!(node_names.len()));
             out.insert(
                 "mst_edges".into(),
-                json!(graph.get("mst_edges").and_then(Value::as_array).map_or(0, Vec::len)),
+                json!(graph
+                    .get("mst_edges")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len)),
             );
             out.insert(
                 "connected_components".into(),
-                json!(hierarchy.get("roots").and_then(Value::as_array).map_or(0, Vec::len)),
+                json!(hierarchy
+                    .get("roots")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len)),
             );
             out.insert(
                 "metadata_columns".into(),
@@ -250,11 +283,17 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
             );
             out.insert(
                 "defaults".into(),
-                bundle.get("defaults").cloned().unwrap_or_else(|| Value::Object(Map::new())),
+                bundle
+                    .get("defaults")
+                    .cloned()
+                    .unwrap_or_else(|| Value::Object(Map::new())),
             );
             out.insert(
                 "merge_impact_metric".into(),
-                graph.get("merge_impact_metric").cloned().unwrap_or(Value::Null),
+                graph
+                    .get("merge_impact_metric")
+                    .cloned()
+                    .unwrap_or(Value::Null),
             );
             let total = derived.rows(bundle).len();
             let shown = derived.selected(bundle, opts.max_merge_events).len();
@@ -274,8 +313,10 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
                 .iter()
                 .map(|stop| {
                     let active = clusters_at_threshold(hierarchy, stop.threshold_value);
-                    let sizes: Vec<usize> =
-                        active.iter().map(|&id| component_size(hierarchy, id)).collect();
+                    let sizes: Vec<usize> = active
+                        .iter()
+                        .map(|&id| component_size(hierarchy, id))
+                        .collect();
                     json!({
                         "threshold_value": stop_value_json(stop),
                         "threshold_label": stop.threshold_label,
@@ -298,8 +339,10 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
         NavMode::Clusters => {
             let active = clusters_at_threshold(hierarchy, Some(threshold));
             let records = cluster_records(hierarchy, &active, opts.min_size);
-            let singletons =
-                records.iter().filter(|r| r.get("size").and_then(Value::as_u64) == Some(1)).count();
+            let singletons = records
+                .iter()
+                .filter(|r| r.get("size").and_then(Value::as_u64) == Some(1))
+                .count();
             let mut out = Map::new();
             out.insert("threshold".into(), threshold_out(threshold));
             out.insert("clusters".into(), json!(records.len()));
@@ -344,7 +387,11 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
             out.insert("size".into(), json!(member_indices.len()));
             out.insert(
                 "metadata_summary".into(),
-                Value::Array(summarize_cluster_metadata(&member_indices, &metadata, opts.top_n)),
+                Value::Array(summarize_cluster_metadata(
+                    &member_indices,
+                    &metadata,
+                    opts.top_n,
+                )),
             );
             if opts.members {
                 out.insert(
@@ -470,12 +517,15 @@ mod tests {
         // each cut-point. The two must agree everywhere, or the cheap path is a lie.
         let bundle = six_node_bundle();
         let hierarchy = &bundle["graph"]["hierarchy"];
-        let out = run(&bundle, SsnNavigatorOptions {
-            mode: NavMode::Node,
-            node: Some("n0".into()),
-            max_merge_events: 0,
-            ..Default::default()
-        });
+        let out = run(
+            &bundle,
+            SsnNavigatorOptions {
+                mode: NavMode::Node,
+                node: Some("n0".into()),
+                max_merge_events: 0,
+                ..Default::default()
+            },
+        );
         let memberships = out["memberships"].as_array().unwrap();
         assert!(memberships.len() > 2, "∞ + one per split event + floor");
         for m in memberships {
@@ -487,7 +537,10 @@ mod tests {
                 .find(|&id| component_members(hierarchy, id).contains(&0usize))
                 .unwrap();
             assert_eq!(m["cluster_id"], json!(expected), "at cut {cut:?}");
-            assert_eq!(m["cluster_size"], json!(component_size(hierarchy, expected)));
+            assert_eq!(
+                m["cluster_size"],
+                json!(component_size(hierarchy, expected))
+            );
         }
         // The ∞ stop leads, where every node stands alone.
         assert_eq!(memberships[0]["threshold_value"], Value::Null);
@@ -500,11 +553,14 @@ mod tests {
         // series is derived from its merge order rather than read out of it.
         let bundle = six_node_bundle();
         let count = |max: usize| -> usize {
-            run(&bundle, SsnNavigatorOptions {
-                mode: NavMode::Thresholds,
-                max_merge_events: max,
-                ..Default::default()
-            })["thresholds"]
+            run(
+                &bundle,
+                SsnNavigatorOptions {
+                    mode: NavMode::Thresholds,
+                    max_merge_events: max,
+                    ..Default::default()
+                },
+            )["thresholds"]
                 .as_array()
                 .unwrap()
                 .len()
@@ -523,11 +579,14 @@ mod tests {
         let mut bundle = six_node_bundle();
         for version in [5, 6] {
             bundle["version"] = json!(version);
-            let out = run(&bundle, SsnNavigatorOptions {
-                mode: NavMode::Overview,
-                max_merge_events: 2,
-                ..Default::default()
-            });
+            let out = run(
+                &bundle,
+                SsnNavigatorOptions {
+                    mode: NavMode::Overview,
+                    max_merge_events: 2,
+                    ..Default::default()
+                },
+            );
             assert_eq!(out["max_merge_events"], json!(2));
             assert!(out["merge_event_total"].as_u64().unwrap() > 0);
             assert!(out["merge_events"].as_u64().unwrap() > 0);

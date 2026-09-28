@@ -102,7 +102,10 @@ impl BooleanEvaluator {
                 }
             }
         }
-        BooleanEvaluator { parts, tok_to_domain }
+        BooleanEvaluator {
+            parts,
+            tok_to_domain,
+        }
     }
 
     /// Domain tokens referenced by the expression (used by the taxonomy-expr
@@ -212,11 +215,15 @@ pub fn get_cds_name(feature: &SeqFeature, precedence: Option<&[&str]>) -> String
 }
 
 fn feature_evalue(f: &SeqFeature) -> f64 {
-    f.get_first("evalue").and_then(|v| v.parse().ok()).unwrap_or(f64::INFINITY)
+    f.get_first("evalue")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(f64::INFINITY)
 }
 
 fn feature_score(f: &SeqFeature) -> f64 {
-    f.get_first("score").and_then(|v| v.parse().ok()).unwrap_or(f64::NEG_INFINITY)
+    f.get_first("score")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(f64::NEG_INFINITY)
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +346,11 @@ impl DomainatorCds {
         for f in &self.domain_features {
             let mut keep = true;
             if let Some(dbs) = databases {
-                if !f.get_first("database").map(|d| dbs.contains(d)).unwrap_or(false) {
+                if !f
+                    .get_first("database")
+                    .map(|d| dbs.contains(d))
+                    .unwrap_or(false)
+                {
                     keep = false;
                 }
             }
@@ -364,7 +375,9 @@ impl DomainatorCds {
 pub fn filter_domains_databases(rec: &mut SeqRecord, databases: &HashSet<String>) {
     rec.features.retain(|f| {
         if f.kind == DOMAIN_FEATURE_NAME || f.kind == DOMAIN_SEARCH_BEST_HIT_NAME {
-            f.get_first("database").map(|d| databases.contains(d)).unwrap_or(false)
+            f.get_first("database")
+                .map(|d| databases.contains(d))
+                .unwrap_or(false)
         } else {
             true
         }
@@ -412,13 +425,18 @@ mod tests {
 
     #[test]
     fn parse_name_list_list_only_and_empty() {
-        let s = parse_name_list(&["a".into(), "b".into()], None).unwrap().unwrap();
+        let s = parse_name_list(&["a".into(), "b".into()], None)
+            .unwrap()
+            .unwrap();
         assert_eq!(s, set(&["a", "b"]));
         assert!(parse_name_list(&[], None).unwrap().is_none());
     }
 
     fn dom_feat(cds_id: &str, name: &str, start: i64, end: i64, evalue: &str) -> SeqFeature {
-        let mut f = SeqFeature::new(DOMAIN_FEATURE_NAME, crate::seq::Location::range(start, end, 1));
+        let mut f = SeqFeature::new(
+            DOMAIN_FEATURE_NAME,
+            crate::seq::Location::range(start, end, 1),
+        );
         f.set("cds_id", cds_id);
         f.set("name", name);
         f.set("database", "DB");
@@ -452,8 +470,14 @@ mod tests {
             dom_feat("C1", "D2", 150, 300, "1e-3"),
             dom_feat(".", "Nuc", 400, 500, "1e-2"),
         ]);
-        let cdss =
-            DomainatorCds::list_from_contig(&rec, f64::INFINITY, f64::NEG_INFINITY, false, None, true);
+        let cdss = DomainatorCds::list_from_contig(
+            &rec,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            false,
+            None,
+            true,
+        );
         assert_eq!(cdss.len(), 2);
         assert_eq!(cdss[0].num, "C1");
         assert_eq!(cdss[0].name, "geneA"); // gene_id precedence
@@ -468,13 +492,30 @@ mod tests {
     fn list_from_contig_evalue_filter_and_db_filter() {
         let mut cds = SeqFeature::new("CDS", crate::seq::Location::range(0, 300, 1));
         cds.set("cds_id", "C1");
-        let rec = contig(vec![cds, dom_feat("C1", "D1", 0, 150, "1e-9"), dom_feat("C1", "D2", 150, 300, "1e-3")]);
+        let rec = contig(vec![
+            cds,
+            dom_feat("C1", "D1", 0, 150, "1e-9"),
+            dom_feat("C1", "D2", 150, 300, "1e-3"),
+        ]);
         // Only domains with evalue < 1e-5 survive (D1).
-        let cdss = DomainatorCds::list_from_contig(&rec, 1e-5, f64::NEG_INFINITY, false, None, true);
+        let cdss =
+            DomainatorCds::list_from_contig(&rec, 1e-5, f64::NEG_INFINITY, false, None, true);
         assert_eq!(cdss[0].domain_names, set(&["D1"]));
         // get_domain_names db restriction.
-        let full = DomainatorCds::list_from_contig(&rec, f64::INFINITY, f64::NEG_INFINITY, false, None, true);
-        assert_eq!(full[0].get_domain_names(Some(&set(&["DB"])), None), set(&["D1", "D2"]));
-        assert!(full[0].get_domain_names(Some(&set(&["OTHER"])), None).is_empty());
+        let full = DomainatorCds::list_from_contig(
+            &rec,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            false,
+            None,
+            true,
+        );
+        assert_eq!(
+            full[0].get_domain_names(Some(&set(&["DB"])), None),
+            set(&["D1", "D2"])
+        );
+        assert!(full[0]
+            .get_domain_names(Some(&set(&["OTHER"])), None)
+            .is_empty());
     }
 }

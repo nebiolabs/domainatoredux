@@ -18,7 +18,11 @@ const PREFS_NAME: &str = "prefs.json";
 
 /// `<app_data>/prefs.json`.
 pub fn prefs_path(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(app.path().app_data_dir().map_err(|e| format!("app data dir: {e}"))?.join(PREFS_NAME))
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app data dir: {e}"))?
+        .join(PREFS_NAME))
 }
 
 /// The current preferences (defaults if the file is missing or unreadable).
@@ -39,7 +43,10 @@ pub struct StartupInfo {
 #[tauri::command(async)]
 pub fn startup_info(app: AppHandle) -> Result<StartupInfo, String> {
     let prefs = load_prefs(&prefs_path(&app)?);
-    Ok(StartupInfo { recent: prefs.existing_recent(), reopen: prefs.workspace_to_reopen() })
+    Ok(StartupInfo {
+        recent: prefs.existing_recent(),
+        reopen: prefs.workspace_to_reopen(),
+    })
 }
 
 /// Drop one entry from the recent list.

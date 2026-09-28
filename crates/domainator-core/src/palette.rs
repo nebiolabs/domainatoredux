@@ -14,22 +14,14 @@
 /// `scripts/generate_distinct_palette.py`; hex is **uppercase**, which the fixtures
 /// check.
 pub const DISTINCT_COLORS: [&str; 64] = [
-    "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728",
-    "#9467BD", "#8C564B", "#E377C2", "#7F7F7F",
-    "#BCBD22", "#17BECF", "#0000FF", "#FF1AFF",
-    "#00F200", "#0026B3", "#1A4D1A", "#FFBF80",
-    "#FF0080", "#00E6B3", "#730D4D", "#806600",
-    "#99B373", "#A60DA6", "#FF808C", "#0080FF",
-    "#BFBFFF", "#99E626", "#9940FF", "#00F280",
-    "#80001A", "#A64D0D", "#004D4D", "#4D4066",
-    "#008C73", "#FFBF00", "#1A338C", "#FFBFD9",
-    "#FF73FF", "#99E680", "#A673FF", "#4D7300",
-    "#FF00BF", "#FF0000", "#33BFFF", "#A67399",
-    "#BF1A80", "#99D9BF", "#4D401A", "#CCB399",
-    "#FF8059", "#CC8C1A", "#A6D9F2", "#BF0D4D",
-    "#1ABF00", "#661A80", "#D98C73", "#4DB373",
-    "#008099", "#004DFF", "#B34D66", "#4D4040",
-    "#66A6FF", "#8C804D", "#CCD973", "#FF1A59",
+    "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD", "#8C564B", "#E377C2", "#7F7F7F",
+    "#BCBD22", "#17BECF", "#0000FF", "#FF1AFF", "#00F200", "#0026B3", "#1A4D1A", "#FFBF80",
+    "#FF0080", "#00E6B3", "#730D4D", "#806600", "#99B373", "#A60DA6", "#FF808C", "#0080FF",
+    "#BFBFFF", "#99E626", "#9940FF", "#00F280", "#80001A", "#A64D0D", "#004D4D", "#4D4066",
+    "#008C73", "#FFBF00", "#1A338C", "#FFBFD9", "#FF73FF", "#99E680", "#A673FF", "#4D7300",
+    "#FF00BF", "#FF0000", "#33BFFF", "#A67399", "#BF1A80", "#99D9BF", "#4D401A", "#CCB399",
+    "#FF8059", "#CC8C1A", "#A6D9F2", "#BF0D4D", "#1ABF00", "#661A80", "#D98C73", "#4DB373",
+    "#008099", "#004DFF", "#B34D66", "#4D4040", "#66A6FF", "#8C804D", "#CCD973", "#FF1A59",
 ];
 
 /// Neutral gray for values with no color of their own: missing data, and the groups
@@ -63,7 +55,12 @@ pub fn sort_palette_values(values: &[String]) -> Vec<String> {
     }
     numeric.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(b.1)));
     other.sort();
-    numeric.into_iter().map(|(_, v)| v).chain(other).cloned().collect()
+    numeric
+        .into_iter()
+        .map(|(_, v)| v)
+        .chain(other)
+        .cloned()
+        .collect()
 }
 
 /// Map values to distinct colors.
@@ -84,8 +81,11 @@ pub fn get_palette(
 
     // Unique, preserving nothing: order comes from sort_palette_values below.
     let mut seen = HashSet::new();
-    let present: Vec<String> =
-        values.iter().filter(|v| seen.insert((*v).clone())).cloned().collect();
+    let present: Vec<String> = values
+        .iter()
+        .filter(|v| seen.insert((*v).clone()))
+        .cloned()
+        .collect();
 
     let keep: Option<HashSet<String>> = match max_groups {
         Some(max) if max < present.len() => {
@@ -94,7 +94,10 @@ pub fn get_palette(
                 Some(c) => {
                     let mut r = present.clone();
                     r.sort_by(|a, b| {
-                        c.get(b).unwrap_or(&0).cmp(c.get(a).unwrap_or(&0)).then(a.cmp(b))
+                        c.get(b)
+                            .unwrap_or(&0)
+                            .cmp(c.get(a).unwrap_or(&0))
+                            .then(a.cmp(b))
                     });
                     r
                 }
@@ -161,7 +164,9 @@ mod tests {
     fn max_groups_ranks_by_frequency_and_grays_the_rest() {
         let values = s(&["a", "b", "c"]);
         let counts: HashMap<String, usize> =
-            [("a".into(), 1usize), ("b".into(), 9), ("c".into(), 5)].into_iter().collect();
+            [("a".into(), 1usize), ("b".into(), 9), ("c".into(), 5)]
+                .into_iter()
+                .collect();
         let p = get_palette(&values, Some(2), Some(&counts));
         // b and c are the two largest groups, so only `a` is grayed out.
         assert_eq!(p["a"], OTHER_COLOR);

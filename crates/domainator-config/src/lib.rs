@@ -10,15 +10,20 @@ pub mod resolve;
 
 use domainator_core::tools::enum_report::{
     append_analysis, feature_count_analysis, motif_count_analysis, named_domain_count_analysis,
-    net_charge_analysis, qualifier_analysis, repeat_count_analysis, static_analysis, taxid_analysis,
-    taxname_analysis, Analysis, By,
+    net_charge_analysis, qualifier_analysis, repeat_count_analysis, static_analysis,
+    taxid_analysis, taxname_analysis, Analysis, By,
 };
 
 /// Load a JSON or YAML config file into `T`, choosing the parser by extension
 /// (`.json` -> JSON, otherwise YAML, which is a superset of JSON).
 pub fn load_config<T: for<'de> Deserialize<'de>>(path: &str) -> Result<T> {
     let text = std::fs::read_to_string(path).with_context(|| format!("reading config {path}"))?;
-    if path.rsplit('.').next().map(|e| e.eq_ignore_ascii_case("json")).unwrap_or(false) {
+    if path
+        .rsplit('.')
+        .next()
+        .map(|e| e.eq_ignore_ascii_case("json"))
+        .unwrap_or(false)
+    {
         serde_json::from_str(&text).with_context(|| format!("parsing JSON config {path}"))
     } else {
         serde_yaml::from_str(&text).with_context(|| format!("parsing YAML config {path}"))
@@ -62,15 +67,36 @@ pub enum ColumnSpec {
     IsoelectricPoint,
     StartsWith,
     MolecularWeight,
-    Taxid { ranks: Vec<String> },
-    Taxname { ranks: Vec<String> },
-    Qualifier { feature: String, qualifier: String },
-    FeatureCount { feature: String },
-    Append { name: String, value_type: String, value: String },
-    MotifCount { pattern: String },
-    NetCharge { ph: String },
-    RepeatCount { min_length: String },
-    NamedDomainCount { name: String },
+    Taxid {
+        ranks: Vec<String>,
+    },
+    Taxname {
+        ranks: Vec<String>,
+    },
+    Qualifier {
+        feature: String,
+        qualifier: String,
+    },
+    FeatureCount {
+        feature: String,
+    },
+    Append {
+        name: String,
+        value_type: String,
+        value: String,
+    },
+    MotifCount {
+        pattern: String,
+    },
+    NetCharge {
+        ph: String,
+    },
+    RepeatCount {
+        min_length: String,
+    },
+    NamedDomainCount {
+        name: String,
+    },
 }
 
 impl ColumnSpec {
@@ -149,11 +175,17 @@ impl ColumnSpec {
                 qualifier_analysis(feature.clone(), qualifier.clone())
             }
             ColumnSpec::FeatureCount { feature } => feature_count_analysis(feature.clone()),
-            ColumnSpec::Append { name, value_type, value } => {
+            ColumnSpec::Append {
+                name,
+                value_type,
+                value,
+            } => {
                 append_analysis(name.clone(), value_type, value).map_err(|e| anyhow::anyhow!(e))?
             }
             ColumnSpec::MotifCount { pattern } => motif_count_analysis(pattern.clone()),
-            ColumnSpec::NetCharge { ph } => net_charge_analysis(ph).map_err(|e| anyhow::anyhow!(e))?,
+            ColumnSpec::NetCharge { ph } => {
+                net_charge_analysis(ph).map_err(|e| anyhow::anyhow!(e))?
+            }
             ColumnSpec::RepeatCount { min_length } => {
                 repeat_count_analysis(min_length).map_err(|e| anyhow::anyhow!(e))?
             }
@@ -1191,7 +1223,11 @@ pub enum HmmerReportColumn {
     Length,
     Consensus,
     Alphabet,
-    Append { name: String, value_type: String, value: String },
+    Append {
+        name: String,
+        value_type: String,
+        value: String,
+    },
 }
 
 impl HmmerReportColumn {
@@ -1228,9 +1264,11 @@ impl HmmerReportColumn {
             return hr_static(name).with_context(|| format!("unknown hmmer_report column: {name}"));
         }
         Ok(match self {
-            HmmerReportColumn::Append { name, value_type, value } => {
-                hr_append(name.clone(), value_type, value).map_err(|e| anyhow::anyhow!(e))?
-            }
+            HmmerReportColumn::Append {
+                name,
+                value_type,
+                value,
+            } => hr_append(name.clone(), value_type, value).map_err(|e| anyhow::anyhow!(e))?,
             _ => unreachable!("static variants handled above"),
         })
     }
@@ -2511,12 +2549,20 @@ mod tests {
         for (tool, default) in every_tool() {
             let in_schema = schema_properties(tool);
             let in_struct = config_fields(&default);
-            let missing: Vec<_> =
-                in_struct.iter().filter(|f| !in_schema.contains(f)).cloned().collect();
-            let extra: Vec<_> =
-                in_schema.iter().filter(|p| !in_struct.contains(p)).cloned().collect();
+            let missing: Vec<_> = in_struct
+                .iter()
+                .filter(|f| !in_schema.contains(f))
+                .cloned()
+                .collect();
+            let extra: Vec<_> = in_schema
+                .iter()
+                .filter(|p| !in_struct.contains(p))
+                .cloned()
+                .collect();
             if !missing.is_empty() {
-                problems.push(format!("{tool}: in the struct but not the schema: {missing:?}"));
+                problems.push(format!(
+                    "{tool}: in the struct but not the schema: {missing:?}"
+                ));
             }
             if !extra.is_empty() {
                 problems.push(format!(
@@ -2525,7 +2571,11 @@ mod tests {
                 ));
             }
         }
-        assert!(problems.is_empty(), "schema/config drift:\n  {}", problems.join("\n  "));
+        assert!(
+            problems.is_empty(),
+            "schema/config drift:\n  {}",
+            problems.join("\n  ")
+        );
     }
 
     /// A tool the CLI accepts but `every_tool()` forgets is a tool this file stops
@@ -2538,8 +2588,15 @@ mod tests {
         for tool in &listed {
             assert!(schema(tool).is_ok(), "{tool} is listed but has no schema");
         }
-        assert!(schema("not-a-tool").is_err(), "unknown tools must be rejected");
-        assert_eq!(listed.len(), 31, "a tool was added or removed without updating this list");
+        assert!(
+            schema("not-a-tool").is_err(),
+            "unknown tools must be rejected"
+        );
+        assert_eq!(
+            listed.len(),
+            31,
+            "a tool was added or removed without updating this list"
+        );
     }
 
     /// Underscore and kebab spellings must resolve to the same schema: config files
@@ -2562,28 +2619,81 @@ mod tests {
         use ColumnSpec::*;
         let s = || "x".to_string();
         let all = vec![
-            Domains, DomainDescriptions, Sequence, Start, End, Strand, Length, Topology,
-            Architecture, ArchitectureDetailed, Score, Identity, Definition, Filename, CdsCount,
-            DomainCount, DomainSearch, TaxidLineage, TaxnameLineage, RankLineage,
-            IsoelectricPoint, StartsWith, MolecularWeight,
+            Domains,
+            DomainDescriptions,
+            Sequence,
+            Start,
+            End,
+            Strand,
+            Length,
+            Topology,
+            Architecture,
+            ArchitectureDetailed,
+            Score,
+            Identity,
+            Definition,
+            Filename,
+            CdsCount,
+            DomainCount,
+            DomainSearch,
+            TaxidLineage,
+            TaxnameLineage,
+            RankLineage,
+            IsoelectricPoint,
+            StartsWith,
+            MolecularWeight,
             Taxid { ranks: vec![s()] },
             Taxname { ranks: vec![s()] },
-            Qualifier { feature: s(), qualifier: s() },
+            Qualifier {
+                feature: s(),
+                qualifier: s(),
+            },
             FeatureCount { feature: s() },
-            Append { name: s(), value_type: "str".into(), value: s() },
+            Append {
+                name: s(),
+                value_type: "str".into(),
+                value: s(),
+            },
             MotifCount { pattern: s() },
             NetCharge { ph: "7".into() },
-            RepeatCount { min_length: "2".into() },
+            RepeatCount {
+                min_length: "2".into(),
+            },
             NamedDomainCount { name: s() },
         ];
         for c in &all {
             match c {
-                Domains | DomainDescriptions | Sequence | Start | End | Strand | Length
-                | Topology | Architecture | ArchitectureDetailed | Score | Identity | Definition
-                | Filename | CdsCount | DomainCount | DomainSearch | TaxidLineage
-                | TaxnameLineage | RankLineage | IsoelectricPoint | StartsWith | MolecularWeight
-                | Taxid { .. } | Taxname { .. } | Qualifier { .. } | FeatureCount { .. }
-                | Append { .. } | MotifCount { .. } | NetCharge { .. } | RepeatCount { .. }
+                Domains
+                | DomainDescriptions
+                | Sequence
+                | Start
+                | End
+                | Strand
+                | Length
+                | Topology
+                | Architecture
+                | ArchitectureDetailed
+                | Score
+                | Identity
+                | Definition
+                | Filename
+                | CdsCount
+                | DomainCount
+                | DomainSearch
+                | TaxidLineage
+                | TaxnameLineage
+                | RankLineage
+                | IsoelectricPoint
+                | StartsWith
+                | MolecularWeight
+                | Taxid { .. }
+                | Taxname { .. }
+                | Qualifier { .. }
+                | FeatureCount { .. }
+                | Append { .. }
+                | MotifCount { .. }
+                | NetCharge { .. }
+                | RepeatCount { .. }
                 | NamedDomainCount { .. } => {}
             }
         }
@@ -2593,8 +2703,17 @@ mod tests {
     fn every_hmmer_column() -> Vec<HmmerReportColumn> {
         use HmmerReportColumn::*;
         let all = vec![
-            Source, Acc, Desc, Length, Consensus, Alphabet,
-            Append { name: "x".into(), value_type: "str".into(), value: "x".into() },
+            Source,
+            Acc,
+            Desc,
+            Length,
+            Consensus,
+            Alphabet,
+            Append {
+                name: "x".into(),
+                value_type: "str".into(),
+                value: "x".into(),
+            },
         ];
         for c in &all {
             match c {
@@ -2609,13 +2728,21 @@ mod tests {
     /// the `oneOf` entries, and the enum is what deserializes the result, so a
     /// variant the schema lacks can never be chosen, and an entry the enum lacks
     /// builds a column the run rejects.
-    fn check_columns_schema<T: serde::Serialize + serde::de::DeserializeOwned>(tool: &str, all: &[T]) {
+    fn check_columns_schema<T: serde::Serialize + serde::de::DeserializeOwned>(
+        tool: &str,
+        all: &[T],
+    ) {
         let schema: serde_json::Value = serde_json::from_str(&schema(tool).unwrap()).unwrap();
         let variants = schema["properties"]["columns"]["items"]["oneOf"]
             .as_array()
             .unwrap_or_else(|| panic!("{tool}: columns.items has no oneOf"))
             .clone();
-        let type_of = |v: &serde_json::Value| v["properties"]["type"]["const"].as_str().unwrap().to_string();
+        let type_of = |v: &serde_json::Value| {
+            v["properties"]["type"]["const"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
         let keys = |v: &serde_json::Value| -> Vec<String> {
             let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
             k.sort();
@@ -2626,7 +2753,12 @@ mod tests {
         types.sort();
         types.dedup();
         assert_eq!(n, types.len(), "{tool}: a column type is described twice");
-        assert_eq!(n, all.len(), "{tool}: the schema describes {n} column types, the enum has {}", all.len());
+        assert_eq!(
+            n,
+            all.len(),
+            "{tool}: the schema describes {n} column types, the enum has {}",
+            all.len()
+        );
 
         for column in all {
             let value = serde_json::to_value(column).unwrap();
@@ -2635,13 +2767,31 @@ mod tests {
                 .iter()
                 .find(|v| type_of(v) == ty)
                 .unwrap_or_else(|| panic!("{tool}: column type {ty:?} is missing from the schema"));
-            let mut required: Vec<String> =
-                variant["required"].as_array().unwrap().iter().map(|r| r.as_str().unwrap().to_string()).collect();
+            let mut required: Vec<String> = variant["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r.as_str().unwrap().to_string())
+                .collect();
             required.sort();
-            assert_eq!(keys(&variant["properties"]), keys(&value), "{tool}.{ty}: schema parameters differ from the enum's fields");
-            assert_eq!(required, keys(&value), "{tool}.{ty}: every field is required, since none has a default");
-            assert_eq!(variant["additionalProperties"], false, "{tool}.{ty}: the enum is deny_unknown_fields");
-            assert!(variant["title"].is_string() && variant["description"].is_string(), "{tool}.{ty}: the GUI needs a title and description");
+            assert_eq!(
+                keys(&variant["properties"]),
+                keys(&value),
+                "{tool}.{ty}: schema parameters differ from the enum's fields"
+            );
+            assert_eq!(
+                required,
+                keys(&value),
+                "{tool}.{ty}: every field is required, since none has a default"
+            );
+            assert_eq!(
+                variant["additionalProperties"], false,
+                "{tool}.{ty}: the enum is deny_unknown_fields"
+            );
+            assert!(
+                variant["title"].is_string() && variant["description"].is_string(),
+                "{tool}.{ty}: the GUI needs a title and description"
+            );
             // And what the schema describes, the enum reads back.
             let _: T = serde_json::from_value(value.clone())
                 .unwrap_or_else(|e| panic!("{tool}.{ty}: {value} does not deserialize: {e}"));

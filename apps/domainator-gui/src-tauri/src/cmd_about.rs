@@ -31,7 +31,8 @@ pub struct AppDiagnostics {
 pub fn app_diagnostics(app: AppHandle) -> Result<AppDiagnostics, String> {
     let pkg = app.package_info();
     let show = |p: Result<std::path::PathBuf, String>| {
-        p.map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|e| format!("unavailable ({e})"))
+        p.map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|e| format!("unavailable ({e})"))
     };
 
     let info = Diagnostics {
@@ -45,9 +46,16 @@ pub fn app_diagnostics(app: AppHandle) -> Result<AppDiagnostics, String> {
         webview_version: tauri::webview_version().unwrap_or_else(|_| "unknown".into()),
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
-        profile: if cfg!(debug_assertions) { "debug" } else { "release" }.to_string(),
+        profile: if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
+        .to_string(),
         app_data_dir: show(
-            app.path().app_data_dir().map_err(|e| format!("app data dir: {e}")),
+            app.path()
+                .app_data_dir()
+                .map_err(|e| format!("app data dir: {e}")),
         ),
         prefs_path: show(cmd_prefs::prefs_path(&app)),
         managed_tools_dir: show(external_tools::managed_dir(&app)),

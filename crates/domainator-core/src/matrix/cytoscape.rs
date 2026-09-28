@@ -142,7 +142,10 @@ pub fn write_xgmml_to<W: Write>(
     }
 
     for (i, &(src, tgt, score)) in edges.iter().enumerate() {
-        writeln!(w, "  <edge id=\"e{i}\" label=\"e{i}\" source=\"n{src}\" target=\"n{tgt}\">")?;
+        writeln!(
+            w,
+            "  <edge id=\"e{i}\" label=\"e{i}\" source=\"n{src}\" target=\"n{tgt}\">"
+        )?;
         writeln!(
             w,
             "    <att type=\"real\" name=\"SSN_SCORE\" value=\"{}\"/>",

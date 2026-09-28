@@ -31,7 +31,6 @@ pub struct SelectByCdsOptions {
     pub include_nucleic_acids: bool,
 }
 
-
 pub use crate::tools::neighborhood::Region;
 
 /// Extract regions around selected CDSs across all `records`. Regions are
@@ -46,13 +45,18 @@ pub fn select_by_cds(records: &[SeqRecord], opts: &SelectByCdsOptions) -> Vec<Re
     out
 }
 
-fn select_one(rec: &SeqRecord, opts: &SelectByCdsOptions, expr: Option<&BooleanEvaluator>) -> Vec<Region> {
+fn select_one(
+    rec: &SeqRecord,
+    opts: &SelectByCdsOptions,
+    expr: Option<&BooleanEvaluator>,
+) -> Vec<Region> {
     let rec_len = rec.seq.len() as i64;
     let circular = rec.topology == Topology::Circular;
 
     // DomainatorCDS list (nucleic-acid annotations included, evalue-filtered),
     // paired with the geometry Cds, then sorted by stranded start together.
-    let dom_cdss = DomainatorCds::list_from_contig(rec, opts.evalue, f64::NEG_INFINITY, false, None, true);
+    let dom_cdss =
+        DomainatorCds::list_from_contig(rec, opts.evalue, f64::NEG_INFINITY, false, None, true);
     let mut paired: Vec<(DomainatorCds, Cds)> = dom_cdss
         .into_iter()
         .map(|d| {
@@ -65,7 +69,12 @@ fn select_one(rec: &SeqRecord, opts: &SelectByCdsOptions, expr: Option<&BooleanE
                 .collect();
             let strand = d.feature.location.strand();
             let cds_id = d.num.clone();
-            let nb = Cds { intervals, strand, cds_id, is_focus: false };
+            let nb = Cds {
+                intervals,
+                strand,
+                cds_id,
+                is_focus: false,
+            };
             (d, nb)
         })
         .collect();
@@ -79,7 +88,10 @@ fn select_one(rec: &SeqRecord, opts: &SelectByCdsOptions, expr: Option<&BooleanE
         && !opts.search_hits
         && !opts.unannotated;
 
-    let non_dom: Vec<SeqFeature> = get_non_domainator_features(rec).into_iter().cloned().collect();
+    let non_dom: Vec<SeqFeature> = get_non_domainator_features(rec)
+        .into_iter()
+        .cloned()
+        .collect();
 
     let mut out: Vec<Region> = Vec::new();
     let mut selected_slices: Vec<SliceLoc> = Vec::new();
@@ -184,7 +196,10 @@ fn select_one(rec: &SeqRecord, opts: &SelectByCdsOptions, expr: Option<&BooleanE
             }
             selected_slices.push(slice);
         }
-        out.push(Region { record: region, dist_to_start });
+        out.push(Region {
+            record: region,
+            dist_to_start,
+        });
     }
     out
 }
@@ -218,7 +233,10 @@ pub fn pad_records(regions: &mut [Region]) {
             }
         }
         if right[i] > 0 {
-            region.record.seq.extend(std::iter::repeat_n(b'N', right[i] as usize));
+            region
+                .record
+                .seq
+                .extend(std::iter::repeat_n(b'N', right[i] as usize));
         }
     }
 }

@@ -74,7 +74,11 @@ pub fn nhmmer_db(
             })
             .collect();
 
-        let max_length = if hmm.max_length > 0 { hmm.max_length } else { (hmm.m * 4) as i32 };
+        let max_length = if hmm.max_length > 0 {
+            hmm.max_length
+        } else {
+            (hmm.m * 4) as i32
+        };
         let do_watson = true;
         let do_crick = abc.complement.is_some();
 
@@ -90,20 +94,45 @@ pub fn nhmmer_db(
                 let mut hits = Vec::new();
                 if do_watson {
                     hits.extend(search_longtarget(
-                        sq, hmm, &gm, &om, &bg, max_length, max_mode, false,
-                        &msv_counter, &bias_counter, &vit_counter, &fwd_counter,
+                        sq,
+                        hmm,
+                        &gm,
+                        &om,
+                        &bg,
+                        max_length,
+                        max_mode,
+                        false,
+                        &msv_counter,
+                        &bias_counter,
+                        &vit_counter,
+                        &fwd_counter,
                     ));
                 }
                 if do_crick {
                     let mut rc_dsq = sq.dsq.clone();
                     abc.revcomp(&mut rc_dsq, sq.n);
                     let rc_sq = Sequence {
-                        name: sq.name.clone(), acc: sq.acc.clone(), desc: sq.desc.clone(),
-                        dsq: rc_dsq, n: sq.n, l: sq.l, taxid: sq.taxid,
+                        name: sq.name.clone(),
+                        acc: sq.acc.clone(),
+                        desc: sq.desc.clone(),
+                        dsq: rc_dsq,
+                        n: sq.n,
+                        l: sq.l,
+                        taxid: sq.taxid,
                     };
                     let mut rc_hits = search_longtarget(
-                        &rc_sq, hmm, &gm, &om, &bg, max_length, max_mode, true,
-                        &msv_counter, &bias_counter, &vit_counter, &fwd_counter,
+                        &rc_sq,
+                        hmm,
+                        &gm,
+                        &om,
+                        &bg,
+                        max_length,
+                        max_mode,
+                        true,
+                        &msv_counter,
+                        &bias_counter,
+                        &vit_counter,
+                        &fwd_counter,
                     );
                     // Convert complement-strand coords back to forward strand
                     // (nhmmer convention: minus-strand hits emit iali > jali).
@@ -139,8 +168,11 @@ pub fn nhmmer_db(
         let strand_multiplier = (do_watson as usize) + (do_crick as usize);
         let residues_searched = (total_residues * strand_multiplier.max(1)) as f64;
 
-        let window_length =
-            if hmm.max_length > 0 { hmm.max_length as f64 } else { (hmm.m * 4) as f64 };
+        let window_length = if hmm.max_length > 0 {
+            hmm.max_length as f64
+        } else {
+            (hmm.m * 4) as f64
+        };
         // C p7_tophits_ComputeNhmmerEvalues: lnP += log((float)N/(float)W).
         let nhmmer_ln_nw = ((residues_searched as f32) / (window_length as f32)).ln() as f64;
         for hit in &mut th.hits {
@@ -176,8 +208,7 @@ pub fn nhmmer_db(
             }
             // hit.name is the target contig name `"{i},contig,{len}"`.
             let mut parts = hit.name.split(',');
-            let contig_len: Option<i64> =
-                parts.nth(2).and_then(|s| s.parse::<i64>().ok());
+            let contig_len: Option<i64> = parts.nth(2).and_then(|s| s.parse::<i64>().ok());
             for dom in &hit.dcl {
                 let i_evalue = dom.lnp.exp();
                 if !(i_evalue < evalue && i_evalue >= min_evalue) {
@@ -202,11 +233,13 @@ pub fn nhmmer_db(
                 }
                 let (rstart, rend, identity) = match &dom.ad {
                     Some(ad) => {
-                        let matches =
-                            ad.mline.chars().filter(|c| c.is_ascii_alphabetic()).count();
+                        let matches = ad.mline.chars().filter(|c| c.is_ascii_alphabetic()).count();
                         let aln_len = (ad.hmmto as i64 - (ad.hmmfrom as i64 - 1)).max(1);
-                        (ad.hmmfrom as i64, ad.hmmto as i64,
-                         100.0 * matches as f64 / aln_len as f64)
+                        (
+                            ad.hmmfrom as i64,
+                            ad.hmmto as i64,
+                            100.0 * matches as f64 / aln_len as f64,
+                        )
                     }
                     None => (0, 0, 0.0),
                 };
@@ -269,17 +302,26 @@ fn search_longtarget(
     om_ssv.reconfig_msv_length(max_length);
     let om = &om_ssv;
 
-    let mut windows =
-        unsafe { ssv_longtarget::p7_ssv_filter_longtarget(&sq.dsq, sq.n, om, bg, 0.02, max_length) };
+    let mut windows = unsafe {
+        ssv_longtarget::p7_ssv_filter_longtarget(&sq.dsq, sq.n, om, bg, 0.02, max_length)
+    };
     if windows.is_empty() {
         return Vec::new();
     }
 
-    let ml = if max_length > 0 { max_length as usize } else { hmm.m * 4 };
-    let (prefix_lens, suffix_lens) =
-        ssv_longtarget::compute_prefix_suffix_lengths_from_om(om);
+    let ml = if max_length > 0 {
+        max_length as usize
+    } else {
+        hmm.m * 4
+    };
+    let (prefix_lens, suffix_lens) = ssv_longtarget::compute_prefix_suffix_lengths_from_om(om);
     ssv_longtarget::p7_pli_extend_and_merge_windows(
-        &mut windows, ml, sq.n, 0.0, &prefix_lens, &suffix_lens,
+        &mut windows,
+        ml,
+        sq.n,
+        0.0,
+        &prefix_lens,
+        &suffix_lens,
     );
 
     // Phase 1a: per-window standard MSV filter (F1 gate).
@@ -334,7 +376,11 @@ fn search_longtarget(
 
         const B1: usize = 110;
         const B2: usize = 240;
-        let max_length_w = if hmm.max_length > 0 { hmm.max_length as usize } else { subseq_len };
+        let max_length_w = if hmm.max_length > 0 {
+            hmm.max_length as usize
+        } else {
+            subseq_len
+        };
         let f1_l = subseq_len.min(B1);
         let f2_l = subseq_len.min(B2);
         let loc_window_len = subseq_len.min(max_length_w);
@@ -349,7 +395,11 @@ fn search_longtarget(
         };
 
         if !nobias {
-            let f1_scale = if f1_l == subseq_len { 1.0_f32 } else { f1_l as f32 / subseq_len as f32 };
+            let f1_scale = if f1_l == subseq_len {
+                1.0_f32
+            } else {
+                f1_l as f32 / subseq_len as f32
+            };
             let filtersc_f1 = nullsc_full + bias_delta * f1_scale;
             let usc = msv.score;
             let bias_pval = hmmer_pure_rs::pipeline::msv_pvalue(usc, filtersc_f1, &hmm.evparam);
@@ -363,18 +413,31 @@ fn search_longtarget(
         bg_loc.set_length(loc_window_len);
         let nullsc_win = bg_loc.null_one(loc_window_len);
 
-        let f2_scale = if f2_l == subseq_len { 1.0_f32 } else { f2_l as f32 / subseq_len as f32 };
+        let f2_scale = if f2_l == subseq_len {
+            1.0_f32
+        } else {
+            f2_l as f32 / subseq_len as f32
+        };
         let filtersc = nullsc_win + bias_delta * f2_scale;
 
         let mut vit_om = om.clone();
         vit_om.reconfig_length(loc_window_len as i32);
         let mut sub_windows = unsafe {
             hmmer_pure_rs::simd::vit_filter::p7_viterbi_filter_longtarget(
-                &vit_sub_dsq, subseq_len, &vit_om, filtersc, f2_p_thresh,
+                &vit_sub_dsq,
+                subseq_len,
+                &vit_om,
+                filtersc,
+                f2_p_thresh,
             )
         };
         ssv_longtarget::p7_pli_extend_and_merge_windows(
-            &mut sub_windows, ml, subseq_len, 0.5, &prefix_lens, &suffix_lens,
+            &mut sub_windows,
+            ml,
+            subseq_len,
+            0.5,
+            &prefix_lens,
+            &suffix_lens,
         );
         let mut prev_end: Option<usize> = None;
         for w in sub_windows {
@@ -428,9 +491,16 @@ fn search_longtarget(
             }
             let chunk = new_len.min(MAX_WINDOW_LEN);
             split_windows.push(ssv_longtarget::HmmWindow {
-                n: new_n, k: 0, length: chunk, score: 0.0,
-                target_len: w.target_len, complement: w.complement,
-                id: w.id, fm_n: w.fm_n, fm_start: w.fm_start, fm_bwt_len: w.fm_bwt_len,
+                n: new_n,
+                k: 0,
+                length: chunk,
+                score: 0.0,
+                target_len: w.target_len,
+                complement: w.complement,
+                id: w.id,
+                fm_n: w.fm_n,
+                fm_start: w.fm_start,
+                fm_bwt_len: w.fm_bwt_len,
             });
             if new_len <= MAX_WINDOW_LEN {
                 break;
@@ -454,8 +524,13 @@ fn search_longtarget(
         win_dsq.extend_from_slice(&sq.dsq[win_start..=win_end]);
         win_dsq.push(DSQ_SENTINEL);
         let win_sq = Sequence {
-            name: sq.name.clone(), acc: sq.acc.clone(), desc: sq.desc.clone(),
-            dsq: win_dsq, n: win_len, l: win_len, taxid: sq.taxid,
+            name: sq.name.clone(),
+            acc: sq.acc.clone(),
+            desc: sq.desc.clone(),
+            dsq: win_dsq,
+            n: win_len,
+            l: win_len,
+            taxid: sq.taxid,
         };
         let mut lgm = gm.clone();
         let mut lom = om.clone();

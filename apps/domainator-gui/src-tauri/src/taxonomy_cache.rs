@@ -27,7 +27,11 @@ static SLOT: Mutex<Option<(Key, Arc<NCBITaxonomy>)>> = Mutex::new(None);
 pub fn load(path: &str) -> Result<Arc<NCBITaxonomy>, String> {
     let p = Path::new(path);
     let meta = std::fs::metadata(p).map_err(|e| format!("taxonomy database {path}: {e}"))?;
-    let key = Key { path: p.to_path_buf(), len: meta.len(), modified: meta.modified().ok() };
+    let key = Key {
+        path: p.to_path_buf(),
+        len: meta.len(),
+        modified: meta.modified().ok(),
+    };
     // Held across the load, so two requests for the same taxonomy parse it once:
     // the second waits, then finds it in the slot.
     let mut slot = SLOT.lock().unwrap_or_else(|e| e.into_inner());
@@ -71,7 +75,10 @@ mod tests {
 
         let first = load(a.to_str().unwrap()).unwrap();
         let again = load(a.to_str().unwrap()).unwrap();
-        assert!(Arc::ptr_eq(&first, &again), "the same taxonomy must not be parsed twice");
+        assert!(
+            Arc::ptr_eq(&first, &again),
+            "the same taxonomy must not be parsed twice"
+        );
 
         let other = load(b.to_str().unwrap()).unwrap();
         assert_eq!(other.name(562), Some("Shigella flexneri"));

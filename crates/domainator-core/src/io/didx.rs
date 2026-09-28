@@ -64,7 +64,11 @@ pub fn write_index(
     filetype: FileType,
     compression: Compression,
 ) -> io::Result<PathBuf> {
-    assert_eq!(offsets.len(), cds_counts.len(), "offsets and cds_counts length mismatch");
+    assert_eq!(
+        offsets.len(),
+        cds_counts.len(),
+        "offsets and cds_counts length mismatch"
+    );
     let comp_flag = compression_flag(compression)?;
     let (size, mtime_ns) = source_fingerprint(source)?;
     let n = offsets.len() as u64;
@@ -143,7 +147,13 @@ fn validate_header(
     if cur != (size, mtime) {
         return Ok(None);
     }
-    Ok(Some((f, Header { record_count: n, total_cds })))
+    Ok(Some((
+        f,
+        Header {
+            record_count: n,
+            total_cds,
+        },
+    )))
 }
 
 /// Read `(offsets, cds_counts)` from a valid, fresh `.didx`, or `None` to signal

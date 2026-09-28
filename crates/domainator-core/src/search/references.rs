@@ -76,7 +76,10 @@ fn fasta_is_nucleic_acid(file: &str) -> std::io::Result<bool> {
             continue;
         }
         total += 1;
-        if matches!(b.to_ascii_uppercase(), b'A' | b'C' | b'G' | b'T' | b'U' | b'N') {
+        if matches!(
+            b.to_ascii_uppercase(),
+            b'A' | b'C' | b'G' | b'T' | b'U' | b'N'
+        ) {
             nuc += 1;
         }
     }
@@ -99,7 +102,10 @@ fn hmm_is_nucleic_acid(file: &str) -> std::io::Result<bool> {
 fn load_nucl_hmm(file: &str) -> std::io::Result<NuclDb> {
     let hmms = crate::search::hmm_read::read_hmm_file(Path::new(file))
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
-    Ok(NuclDb { name: file_stem(file), hmms })
+    Ok(NuclDb {
+        name: file_stem(file),
+        hmms,
+    })
 }
 
 /// pyhmmer's nucleotide gap-open / gap-extend defaults (C `p7_builder.c`'s
@@ -151,7 +157,10 @@ fn load_nucl_fasta(file: &str) -> std::io::Result<NuclDb> {
         hmm.desc = desc;
         hmms.push(hmm);
     }
-    Ok(NuclDb { name: file_stem(file), hmms })
+    Ok(NuclDb {
+        name: file_stem(file),
+        hmms,
+    })
 }
 
 fn file_stem(f: &str) -> String {
@@ -219,7 +228,10 @@ mod tests {
         // A compression suffix is looked through, never mistaken for the type.
         assert!(matches!(ref_file_type("x.hmm.gz"), Ok(RefFileType::Hmm)));
         assert!(matches!(ref_file_type("x.HMM.BGZ"), Ok(RefFileType::Hmm)));
-        assert!(matches!(ref_file_type("x.fasta.gz"), Ok(RefFileType::Fasta)));
+        assert!(matches!(
+            ref_file_type("x.fasta.gz"),
+            Ok(RefFileType::Fasta)
+        ));
         assert!(ref_file_type("x.gz").is_err());
     }
 }

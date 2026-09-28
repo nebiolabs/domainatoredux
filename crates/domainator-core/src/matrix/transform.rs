@@ -47,7 +47,11 @@ pub fn apply_lower_bound(m: &mut DataMatrix, lb: f64) {
                 }
             }
         }
-        Storage::Sparse { values, indices, indptr } => {
+        Storage::Sparse {
+            values,
+            indices,
+            indptr,
+        } => {
             let nrows = indptr.len().saturating_sub(1);
             let mut new_values: Vec<f64> = Vec::with_capacity(values.len());
             let mut new_indices: Vec<i32> = Vec::with_capacity(indices.len());

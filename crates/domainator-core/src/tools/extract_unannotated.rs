@@ -40,18 +40,28 @@ fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractUnannotatedOptions) -> Ve
             continue;
         }
         if let Some(dbs) = &opts.databases {
-            if !feature.get_first("database").map(|d| dbs.contains(d)).unwrap_or(false) {
+            if !feature
+                .get_first("database")
+                .map(|d| dbs.contains(d))
+                .unwrap_or(false)
+            {
                 continue;
             }
         }
         let mut keep = true;
         if let Some(e) = opts.evalue {
-            let ev: f64 = feature.get_first("evalue").and_then(|v| v.parse().ok()).unwrap_or(f64::INFINITY);
+            let ev: f64 = feature
+                .get_first("evalue")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(f64::INFINITY);
             if ev > e {
                 keep = false;
             }
         } else if let Some(s) = opts.score {
-            let sc: f64 = feature.get_first("score").and_then(|v| v.parse().ok()).unwrap_or(f64::NEG_INFINITY);
+            let sc: f64 = feature
+                .get_first("score")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(f64::NEG_INFINITY);
             if sc < s {
                 keep = false;
             }
@@ -140,8 +150,10 @@ pub fn extract_unannotated(
         };
 
         // Filter by size.
-        let mut regions: Vec<(i64, i64, i32)> =
-            regions.into_iter().filter(|&(s, e, _)| (e - s) >= opts.lb.unwrap_or(0)).collect();
+        let mut regions: Vec<(i64, i64, i32)> = regions
+            .into_iter()
+            .filter(|&(s, e, _)| (e - s) >= opts.lb.unwrap_or(0))
+            .collect();
         if regions.is_empty() {
             continue;
         }
@@ -155,7 +167,12 @@ pub fn extract_unannotated(
             let mut slice = slice_from_location(rec, &loc, &rec.features, false);
             let mut new_name = rec.id.clone();
             if slice.seq.len() as i64 != rec_len {
-                new_name = format!("{}_{}:{}", rec.id, loc.stranded_start_hr(), loc.stranded_end_hr());
+                new_name = format!(
+                    "{}_{}:{}",
+                    rec.id,
+                    loc.stranded_start_hr(),
+                    loc.stranded_end_hr()
+                );
             }
             // Protein: never reverse-complement (molecule_type == protein).
             let protein = rec.molecule_type.as_deref() == Some("protein");
@@ -237,7 +254,10 @@ mod tests {
         let r = prot(b"ACDEFGHIKLMNPQRSTVWY", vec![dom("A", 5, 10)]);
         let out = extract_unannotated(
             &[r],
-            &ExtractUnannotatedOptions { largest: true, ..Default::default() },
+            &ExtractUnannotatedOptions {
+                largest: true,
+                ..Default::default()
+            },
         )
         .unwrap();
         assert_eq!(out.len(), 1);
@@ -249,7 +269,10 @@ mod tests {
         let r = prot(b"ACDEFGHIKLMNPQRSTVWY", vec![dom("A", 5, 10)]);
         let out = extract_unannotated(
             &[r],
-            &ExtractUnannotatedOptions { lb: Some(6), ..Default::default() },
+            &ExtractUnannotatedOptions {
+                lb: Some(6),
+                ..Default::default()
+            },
         )
         .unwrap();
         // only [10,20) (len 10) passes; [0,5) (len 5) filtered

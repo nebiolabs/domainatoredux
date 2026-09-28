@@ -10,8 +10,16 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Literals behind macros so `LONG_VERSION` can be assembled with `concat!` and
 // handed to clap, which wants a `&'static str`.
-macro_rules! upstream_version { () => { "0.11.0" } }
-macro_rules! upstream_commit { () => { "9c70934" } }
+macro_rules! upstream_version {
+    () => {
+        "0.11.0"
+    };
+}
+macro_rules! upstream_commit {
+    () => {
+        "9c70934"
+    };
+}
 
 /// Upstream's `__version__` at the pin — what the Python suite would call itself
 /// if it had produced the same output. Also the value of a `.dsnv` bundle's

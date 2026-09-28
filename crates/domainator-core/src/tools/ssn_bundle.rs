@@ -83,7 +83,11 @@ pub fn load_bundle(path: &Path) -> io::Result<Value> {
 /// Split out from [`load_bundle`] so the version/format contract can be tested without
 /// touching the filesystem, keeping these tests fixture-free like the rest of the suite.
 pub fn parse_bundle(raw: &[u8], display: &str) -> io::Result<Value> {
-    let bytes = if raw.starts_with(&[0x1f, 0x8b]) { gunzip(raw)? } else { raw.to_vec() };
+    let bytes = if raw.starts_with(&[0x1f, 0x8b]) {
+        gunzip(raw)?
+    } else {
+        raw.to_vec()
+    };
     let bundle: Value =
         serde_json::from_slice(&bytes).map_err(|e| invalid(format!("invalid JSON: {e}")))?;
 
@@ -99,12 +103,16 @@ pub fn parse_bundle(raw: &[u8], display: &str) -> io::Result<Value> {
     match version {
         Some(v) if SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS.contains(&v) => {}
         _ => {
-            let supported: Vec<String> =
-                SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS.iter().map(|v| v.to_string()).collect();
+            let supported: Vec<String> = SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS
+                .iter()
+                .map(|v| v.to_string())
+                .collect();
             return Err(invalid(format!(
                 "Unsupported Domainator Similarity Network Viewer bundle version {}; \
                  this build understands version(s) {}.",
-                version.map(|v| v.to_string()).unwrap_or_else(|| "None".into()),
+                version
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "None".into()),
                 supported.join(", ")
             )));
         }
@@ -157,7 +165,9 @@ pub fn merge_event_rows(bundle: &Value, merge_impact_metric: Option<&str>) -> Ve
         .get("graph")
         .and_then(|g| g.get("merge_impact_metric"))
         .and_then(Value::as_str);
-    let metric = merge_impact_metric.or(recorded).unwrap_or(MERGE_IMPACT_MIN_CHILD);
+    let metric = merge_impact_metric
+        .or(recorded)
+        .unwrap_or(MERGE_IMPACT_MIN_CHILD);
     let summary = component_size_summary_by_threshold(&bundle_tree(bundle), metric);
     threshold_merge_event_rows(&summary)
 }
@@ -211,7 +221,10 @@ pub fn slider_stops(
 
 fn hier_nodes(hierarchy: &Value) -> &Vec<Value> {
     static EMPTY: Vec<Value> = Vec::new();
-    hierarchy.get("nodes").and_then(Value::as_array).unwrap_or(&EMPTY)
+    hierarchy
+        .get("nodes")
+        .and_then(Value::as_array)
+        .unwrap_or(&EMPTY)
 }
 
 fn f(node: &Value, key: &str) -> f64 {
@@ -236,8 +249,14 @@ pub fn coarsest_threshold(hierarchy: &Value) -> f64 {
     if merge_thresholds.is_empty() {
         return 0.0;
     }
-    let lo = merge_thresholds.iter().cloned().fold(f64::INFINITY, f64::min);
-    let hi = merge_thresholds.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let lo = merge_thresholds
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let hi = merge_thresholds
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
     floor_threshold_value(lo, hi)
 }
 
@@ -258,11 +277,18 @@ pub fn clusters_at_threshold(hierarchy: &Value, threshold: Option<f64>) -> Vec<u
     let roots: Vec<usize> = hierarchy
         .get("roots")
         .and_then(Value::as_array)
-        .map(|r| r.iter().filter_map(Value::as_u64).map(|v| v as usize).collect())
+        .map(|r| {
+            r.iter()
+                .filter_map(Value::as_u64)
+                .map(|v| v as usize)
+                .collect()
+        })
         .unwrap_or_default();
     let mut stack: Vec<usize> = roots.into_iter().rev().collect();
     while let Some(id) = stack.pop() {
-        let Some(component) = nodes.get(id) else { continue };
+        let Some(component) = nodes.get(id) else {
+            continue;
+        };
         if is_leaf(component) {
             active.push(id);
             continue;
@@ -280,7 +306,9 @@ pub fn clusters_at_threshold(hierarchy: &Value, threshold: Option<f64>) -> Vec<u
 /// Node indices belonging to `component_id` (a `leaf_order` slice).
 pub fn component_members(hierarchy: &Value, component_id: usize) -> Vec<usize> {
     let nodes = hier_nodes(hierarchy);
-    let Some(component) = nodes.get(component_id) else { return Vec::new() };
+    let Some(component) = nodes.get(component_id) else {
+        return Vec::new();
+    };
     let start = u(component, "leaf_start");
     let count = u(component, "leaf_count");
     hierarchy
@@ -299,7 +327,10 @@ pub fn component_members(hierarchy: &Value, component_id: usize) -> Vec<usize> {
 
 /// Size (leaf count) of a hierarchy component.
 pub fn component_size(hierarchy: &Value, component_id: usize) -> usize {
-    hier_nodes(hierarchy).get(component_id).map(|n| u(n, "size")).unwrap_or(0)
+    hier_nodes(hierarchy)
+        .get(component_id)
+        .map(|n| u(n, "size"))
+        .unwrap_or(0)
 }
 
 /// Map node id string -> position in `graph.nodes` (== metadata row index).
@@ -309,7 +340,11 @@ pub fn node_index_by_name(bundle: &Value) -> HashMap<&str, usize> {
         .and_then(|g| g.get("nodes"))
         .and_then(Value::as_array)
         .map(|names| {
-            names.iter().enumerate().filter_map(|(i, v)| v.as_str().map(|s| (s, i))).collect()
+            names
+                .iter()
+                .enumerate()
+                .filter_map(|(i, v)| v.as_str().map(|s| (s, i)))
+                .collect()
         })
         .unwrap_or_default()
 }
@@ -334,7 +369,10 @@ pub fn cluster_for_node(hierarchy: &Value, node_index: usize, threshold: f64) ->
     let mut current = node_index;
     nodes.get(current)?;
     loop {
-        let parent = match nodes.get(current).and_then(|n| n.get("parent")).and_then(Value::as_u64)
+        let parent = match nodes
+            .get(current)
+            .and_then(|n| n.get("parent"))
+            .and_then(Value::as_u64)
         {
             Some(p) => p as usize,
             None => return Some(current),
@@ -374,8 +412,14 @@ pub fn summarize_cluster_metadata(
     top_n: usize,
 ) -> Vec<Value> {
     let empty = Vec::new();
-    let columns = metadata.get("columns").and_then(Value::as_array).unwrap_or(&empty);
-    let rows = metadata.get("rows").and_then(Value::as_array).unwrap_or(&empty);
+    let columns = metadata
+        .get("columns")
+        .and_then(Value::as_array)
+        .unwrap_or(&empty);
+    let rows = metadata
+        .get("rows")
+        .and_then(Value::as_array)
+        .unwrap_or(&empty);
     let mut out = Vec::with_capacity(columns.len());
 
     for (col_idx, column) in columns.iter().enumerate() {
@@ -465,15 +509,26 @@ mod tests {
         // 7 is from the future.
         for v in [1, 2, 7] {
             let err = parse(&tiny(v)).unwrap_err().to_string();
-            assert!(err.contains("Unsupported"), "version {v} should be refused: {err}");
-            assert!(err.contains("3, 4, 5, 6"), "error should name the supported set: {err}");
+            assert!(
+                err.contains("Unsupported"),
+                "version {v} should be refused: {err}"
+            );
+            assert!(
+                err.contains("3, 4, 5, 6"),
+                "error should name the supported set: {err}"
+            );
         }
     }
 
     #[test]
     fn rejects_a_non_bundle() {
-        let err = parse(&json!({"format": "something_else", "version": 5})).unwrap_err().to_string();
-        assert!(err.contains("is not a Domainator Similarity Network Viewer bundle"), "{err}");
+        let err = parse(&json!({"format": "something_else", "version": 5}))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("is not a Domainator Similarity Network Viewer bundle"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -482,7 +537,10 @@ mod tests {
         let plain = serde_json::to_vec(&tiny(5)).unwrap();
         let gz = super::super::build_ssn_viewer::gzip(&plain);
         assert_eq!(&gz[..2], &[0x1f, 0x8b]);
-        assert_eq!(parse_bundle(&gz, "t").unwrap(), parse_bundle(&plain, "t").unwrap());
+        assert_eq!(
+            parse_bundle(&gz, "t").unwrap(),
+            parse_bundle(&plain, "t").unwrap()
+        );
     }
 
     /// A real bundle built the way `build-ssn-viewer` builds one, so the derivation
@@ -523,10 +581,17 @@ mod tests {
     fn a_v6_bundle_carries_only_what_cannot_be_derived() {
         let bundle = bundle_from_matrix(&six_node_matrix());
         assert_eq!(bundle["version"], json!(6));
-        let mut keys: Vec<&str> =
-            bundle["graph"].as_object().unwrap().keys().map(String::as_str).collect();
+        let mut keys: Vec<&str> = bundle["graph"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
         keys.sort_unstable();
-        assert_eq!(keys, vec!["hierarchy", "merge_impact_metric", "mst_edges", "nodes"]);
+        assert_eq!(
+            keys,
+            vec!["hierarchy", "merge_impact_metric", "mst_edges", "nodes"]
+        );
     }
 
     #[test]
@@ -545,7 +610,9 @@ mod tests {
 
         let rows = merge_event_rows(&bundle, None);
         let shape = |v: &[MergeEvent]| -> Vec<(i64, f64, f64)> {
-            v.iter().map(|e| (e.edge_index, e.threshold_value, e.merge_impact)).collect()
+            v.iter()
+                .map(|e| (e.edge_index, e.threshold_value, e.merge_impact))
+                .collect()
         };
         assert_eq!(shape(&rows), shape(&expected));
         assert_eq!(
@@ -566,7 +633,10 @@ mod tests {
         assert_eq!(stops[0].threshold_value, None, "the ∞ stop leads");
         // The 2.0 edge closes a cycle, so the weakest MST edge is 4.0 and the floor
         // sits 1% of the MST weight range below it.
-        let weakest = tree.mst_edges().map(|(_, _, w)| w).fold(f64::INFINITY, f64::min);
+        let weakest = tree
+            .mst_edges()
+            .map(|(_, _, w)| w)
+            .fold(f64::INFINITY, f64::min);
         assert_eq!(weakest, 4.0);
         assert!(
             stops.last().unwrap().threshold_value.unwrap() < weakest,
@@ -605,7 +675,11 @@ mod tests {
         let bundle = bundle_from_matrix(&six_node_matrix());
         let default = merge_event_rows(&bundle, None);
         let product = merge_event_rows(&bundle, Some(MERGE_IMPACT_PRODUCT));
-        assert_eq!(default.len(), product.len(), "same events, different weighting");
+        assert_eq!(
+            default.len(),
+            product.len(),
+            "same events, different weighting"
+        );
         assert_ne!(
             default.iter().map(|e| e.merge_impact).collect::<Vec<_>>(),
             product.iter().map(|e| e.merge_impact).collect::<Vec<_>>()
@@ -621,10 +695,8 @@ mod tests {
         let hierarchy = &bundle["graph"]["hierarchy"];
         let cuts: Vec<f64> = vec![f64::INFINITY, 10.0, 9.0, 8.0, 5.0, 4.0, 2.0, 1.9, -1.0];
         for cut in cuts {
-            let active = clusters_at_threshold(
-                hierarchy,
-                if cut.is_infinite() { None } else { Some(cut) },
-            );
+            let active =
+                clusters_at_threshold(hierarchy, if cut.is_infinite() { None } else { Some(cut) });
             for node_index in 0..6 {
                 let walked = cluster_for_node(hierarchy, node_index, cut)
                     .unwrap_or_else(|| panic!("no cluster for node {node_index} at {cut}"));

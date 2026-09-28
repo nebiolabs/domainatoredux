@@ -27,7 +27,10 @@ pub fn scan_fasta_ids(path: &str) -> io::Result<Vec<(String, String)>> {
             break;
         }
         if raw.first() == Some(&b'>') {
-            let end = raw.iter().rposition(|&b| b != b'\n' && b != b'\r').map_or(0, |i| i + 1);
+            let end = raw
+                .iter()
+                .rposition(|&b| b != b'\n' && b != b'\r')
+                .map_or(0, |i| i + 1);
             let title = String::from_utf8_lossy(&raw[1..end]);
             let id = title.split_whitespace().next().unwrap_or("").to_string();
             out.push((id.clone(), id));
@@ -54,7 +57,10 @@ pub fn read_fasta_partition(
 /// the file's magic bytes rather than its name (see
 /// [`super::open_decompressed`]). For whole-file reads such as reference
 /// databases, where nothing seeks, so plain gzip is as good as BGZF.
-pub fn read_fasta_decompressed(path: &str, molecule_type: Option<&str>) -> io::Result<Vec<SeqRecord>> {
+pub fn read_fasta_decompressed(
+    path: &str,
+    molecule_type: Option<&str>,
+) -> io::Result<Vec<SeqRecord>> {
     let reader = BufReader::new(super::open_decompressed(std::path::Path::new(path))?);
     parse_fasta(reader, u64::MAX, molecule_type)
 }
@@ -71,23 +77,24 @@ fn parse_fasta<R: BufRead>(
     let mut seq: Vec<u8> = Vec::new();
     let mut line: Vec<u8> = Vec::new();
 
-    let flush = |out: &mut Vec<SeqRecord>, title: &mut Option<String>, seq: &mut Vec<u8>, mol: &str| {
-        if let Some(t) = title.take() {
-            let id = t.split_whitespace().next().unwrap_or("").to_string();
-            out.push(SeqRecord {
-                id,
-                name: t.split_whitespace().next().unwrap_or("").to_string(),
-                description: t,
-                seq: std::mem::take(seq),
-                molecule_type: Some(mol.to_string()),
-                topology: Topology::Linear,
-                annotations: Annotations::default(),
-                features: Vec::new(),
-            });
-        } else {
-            seq.clear();
-        }
-    };
+    let flush =
+        |out: &mut Vec<SeqRecord>, title: &mut Option<String>, seq: &mut Vec<u8>, mol: &str| {
+            if let Some(t) = title.take() {
+                let id = t.split_whitespace().next().unwrap_or("").to_string();
+                out.push(SeqRecord {
+                    id,
+                    name: t.split_whitespace().next().unwrap_or("").to_string(),
+                    description: t,
+                    seq: std::mem::take(seq),
+                    molecule_type: Some(mol.to_string()),
+                    topology: Topology::Linear,
+                    annotations: Annotations::default(),
+                    features: Vec::new(),
+                });
+            } else {
+                seq.clear();
+            }
+        };
 
     loop {
         line.clear();
@@ -101,7 +108,10 @@ fn parse_fasta<R: BufRead>(
                 return Ok(out); // partition limit reached; don't start the next record
             }
             let raw = &line[1..];
-            let end = raw.iter().rposition(|&b| b != b'\n' && b != b'\r').map_or(0, |i| i + 1);
+            let end = raw
+                .iter()
+                .rposition(|&b| b != b'\n' && b != b'\r')
+                .map_or(0, |i| i + 1);
             title = Some(String::from_utf8_lossy(&raw[..end]).into_owned());
         } else if title.is_some() {
             for &b in &line {

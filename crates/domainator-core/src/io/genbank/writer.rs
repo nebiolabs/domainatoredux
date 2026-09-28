@@ -80,7 +80,11 @@ fn write_wrapped<W: Write>(w: &mut W, tag: &str, value: &str) -> io::Result<()> 
     let mut first = true;
     let mut remaining = value;
     loop {
-        let prefix = if first { format!("{:<12}", tag) } else { HEADER_INDENT.to_string() };
+        let prefix = if first {
+            format!("{:<12}", tag)
+        } else {
+            HEADER_INDENT.to_string()
+        };
         if remaining.len() <= width {
             writeln!(w, "{prefix}{remaining}")?;
             break;
@@ -194,11 +198,11 @@ fn write_comment<W: Write>(w: &mut W, ann: &crate::seq::Annotations) -> io::Resu
 /// 80 characters and the last one is shorter.
 fn write_qualifier<W: Write>(w: &mut W, key: &str, value: &str, has_value: bool) -> io::Result<()> {
     const INDENT: &str = "                     "; // 21 spaces
-    // Upstream leaves a qualifier unquoted only for this fixed list (its
-    // `FTQUAL_NO_QUOTE`) or for a value that is a Python `int`. Our qualifier
-    // values are always strings, so the list is the whole rule -- guessing from
-    // the value instead strips the quotes off `/gc="49"`, `/length="105"` and
-    // every other numeric-looking annotation these tools write.
+                                                  // Upstream leaves a qualifier unquoted only for this fixed list (its
+                                                  // `FTQUAL_NO_QUOTE`) or for a value that is a Python `int`. Our qualifier
+                                                  // values are always strings, so the list is the whole rule -- guessing from
+                                                  // the value instead strips the quotes off `/gc="49"`, `/length="105"` and
+                                                  // every other numeric-looking annotation these tools write.
     const FTQUAL_NO_QUOTE: [&str; 13] = [
         "anticodon",
         "citation",
@@ -248,7 +252,12 @@ fn write_qualifier<W: Write>(w: &mut W, key: &str, value: &str, has_value: bool)
 }
 
 fn write_feature<W: Write>(w: &mut W, feature: &SeqFeature) -> io::Result<()> {
-    writeln!(w, "     {:<15} {}", feature.kind, fmt_location(&feature.location))?;
+    writeln!(
+        w,
+        "     {:<15} {}",
+        feature.kind,
+        fmt_location(&feature.location)
+    )?;
     for (key, values) in &feature.qualifiers {
         if values.is_empty() {
             write_qualifier(w, key, "", false)?;
@@ -301,8 +310,12 @@ fn regenerate_domain_rollups(features: &mut [SeqFeature]) {
             continue;
         }
         let (cds_id, db, name, eval, score, desc) = match (
-            f.get_first("cds_id"), f.get_first("database"), f.get_first("name"),
-            f.get_first("evalue"), f.get_first("score"), f.get_first("description"),
+            f.get_first("cds_id"),
+            f.get_first("database"),
+            f.get_first("name"),
+            f.get_first("evalue"),
+            f.get_first("score"),
+            f.get_first("description"),
         ) {
             (Some(c), Some(db), Some(n), Some(e), Some(s), Some(d)) => (c, db, n, e, s, d),
             _ => continue,
@@ -328,7 +341,8 @@ fn regenerate_domain_rollups(features: &mut [SeqFeature]) {
                 }
             }
         }
-        f.qualifiers.retain(|(k, _)| !k.starts_with("domainator_") || seen.contains(k));
+        f.qualifiers
+            .retain(|(k, _)| !k.starts_with("domainator_") || seen.contains(k));
     }
 }
 
@@ -342,7 +356,11 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
     } else if !rec.name.is_empty() {
         rec.name.clone()
     } else {
-        rec.annotations.accessions.first().cloned().unwrap_or_default()
+        rec.annotations
+            .accessions
+            .first()
+            .cloned()
+            .unwrap_or_default()
     };
     let mol_type = match rec.molecule_type.as_deref() {
         Some("protein") | Some("PROTEIN") => "",
@@ -356,12 +374,13 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
     let units = if mol_type.is_empty() { "aa" } else { "bp" };
     let len_str = rec.len().to_string();
     // Match Biopython: long names steal from the length field but keep a space.
-    let name_length = if locus.len() > 16 && len_str.len() > 11usize.saturating_sub(locus.len() - 16) {
-        format!("{locus} {len_str}")
-    } else {
-        let padded = format!("{:>28}", len_str);
-        format!("{}{}", locus, &padded[locus.len().min(padded.len())..])
-    };
+    let name_length =
+        if locus.len() > 16 && len_str.len() > 11usize.saturating_sub(locus.len() - 16) {
+            format!("{locus} {len_str}")
+        } else {
+            let padded = format!("{:>28}", len_str);
+            format!("{}{}", locus, &padded[locus.len().min(padded.len())..])
+        };
     // Protein (genpept) LOCUS lines carry no topology field; emitting one breaks
     // Biopython's column parser so it never sets molecule_type='protein'.
     // Biopython writes `annotations["topology"]` and leaves the column blank when
@@ -401,19 +420,30 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
         name_length, units, mol_type, topology, division, date,
     )?;
     // Biopython writes DEFINITION with a trailing '.' (or just '.' when empty).
-    let definition =
-        if rec.description.is_empty() { ".".to_string() } else { format!("{}.", rec.description) };
+    let definition = if rec.description.is_empty() {
+        ".".to_string()
+    } else {
+        format!("{}.", rec.description)
+    };
     write_wrapped(w, "DEFINITION", &definition)?;
     let ann = &rec.annotations;
     // ACCESSION / VERSION: derive a default accession from the retained version
     // token (stripping a trailing `.<version>`), prefer the
     // `accessions` annotation, and always emit both lines.
-    let version = if rec.name.is_empty() { &rec.id } else { &rec.name };
+    let version = if rec.name.is_empty() {
+        &rec.id
+    } else {
+        &rec.name
+    };
     let default_acc = match version.split_once('.') {
         Some((base, ver)) if !ver.is_empty() && ver.chars().all(|c| c.is_ascii_digit()) => base,
         _ => version.as_str(),
     };
-    let accession = ann.accessions.first().map(String::as_str).unwrap_or(default_acc);
+    let accession = ann
+        .accessions
+        .first()
+        .map(String::as_str)
+        .unwrap_or(default_acc);
     let acc_with_version = if let Some(rest) = version.strip_prefix(&format!("{accession}.")) {
         match rest.parse::<i64>() {
             Ok(v) => format!("{accession}.{v}"),
@@ -444,7 +474,11 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
     write_wrapped(w, "SOURCE", ann.source.as_deref().unwrap_or("."))?;
     let org = ann.organism.as_deref().unwrap_or(".");
     // ORGANISM must be a single line (continuations are taxonomy); truncate like Biopython.
-    let org_trunc = if org.len() > 67 { format!("{}...", &org[..63]) } else { org.to_string() };
+    let org_trunc = if org.len() > 67 {
+        format!("{}...", &org[..63])
+    } else {
+        org.to_string()
+    };
     writeln!(w, "{:<12}{}", "  ORGANISM", org_trunc)?;
     let taxonomy = if ann.taxonomy.is_empty() {
         ".".to_string()
@@ -499,7 +533,11 @@ mod tests {
         let long = "2-oxoacid dehydrogenases acyltransferase (catalytic domain)";
         let out = qualifier("description", long);
         assert_eq!(out.lines().count(), 1);
-        assert!(out.len() > 80, "the line is {} chars, so it really is past the old cut", out.len());
+        assert!(
+            out.len() > 80,
+            "the line is {} chars, so it really is past the old cut",
+            out.len()
+        );
         assert!(out.ends_with(&format!("{long}\"\n")));
     }
 
@@ -514,17 +552,29 @@ mod tests {
         }
         assert!(lines.last().unwrap().len() <= 80);
         for line in &lines[1..] {
-            assert!(line.starts_with("                     "), "continuation indent");
+            assert!(
+                line.starts_with("                     "),
+                "continuation indent"
+            );
         }
         // Nothing is lost or duplicated on the way through.
-        let rejoined: String = lines.iter().map(|l| l.trim_start()).collect::<Vec<_>>().join("");
+        let rejoined: String = lines
+            .iter()
+            .map(|l| l.trim_start())
+            .collect::<Vec<_>>()
+            .join("");
         assert_eq!(rejoined, format!("/translation=\"{peptide}\""));
     }
 
     fn locus_line(rec: &SeqRecord) -> String {
         let mut out = Vec::new();
         write_record(&mut out, rec).unwrap();
-        String::from_utf8(out).unwrap().lines().next().unwrap().to_string()
+        String::from_utf8(out)
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap()
+            .to_string()
     }
 
     /// Biopython writes `annotations["topology"]` and leaves the column blank when
@@ -532,15 +582,27 @@ mod tests {
     #[test]
     fn locus_topology_is_blank_unless_it_was_declared() {
         let mut r = rec(vec![], "d");
-        assert!(locus_line(&r).contains("DNA              "), "{}", locus_line(&r));
+        assert!(
+            locus_line(&r).contains("DNA              "),
+            "{}",
+            locus_line(&r)
+        );
 
         r.annotations.topology = Some(Topology::Linear);
-        assert!(locus_line(&r).contains("DNA     linear   "), "{}", locus_line(&r));
+        assert!(
+            locus_line(&r).contains("DNA     linear   "),
+            "{}",
+            locus_line(&r)
+        );
 
         // A tool that made the record circular still says so, annotation or not.
         let mut r = rec(vec![], "d");
         r.topology = Topology::Circular;
-        assert!(locus_line(&r).contains("DNA     circular "), "{}", locus_line(&r));
+        assert!(
+            locus_line(&r).contains("DNA     circular "),
+            "{}",
+            locus_line(&r)
+        );
     }
 
     #[test]
@@ -549,8 +611,14 @@ mod tests {
         // goes unquoted. Guessing from the value drops the quotes off every
         // numeric annotation these tools write.
         assert_eq!(qualifier("gc", "49"), "                     /gc=\"49\"\n");
-        assert_eq!(qualifier("length", "105"), "                     /length=\"105\"\n");
-        assert_eq!(qualifier("phase", "0"), "                     /phase=\"0\"\n");
+        assert_eq!(
+            qualifier("length", "105"),
+            "                     /length=\"105\"\n"
+        );
+        assert_eq!(
+            qualifier("phase", "0"),
+            "                     /phase=\"0\"\n"
+        );
         assert_eq!(
             qualifier("codon_start", "1"),
             "                     /codon_start=1\n"
@@ -596,8 +664,12 @@ mod tests {
         let mut cds = SeqFeature::new("CDS", Location::range(100, 400, 1));
         cds.set("cds_id", "C1");
         cds.set("domainator_OLD", "stale"); // a db with no surviving domains
-        // Domains added out of start order (B at 250 before A at 150).
-        let mut feats = vec![cds, dom("Bdom", 250, 300, "DB"), dom("Adom", 150, 200, "DB")];
+                                            // Domains added out of start order (B at 250 before A at 150).
+        let mut feats = vec![
+            cds,
+            dom("Bdom", 250, 300, "DB"),
+            dom("Adom", 150, 200, "DB"),
+        ];
         regenerate_domain_rollups(&mut feats);
         let cds = feats.iter().find(|f| f.kind == "CDS").unwrap();
         // Rollup follows feature order (B then A), grouped by database.
@@ -616,7 +688,14 @@ mod tests {
             c.set("cds_id", "C1");
             c
         };
-        let r = rec(vec![cds, dom("Bdom", 250, 300, "DB"), dom("Adom", 150, 200, "DB")], "My definition");
+        let r = rec(
+            vec![
+                cds,
+                dom("Bdom", 250, 300, "DB"),
+                dom("Adom", 150, 200, "DB"),
+            ],
+            "My definition",
+        );
         let mut buf = Vec::new();
         write_record(&mut buf, &r).unwrap();
         let text = String::from_utf8(buf).unwrap();
@@ -633,7 +712,10 @@ mod tests {
         let mut buf = Vec::new();
         write_record(&mut buf, &r).unwrap();
         let text = String::from_utf8(buf).unwrap();
-        assert!(text.lines().any(|l| l.trim_end() == "DEFINITION  ."), "{text}");
+        assert!(
+            text.lines().any(|l| l.trim_end() == "DEFINITION  ."),
+            "{text}"
+        );
     }
 
     #[test]
@@ -642,7 +724,10 @@ mod tests {
         let mut cds = SeqFeature::new("CDS", Location::range(100, 400, 1));
         cds.set("cds_id", "C1");
         cds.set("gene_id", "geneA");
-        let mut original = rec(vec![cds, dom("Adom", 150, 200, "DB")], "A sample definition");
+        let mut original = rec(
+            vec![cds, dom("Adom", 150, 200, "DB")],
+            "A sample definition",
+        );
         original.id = "locus_101:700".into();
         original.name = "ACC001.2".into();
         original.annotations.accessions = vec!["ACC001".into()];

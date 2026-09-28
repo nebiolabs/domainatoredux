@@ -46,7 +46,13 @@ pub fn load_hmm_dbs(files: &[String]) -> std::io::Result<Vec<HmmDb>> {
         let hmms = crate::search::hmm_read::read_hmm_file(Path::new(f))
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
         let name = file_stem(f);
-        out.push(HmmDb { name, hmms, program: "hmmsearch".to_string(), phmmer_bg_filter: false, rlen: Vec::new() });
+        out.push(HmmDb {
+            name,
+            hmms,
+            program: "hmmsearch".to_string(),
+            phmmer_bg_filter: false,
+            rlen: Vec::new(),
+        });
     }
     Ok(out)
 }
@@ -66,15 +72,25 @@ pub fn load_phmmer_db(file: &str) -> std::io::Result<HmmDb> {
         // (including a trailing `*` stop, mapped to a residue), drop only
         // whitespace. This is why M includes the stop (Python's rlen = 102, not
         // 101, for a 101-aa + `*` sequence).
-        let residues: Vec<u8> =
-            rec.seq.iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
+        let residues: Vec<u8> = rec
+            .seq
+            .iter()
+            .copied()
+            .filter(|b| !b.is_ascii_whitespace())
+            .collect();
         let dsq = abc.digitize(&residues);
         let ref_len = dsq.len().saturating_sub(2); // strip the two sentinels
         if ref_len == 0 {
             continue;
         }
         let mut hmm = hmmer_pure_rs::seqmodel::build_single_seq_hmm(
-            &fasta_description(&rec.description).0, &dsq, ref_len, &abc, &bg, PHMMER_POPEN, PHMMER_PEXTEND,
+            &fasta_description(&rec.description).0,
+            &dsq,
+            ref_len,
+            &abc,
+            &bg,
+            PHMMER_POPEN,
+            PHMMER_PEXTEND,
         );
         // build_single_seq_hmm names the profile after the sequence id; carry the
         // FASTA id/description so the output `name`/`description` match Python.
@@ -84,7 +100,13 @@ pub fn load_phmmer_db(file: &str) -> std::io::Result<HmmDb> {
         rlen.push(ref_len as i64);
         hmms.push(hmm);
     }
-    Ok(HmmDb { name: file_stem(file), hmms, program: "phmmer".to_string(), phmmer_bg_filter: true, rlen })
+    Ok(HmmDb {
+        name: file_stem(file),
+        hmms,
+        program: "phmmer".to_string(),
+        phmmer_bg_filter: true,
+        rlen,
+    })
 }
 
 fn file_stem(f: &str) -> String {
@@ -99,7 +121,14 @@ pub fn fasta_description(title: &str) -> (String, Option<String>) {
     match title.split_once(char::is_whitespace) {
         Some((id, rest)) => {
             let rest = rest.trim();
-            (id.to_string(), if rest.is_empty() { None } else { Some(rest.to_string()) })
+            (
+                id.to_string(),
+                if rest.is_empty() {
+                    None
+                } else {
+                    Some(rest.to_string())
+                },
+            )
         }
         None => (title.to_string(), None),
     }
@@ -174,7 +203,11 @@ pub fn hmmsearch_db(
                     Some(ad) => {
                         let matches = ad.mline.chars().filter(|c| c.is_ascii_alphabetic()).count();
                         let aln_len = (ad.hmmto as i64 - (ad.hmmfrom as i64 - 1)).max(1);
-                        (ad.hmmfrom as i64, ad.hmmto as i64, 100.0 * matches as f64 / aln_len as f64)
+                        (
+                            ad.hmmfrom as i64,
+                            ad.hmmto as i64,
+                            100.0 * matches as f64 / aln_len as f64,
+                        )
                     }
                     None => (0, 0, 0.0),
                 };
@@ -218,11 +251,17 @@ mod tests {
     #[test]
     fn profile_parallelism_preserves_order_and_hits() {
         let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../../test/data/");
-        let db = load_hmm_dbs(&[format!("{fixture}FeSOD_pfam.hmm")]).unwrap().remove(0);
+        let db = load_hmm_dbs(&[format!("{fixture}FeSOD_pfam.hmm")])
+            .unwrap()
+            .remove(0);
         let records = crate::io::fasta::read_fasta_decompressed(
-            &format!("{fixture}FeSOD_20.fasta"), Some("protein"),
-        ).unwrap();
-        let peptides: Vec<_> = records.iter().take(4)
+            &format!("{fixture}FeSOD_20.fasta"),
+            Some("protein"),
+        )
+        .unwrap();
+        let peptides: Vec<_> = records
+            .iter()
+            .take(4)
             .map(|record| (record.id.clone(), record.seq.clone()))
             .collect();
         let serial = hmmsearch_db(&db, &peptides, 1000.0, 0.001, 0.0, false, false);
@@ -230,10 +269,18 @@ mod tests {
             hmmsearch_db(&db, &peptides, 1000.0, 0.001, 0.0, false, true)
         });
         let signature = |hits: Vec<NamedHit>| {
-            hits.into_iter().map(|hit| {
-                let feature = hit.result.to_feature("Domainator", "0");
-                (hit.target, feature, hit.result.score.to_bits(), hit.result.evalue.to_bits(), hit.result.identity.to_bits())
-            }).collect::<Vec<_>>()
+            hits.into_iter()
+                .map(|hit| {
+                    let feature = hit.result.to_feature("Domainator", "0");
+                    (
+                        hit.target,
+                        feature,
+                        hit.result.score.to_bits(),
+                        hit.result.evalue.to_bits(),
+                        hit.result.identity.to_bits(),
+                    )
+                })
+                .collect::<Vec<_>>()
         };
         assert!(!serial.is_empty());
         assert_eq!(signature(serial), signature(parallel));

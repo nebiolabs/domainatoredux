@@ -137,7 +137,11 @@ pub async fn list_reference_dbs(
             }
         })
         .collect();
-    Ok(ReferenceDbList { databases, free_bytes, dir: dir.to_string_lossy().into_owned() })
+    Ok(ReferenceDbList {
+        databases,
+        free_bytes,
+        dir: dir.to_string_lossy().into_owned(),
+    })
 }
 
 /// Fetch one database's current release from its publisher and remember it. This is
@@ -214,7 +218,12 @@ pub async fn download_reference_db(
     if outcome.is_err() && flag.load(Ordering::Relaxed) {
         let _ = app.emit(
             "refdb-progress",
-            RefDbProgress { id, phase: "canceled".into(), done_bytes: 0, total_bytes: 0 },
+            RefDbProgress {
+                id,
+                phase: "canceled".into(),
+                done_bytes: 0,
+                total_bytes: 0,
+            },
         );
         return Err("canceled".into());
     }
@@ -263,12 +272,11 @@ pub async fn remove_reference_db(app: AppHandle, id: String) -> Result<(), Strin
 pub async fn sync_reference_dbs(app: AppHandle) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = crate::cmd_db::central_registry_path(&app)?;
-        let known: Vec<String> =
-            domainator_core::app_support::registry::load_registry_file(&path)
-                .databases
-                .into_iter()
-                .map(|d| d.path)
-                .collect();
+        let known: Vec<String> = domainator_core::app_support::registry::load_registry_file(&path)
+            .databases
+            .into_iter()
+            .map(|d| d.path)
+            .collect();
         let mut added = 0usize;
         for entry in reference_dbs::load_manifest(&app).databases {
             if known.contains(&entry.path) || !std::path::Path::new(&entry.path).is_file() {

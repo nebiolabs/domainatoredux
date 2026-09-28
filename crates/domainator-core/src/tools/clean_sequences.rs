@@ -42,7 +42,9 @@ fn is_canonical(b: u8, canonical: &[u8]) -> bool {
 /// Newick-incompatible characters replaced with `_` (` ;:,()'"`).
 fn clean_name_for_newick(name: &str) -> String {
     const BAD: &[char] = &[' ', ';', ':', ',', '(', ')', '\'', '"'];
-    name.chars().map(|c| if BAD.contains(&c) { '_' } else { c }).collect()
+    name.chars()
+        .map(|c| if BAD.contains(&c) { '_' } else { c })
+        .collect()
 }
 
 /// `[start, end)` bounds after trimming non-canonical residues (and `*`) from
@@ -100,10 +102,18 @@ fn slice_linear(rec: &SeqRecord, start: i64, end: i64) -> SeqRecord {
             continue;
         }
         parts.sort_by_key(|p| p.0);
-        let operator = if parts.len() > 1 { f.location.operator.or(Some(CompoundOp::Join)) } else { None };
+        let operator = if parts.len() > 1 {
+            f.location.operator.or(Some(CompoundOp::Join))
+        } else {
+            None
+        };
         features.push(SeqFeature {
             kind: f.kind.clone(),
-            location: Location { operator, between: false, parts },
+            location: Location {
+                operator,
+                between: false,
+                parts,
+            },
             qualifiers: f.qualifiers.clone(),
         });
     }
@@ -120,8 +130,11 @@ pub fn clean_sequences(
     opts: &CleanSequencesOptions,
     stats: &mut CleaningStats,
 ) -> Vec<SeqRecord> {
-    let canonical: &[u8] =
-        if opts.fasta_type == "protein" { CANONICAL_PROTEIN } else { CANONICAL_NUCLEOTIDE };
+    let canonical: &[u8] = if opts.fasta_type == "protein" {
+        CANONICAL_PROTEIN
+    } else {
+        CANONICAL_NUCLEOTIDE
+    };
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut out = Vec::new();
 
@@ -193,7 +206,11 @@ mod tests {
     #[test]
     fn strip_and_filter() {
         let recs = vec![rec("a", b"**ACDEFXX"), rec("b", b"XXXX")];
-        let opts = CleanSequencesOptions { fasta_type: "protein".into(), strip: true, ..Default::default() };
+        let opts = CleanSequencesOptions {
+            fasta_type: "protein".into(),
+            strip: true,
+            ..Default::default()
+        };
         let mut st = CleaningStats::default();
         let out = clean_sequences(recs, &opts, &mut st);
         // "a" strips to "ACDEF"; "b" is all non-canonical -> empty -> dropped.
@@ -205,8 +222,11 @@ mod tests {
     #[test]
     fn filter_by_aa_drops_noncanonical() {
         let recs = vec![rec("a", b"ACDEF"), rec("b", b"ACXEF")];
-        let opts =
-            CleanSequencesOptions { fasta_type: "protein".into(), filter_by_aa: true, ..Default::default() };
+        let opts = CleanSequencesOptions {
+            fasta_type: "protein".into(),
+            filter_by_aa: true,
+            ..Default::default()
+        };
         let mut st = CleaningStats::default();
         let out = clean_sequences(recs, &opts, &mut st);
         assert_eq!(out.len(), 1);
@@ -215,7 +235,11 @@ mod tests {
 
     #[test]
     fn clean_and_dedup_names() {
-        let recs = vec![rec("a b(c)", b"ACDEF"), rec("x", b"ACDEF"), rec("x", b"GGGGG")];
+        let recs = vec![
+            rec("a b(c)", b"ACDEF"),
+            rec("x", b"ACDEF"),
+            rec("x", b"GGGGG"),
+        ];
         let opts = CleanSequencesOptions {
             fasta_type: "protein".into(),
             clean_name: true,

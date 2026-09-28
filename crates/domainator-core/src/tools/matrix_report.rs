@@ -9,9 +9,8 @@ use serde_json::{json, Value};
 use crate::matrix::ssn::{
     component_size_summary_by_threshold, edge_scores_desc, filter_merge_event_rows,
     format_threshold_value, merge_event_moving_sum, threshold_merge_event_rows,
-    threshold_slider_stops, MaxTree, MovingSum, SliderStop, MOVING_SUM_GRID_POINTS,
-    MOVING_SUM_WINDOW_FRACTION,
-    MergeEvent, DEFAULT_MAX_MERGE_EVENTS, MERGE_IMPACT_MIN_CHILD,
+    threshold_slider_stops, MaxTree, MergeEvent, MovingSum, SliderStop, DEFAULT_MAX_MERGE_EVENTS,
+    MERGE_IMPACT_MIN_CHILD, MOVING_SUM_GRID_POINTS, MOVING_SUM_WINDOW_FRACTION,
 };
 use crate::matrix::DataMatrix;
 
@@ -55,7 +54,11 @@ pub fn matrix_report(
 ) -> MatrixReport {
     let scores = edge_scores_desc(matrix); // descending
     let n = scores.len();
-    let mean = if n > 0 { scores.iter().sum::<f64>() / n as f64 } else { 0.0 };
+    let mean = if n > 0 {
+        scores.iter().sum::<f64>() / n as f64
+    } else {
+        0.0
+    };
     let median = if n == 0 {
         0.0
     } else if n % 2 == 1 {
@@ -123,7 +126,9 @@ fn sample_indices(len: usize) -> Vec<usize> {
     // what makes these tables line-for-line identical rather than merely similar.
     let idx = [0usize, 1, 2, len / 2];
     let mut seen = std::collections::HashSet::new();
-    idx.into_iter().filter(|&i| i < len && seen.insert(i)).collect()
+    idx.into_iter()
+        .filter(|&i| i < len && seen.insert(i))
+        .collect()
 }
 
 /// A very small ASCII histogram (bashplotlib is not replicated exactly).
@@ -198,7 +203,10 @@ pub fn render_text(r: &MatrixReport) -> String {
         b.merge_impact
             .total_cmp(&a.merge_impact)
             .then(b.delta_largest.total_cmp(&a.delta_largest))
-            .then(b.delta_avg_non_singleton.total_cmp(&a.delta_avg_non_singleton))
+            .then(
+                b.delta_avg_non_singleton
+                    .total_cmp(&a.delta_avg_non_singleton),
+            )
     });
     ranked.truncate(25);
     ranked.sort_by(|a, b| b.threshold_from_value.total_cmp(&a.threshold_from_value));
@@ -209,7 +217,9 @@ pub fn render_text(r: &MatrixReport) -> String {
         for e in ranked {
             s.push_str(&format!(
                 "  {:>8}  {:>8}  {:>8}\n",
-                e.threshold_from, e.threshold_to, e.merge_impact.round() as i64
+                e.threshold_from,
+                e.threshold_to,
+                e.merge_impact.round() as i64
             ));
         }
     }

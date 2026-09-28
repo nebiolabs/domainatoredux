@@ -8,8 +8,8 @@
 use std::io::Write;
 use std::path::Path;
 
-use crate::search::hmm_write::write_hmm;
 use crate::search::hmm_read::read_hmm_file;
+use crate::search::hmm_write::write_hmm;
 use hmmer_pure_rs::{Alphabet, Bg, Hmm};
 use rayon::prelude::*;
 
@@ -86,8 +86,11 @@ pub fn hmmer_search<W: Write>(
             .collect()
     });
 
-    let mut kept: Vec<(usize, f64)> =
-        best.iter().enumerate().filter_map(|(i, b)| b.map(|s| (i, s))).collect();
+    let mut kept: Vec<(usize, f64)> = best
+        .iter()
+        .enumerate()
+        .filter_map(|(i, b)| b.map(|s| (i, s)))
+        .collect();
     if let Some(n) = opts.max_hits {
         // Rank by best score descending; ties keep input order.
         kept.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));

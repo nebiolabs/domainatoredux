@@ -11,10 +11,10 @@
 //! the tools depend on Biopython's in-memory id/name mapping.
 
 pub mod location;
-pub mod translate;
+pub mod protein_analysis;
 pub mod taxid;
 pub mod taxonomy;
-pub mod protein_analysis;
+pub mod translate;
 
 pub use location::{CompoundOp, Location};
 
@@ -99,7 +99,11 @@ pub struct SeqFeature {
 
 impl SeqFeature {
     pub fn new(kind: impl Into<String>, location: Location) -> Self {
-        SeqFeature { kind: kind.into(), location, qualifiers: Vec::new() }
+        SeqFeature {
+            kind: kind.into(),
+            location,
+            qualifiers: Vec::new(),
+        }
     }
 
     /// First value for `key`, if any.

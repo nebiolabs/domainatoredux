@@ -47,7 +47,10 @@ pub struct JobRecord {
 
 /// Milliseconds since the Unix epoch (monotonic enough for job ordering/ids).
 pub fn now_ms() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
 }
 
 /// A job id derived from the start time in millis (hex), e.g. `job_18f3a...`.
@@ -106,14 +109,22 @@ pub struct SourceTrace {
 
 fn file_mtime_ms(p: &Path) -> Option<u128> {
     let t = std::fs::metadata(p).ok()?.modified().ok()?;
-    Some(t.duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))
+    Some(
+        t.duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0),
+    )
 }
 
 fn source_status(path: &str, consumed_at_ms: u128) -> SourceFile {
     let p = Path::new(path);
     let present = p.exists();
     let modified_since = present && file_mtime_ms(p).is_some_and(|m| m > consumed_at_ms);
-    SourceFile { path: path.to_string(), present, modified_since }
+    SourceFile {
+        path: path.to_string(),
+        present,
+        modified_since,
+    }
 }
 
 /// Trace a network artifact back to the sequence files that supplied its node
@@ -134,11 +145,15 @@ pub fn trace_source_sequences(root: &Path, data_file: &Path) -> SourceTrace {
     let mut queue: Vec<std::path::PathBuf> = vec![data_file.to_path_buf()];
 
     while let Some(p) = queue.pop() {
-        let Some(job_id) = FileMeta::load(root, &p).created_by_job else { continue };
+        let Some(job_id) = FileMeta::load(root, &p).created_by_job else {
+            continue;
+        };
         if !seen_jobs.insert(job_id.clone()) {
             continue;
         }
-        let Some(job) = load_job(root, &job_id) else { continue };
+        let Some(job) = load_job(root, &job_id) else {
+            continue;
+        };
         found_job = true;
         for inp in &job.inputs {
             let role = inp.role.as_str();
@@ -152,7 +167,10 @@ pub fn trace_source_sequences(root: &Path, data_file: &Path) -> SourceTrace {
             // Anything else (references, tables) doesn't hold node sequences.
         }
     }
-    SourceTrace { has_provenance: found_job && !sources.is_empty(), sources }
+    SourceTrace {
+        has_provenance: found_job && !sources.is_empty(),
+        sources,
+    }
 }
 
 #[cfg(test)]
@@ -160,8 +178,8 @@ mod tests {
     use super::*;
 
     fn workspace(name: &str) -> std::path::PathBuf {
-        let root = std::env::temp_dir()
-            .join(format!("domainator-prov-{}-{name}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("domainator-prov-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         root
@@ -174,7 +192,10 @@ mod tests {
     }
 
     fn io(path: &str, role: &str) -> IoRef {
-        IoRef { path: path.to_string(), role: role.to_string() }
+        IoRef {
+            path: path.to_string(),
+            role: role.to_string(),
+        }
     }
 
     fn job(id: &str, inputs: Vec<IoRef>, outputs: Vec<IoRef>) -> JobRecord {
@@ -207,7 +228,11 @@ mod tests {
     fn a_job_round_trips_and_stamps_its_outputs() {
         let root = workspace("round-trip");
         let out = touch(&root, "m.hdf5");
-        let record = job("job_1", vec![io("in.gb", "sequence")], vec![io(&out, "matrix")]);
+        let record = job(
+            "job_1",
+            vec![io("in.gb", "sequence")],
+            vec![io(&out, "matrix")],
+        );
         write_job(&root, &record, "a distance matrix").unwrap();
 
         let loaded = load_job(&root, "job_1").expect("job should load");
@@ -230,7 +255,12 @@ mod tests {
         meta.description = "mine".into();
         meta.save(&root, Path::new(&out)).unwrap();
 
-        write_job(&root, &job("job_2", vec![], vec![io(&out, "matrix")]), "generated").unwrap();
+        write_job(
+            &root,
+            &job("job_2", vec![], vec![io(&out, "matrix")]),
+            "generated",
+        )
+        .unwrap();
         let meta = crate::app_support::workspace::FileMeta::load(&root, Path::new(&out));
         assert_eq!(meta.description, "mine");
         assert_eq!(meta.created_by_job.as_deref(), Some("job_2"));
@@ -246,11 +276,23 @@ mod tests {
         let matrix = touch(&root, "d.hdf5");
         let bundle = touch(&root, "n.dsnv");
 
-        write_job(&root, &job("job_a", vec![io(&seqs, "sequence")], vec![io(&matrix, "matrix")]), "")
-            .unwrap();
         write_job(
             &root,
-            &job("job_b", vec![io(&matrix, "matrix"), io("pfam.hmm", "reference")], vec![io(&bundle, "dsnv")]),
+            &job(
+                "job_a",
+                vec![io(&seqs, "sequence")],
+                vec![io(&matrix, "matrix")],
+            ),
+            "",
+        )
+        .unwrap();
+        write_job(
+            &root,
+            &job(
+                "job_b",
+                vec![io(&matrix, "matrix"), io("pfam.hmm", "reference")],
+                vec![io(&bundle, "dsnv")],
+            ),
             "",
         )
         .unwrap();
@@ -274,8 +316,16 @@ mod tests {
 
         // A job with no sequence input anywhere in its chain is also unusable,
         // even though a creating job was found.
-        write_job(&root, &job("job_c", vec![io("pfam.hmm", "reference")], vec![io(&bundle, "dsnv")]), "")
-            .unwrap();
+        write_job(
+            &root,
+            &job(
+                "job_c",
+                vec![io("pfam.hmm", "reference")],
+                vec![io(&bundle, "dsnv")],
+            ),
+            "",
+        )
+        .unwrap();
         assert!(!trace_source_sequences(&root, Path::new(&bundle)).has_provenance);
     }
 
@@ -287,13 +337,30 @@ mod tests {
         let a = touch(&root, "a.hdf5");
         let b = touch(&root, "b.hdf5");
         let seqs = touch(&root, "s.gb");
-        write_job(&root, &job("job_x", vec![io(&b, "matrix"), io(&seqs, "sequence")], vec![io(&a, "matrix")]), "")
-            .unwrap();
-        write_job(&root, &job("job_y", vec![io(&a, "matrix")], vec![io(&b, "matrix")]), "").unwrap();
+        write_job(
+            &root,
+            &job(
+                "job_x",
+                vec![io(&b, "matrix"), io(&seqs, "sequence")],
+                vec![io(&a, "matrix")],
+            ),
+            "",
+        )
+        .unwrap();
+        write_job(
+            &root,
+            &job("job_y", vec![io(&a, "matrix")], vec![io(&b, "matrix")]),
+            "",
+        )
+        .unwrap();
 
         let trace = trace_source_sequences(&root, Path::new(&a));
         assert!(trace.has_provenance);
-        assert_eq!(trace.sources.len(), 1, "the same source must not be listed twice");
+        assert_eq!(
+            trace.sources.len(),
+            1,
+            "the same source must not be listed twice"
+        );
     }
 
     /// `modified_since` is what warns that node labels may no longer match the
@@ -304,7 +371,11 @@ mod tests {
         let root = workspace("stale");
         let seqs = touch(&root, "s.gb");
         let matrix = touch(&root, "d.hdf5");
-        let mut stale = job("job_s", vec![io(&seqs, "sequence")], vec![io(&matrix, "matrix")]);
+        let mut stale = job(
+            "job_s",
+            vec![io(&seqs, "sequence")],
+            vec![io(&matrix, "matrix")],
+        );
         stale.finished_at_ms = 1; // long before the file was written
         write_job(&root, &stale, "").unwrap();
 

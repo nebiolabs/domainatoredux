@@ -24,13 +24,17 @@ fn embed_tool_specs() {
     paths.sort();
     let mut code = String::from("pub const TOOL_SPEC_FILES: &[(&str, &str)] = &[\n");
     for p in &paths {
-        let text = std::fs::read_to_string(p).unwrap_or_else(|e| panic!("reading {}: {e}", p.display()));
+        let text =
+            std::fs::read_to_string(p).unwrap_or_else(|e| panic!("reading {}: {e}", p.display()));
         if let Err(e) = serde_yaml::from_str::<tool_spec_types::ToolSpec>(&text) {
             panic!("{}: {e}", p.display());
         }
         let name = p.file_name().unwrap().to_string_lossy();
         let abs = p.canonicalize().unwrap();
-        code.push_str(&format!("    ({name:?}, include_str!({:?})),\n", abs.display().to_string()));
+        code.push_str(&format!(
+            "    ({name:?}, include_str!({:?})),\n",
+            abs.display().to_string()
+        ));
     }
     code.push_str("];\n");
     let out = Path::new(&std::env::var("OUT_DIR").unwrap()).join("tool_specs.rs");

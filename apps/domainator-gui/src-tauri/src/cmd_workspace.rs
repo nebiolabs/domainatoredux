@@ -3,8 +3,9 @@
 use std::path::Path;
 
 use domainator_core::app_support::workspace::{
-    accepted_types_hint, classify_file, is_in_dot_dir, is_reserved_name, list_files, move_data_file,
-    open_or_init_manifest, scan_folder_tree, FileEntry, FileMeta, FolderNode, Settings, DOT_DIR,
+    accepted_types_hint, classify_file, is_in_dot_dir, is_reserved_name, list_files,
+    move_data_file, open_or_init_manifest, scan_folder_tree, FileEntry, FileMeta, FolderNode,
+    Settings, DOT_DIR,
 };
 use serde::Serialize;
 
@@ -100,8 +101,7 @@ pub async fn import_files(
                 None => continue,
             };
             let dest = unique_dest(target, name);
-            std::fs::copy(sp, &dest)
-                .map_err(|e| format!("copying {}: {e}", sp.display()))?;
+            std::fs::copy(sp, &dest).map_err(|e| format!("copying {}: {e}", sp.display()))?;
             imported.push(dest.to_string_lossy().into_owned());
         }
         Ok(imported)
@@ -114,10 +114,7 @@ pub async fn import_files(
 /// folder tree. The tree is derived from the filesystem so files added out-of-band
 /// (e.g. by the CLI) always show up.
 #[tauri::command]
-pub async fn open_workspace(
-    app: tauri::AppHandle,
-    root: String,
-) -> Result<WorkspaceInfo, String> {
+pub async fn open_workspace(app: tauri::AppHandle, root: String) -> Result<WorkspaceInfo, String> {
     // Off the UI thread: scanning the tree classifies each file (reading first
     // records), which can be slow on a large workspace. A synchronous command
     // would freeze all IPC while it runs.
@@ -129,7 +126,11 @@ pub async fn open_workspace(
         let manifest =
             open_or_init_manifest(root_path).map_err(|e| format!("workspace manifest: {e}"))?;
         let tree = scan_folder_tree(root_path).map_err(|e| format!("scanning folders: {e}"))?;
-        Ok(WorkspaceInfo { root, tree, settings: manifest.settings })
+        Ok(WorkspaceInfo {
+            root,
+            tree,
+            settings: manifest.settings,
+        })
     })
     .await
     .map_err(|e| format!("opening workspace failed: {e}"))??;
@@ -144,7 +145,8 @@ pub async fn open_workspace(
 pub async fn list_folder(workspace_root: String, dir: String) -> Result<Vec<FileEntry>, String> {
     // Off the UI thread: classifies each file (may read first records).
     tauri::async_runtime::spawn_blocking(move || {
-        list_files(Path::new(&workspace_root), Path::new(&dir)).map_err(|e| format!("listing {dir}: {e}"))
+        list_files(Path::new(&workspace_root), Path::new(&dir))
+            .map_err(|e| format!("listing {dir}: {e}"))
     })
     .await
     .map_err(|e| format!("listing folder failed: {e}"))?
@@ -164,7 +166,12 @@ pub async fn rescan_tree(root: String) -> Result<FolderNode, String> {
 #[tauri::command]
 pub fn create_folder(parent: String, name: String) -> Result<String, String> {
     let clean = name.trim();
-    if clean.is_empty() || clean == "." || clean == ".." || clean.contains('/') || clean.contains('\\') {
+    if clean.is_empty()
+        || clean == "."
+        || clean == ".."
+        || clean.contains('/')
+        || clean.contains('\\')
+    {
         return Err("invalid folder name".into());
     }
     if is_reserved_name(clean) {
@@ -189,7 +196,12 @@ pub async fn rename_file(
     tauri::async_runtime::spawn_blocking(move || {
         let root = Path::new(&workspace_root);
         let clean = new_name.trim();
-        if clean.is_empty() || clean.contains('/') || clean.contains('\\') || clean == "." || clean == ".." {
+        if clean.is_empty()
+            || clean.contains('/')
+            || clean.contains('\\')
+            || clean == "."
+            || clean == ".."
+        {
             return Err("invalid file name".into());
         }
         if is_reserved_name(clean) {
@@ -260,7 +272,10 @@ pub async fn move_files(
     tauri::async_runtime::spawn_blocking(move || {
         let root = Path::new(&workspace_root);
         let dest = Path::new(&dest_dir);
-        let mut report = MoveReport { moved: Vec::new(), failed: Vec::new() };
+        let mut report = MoveReport {
+            moved: Vec::new(),
+            failed: Vec::new(),
+        };
         for p in paths {
             match move_data_file(root, Path::new(&p), dest) {
                 Ok(np) => report.moved.push((p, np.to_string_lossy().into_owned())),

@@ -44,7 +44,8 @@ mod tests {
     use serde_json::Value;
 
     fn schema_props(tool: &str) -> serde_json::Map<String, Value> {
-        let text = domainator_config::schema(tool).unwrap_or_else(|e| panic!("{tool}: no schema: {e}"));
+        let text =
+            domainator_config::schema(tool).unwrap_or_else(|e| panic!("{tool}: no schema: {e}"));
         let v: Value = serde_json::from_str(&text).unwrap();
         v["properties"].as_object().unwrap().clone()
     }
@@ -66,7 +67,10 @@ mod tests {
     fn prop_types(prop: &Value) -> Vec<String> {
         match &prop["type"] {
             Value::String(s) => vec![s.clone()],
-            Value::Array(a) => a.iter().filter_map(|t| t.as_str().map(str::to_string)).collect(),
+            Value::Array(a) => a
+                .iter()
+                .filter_map(|t| t.as_str().map(str::to_string))
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -88,13 +92,27 @@ mod tests {
     /// gives files, `taxonomy` (a registry format only: an NCBI taxdump), and the
     /// two groups `toolInputs.ts::typeMatches` expands.
     const FILE_TYPES: [&str; 13] = [
-        "genbank", "fasta", "hmm", "hdf5", "cm", "stockholm", "table", "text", "svg",
-        "ssn_viewer", "taxonomy", "sequence", "reference",
+        "genbank",
+        "fasta",
+        "hmm",
+        "hdf5",
+        "cm",
+        "stockholm",
+        "table",
+        "text",
+        "svg",
+        "ssn_viewer",
+        "taxonomy",
+        "sequence",
+        "reference",
     ];
 
     /// A `columns` property's `items.oneOf`: one entry per column type.
     fn column_variants(prop: &Value) -> Vec<Value> {
-        prop["items"]["oneOf"].as_array().cloned().unwrap_or_default()
+        prop["items"]["oneOf"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn variant_type(v: &Value) -> &str {
@@ -113,16 +131,23 @@ mod tests {
     /// Check one column object against its `oneOf` entry, the way the report's
     /// `deny_unknown_fields` column enum will read it; returns its type.
     fn check_column(at: &str, variants: &[Value], column: &Value) -> String {
-        let ty = column["type"].as_str().unwrap_or_else(|| panic!("{at}: a column needs a `type`"));
+        let ty = column["type"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{at}: a column needs a `type`"));
         let variant = variants
             .iter()
             .find(|v| variant_type(v) == ty)
             .unwrap_or_else(|| panic!("{at}: unknown column type {ty:?}"));
         let props = variant["properties"].as_object().unwrap();
         for (k, val) in column.as_object().unwrap() {
-            let prop = props.get(k).unwrap_or_else(|| panic!("{at}: {ty} columns take no {k:?}"));
+            let prop = props
+                .get(k)
+                .unwrap_or_else(|| panic!("{at}: {ty} columns take no {k:?}"));
             if k != "type" {
-                assert!(fits_prop(val, prop), "{at}: {ty}.{k} = {val} does not fit {prop}");
+                assert!(
+                    fits_prop(val, prop),
+                    "{at}: {ty}.{k} = {val} does not fit {prop}"
+                );
             }
         }
         for r in variant["required"].as_array().unwrap() {
@@ -142,11 +167,17 @@ mod tests {
             for f in &spec.fields {
                 let at = format!("{}.{}", spec.id, f.name);
                 if f.role != "columns" {
-                    assert!(f.column_types.is_empty(), "{at}: `column_types` only applies to the columns role");
+                    assert!(
+                        f.column_types.is_empty(),
+                        "{at}: `column_types` only applies to the columns role"
+                    );
                     continue;
                 }
                 let variants = column_variants(&props[&f.name]);
-                assert!(!variants.is_empty(), "{at}: the schema's columns.items has no oneOf to build from");
+                assert!(
+                    !variants.is_empty(),
+                    "{at}: the schema's columns.items has no oneOf to build from"
+                );
                 for (ty, over) in &f.column_types {
                     let variant = variants
                         .iter()
@@ -158,17 +189,29 @@ mod tests {
                             .filter(|_| param != "type")
                             .unwrap_or_else(|| panic!("{at}.{ty}: no parameter {param:?}"));
                         if let Some(d) = &p.default {
-                            assert!(fits_prop(d, prop), "{at}.{ty}.{param}: default {d} does not fit {prop}");
+                            assert!(
+                                fits_prop(d, prop),
+                                "{at}.{ty}.{param}: default {d} does not fit {prop}"
+                            );
                         }
                         // A choice is one entry of a list parameter, or a whole value otherwise.
-                        let one = if prop["type"] == "array" { &prop["items"] } else { prop };
+                        let one = if prop["type"] == "array" {
+                            &prop["items"]
+                        } else {
+                            prop
+                        };
                         for c in &p.choices {
-                            assert!(fits_prop(c, one), "{at}.{ty}.{param}: choice {c} does not fit {one}");
+                            assert!(
+                                fits_prop(c, one),
+                                "{at}.{ty}.{param}: choice {c} does not fit {one}"
+                            );
                         }
                     }
                 }
                 assert!(
-                    variants.iter().any(|v| f.column_types.get(variant_type(v)).is_none_or(|o| o.show)),
+                    variants
+                        .iter()
+                        .any(|v| f.column_types.get(variant_type(v)).is_none_or(|o| o.show)),
                     "{at}: column_types hides every column type"
                 );
             }
@@ -189,8 +232,18 @@ mod tests {
     fn one_spec_file_per_tool_named_after_it() {
         let mut ids = Vec::new();
         for ((file, _), spec) in TOOL_SPEC_FILES.iter().zip(specs()) {
-            assert_eq!(*file, format!("{}.yml", spec.id), "tools/{file} declares id {:?}", spec.id);
-            assert!(TOOL_CATEGORIES.contains(&spec.category.as_str()), "{}: unknown category {:?}", spec.id, spec.category);
+            assert_eq!(
+                *file,
+                format!("{}.yml", spec.id),
+                "tools/{file} declares id {:?}",
+                spec.id
+            );
+            assert!(
+                TOOL_CATEGORIES.contains(&spec.category.as_str()),
+                "{}: unknown category {:?}",
+                spec.id,
+                spec.category
+            );
             ids.push(spec.id.clone());
         }
         let n = ids.len();
@@ -208,7 +261,11 @@ mod tests {
             let props = schema_props(&spec.id);
             let mut names: Vec<&str> = spec.fields.iter().map(|f| f.name.as_str()).collect();
             for n in &names {
-                assert!(props.contains_key(*n), "{}: field {n:?} is not a config property", spec.id);
+                assert!(
+                    props.contains_key(*n),
+                    "{}: field {n:?} is not a config property",
+                    spec.id
+                );
             }
             for p in props.keys() {
                 assert!(
@@ -264,11 +321,17 @@ mod tests {
                 );
                 let prop = &props[&f.name];
                 if let Some(options) = prop["enum"].as_array() {
-                    assert!(options.iter().any(|o| same_value(o, v)), "{at}: {v} is not one of {options:?}");
+                    assert!(
+                        options.iter().any(|o| same_value(o, v)),
+                        "{at}: {v} is not one of {options:?}"
+                    );
                 }
                 let types = prop_types(prop);
                 if !types.is_empty() {
-                    assert!(types.iter().any(|t| value_fits_type(v, t)), "{at}: {v} is not a {types:?}");
+                    assert!(
+                        types.iter().any(|t| value_fits_type(v, t)),
+                        "{at}: {v} is not a {types:?}"
+                    );
                 }
                 if f.role == "columns" {
                     let variants = column_variants(prop);
@@ -290,7 +353,11 @@ mod tests {
         for spec in specs() {
             for f in &spec.fields {
                 let at = format!("{}.{}", spec.id, f.name);
-                assert!(ROLES.contains(&f.role.as_str()), "{at}: ToolDialog cannot render role {:?}", f.role);
+                assert!(
+                    ROLES.contains(&f.role.as_str()),
+                    "{at}: ToolDialog cannot render role {:?}",
+                    f.role
+                );
                 if matches!(f.role.as_str(), "input_file" | "input_files") {
                     assert!(f.sources.is_some(), "{at}: an input needs `sources`");
                     assert!(f.select.is_some(), "{at}: an input needs `select`");
@@ -303,10 +370,9 @@ mod tests {
                         );
                     }
                     if let Some(Select::Database(id)) = &f.select {
-                        let db = dbs
-                            .iter()
-                            .find(|d| d.id == id.as_str())
-                            .unwrap_or_else(|| panic!("{at}: select names unknown reference database {id:?}"));
+                        let db = dbs.iter().find(|d| d.id == id.as_str()).unwrap_or_else(|| {
+                            panic!("{at}: select names unknown reference database {id:?}")
+                        });
                         let format = db.kind.as_str();
                         assert!(
                             f.file_type.iter().any(|ft| format_fits(format, ft)),
@@ -315,15 +381,27 @@ mod tests {
                         );
                     }
                 } else {
-                    assert!(f.sources.is_none() && f.select.is_none(), "{at}: `sources`/`select` only apply to inputs");
-                    assert!(f.file_type.is_empty(), "{at}: `file_type` only applies to inputs");
+                    assert!(
+                        f.sources.is_none() && f.select.is_none(),
+                        "{at}: `sources`/`select` only apply to inputs"
+                    );
+                    assert!(
+                        f.file_type.is_empty(),
+                        "{at}: `file_type` only applies to inputs"
+                    );
                 }
                 if f.output_name.is_some() {
-                    assert_eq!(f.role, "output_file", "{at}: `output_name` only applies to outputs");
+                    assert_eq!(
+                        f.role, "output_file",
+                        "{at}: `output_name` only applies to outputs"
+                    );
                 }
                 if !f.show {
                     assert!(!f.required, "{at}: a required field cannot be hidden");
-                    assert!(f.help.is_none(), "{at}: `help` on a hidden field is never shown");
+                    assert!(
+                        f.help.is_none(),
+                        "{at}: `help` on a hidden field is never shown"
+                    );
                 }
                 if let Some(h) = &f.help {
                     assert!(!h.trim().is_empty(), "{at}: an empty `help` hides the schema's description; delete the key instead");
@@ -337,11 +415,28 @@ mod tests {
     #[test]
     fn required_outputs_have_a_name_template() {
         for spec in specs() {
-            for f in spec.fields.iter().filter(|f| f.role == "output_file" && f.required) {
-                let t = f.output_name.as_deref().unwrap_or_else(|| panic!("{}.{}: no output_name", spec.id, f.name));
+            for f in spec
+                .fields
+                .iter()
+                .filter(|f| f.role == "output_file" && f.required)
+            {
+                let t = f
+                    .output_name
+                    .as_deref()
+                    .unwrap_or_else(|| panic!("{}.{}: no output_name", spec.id, f.name));
                 let rest = t.replace("{stem}", "");
-                assert!(!rest.contains('{') && !rest.contains('}'), "{}.{}: {t:?} has a placeholder other than {{stem}}", spec.id, f.name);
-                assert!(!rest.contains('/') && !rest.contains('\\'), "{}.{}: {t:?} is a path, not a file name", spec.id, f.name);
+                assert!(
+                    !rest.contains('{') && !rest.contains('}'),
+                    "{}.{}: {t:?} has a placeholder other than {{stem}}",
+                    spec.id,
+                    f.name
+                );
+                assert!(
+                    !rest.contains('/') && !rest.contains('\\'),
+                    "{}.{}: {t:?} is a path, not a file name",
+                    spec.id,
+                    f.name
+                );
             }
         }
     }

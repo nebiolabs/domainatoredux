@@ -78,7 +78,9 @@ pub(crate) fn subset_matrix(m: &DataMatrix, subset: &Option<HashSet<String>>) ->
             }
         }
     };
-    let keep: Vec<usize> = (0..m.nrows()).filter(|&i| subset.contains(&m.rows[i])).collect();
+    let keep: Vec<usize> = (0..m.nrows())
+        .filter(|&i| subset.contains(&m.rows[i]))
+        .collect();
     let dense = m.densify();
     let nc = m.ncols();
     let mut sub = Vec::with_capacity(keep.len() * keep.len());
@@ -88,7 +90,10 @@ pub(crate) fn subset_matrix(m: &DataMatrix, subset: &Option<HashSet<String>>) ->
         }
     }
     let names: Vec<String> = keep.iter().map(|&i| m.rows[i].clone()).collect();
-    let row_lengths = m.row_lengths.as_ref().map(|v| keep.iter().map(|&i| v[i]).collect());
+    let row_lengths = m
+        .row_lengths
+        .as_ref()
+        .map(|v| keep.iter().map(|&i| v[i]).collect());
     DataMatrix {
         rows: names.clone(),
         cols: names,
@@ -135,7 +140,9 @@ struct Uf {
 }
 impl Uf {
     fn new(n: usize) -> Self {
-        Uf { parent: (0..n).collect() }
+        Uf {
+            parent: (0..n).collect(),
+        }
     }
     fn find(&mut self, mut x: usize) -> usize {
         while self.parent[x] != x {
@@ -223,9 +230,7 @@ fn orient_by_name(m: &DataMatrix, a: usize, b: usize) -> (usize, usize) {
 
 /// Parse a TSV metadata file into (column names, per-index value map). The first
 /// column is the index; remaining columns are values keyed by the index string.
-pub(crate) fn read_metadata(
-    path: &str,
-) -> io::Result<MetadataTable> {
+pub(crate) fn read_metadata(path: &str) -> io::Result<MetadataTable> {
     let text = std::fs::read_to_string(path)?;
     let mut lines = text.lines();
     let header = lines.next().unwrap_or_default();
@@ -292,7 +297,11 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
         None => (opts.mst, opts.knn),
     };
 
-    let tree = if use_mst { Some(MaxTree::from_matrix(&matrix)) } else { None };
+    let tree = if use_mst {
+        Some(MaxTree::from_matrix(&matrix))
+    } else {
+        None
+    };
 
     // Edges per mode.
     let edges: Vec<(usize, usize, f64)> = if use_mst && knn_k.is_none() {
@@ -381,18 +390,26 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
         }
     }
 
-    let table = NodeTable { names: names.clone(), columns, coltypes, cells };
+    let table = NodeTable {
+        names: names.clone(),
+        columns,
+        coltypes,
+        cells,
+    };
 
     // Color resolution.
     let (node_fills, resolved_color_table) = resolve_colors(&table, opts);
 
-    Ok(BuildSsnResult { table, edges, node_fills, resolved_color_table, cluster_labels })
+    Ok(BuildSsnResult {
+        table,
+        edges,
+        node_fills,
+        resolved_color_table,
+        cluster_labels,
+    })
 }
 
-fn resolve_colors(
-    table: &NodeTable,
-    opts: &BuildSsnOptions,
-) -> ResolvedColors {
+fn resolve_colors(table: &NodeTable, opts: &BuildSsnOptions) -> ResolvedColors {
     let color_by = match &opts.color_by {
         Some(c) => c,
         None => return (None, None),
@@ -430,7 +447,12 @@ fn resolve_colors(
 
     let fills: Vec<Option<String>> = (0..table.names.len())
         .map(|i| match value_of(i) {
-            Some(v) => Some(table_map.get(&v).cloned().unwrap_or_else(|| DEFAULT_COLOR.to_string())),
+            Some(v) => Some(
+                table_map
+                    .get(&v)
+                    .cloned()
+                    .unwrap_or_else(|| DEFAULT_COLOR.to_string()),
+            ),
             None => Some(DEFAULT_COLOR.to_string()),
         })
         .collect();

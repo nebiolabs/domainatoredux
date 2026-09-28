@@ -59,7 +59,10 @@ impl GenbankReader {
                 break;
             }
             // Strip trailing newline / CR.
-            let end = raw.iter().rposition(|&b| b != b'\n' && b != b'\r').map_or(0, |i| i + 1);
+            let end = raw
+                .iter()
+                .rposition(|&b| b != b'\n' && b != b'\r')
+                .map_or(0, |i| i + 1);
             let line_bytes = &raw[..end];
 
             if !started {
@@ -71,7 +74,11 @@ impl GenbankReader {
             }
 
             if line_bytes.starts_with(b"//") {
-                return Ok(Some(RecordBlock { header_lines, residues, had_origin }));
+                return Ok(Some(RecordBlock {
+                    header_lines,
+                    residues,
+                    had_origin,
+                }));
             }
 
             if in_origin {
@@ -92,7 +99,11 @@ impl GenbankReader {
         }
 
         if started {
-            Ok(Some(RecordBlock { header_lines, residues, had_origin }))
+            Ok(Some(RecordBlock {
+                header_lines,
+                residues,
+                had_origin,
+            }))
         } else {
             Ok(None)
         }
@@ -139,7 +150,10 @@ pub fn scan_genbank_ids(path: &str) -> std::io::Result<Vec<(String, String)>> {
         if n == 0 {
             break;
         }
-        let end = raw.iter().rposition(|&b| b != b'\n' && b != b'\r').map_or(0, |i| i + 1);
+        let end = raw
+            .iter()
+            .rposition(|&b| b != b'\n' && b != b'\r')
+            .map_or(0, |i| i + 1);
         let line_bytes = &raw[..end];
 
         if line_bytes.starts_with(b"LOCUS") {

@@ -12,9 +12,7 @@
 
 use domainator_core::app_support::about;
 use domainator_core::app_support::prefs::update_prefs;
-use domainator_core::app_support::version_check::{
-    is_newer, pick_latest_release, UpdateCheck,
-};
+use domainator_core::app_support::version_check::{is_newer, pick_latest_release, UpdateCheck};
 use tauri::AppHandle;
 
 use crate::cmd_prefs::prefs_path;
@@ -49,7 +47,12 @@ pub async fn check_for_updates(app: AppHandle) -> Result<UpdateCheck, String> {
     Ok(match fetched {
         Ok(Some(rel)) => {
             let newer = is_newer(&rel.tag, &current);
-            UpdateCheck { current, latest: Some(rel), newer, note: None }
+            UpdateCheck {
+                current,
+                latest: Some(rel),
+                newer,
+                note: None,
+            }
         }
         Ok(None) => UpdateCheck {
             current,
@@ -57,7 +60,12 @@ pub async fn check_for_updates(app: AppHandle) -> Result<UpdateCheck, String> {
             newer: false,
             note: Some("No public releases are available yet.".into()),
         },
-        Err(note) => UpdateCheck { current, latest: None, newer: false, note: Some(note) },
+        Err(note) => UpdateCheck {
+            current,
+            latest: None,
+            newer: false,
+            note: Some(note),
+        },
     })
 }
 
@@ -73,7 +81,10 @@ fn fetch_latest() -> Result<Option<domainator_core::app_support::version_check::
     let resp = agent
         .get(about::RELEASES_API)
         // GitHub 403s a request with no User-Agent, so this line is load-bearing.
-        .set("User-Agent", &format!("domainator-gui/{}", env!("CARGO_PKG_VERSION")))
+        .set(
+            "User-Agent",
+            &format!("domainator-gui/{}", env!("CARGO_PKG_VERSION")),
+        )
         .set("Accept", "application/vnd.github+json")
         .set("X-GitHub-Api-Version", "2022-11-28")
         .call();
@@ -82,8 +93,9 @@ fn fetch_latest() -> Result<Option<domainator_core::app_support::version_check::
         Ok(r) => {
             // `into_string` rather than `into_json`: the latter needs ureq's
             // `json` feature, and serde_json is already a dependency here.
-            let text =
-                r.into_string().map_err(|e| format!("could not read the release list: {e}"))?;
+            let text = r
+                .into_string()
+                .map_err(|e| format!("could not read the release list: {e}"))?;
             let body: serde_json::Value = serde_json::from_str(&text)
                 .map_err(|e| format!("could not parse the release list: {e}"))?;
             Ok(pick_latest_release(&body))

@@ -78,7 +78,11 @@ fn search_model(
         if score <= lb {
             continue;
         }
-        out.push(CmpResult { score, query: hit.name.clone(), subject: subject.to_string() });
+        out.push(CmpResult {
+            score,
+            query: hit.name.clone(),
+            subject: subject.to_string(),
+        });
     }
     out
 }
@@ -92,8 +96,10 @@ pub fn hmmsearch_scores(input_seqs: &[(String, Vec<u8>)], hmms: &[Hmm], lb: f64)
         .flat_map_iter(|hmm| {
             let abc = Alphabet::new(hmm.abc_type);
             let bg = Bg::new(&abc);
-            let targets: Vec<Sequence> =
-                input_seqs.iter().map(|(n, r)| make_sequence(n, &abc, r)).collect();
+            let targets: Vec<Sequence> = input_seqs
+                .iter()
+                .map(|(n, r)| make_sequence(n, &abc, r))
+                .collect();
             let mut gm = Profile::new(hmm.m, &abc);
             profile_config(hmm, &bg, &mut gm, 400, P7_LOCAL);
             let om = OProfile::convert(&gm);
@@ -111,8 +117,10 @@ pub fn phmmer_scores(
 ) -> Vec<CmpResult> {
     let abc = Alphabet::amino();
     let bg = Bg::new(&abc);
-    let targets: Vec<Sequence> =
-        input_seqs.iter().map(|(n, r)| make_sequence(n, &abc, r)).collect();
+    let targets: Vec<Sequence> = input_seqs
+        .iter()
+        .map(|(n, r)| make_sequence(n, &abc, r))
+        .collect();
 
     // Each reference builds its own single-sequence profile and searches the
     // shared (read-only) targets. Parallelize over references.

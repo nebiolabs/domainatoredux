@@ -55,7 +55,9 @@ fn merge_intervals(mut iv: Vec<(i64, i64)>) -> Vec<(i64, i64)> {
 }
 
 fn intervals_cover(outer_merged: &[(i64, i64)], inner: &[(i64, i64)]) -> bool {
-    inner.iter().all(|&(s, e)| outer_merged.iter().any(|&(os, oe)| os <= s && e <= oe))
+    inner
+        .iter()
+        .all(|&(s, e)| outer_merged.iter().any(|&(os, oe)| os <= s && e <= oe))
 }
 
 /// A `source` feature reduced to what taxonomy resolution needs.
@@ -74,15 +76,24 @@ fn collect_sources(features: &[SeqFeature]) -> Vec<SourceInfo> {
         .map(|f| {
             let intervals = f.location.intervals();
             let length: i64 = intervals.iter().map(|&(s, e)| e - s).sum();
-            SourceInfo { taxon: feature_taxon(f), merged: merge_intervals(intervals), length }
+            SourceInfo {
+                taxon: feature_taxon(f),
+                merged: merge_intervals(intervals),
+                length,
+            }
         })
         .collect();
     v.sort_by_key(|a| std::cmp::Reverse(a.length));
     v
 }
 
-fn longest_covering<'a>(sources: &'a [SourceInfo], region: &[(i64, i64)]) -> Option<&'a SourceInfo> {
-    sources.iter().find(|src| intervals_cover(&src.merged, region))
+fn longest_covering<'a>(
+    sources: &'a [SourceInfo],
+    region: &[(i64, i64)],
+) -> Option<&'a SourceInfo> {
+    sources
+        .iter()
+        .find(|src| intervals_cover(&src.merged, region))
 }
 
 /// Taxid covering a feature `location`: the taxon of the longest covering `source`

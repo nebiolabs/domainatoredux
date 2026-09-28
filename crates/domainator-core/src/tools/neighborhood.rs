@@ -73,8 +73,10 @@ impl Cds {
 /// Correctly collapses an origin-crossing gene (e.g. `[0,130)+[1842,2552)`) into a
 /// single arc (`[1842, 2682)`).
 fn min_covering_arc(intervals: &[(i64, i64)], l: i64) -> (i64, i64) {
-    let mut segs: Vec<(i64, i64)> =
-        intervals.iter().map(|&(s, e)| if s <= e { (s, e) } else { (e, s) }).collect();
+    let mut segs: Vec<(i64, i64)> = intervals
+        .iter()
+        .map(|&(s, e)| if s <= e { (s, e) } else { (e, s) })
+        .collect();
     segs.sort();
     let mut merged: Vec<(i64, i64)> = Vec::new();
     for (s, e) in segs {
@@ -97,7 +99,11 @@ fn min_covering_arc(intervals: &[(i64, i64)], l: i64) -> (i64, i64) {
     let (mut max_gap, mut gap_after) = (-1i64, 0usize);
     for i in 0..n {
         let gap_start = merged[i].1;
-        let gap_end = if i + 1 == n { merged[0].0 + l } else { merged[i + 1].0 };
+        let gap_end = if i + 1 == n {
+            merged[0].0 + l
+        } else {
+            merged[i + 1].0
+        };
         let gap = gap_end - gap_start;
         if gap > max_gap {
             max_gap = gap;
@@ -168,10 +174,18 @@ fn build_slice_from_window(w_lo: i64, w_hi: i64, l: i64, strand: i32) -> SliceLo
     let lo0 = w_lo.rem_euclid(l);
     let mut parts: Vec<Env> = Vec::new();
     let first_end = (lo0 + len).min(l);
-    parts.push(Env { start: lo0, end: first_end, strand });
+    parts.push(Env {
+        start: lo0,
+        end: first_end,
+        strand,
+    });
     let rem = len - (first_end - lo0);
     if rem > 0 {
-        parts.push(Env { start: 0, end: rem, strand });
+        parts.push(Env {
+            start: 0,
+            end: rem,
+            strand,
+        });
     }
     // Any **forward** window that wraps the origin -- not just the full circle --
     // stays in rotation order `[lo0, l) + [0, rem)`: that is the order the bases are
@@ -189,8 +203,19 @@ fn build_slice_from_window(w_lo: i64, w_hi: i64, l: i64, strand: i32) -> SliceLo
     }
     let first = parts[0];
     let last = *parts.last().unwrap();
-    let (ns, ne) = if strand == -1 { (first.end, last.start) } else { (first.start, last.end) };
-    SliceLoc { parts, name_start: ns, name_end: ne, overall_strand: strand, dist_to_start: 0, dist_to_end: 0 }
+    let (ns, ne) = if strand == -1 {
+        (first.end, last.start)
+    } else {
+        (first.start, last.end)
+    };
+    SliceLoc {
+        parts,
+        name_start: ns,
+        name_end: ne,
+        overall_strand: strand,
+        dist_to_start: 0,
+        dist_to_end: 0,
+    }
 }
 
 /// Recompute a CDS feature's `cds_id` (1-based strand-aware coords), matching
@@ -238,13 +263,27 @@ fn pad_linear(env: Env, rec_len: i64, up: i64, down: i64) -> (Env, (i64, i64)) {
         let down_ext = env.start - min_coord;
         let max_coord = (env.end + up).min(rec_len);
         let up_ext = max_coord - env.end;
-        (Env { start: min_coord, end: max_coord, strand: env.strand }, (up_ext, down_ext))
+        (
+            Env {
+                start: min_coord,
+                end: max_coord,
+                strand: env.strand,
+            },
+            (up_ext, down_ext),
+        )
     } else {
         let min_coord = (env.start - up).max(0);
         let up_ext = env.start - min_coord;
         let max_coord = (env.end + down).min(rec_len);
         let down_ext = max_coord - env.end;
-        (Env { start: min_coord, end: max_coord, strand: env.strand }, (up_ext, down_ext))
+        (
+            Env {
+                start: min_coord,
+                end: max_coord,
+                strand: env.strand,
+            },
+            (up_ext, down_ext),
+        )
     }
 }
 
@@ -411,7 +450,11 @@ pub(crate) fn cds_neighborhood(
     let strand = focus.strand;
 
     if !circular {
-        let envelope = Env { start: focus.start(), end: focus.end(), strand };
+        let envelope = Env {
+            start: focus.start(),
+            end: focus.end(),
+            strand,
+        };
         let (mut up, mut down) = (0i64, 0i64);
         match range {
             Range::Whole => {
@@ -425,9 +468,15 @@ pub(crate) fn cds_neighborhood(
             Range::Cds(cu, cd) => {
                 let n = cds_list.len() as i64;
                 let (left_cds, right_cds) = if strand == -1 {
-                    ((focus_idx as i64 - cd).max(0), (focus_idx as i64 + cu).min(n - 1))
+                    (
+                        (focus_idx as i64 - cd).max(0),
+                        (focus_idx as i64 + cu).min(n - 1),
+                    )
                 } else {
-                    ((focus_idx as i64 - cu).max(0), (focus_idx as i64 + cd).min(n - 1))
+                    (
+                        (focus_idx as i64 - cu).max(0),
+                        (focus_idx as i64 + cd).min(n - 1),
+                    )
                 };
                 let left_coord = cds_list[left_cds as usize].start();
                 let right_coord = cds_list[right_cds as usize].end();
@@ -538,7 +587,11 @@ pub(crate) fn merge_touching_parts(parts: &mut Vec<(i64, i64, i32, bool, bool)>)
 /// Slice `rec` to `slice`, keeping `keep_features` that are fully contained
 /// (source features are truncated to the overlap), remapping coordinates. Port of
 /// `slice_record_from_location`.
-pub(crate) fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[SeqFeature]) -> SeqRecord {
+pub(crate) fn slice_record(
+    rec: &SeqRecord,
+    slice: &SliceLoc,
+    keep_features: &[SeqFeature],
+) -> SeqRecord {
     // Build sequence and per-part coordinate shifts.
     let mut seq = Vec::new();
     let mut shifts = Vec::with_capacity(slice.parts.len());
@@ -610,8 +663,16 @@ pub(crate) fn slice_record(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
         if matches!(f.location.operator, None | Some(CompoundOp::Join)) {
             merge_touching_parts(&mut remapped_parts);
         }
-        let operator = if remapped_parts.len() > 1 { Some(CompoundOp::Join) } else { None };
-        let location = Location { operator, between: false, parts: remapped_parts };
+        let operator = if remapped_parts.len() > 1 {
+            Some(CompoundOp::Join)
+        } else {
+            None
+        };
+        let location = Location {
+            operator,
+            between: false,
+            parts: remapped_parts,
+        };
         new_features.push(SeqFeature {
             kind: f.kind.clone(),
             location,
@@ -666,7 +727,8 @@ pub fn select_by_cds_hits(
     // cds_ids carrying a Domain_Search best-hit feature (the focus CDSs), plus
     // the best-hit domain name per focus cds_id (for decoy filtering).
     let mut focus_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut hit_name_by_cid: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut hit_name_by_cid: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     for f in &rec.features {
         if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME {
             if let Some(cid) = f.get_first("cds_id") {
@@ -692,7 +754,12 @@ pub fn select_by_cds_hits(
             .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
             .collect();
         let is_focus = focus_ids.contains(&cid);
-        cds_list.push(Cds { intervals, strand: f.location.strand(), cds_id: cid, is_focus });
+        cds_list.push(Cds {
+            intervals,
+            strand: f.location.strand(),
+            cds_id: cid,
+            is_focus,
+        });
     }
 
     // Whole-contig (nhmmer) hits carry `cds_id="."`; each best-hit contig feature
@@ -700,7 +767,8 @@ pub fn select_by_cds_hits(
     // `include_nucleic_acid_annotations` path). Its cds_id is a synthetic `nuc_N`
     // so it never collides with a real CDS, and the originating feature is kept
     // verbatim when it is the focus.
-    let mut nuc_features: std::collections::HashMap<String, &SeqFeature> = std::collections::HashMap::new();
+    let mut nuc_features: std::collections::HashMap<String, &SeqFeature> =
+        std::collections::HashMap::new();
     let mut nuc_idx = 0usize;
     for f in &rec.features {
         if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME && f.get_first("cds_id") == Some(".") {
@@ -717,7 +785,12 @@ pub fn select_by_cds_hits(
                 hit_name_by_cid.insert(cid.clone(), name.to_string());
             }
             nuc_features.insert(cid.clone(), f);
-            cds_list.push(Cds { intervals, strand, cds_id: cid, is_focus: true });
+            cds_list.push(Cds {
+                intervals,
+                strand,
+                cds_id: cid,
+                is_focus: true,
+            });
         }
     }
 
@@ -762,7 +835,10 @@ pub fn select_by_cds_hits(
 
         // Decoy filter: skip focus CDSs whose best hit is a decoy domain.
         if let Some(decoys) = decoys {
-            if hit_name_by_cid.get(&focus_cid).is_some_and(|n| decoys.contains(n)) {
+            if hit_name_by_cid
+                .get(&focus_cid)
+                .is_some_and(|n| decoys.contains(n))
+            {
                 continue;
             }
         }
@@ -837,8 +913,11 @@ pub fn select_by_cds_hits(
         // is unsupported. Read before `slice` can be moved into `selected` below, and
         // swapped with `dist_to_end` on an un-normalized reverse region, which was
         // flipped back to the original orientation above.
-        let dist_to_start =
-            if !normalize_direction && strand == -1 { slice.dist_to_end } else { slice.dist_to_start };
+        let dist_to_start = if !normalize_direction && strand == -1 {
+            slice.dist_to_end
+        } else {
+            slice.dist_to_start
+        };
         if max_region_overlap < 1.0 {
             let loc_len: i64 = slice.parts.iter().map(|p| p.end - p.start).sum();
             let mut drop = false;
@@ -853,7 +932,10 @@ pub fn select_by_cds_hits(
             }
             selected.push(slice);
         }
-        out.push(Region { record: region, dist_to_start });
+        out.push(Region {
+            record: region,
+            dist_to_start,
+        });
         if max_hits_per_contig.is_some_and(|m| out.len() >= m) {
             break;
         }
@@ -904,7 +986,9 @@ pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<Se
             continue;
         }
         let cid = cds_unique_name(f);
-        let Some(search) = search_by.get(&cid) else { continue };
+        let Some(search) = search_by.get(&cid) else {
+            continue;
+        };
         let strand = f.location.strand();
         if let Some(sf) = strand_filter {
             if strand != sf {
@@ -919,11 +1003,21 @@ pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<Se
             .iter()
             .map(|&(s, e, st, _, _)| {
                 let (lo, hi) = if s <= e { (s, e) } else { (e, s) };
-                Env { start: lo, end: hi, strand: st }
+                Env {
+                    start: lo,
+                    end: hi,
+                    strand: st,
+                }
             })
             .collect();
-        let slice =
-            SliceLoc { parts, name_start: 0, name_end: 0, overall_strand: strand, dist_to_start: 0, dist_to_end: 0 };
+        let slice = SliceLoc {
+            parts,
+            name_start: 0,
+            name_end: 0,
+            overall_strand: strand,
+            dist_to_start: 0,
+            dist_to_end: 0,
+        };
 
         let mut cds_feat = f.clone();
         cds_feat.qualifiers.retain(|(k, _)| k != "translation");
@@ -1001,13 +1095,21 @@ pub(crate) fn reverse_complement_record(rec: &SeqRecord) -> SeqRecord {
             let operator = f.location.operator;
             SeqFeature {
                 kind: f.kind.clone(),
-                location: Location { operator, between: f.location.between, parts },
+                location: Location {
+                    operator,
+                    between: f.location.between,
+                    parts,
+                },
                 qualifiers: f.qualifiers.clone(),
             }
         })
         .collect();
     features.sort_by_key(|f| f.location.start());
-    SeqRecord { seq, features, ..rec.clone() }
+    SeqRecord {
+        seq,
+        features,
+        ..rec.clone()
+    }
 }
 
 #[cfg(test)]
@@ -1027,7 +1129,10 @@ mod tests {
 
     #[test]
     fn validate_range_resolution() {
-        assert!(matches!(validate_range(true, None, None, None, None, None, None), Ok(Range::Whole)));
+        assert!(matches!(
+            validate_range(true, None, None, None, None, None, None),
+            Ok(Range::Whole)
+        ));
         assert!(matches!(
             validate_range(false, None, None, None, Some(2), None, None),
             Ok(Range::Cds(2, 2))
@@ -1040,7 +1145,10 @@ mod tests {
             validate_range(false, Some(0.5), None, None, None, None, None),
             Ok(Range::Kb(a, b)) if a == 0.5 && b == 0.5
         ));
-        assert!(matches!(validate_range(false, None, None, None, None, None, None), Ok(Range::None)));
+        assert!(matches!(
+            validate_range(false, None, None, None, None, None, None),
+            Ok(Range::None)
+        ));
         // Conflicts / negatives are errors.
         assert!(validate_range(false, None, None, None, Some(2), Some(1), None).is_err());
         assert!(validate_range(false, Some(1.0), None, None, Some(2), None, None).is_err());
@@ -1051,7 +1159,10 @@ mod tests {
     fn min_covering_arc_origin_crossing() {
         // An origin-crossing gene [0,130)+[1842,2552) on a length-2552 circle
         // collapses to a single arc [1842, 2682).
-        assert_eq!(min_covering_arc(&[(0, 130), (1842, 2552)], 2552), (1842, 2682));
+        assert_eq!(
+            min_covering_arc(&[(0, 130), (1842, 2552)], 2552),
+            (1842, 2682)
+        );
         // A simple interval is unchanged.
         assert_eq!(min_covering_arc(&[(100, 200)], 1000), (100, 200));
     }
@@ -1084,7 +1195,18 @@ mod tests {
     /// circular contig: `[14,20)` then `[0,4)`, concatenated into a 10-long record.
     fn slice_origin_crossing() -> SliceLoc {
         SliceLoc {
-            parts: vec![Env { start: 14, end: 20, strand: 1 }, Env { start: 0, end: 4, strand: 1 }],
+            parts: vec![
+                Env {
+                    start: 14,
+                    end: 20,
+                    strand: 1,
+                },
+                Env {
+                    start: 0,
+                    end: 4,
+                    strand: 1,
+                },
+            ],
             name_start: 14,
             name_end: 4,
             overall_strand: 1,
@@ -1097,7 +1219,10 @@ mod tests {
         Location {
             operator: Some(CompoundOp::Join),
             between: false,
-            parts: parts.iter().map(|&(s, e, st)| (s, e, st, false, false)).collect(),
+            parts: parts
+                .iter()
+                .map(|&(s, e, st)| (s, e, st, false, false))
+                .collect(),
         }
     }
 
@@ -1117,7 +1242,10 @@ mod tests {
         assert_eq!(r.name_label(), (10, 5));
         // 10 down to 5 inclusive is 6 bases -- the length of the slice.
         let (ls, le) = r.name_label();
-        assert_eq!(ls - le + 1, r.parts.iter().map(|p| p.end - p.start).sum::<i64>());
+        assert_eq!(
+            ls - le + 1,
+            r.parts.iter().map(|p| p.end - p.start).sum::<i64>()
+        );
     }
 
     #[test]
@@ -1146,7 +1274,10 @@ mod tests {
 
         // A window that does not wrap is a single part either way.
         let n = build_slice_from_window(4, 10, 20, 1);
-        assert_eq!(n.parts.iter().map(|p| (p.start, p.end)).collect::<Vec<_>>(), vec![(4, 10)]);
+        assert_eq!(
+            n.parts.iter().map(|p| (p.start, p.end)).collect::<Vec<_>>(),
+            vec![(4, 10)]
+        );
         assert_eq!((n.name_start, n.name_end), (4, 10));
 
         // A full circle stays rotated to its split point (Python names it `15:14`).
@@ -1166,9 +1297,15 @@ mod tests {
             v
         };
         // Abutting parts coalesce -- the origin-crossing case.
-        assert_eq!(m(&[(0, 5, 1, false, false), (5, 10, 1, false, false)]), vec![(0, 10, 1, false, false)]);
+        assert_eq!(
+            m(&[(0, 5, 1, false, false), (5, 10, 1, false, false)]),
+            vec![(0, 10, 1, false, false)]
+        );
         // So do overlapping ones.
-        assert_eq!(m(&[(0, 5, 1, false, false), (3, 10, 1, false, false)]), vec![(0, 10, 1, false, false)]);
+        assert_eq!(
+            m(&[(0, 5, 1, false, false), (3, 10, 1, false, false)]),
+            vec![(0, 10, 1, false, false)]
+        );
         // A real gap is preserved: merging here would invent sequence.
         let gap = [(0, 5, 1, false, false), (7, 10, 1, false, false)];
         assert_eq!(m(&gap), gap.to_vec());
@@ -1176,7 +1313,10 @@ mod tests {
         let strands = [(0, 5, 1, false, false), (5, 10, -1, false, false)];
         assert_eq!(m(&strands), strands.to_vec());
         // Python builds a plain SimpleLocation for a merged part, so `<`/`>` markers go.
-        assert_eq!(m(&[(0, 5, 1, true, false), (5, 10, 1, false, true)]), vec![(0, 10, 1, false, false)]);
+        assert_eq!(
+            m(&[(0, 5, 1, true, false), (5, 10, 1, false, true)]),
+            vec![(0, 10, 1, false, false)]
+        );
         // Untouched parts keep theirs.
         let fuzzy = [(0, 5, 1, true, false), (7, 10, 1, false, true)];
         assert_eq!(m(&fuzzy), fuzzy.to_vec());
@@ -1194,7 +1334,10 @@ mod tests {
         let out = slice_record(&rec, &slice_origin_crossing(), &rec.features);
         assert_eq!(out.seq, b"TTACGTAAAA");
         assert_eq!(out.features.len(), 1);
-        assert_eq!(out.features[0].location.parts, vec![(0, 10, 1, false, false)]);
+        assert_eq!(
+            out.features[0].location.parts,
+            vec![(0, 10, 1, false, false)]
+        );
     }
 
     #[test]
@@ -1207,8 +1350,14 @@ mod tests {
             vec![SeqFeature::new("gene", joined(&[(16, 20, 1), (0, 2, 1)]))],
         );
         let out = slice_record(&rec, &slice_origin_crossing(), &rec.features);
-        assert_eq!(out.features[0].location.parts, vec![(2, 8, 1, false, false)]);
-        assert!(out.features[0].location.operator.is_none(), "one part must not stay a join");
+        assert_eq!(
+            out.features[0].location.parts,
+            vec![(2, 8, 1, false, false)]
+        );
+        assert!(
+            out.features[0].location.operator.is_none(),
+            "one part must not stay a join"
+        );
     }
 
     #[test]
@@ -1229,20 +1378,32 @@ mod tests {
 
     #[test]
     fn slice_record_forward_remap() {
-        let rec = test_rec(b"TTTTAACCCGTTTTTT", vec![SeqFeature::new("gene", Location::range(5, 8, 1))]);
+        let rec = test_rec(
+            b"TTTTAACCCGTTTTTT",
+            vec![SeqFeature::new("gene", Location::range(5, 8, 1))],
+        );
         let out = slice_record(&rec, &slice1(4, 10, 1), &rec.features);
         assert_eq!(out.seq, b"AACCCG");
         assert_eq!(out.features.len(), 1);
-        assert_eq!(out.features[0].location.parts, vec![(1, 4, 1, false, false)]);
+        assert_eq!(
+            out.features[0].location.parts,
+            vec![(1, 4, 1, false, false)]
+        );
     }
 
     #[test]
     fn slice_record_reverse_flips_seq_and_feature() {
-        let rec = test_rec(b"TTTTAACCCGTTTTTT", vec![SeqFeature::new("gene", Location::range(5, 8, 1))]);
+        let rec = test_rec(
+            b"TTTTAACCCGTTTTTT",
+            vec![SeqFeature::new("gene", Location::range(5, 8, 1))],
+        );
         let out = slice_record(&rec, &slice1(4, 10, -1), &rec.features);
         // revcomp("AACCCG") == "CGGGTT"; the feature flips within the part.
         assert_eq!(out.seq, b"CGGGTT");
-        assert_eq!(out.features[0].location.parts, vec![(2, 5, -1, false, false)]);
+        assert_eq!(
+            out.features[0].location.parts,
+            vec![(2, 5, -1, false, false)]
+        );
     }
 
     #[test]
@@ -1276,11 +1437,14 @@ mod tests {
         feats.extend(hit_cds(20, 29, "21_1_29", "B"));
         feats.extend(hit_cds(40, 49, "41_1_49", "C"));
         let rec = test_rec(&[b'A'; 60], feats);
-        let mut out = select_by_cds_hits(&rec, Range::Cds(1, 1), true, None, 1.0, None, None).unwrap();
+        let mut out =
+            select_by_cds_hits(&rec, Range::Cds(1, 1), true, None, 1.0, None, None).unwrap();
 
         // The first hit has no upstream neighbor, so its region starts at the focus.
         assert_eq!(
-            out.iter().map(|r| (r.record.seq.len(), r.dist_to_start)).collect::<Vec<_>>(),
+            out.iter()
+                .map(|r| (r.record.seq.len(), r.dist_to_start))
+                .collect::<Vec<_>>(),
             vec![(29, 0), (49, 20), (29, 20)]
         );
 
@@ -1288,7 +1452,10 @@ mod tests {
 
         // Every region is now the same length, and every focus CDS starts at the same
         // offset -- the largest original distance.
-        assert!(out.iter().all(|r| r.record.seq.len() == 49), "regions must share a length");
+        assert!(
+            out.iter().all(|r| r.record.seq.len() == 49),
+            "regions must share a length"
+        );
         let focus_starts: Vec<i64> = out
             .iter()
             .map(|r| {
@@ -1313,7 +1480,8 @@ mod tests {
         let rec = test_rec(&[b'A'; 60], feats);
         let all = select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, None, None).unwrap();
         assert_eq!(all.len(), 2);
-        let capped = select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, None, Some(1)).unwrap();
+        let capped =
+            select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, None, Some(1)).unwrap();
         assert_eq!(capped.len(), 1);
     }
 
@@ -1324,7 +1492,8 @@ mod tests {
         feats.extend(hit_cds(30, 39, "31_1_39", "B"));
         let rec = test_rec(&[b'A'; 60], feats);
         let decoys: std::collections::HashSet<String> = ["A".to_string()].into_iter().collect();
-        let out = select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, Some(&decoys), None).unwrap();
+        let out =
+            select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, Some(&decoys), None).unwrap();
         assert_eq!(out.len(), 1);
     }
 }

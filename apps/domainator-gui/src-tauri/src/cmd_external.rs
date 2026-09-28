@@ -47,7 +47,10 @@ pub async fn list_external_tools(app: AppHandle) -> Vec<ExternalToolStatus> {
 pub async fn download_external_tool(app: AppHandle, id: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let specs = external_tools::specs();
-        let spec = specs.iter().find(|s| s.id == id).ok_or_else(|| format!("unknown tool: {id}"))?;
+        let spec = specs
+            .iter()
+            .find(|s| s.id == id)
+            .ok_or_else(|| format!("unknown tool: {id}"))?;
         external_tools::download(&app, spec).map(|p| p.to_string_lossy().into_owned())
     })
     .await

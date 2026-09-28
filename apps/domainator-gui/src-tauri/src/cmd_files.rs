@@ -1,26 +1,26 @@
 //! File-inspection / viewer-data commands.
 
+use domainator_config::ColumnSpec;
 use domainator_core::app_support::contig_view::{build_contig_file_view, ContigFileView};
 use domainator_core::app_support::hmm_logo::{
     index_hmm_file, logo_from_hmm_bytes, read_hmm_byte_ranges, HmmEntry, HmmLogo, HmmSummary,
 };
-use domainator_core::search::hmm_write::write_hmm_output;
+use domainator_core::app_support::provenance::{trace_source_sequences, SourceTrace};
 use domainator_core::app_support::summary_stats::SummaryStats;
 use domainator_core::app_support::text_file::{detect_eol, from_lf, to_lf, Eol};
 use domainator_core::app_support::workspace::{classify_file, find_workspace_root};
-use domainator_core::app_support::provenance::{trace_source_sequences, SourceTrace};
-use serde::{Deserialize, Serialize};
-use domainator_core::io::{detect_filetype, FileType};
-use domainator_core::io::genbank::{read_genbank, scan_genbank_ids, write_genbank};
 use domainator_core::io::fasta::{read_fasta, scan_fasta_ids};
-use domainator_core::seq::SeqRecord;
+use domainator_core::io::genbank::{read_genbank, scan_genbank_ids, write_genbank};
+use domainator_core::io::{detect_filetype, FileType};
 use domainator_core::matrix::read_matrix;
+use domainator_core::search::hmm_write::write_hmm_output;
+use domainator_core::seq::SeqRecord;
 use domainator_core::tools::build_ssn_viewer::render_html;
-use domainator_config::ColumnSpec;
 use domainator_core::tools::enum_report::{enum_report, needs_taxonomy, By, OutputFormat};
 use domainator_core::tools::matrix_report::{
     matrix_report, to_viewer_json, DEFAULT_MAX_MERGE, DEFAULT_MERGE_IMPACT_METRIC,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 /// Load a GenBank or FASTA file as a drawable [`ContigFileView`] (features with
@@ -32,8 +32,12 @@ pub async fn load_contig_view(path: String) -> Result<ContigFileView, String> {
         let kind = detect_filetype(std::path::Path::new(&path))
             .ok_or_else(|| format!("not a sequence file: {path}"))?;
         let records = match kind {
-            FileType::Genbank => read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?,
-            FileType::Fasta => read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?,
+            FileType::Genbank => {
+                read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?
+            }
+            FileType::Fasta => {
+                read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?
+            }
         };
         Ok(build_contig_file_view(&path, &records))
     })
@@ -90,8 +94,11 @@ fn histogram(scores: &[f64], bins: usize) -> Value {
         }
         counts[idx] += 1;
     }
-    let out: Vec<Value> =
-        counts.iter().enumerate().map(|(i, &c)| json!([min + i as f64 * width, c])).collect();
+    let out: Vec<Value> = counts
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| json!([min + i as f64 * width, c]))
+        .collect();
     Value::Array(out)
 }
 
@@ -100,17 +107,32 @@ fn histogram(scores: &[f64], bins: usize) -> Value {
 
 /// Pure-data summary statistics for a sequence file (Summary dashboard).
 #[tauri::command]
-pub async fn run_summary_stats(path: String, ncbi_taxonomy_path: Option<String>) -> Result<SummaryStats, String> {
+pub async fn run_summary_stats(
+    path: String,
+    ncbi_taxonomy_path: Option<String>,
+) -> Result<SummaryStats, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let kind = detect_filetype(std::path::Path::new(&path))
             .ok_or_else(|| format!("not a sequence file: {path}"))?;
         let records = match kind {
-            FileType::Genbank => read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?,
-            FileType::Fasta => read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?,
+            FileType::Genbank => {
+                read_genbank(&path).map_err(|e| format!("reading GenBank: {e}"))?
+            }
+            FileType::Fasta => {
+                read_fasta(&path, None).map_err(|e| format!("reading FASTA: {e}"))?
+            }
         };
-        let taxonomy = ncbi_taxonomy_path.as_deref().filter(|path| !path.is_empty())
-            .map(crate::taxonomy_cache::load).transpose()?;
-        Ok(domainator_core::app_support::summary_stats::summarize_with_taxonomy(&records, taxonomy.as_deref()))
+        let taxonomy = ncbi_taxonomy_path
+            .as_deref()
+            .filter(|path| !path.is_empty())
+            .map(crate::taxonomy_cache::load)
+            .transpose()?;
+        Ok(
+            domainator_core::app_support::summary_stats::summarize_with_taxonomy(
+                &records,
+                taxonomy.as_deref(),
+            ),
+        )
     })
     .await
     .map_err(|e| format!("summary failed: {e}"))?
@@ -147,7 +169,10 @@ pub(crate) fn default_columns(by: &str) -> Vec<ColumnSpec> {
         "domain" => &["start", "end", "strand", "score", "identity"],
         _ => &["domains", "architecture", "length"],
     };
-    names.iter().filter_map(|n| ColumnSpec::from_static_flag(n)).collect()
+    names
+        .iter()
+        .filter_map(|n| ColumnSpec::from_static_flag(n))
+        .collect()
 }
 
 fn run_enum_report_blocking(
@@ -197,7 +222,16 @@ fn run_enum_report_blocking(
     let recs: Vec<_> = records.into_iter().map(|r| (r, filename.clone())).collect();
 
     let mut buf: Vec<u8> = Vec::new();
-    enum_report(recs, by, &analyses, None, tax.as_deref(), None, OutputFormat::Json, &mut buf)?;
+    enum_report(
+        recs,
+        by,
+        &analyses,
+        None,
+        tax.as_deref(),
+        None,
+        OutputFormat::Json,
+        &mut buf,
+    )?;
     ndjson_to_array(&buf)
 }
 
@@ -209,7 +243,8 @@ fn run_enum_report_blocking(
 /// the second row ("trailing characters at line 2 column 1"), which is what the
 /// grid used to do.
 fn ndjson_to_array(buf: &[u8]) -> Result<Value, String> {
-    let text = std::str::from_utf8(buf).map_err(|e| format!("enum_report output not utf-8: {e}"))?;
+    let text =
+        std::str::from_utf8(buf).map_err(|e| format!("enum_report output not utf-8: {e}"))?;
     let mut rows = Vec::new();
     for line in text.lines() {
         if line.trim().is_empty() {
@@ -272,11 +307,15 @@ pub(crate) fn lock_poison_tolerant<T>(m: &std::sync::Mutex<T>) -> std::sync::Mut
 fn file_mtime_ns(path: &str) -> Result<u128, String> {
     let m = std::fs::metadata(path).map_err(|e| format!("stat {path}: {e}"))?;
     let t = m.modified().map_err(|e| format!("mtime {path}: {e}"))?;
-    Ok(t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0))
+    Ok(t.duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0))
 }
 
 fn file_size(path: &str) -> Result<u64, String> {
-    Ok(std::fs::metadata(path).map_err(|e| format!("stat {path}: {e}"))?.len())
+    Ok(std::fs::metadata(path)
+        .map_err(|e| format!("stat {path}: {e}"))?
+        .len())
 }
 
 /// Cached header-only index of recently-touched HMM libraries, so listing profiles,
@@ -323,7 +362,12 @@ fn cached_hmm_index(
     guard.retain(|e| e.path != path);
     guard.insert(
         0,
-        HmmIndexEntry { path: path.to_string(), size, mtime_ns, entries: entries.clone() },
+        HmmIndexEntry {
+            path: path.to_string(),
+            size,
+            mtime_ns,
+            entries: entries.clone(),
+        },
     );
     guard.truncate(HMM_INDEX_CACHE_SLOTS);
     Ok(entries)
@@ -381,24 +425,31 @@ fn cached_record_ids(
         }
     }
     let lower = path.to_ascii_lowercase();
-    let compressed =
-        lower.ends_with(".gz") || lower.ends_with(".bgz") || lower.ends_with(".bgzf");
+    let compressed = lower.ends_with(".gz") || lower.ends_with(".bgz") || lower.ends_with(".bgzf");
     let ids: Vec<(String, String)> = match (kind, compressed) {
         (FileType::Genbank, false) => scan_genbank_ids(path).ok()?,
         (FileType::Fasta, false) => scan_fasta_ids(path).ok()?,
         // Compressed: no cheap byte scan — full parse, then keep just id/name.
-        (FileType::Genbank, true) => {
-            read_genbank(path).ok()?.iter().map(|r| (r.id.clone(), r.name.clone())).collect()
-        }
-        (FileType::Fasta, true) => {
-            read_fasta(path, None).ok()?.iter().map(|r| (r.id.clone(), r.name.clone())).collect()
-        }
+        (FileType::Genbank, true) => read_genbank(path)
+            .ok()?
+            .iter()
+            .map(|r| (r.id.clone(), r.name.clone()))
+            .collect(),
+        (FileType::Fasta, true) => read_fasta(path, None)
+            .ok()?
+            .iter()
+            .map(|r| (r.id.clone(), r.name.clone()))
+            .collect(),
     };
     let ids = std::sync::Arc::new(ids);
-    cache
-        .lock()
-        .unwrap()
-        .insert(path.to_string(), RecordIdCacheEntry { size, mtime_ns, ids: ids.clone() });
+    cache.lock().unwrap().insert(
+        path.to_string(),
+        RecordIdCacheEntry {
+            size,
+            mtime_ns,
+            ids: ids.clone(),
+        },
+    );
     Some(ids)
 }
 
@@ -430,7 +481,11 @@ pub async fn get_contig_sequences(
         let mtime = file_mtime_ns(&path)?;
         let slice = |seqs: &[String]| -> Vec<String> {
             let e = end.min(seqs.len());
-            if start >= e { Vec::new() } else { seqs[start..e].to_vec() }
+            if start >= e {
+                Vec::new()
+            } else {
+                seqs[start..e].to_vec()
+            }
         };
         {
             let guard = lock_poison_tolerant(&cache);
@@ -442,7 +497,11 @@ pub async fn get_contig_sequences(
         }
         let seqs = parse_all_seqs(&path)?;
         let out = slice(&seqs);
-        *lock_poison_tolerant(&cache) = Some(SeqCacheEntry { path, mtime_ns: mtime, seqs });
+        *lock_poison_tolerant(&cache) = Some(SeqCacheEntry {
+            path,
+            mtime_ns: mtime,
+            seqs,
+        });
         Ok(out)
     })
     .await
@@ -611,7 +670,9 @@ pub async fn save_text_file(
         .add_filter(&filter_name, &[extension.as_str()])
         .save_file()
         .await;
-    let Some(handle) = picked else { return Ok(None) };
+    let Some(handle) = picked else {
+        return Ok(None);
+    };
     let path = handle.path().to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::write(&path, contents).map_err(|e| format!("writing file: {e}"))?;
@@ -646,7 +707,9 @@ pub async fn save_binary_file(
         .add_filter(&filter_name, &[extension.as_str()])
         .save_file()
         .await;
-    let Some(handle) = picked else { return Ok(None) };
+    let Some(handle) = picked else {
+        return Ok(None);
+    };
     let path = handle.path().to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::write(&path, bytes).map_err(|e| format!("writing file: {e}"))?;
@@ -692,8 +755,12 @@ pub async fn resolve_records(
 
         for path_str in &files {
             let path = std::path::Path::new(path_str);
-            let Some(kind) = detect_filetype(path) else { continue };
-            let Some(ids) = cached_record_ids(&cache, path_str, kind) else { continue };
+            let Some(kind) = detect_filetype(path) else {
+                continue;
+            };
+            let Some(ids) = cached_record_ids(&cache, path_str, kind) else {
+                continue;
+            };
             let file_type = classify_file(path).unwrap_or("genbank").to_string();
             for (i, (id, name)) in ids.iter().enumerate() {
                 // A record can satisfy a label by either its id or its name.
@@ -733,7 +800,10 @@ pub async fn trace_network_sources(path: String) -> Result<SourceTrace, String> 
         let p = std::path::Path::new(&path);
         match find_workspace_root(p) {
             Some(root) => trace_source_sequences(&root, p),
-            None => SourceTrace { has_provenance: false, sources: Vec::new() },
+            None => SourceTrace {
+                has_provenance: false,
+                sources: Vec::new(),
+            },
         }
     })
     .await
@@ -768,9 +838,16 @@ pub struct RecordRef {
 /// Validate a bare filename and join it to `dir`, refusing path separators, the
 /// reserved `.domainator` name, and pre-existing targets (caller supplies a name).
 fn validated_target(dir: &str, name: &str) -> Result<std::path::PathBuf, String> {
-    use domainator_core::app_support::workspace::{accepted_types_hint, classify_file, is_reserved_name};
+    use domainator_core::app_support::workspace::{
+        accepted_types_hint, classify_file, is_reserved_name,
+    };
     let clean = name.trim();
-    if clean.is_empty() || clean.contains('/') || clean.contains('\\') || clean == "." || clean == ".." {
+    if clean.is_empty()
+        || clean.contains('/')
+        || clean.contains('\\')
+        || clean == "."
+        || clean == ".."
+    {
         return Err("invalid file name".into());
     }
     if is_reserved_name(clean) {
@@ -780,7 +857,10 @@ fn validated_target(dir: &str, name: &str) -> Result<std::path::PathBuf, String>
     // Refuse unrecognized extensions — the workspace only lists known data types,
     // so a mystery extension would create a file the browser can't show.
     if classify_file(&p).is_none() {
-        return Err(format!("unrecognized file type for '{clean}'. {}", accepted_types_hint()));
+        return Err(format!(
+            "unrecognized file type for '{clean}'. {}",
+            accepted_types_hint()
+        ));
     }
     if p.exists() {
         return Err(format!("already exists: {clean}"));
@@ -790,7 +870,9 @@ fn validated_target(dir: &str, name: &str) -> Result<std::path::PathBuf, String>
 
 fn is_fasta_name(name: &str) -> bool {
     let l = name.to_lowercase();
-    [".fasta", ".fa", ".fna", ".faa", ".fap", ".pep"].iter().any(|e| l.ends_with(e))
+    [".fasta", ".fa", ".fna", ".faa", ".fap", ".pep"]
+        .iter()
+        .any(|e| l.ends_with(e))
 }
 
 /// Notify every window that files under `dir` changed, so file browsers refresh
@@ -813,14 +895,18 @@ pub async fn extract_contigs(
     let dir_c = dir.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
         let recs = load_sequence_any(&source)?;
-        let out: Vec<SeqRecord> = indices.iter().filter_map(|&i| recs.get(i).cloned()).collect();
+        let out: Vec<SeqRecord> = indices
+            .iter()
+            .filter_map(|&i| recs.get(i).cloned())
+            .collect();
         if out.is_empty() {
             return Err("no contigs selected".into());
         }
         let target = validated_target(&dir, &name)?;
         let ts = target.to_string_lossy().into_owned();
         if is_fasta_name(&name) {
-            domainator_core::io::fasta::write_fasta(&ts, &out).map_err(|e| format!("writing FASTA: {e}"))?;
+            domainator_core::io::fasta::write_fasta(&ts, &out)
+                .map_err(|e| format!("writing FASTA: {e}"))?;
         } else {
             write_genbank(&ts, &out).map_err(|e| format!("writing GenBank: {e}"))?;
         }
@@ -854,9 +940,13 @@ pub async fn extract_region(
     let dir_c = dir.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
         use domainator_core::tools::extract_peptides::{extract_peptides, ExtractPeptidesOptions};
-        use domainator_core::tools::select_by_coord::{extract_coordinate_region, CoordinateSelection};
+        use domainator_core::tools::select_by_coord::{
+            extract_coordinate_region, CoordinateSelection,
+        };
         let recs = load_sequence_any(&source)?;
-        let contig = recs.get(index).ok_or_else(|| format!("no contig at index {index}"))?;
+        let contig = recs
+            .get(index)
+            .ok_or_else(|| format!("no contig at index {index}"))?;
         if end <= start {
             return Err("empty region".into());
         }
@@ -890,7 +980,8 @@ pub async fn extract_region(
             }
             write_genbank(&ts, &peps).map_err(|e| format!("writing GenBank: {e}"))?;
         } else {
-            write_genbank(&ts, std::slice::from_ref(&rec)).map_err(|e| format!("writing GenBank: {e}"))?;
+            write_genbank(&ts, std::slice::from_ref(&rec))
+                .map_err(|e| format!("writing GenBank: {e}"))?;
         }
         Ok::<String, String>(ts)
     })
@@ -922,8 +1013,11 @@ pub async fn extract_hmms(
         // One pass over the source for every selected profile: a gzipped library
         // cannot be seeked, and inflating it once per profile would be quadratic.
         let entries = cached_hmm_index(&state, &source)?;
-        let ranges: Vec<(u64, u64)> =
-            indices.iter().filter_map(|&i| entries.get(i)).map(|e| (e.byte_start, e.byte_end)).collect();
+        let ranges: Vec<(u64, u64)> = indices
+            .iter()
+            .filter_map(|&i| entries.get(i))
+            .map(|e| (e.byte_start, e.byte_end))
+            .collect();
         if ranges.is_empty() {
             return Err("no profiles selected".to_string());
         }
@@ -931,7 +1025,9 @@ pub async fn extract_hmms(
         // `.hmm.gz` gets plain gzip and `.hmm.bgz` is refused, as for every other
         // hmm output (HMMER cannot read BGZF).
         write_hmm_output(&ts, |w| {
-            profiles.iter().try_for_each(|bytes| w.write_all(bytes).map_err(|e| format!("writing {ts}: {e}")))
+            profiles
+                .iter()
+                .try_for_each(|bytes| w.write_all(bytes).map_err(|e| format!("writing {ts}: {e}")))
         })?;
         Ok::<String, String>(ts)
     })
@@ -1038,7 +1134,8 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> String {
-        let d = std::env::temp_dir().join(format!("domainator-files-{}-{name}", std::process::id()));
+        let d =
+            std::env::temp_dir().join(format!("domainator-files-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d.to_string_lossy().into_owned()
@@ -1105,7 +1202,11 @@ mod tests {
             2,
             "a rewritten library must be re-indexed"
         );
-        assert_eq!(lock_poison_tolerant(&cache).len(), 1, "no duplicate entry for the same path");
+        assert_eq!(
+            lock_poison_tolerant(&cache).len(),
+            1,
+            "no duplicate entry for the same path"
+        );
     }
 
     /// Every "save as" and "extract to" path in the GUI funnels through this, and
@@ -1148,7 +1249,10 @@ mod tests {
     fn only_recognized_file_types_can_be_created() {
         let dir = scratch("types");
         for ok in ["a.gb", "b.fasta", "c.hmm", "d.tsv", "e.dsnv", "f.hdf5"] {
-            assert!(validated_target(&dir, ok).is_ok(), "{ok} should be accepted");
+            assert!(
+                validated_target(&dir, ok).is_ok(),
+                "{ok} should be accepted"
+            );
         }
         let err = validated_target(&dir, "notes.rtf").unwrap_err();
         assert!(err.contains("unrecognized file type"), "{err}");
@@ -1199,7 +1303,11 @@ mod tests {
         assert_eq!(rows[0][0].as_f64().unwrap(), -4.0);
         assert_eq!(rows[1][0].as_f64().unwrap(), -2.0);
         let total: i64 = rows.iter().map(|r| r[1].as_i64().unwrap()).sum();
-        assert_eq!(total, scores.len() as i64, "the maximum must not fall off the end");
+        assert_eq!(
+            total,
+            scores.len() as i64,
+            "the maximum must not fall off the end"
+        );
     }
 
     /// The Enum Report tab takes the same column objects as the export's builder,
@@ -1229,11 +1337,18 @@ mod tests {
         );
 
         // No taxonomy chosen: refused with what to do, before the file is read.
-        let err = run_enum_report_blocking(gb.to_string_lossy().into_owned(), None, columns, None).unwrap_err();
+        let err = run_enum_report_blocking(gb.to_string_lossy().into_owned(), None, columns, None)
+            .unwrap_err();
         assert!(err.contains("taxonomy database"), "{err}");
 
         // No columns: the per-granularity default set.
-        let rows = run_enum_report_blocking(gb.to_string_lossy().into_owned(), Some("contig".into()), vec![], None).unwrap();
+        let rows = run_enum_report_blocking(
+            gb.to_string_lossy().into_owned(),
+            Some("contig".into()),
+            vec![],
+            None,
+        )
+        .unwrap();
         let keys: Vec<&String> = rows[0].as_object().unwrap().keys().collect();
         assert_eq!(keys, ["contig", "length", "cds_count", "domains"]);
     }

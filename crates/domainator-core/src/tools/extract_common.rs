@@ -18,7 +18,10 @@ pub struct Loc {
 
 impl Loc {
     pub fn single(start: i64, end: i64, strand: i32) -> Loc {
-        Loc { parts: vec![(start, end)], strand }
+        Loc {
+            parts: vec![(start, end)],
+            strand,
+        }
     }
     /// `location.start` (lowest coord).
     pub fn start(&self) -> i64 {
@@ -77,13 +80,31 @@ pub fn pad_location(rec: &SeqRecord, loc: &Loc, pad_up: i64, pad_down: i64) -> L
         if rec.topology != Topology::Circular {
             // Linear: pad the first part upstream and last part downstream.
             let mut parts = loc.parts.clone();
-            let first = pad_location(rec, &Loc { parts: vec![parts[0]], strand: loc.strand }, pad_up, 0);
+            let first = pad_location(
+                rec,
+                &Loc {
+                    parts: vec![parts[0]],
+                    strand: loc.strand,
+                },
+                pad_up,
+                0,
+            );
             let last_idx = parts.len() - 1;
-            let last =
-                pad_location(rec, &Loc { parts: vec![parts[last_idx]], strand: loc.strand }, 0, pad_down);
+            let last = pad_location(
+                rec,
+                &Loc {
+                    parts: vec![parts[last_idx]],
+                    strand: loc.strand,
+                },
+                0,
+                pad_down,
+            );
             parts[0] = first.parts[0];
             parts[last_idx] = *last.parts.last().unwrap();
-            return Loc { parts, strand: loc.strand };
+            return Loc {
+                parts,
+                strand: loc.strand,
+            };
         }
         return pad_location_circular_compound(rec, loc, pad_up, pad_down, rec_len);
     }
@@ -95,7 +116,10 @@ pub fn pad_location(rec: &SeqRecord, loc: &Loc, pad_up: i64, pad_down: i64) -> L
         } else {
             ((l_start - pad_up).max(0), (l_end + pad_down).min(rec_len))
         };
-        return Loc { parts: vec![(min_coord, max_coord)], strand: loc.strand };
+        return Loc {
+            parts: vec![(min_coord, max_coord)],
+            strand: loc.strand,
+        };
     }
 
     // Circular, single part (mirrors utils.pad_location circular single-part).
@@ -108,7 +132,10 @@ pub fn pad_location(rec: &SeqRecord, loc: &Loc, pad_up: i64, pad_down: i64) -> L
 
     if min_coord >= 0 && max_coord <= rec_len {
         // Bounds don't cross the origin.
-        return Loc { parts: vec![(min_coord, max_coord)], strand: loc.strand };
+        return Loc {
+            parts: vec![(min_coord, max_coord)],
+            strand: loc.strand,
+        };
     }
 
     // Truncate extensions that would run into the FeatureLocation from the far side.
@@ -154,7 +181,10 @@ pub fn pad_location(rec: &SeqRecord, loc: &Loc, pad_up: i64, pad_down: i64) -> L
     if loc.strand == -1 {
         parts.reverse();
     }
-    Loc { parts, strand: loc.strand }
+    Loc {
+        parts,
+        strand: loc.strand,
+    }
 }
 
 /// `CompoundLocation.circular_envelope`: the smallest gapless arc containing all
@@ -174,13 +204,23 @@ fn circular_envelope(parts: &[(i64, i64, i32)], rec_len: i64, strand: i32) -> Ve
     for &(next_start, next_end, next_strand) in &parts[1..] {
         let (this_start, this_end, this_strand) = *loc_parts.last().unwrap();
         if touches((this_start, this_end), (next_start, next_end)) {
-            *loc_parts.last_mut().unwrap() =
-                (this_start.min(next_start), this_end.max(next_end), next_strand);
+            *loc_parts.last_mut().unwrap() = (
+                this_start.min(next_start),
+                this_end.max(next_end),
+                next_strand,
+            );
         } else if this_strand == -1 {
-            let no_cross = if next_strand == -1 { next_end <= this_start } else { next_start <= this_start };
+            let no_cross = if next_strand == -1 {
+                next_end <= this_start
+            } else {
+                next_start <= this_start
+            };
             if no_cross {
-                *loc_parts.last_mut().unwrap() =
-                    (this_start.min(next_start), this_end.max(next_end), next_strand);
+                *loc_parts.last_mut().unwrap() = (
+                    this_start.min(next_start),
+                    this_end.max(next_end),
+                    next_strand,
+                );
             } else {
                 if this_start != 0 {
                     *loc_parts.last_mut().unwrap() = (0, this_end, this_strand);
@@ -188,10 +228,17 @@ fn circular_envelope(parts: &[(i64, i64, i32)], rec_len: i64, strand: i32) -> Ve
                 loc_parts.push((next_start, rec_len, next_strand));
             }
         } else {
-            let no_cross = if next_strand == -1 { next_end >= this_end } else { next_start >= this_end };
+            let no_cross = if next_strand == -1 {
+                next_end >= this_end
+            } else {
+                next_start >= this_end
+            };
             if no_cross {
-                *loc_parts.last_mut().unwrap() =
-                    (this_start.min(next_start), this_end.max(next_end), next_strand);
+                *loc_parts.last_mut().unwrap() = (
+                    this_start.min(next_start),
+                    this_end.max(next_end),
+                    next_strand,
+                );
             } else {
                 if this_end != rec_len {
                     *loc_parts.last_mut().unwrap() = (this_start, rec_len, this_strand);
@@ -225,7 +272,13 @@ fn circular_envelope(parts: &[(i64, i64, i32)], rec_len: i64, strand: i32) -> Ve
 }
 
 /// `pad_location` multi-part circular branch (utils.pad_location lines 1408-1458).
-fn pad_location_circular_compound(rec: &SeqRecord, loc: &Loc, pad_up: i64, pad_down: i64, rec_len: i64) -> Loc {
+fn pad_location_circular_compound(
+    rec: &SeqRecord,
+    loc: &Loc,
+    pad_up: i64,
+    pad_down: i64,
+    rec_len: i64,
+) -> Loc {
     let strand = loc.strand;
     let parts3: Vec<(i64, i64, i32)> = loc.parts.iter().map(|&(s, e)| (s, e, strand)).collect();
     let env = circular_envelope(&parts3, rec_len, strand);
@@ -237,10 +290,21 @@ fn pad_location_circular_compound(rec: &SeqRecord, loc: &Loc, pad_up: i64, pad_d
     if env.len() == 1 {
         // Envelope does not cross the origin: padding might. Pad the single-part
         // envelope to get extension sizes, then apply to the first/last parts.
-        let (up_ext, down_ext) = single_pad_extensions(rec, env[0].0, env[0].1, strand, pad_up, pad_down, rec_len);
-        let first = pad_location(rec, &Loc::single(loc.parts[0].0, loc.parts[0].1, strand), up_ext, 0);
+        let (up_ext, down_ext) =
+            single_pad_extensions(rec, env[0].0, env[0].1, strand, pad_up, pad_down, rec_len);
+        let first = pad_location(
+            rec,
+            &Loc::single(loc.parts[0].0, loc.parts[0].1, strand),
+            up_ext,
+            0,
+        );
         let last_idx = loc.parts.len() - 1;
-        let last = pad_location(rec, &Loc::single(loc.parts[last_idx].0, loc.parts[last_idx].1, strand), 0, down_ext);
+        let last = pad_location(
+            rec,
+            &Loc::single(loc.parts[last_idx].0, loc.parts[last_idx].1, strand),
+            0,
+            down_ext,
+        );
         let mut out: Vec<(i64, i64)> = Vec::new();
         out.extend(first.parts);
         out.extend(loc.parts[1..last_idx].iter().copied());
@@ -266,9 +330,19 @@ fn pad_location_circular_compound(rec: &SeqRecord, loc: &Loc, pad_up: i64, pad_d
             pd -= 1;
         }
     }
-    let first = pad_location(rec, &Loc::single(loc.parts[0].0, loc.parts[0].1, strand), pu, 0);
+    let first = pad_location(
+        rec,
+        &Loc::single(loc.parts[0].0, loc.parts[0].1, strand),
+        pu,
+        0,
+    );
     let last_idx = loc.parts.len() - 1;
-    let last = pad_location(rec, &Loc::single(loc.parts[last_idx].0, loc.parts[last_idx].1, strand), 0, pd);
+    let last = pad_location(
+        rec,
+        &Loc::single(loc.parts[last_idx].0, loc.parts[last_idx].1, strand),
+        0,
+        pd,
+    );
     let mut out: Vec<(i64, i64)> = Vec::new();
     out.extend(first.parts);
     out.extend(loc.parts[1..last_idx].iter().copied());
@@ -278,7 +352,15 @@ fn pad_location_circular_compound(rec: &SeqRecord, loc: &Loc, pad_up: i64, pad_d
 
 /// Extension sizes `(upstream, downstream)` from padding a single-part location on
 /// a circular contig (mirrors pad_location's return_extension_sizes path).
-fn single_pad_extensions(_rec: &SeqRecord, l_start: i64, l_end: i64, strand: i32, pad_up: i64, pad_down: i64, rec_len: i64) -> (i64, i64) {
+fn single_pad_extensions(
+    _rec: &SeqRecord,
+    l_start: i64,
+    l_end: i64,
+    strand: i32,
+    pad_up: i64,
+    pad_down: i64,
+    rec_len: i64,
+) -> (i64, i64) {
     let end_to_origin = rec_len - l_end;
     let (mut min_coord, mut max_coord) = if strand == -1 {
         (l_start - pad_down, l_end + pad_up)
@@ -324,8 +406,15 @@ pub fn slice_from_location(
     keep_features: &[SeqFeature],
     truncate_features: bool,
 ) -> SeqRecord {
-    let parts: Vec<Env> =
-        loc.parts.iter().map(|&(s, e)| Env { start: s, end: e, strand: loc.strand }).collect();
+    let parts: Vec<Env> = loc
+        .parts
+        .iter()
+        .map(|&(s, e)| Env {
+            start: s,
+            end: e,
+            strand: loc.strand,
+        })
+        .collect();
     let (ns, ne) = if loc.strand == -1 {
         (parts.last().unwrap().end, parts[0].start)
     } else {
@@ -349,7 +438,11 @@ pub fn slice_from_location(
 /// Like [`slice_record`] but partially-overlapping non-source features are
 /// truncated to the slice instead of dropped (the `truncate_features=True` case).
 /// Only supports the single-part forward slice used by the splice path.
-fn slice_record_truncating(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[SeqFeature]) -> SeqRecord {
+fn slice_record_truncating(
+    rec: &SeqRecord,
+    slice: &SliceLoc,
+    keep_features: &[SeqFeature],
+) -> SeqRecord {
     use crate::seq::location::{CompoundOp, Location};
     // Build sequence + per-part shifts.
     let mut seq = Vec::new();
@@ -407,10 +500,18 @@ fn slice_record_truncating(rec: &SeqRecord, slice: &SliceLoc, keep_features: &[S
         if matches!(f.location.operator, None | Some(CompoundOp::Join)) {
             super::neighborhood::merge_touching_parts(&mut remapped);
         }
-        let operator = if remapped.len() > 1 { Some(CompoundOp::Join) } else { None };
+        let operator = if remapped.len() > 1 {
+            Some(CompoundOp::Join)
+        } else {
+            None
+        };
         new_features.push(SeqFeature {
             kind: f.kind.clone(),
-            location: Location { operator, between: false, parts: remapped },
+            location: Location {
+                operator,
+                between: false,
+                parts: remapped,
+            },
             qualifiers: f.qualifiers.clone(),
         });
     }
@@ -447,7 +548,12 @@ mod tests {
     use super::{circular_envelope, slice_from_location, Loc};
 
     /// `(description, input parts, overall strand, expected envelope)`.
-    type Case = (&'static str, &'static [(i64, i64, i32)], i32, &'static [(i64, i64)]);
+    type Case = (
+        &'static str,
+        &'static [(i64, i64, i32)],
+        i32,
+        &'static [(i64, i64)],
+    );
 
     /// `circular_envelope`'s multi-part branch: the smallest gapless arc containing
     /// every part and the junctions between them, on a circular record.
@@ -461,16 +567,55 @@ mod tests {
     fn circular_envelope_matches_python() {
         const REC: i64 = 100;
         let cases: &[Case] = &[
-            ("touching parts merge", &[(10, 30, 1), (25, 50, 1)], 1, &[(10, 50)]),
-            ("disjoint, no origin cross", &[(10, 30, 1), (40, 60, 1)], 1, &[(10, 60)]),
-            ("forward crosses the origin", &[(80, 100, 1), (0, 20, 1)], 1, &[(80, 100), (0, 20)]),
-            ("reverse crosses the origin", &[(0, 20, -1), (80, 100, -1)], -1, &[(0, 20), (80, 100)]),
-            ("reverse, no origin cross", &[(60, 80, -1), (10, 30, -1)], -1, &[(10, 80)]),
-            ("three parts, no wrap", &[(10, 20, 1), (30, 40, 1), (50, 60, 1)], 1, &[(10, 60)]),
-            ("three parts, wrapping", &[(70, 90, 1), (95, 100, 1), (0, 10, 1)], 1, &[(70, 100), (0, 10)]),
+            (
+                "touching parts merge",
+                &[(10, 30, 1), (25, 50, 1)],
+                1,
+                &[(10, 50)],
+            ),
+            (
+                "disjoint, no origin cross",
+                &[(10, 30, 1), (40, 60, 1)],
+                1,
+                &[(10, 60)],
+            ),
+            (
+                "forward crosses the origin",
+                &[(80, 100, 1), (0, 20, 1)],
+                1,
+                &[(80, 100), (0, 20)],
+            ),
+            (
+                "reverse crosses the origin",
+                &[(0, 20, -1), (80, 100, -1)],
+                -1,
+                &[(0, 20), (80, 100)],
+            ),
+            (
+                "reverse, no origin cross",
+                &[(60, 80, -1), (10, 30, -1)],
+                -1,
+                &[(10, 80)],
+            ),
+            (
+                "three parts, no wrap",
+                &[(10, 20, 1), (30, 40, 1), (50, 60, 1)],
+                1,
+                &[(10, 60)],
+            ),
+            (
+                "three parts, wrapping",
+                &[(70, 90, 1), (95, 100, 1), (0, 10, 1)],
+                1,
+                &[(70, 100), (0, 10)],
+            ),
         ];
         for (name, parts, strand, expected) in cases {
-            assert_eq!(circular_envelope(parts, REC, *strand), *expected, "case: {name}");
+            assert_eq!(
+                circular_envelope(parts, REC, *strand),
+                *expected,
+                "case: {name}"
+            );
         }
     }
 
@@ -494,11 +639,20 @@ mod tests {
             features: vec![SeqFeature::new("source", Location::range(0, 20, 1))],
         };
         // The origin-crossing window [14,20) + [0,4), as a CDS location would give it.
-        let loc = Loc { parts: vec![(14, 20), (0, 4)], strand: 1 };
+        let loc = Loc {
+            parts: vec![(14, 20), (0, 4)],
+            strand: 1,
+        };
         let out = slice_from_location(&rec, &loc, &rec.features, true);
         assert_eq!(out.seq, b"TTACGTAAAA");
-        assert_eq!(out.features[0].location.parts, vec![(0, 10, 1, false, false)]);
-        assert!(out.features[0].location.operator.is_none(), "must not stay a join");
+        assert_eq!(
+            out.features[0].location.parts,
+            vec![(0, 10, 1, false, false)]
+        );
+        assert!(
+            out.features[0].location.operator.is_none(),
+            "must not stay a join"
+        );
     }
 
     /// `stranded_{start,end}_human_readable`: the start reads `parts[0]`, the end
@@ -509,17 +663,35 @@ mod tests {
     #[test]
     fn stranded_human_readable_start_is_first_part_end_is_last() {
         // The origin-crossing Domainator feature join(2438..2552, 1..707).
-        let fwd = Loc { parts: vec![(2437, 2552), (0, 707)], strand: 1 };
-        assert_eq!((fwd.stranded_start_hr(), fwd.stranded_end_hr()), (2438, 707));
+        let fwd = Loc {
+            parts: vec![(2437, 2552), (0, 707)],
+            strand: 1,
+        };
+        assert_eq!(
+            (fwd.stranded_start_hr(), fwd.stranded_end_hr()),
+            (2438, 707)
+        );
 
-        let rev = Loc { parts: vec![(2437, 2552), (0, 707)], strand: -1 };
+        let rev = Loc {
+            parts: vec![(2437, 2552), (0, 707)],
+            strand: -1,
+        };
         assert_eq!((rev.stranded_start_hr(), rev.stranded_end_hr()), (2552, 1));
 
         // A single part is unaffected either way.
-        let one = Loc { parts: vec![(99, 200)], strand: 1 };
+        let one = Loc {
+            parts: vec![(99, 200)],
+            strand: 1,
+        };
         assert_eq!((one.stranded_start_hr(), one.stranded_end_hr()), (100, 200));
-        let one_rev = Loc { parts: vec![(99, 200)], strand: -1 };
-        assert_eq!((one_rev.stranded_start_hr(), one_rev.stranded_end_hr()), (200, 100));
+        let one_rev = Loc {
+            parts: vec![(99, 200)],
+            strand: -1,
+        };
+        assert_eq!(
+            (one_rev.stranded_start_hr(), one_rev.stranded_end_hr()),
+            (200, 100)
+        );
     }
 
     #[test]

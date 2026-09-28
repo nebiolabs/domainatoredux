@@ -12,18 +12,30 @@ const COMPRESSION_EXTS: [&str; 3] = ["gz", "bgz", "bgzf"];
 /// `(dir, stem, fmt_ext, comp_ext)` split of a database path. `fmt_ext` is the
 /// sequence-format extension; `comp_ext` is a trailing compression suffix or "".
 pub(crate) fn split_db_name(db_path: &Path) -> (PathBuf, String, String, String) {
-    let directory = db_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-    let base = db_path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+    let directory = db_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let base = db_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
     let mut parts: Vec<&str> = base.split('.').collect();
     let mut comp = String::new();
-    if parts.len() >= 2 && COMPRESSION_EXTS.contains(&parts.last().unwrap().to_ascii_lowercase().as_str()) {
+    if parts.len() >= 2
+        && COMPRESSION_EXTS.contains(&parts.last().unwrap().to_ascii_lowercase().as_str())
+    {
         comp = parts.pop().unwrap().to_string();
     }
     let (fmt, stem) = if parts.len() >= 2 {
         let fmt = parts.pop().unwrap().to_string();
         (fmt, parts.join("."))
     } else {
-        (String::new(), parts.first().copied().unwrap_or("").to_string())
+        (
+            String::new(),
+            parts.first().copied().unwrap_or("").to_string(),
+        )
     };
     (directory, stem, fmt, comp)
 }
@@ -90,9 +102,14 @@ pub fn resolve_database_shards(db_path: &Path) -> Result<Vec<PathBuf>, String> {
     let base_exists = db_path.exists();
     let (dir, stem, fmt, _comp) = split_db_name(db_path);
 
-    let mut shards_by_num: std::collections::BTreeMap<u64, PathBuf> = std::collections::BTreeMap::new();
+    let mut shards_by_num: std::collections::BTreeMap<u64, PathBuf> =
+        std::collections::BTreeMap::new();
     if !fmt.is_empty() {
-        let search_dir = if dir.as_os_str().is_empty() { PathBuf::from(".") } else { dir.clone() };
+        let search_dir = if dir.as_os_str().is_empty() {
+            PathBuf::from(".")
+        } else {
+            dir.clone()
+        };
         if let Ok(entries) = std::fs::read_dir(&search_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name();
@@ -101,7 +118,11 @@ pub fn resolve_database_shards(db_path: &Path) -> Result<Vec<PathBuf>, String> {
                     None => continue,
                 };
                 if let Some(num) = match_shard(name, &stem, &fmt) {
-                    let full = if dir.as_os_str().is_empty() { PathBuf::from(name) } else { dir.join(name) };
+                    let full = if dir.as_os_str().is_empty() {
+                        PathBuf::from(name)
+                    } else {
+                        dir.join(name)
+                    };
                     if let Some(existing) = shards_by_num.get(&num) {
                         return Err(format!(
                             "Ambiguous shards for '{}': {} and {} both resolve to shard {} (leading-zero collision).",

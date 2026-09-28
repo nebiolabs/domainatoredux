@@ -21,7 +21,11 @@ pub(crate) fn hide_console(command: &mut Command) {
 /// in order, then a bundled `external/<bundled_dir>/<name>` searched upward from
 /// the running executable and in the current directory, then bare `name` on PATH.
 pub(crate) fn find_binary(name: &str, env_vars: &[&str], bundled_dir: &str) -> PathBuf {
-    let exe_name = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
+    let exe_name = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
     for var in env_vars {
         if let Ok(p) = std::env::var(var) {
             if !p.is_empty() {
@@ -54,7 +58,10 @@ pub(crate) fn spawn_error(e: std::io::Error, bin: &Path, hint: &str) -> std::io:
     if e.kind() == std::io::ErrorKind::NotFound {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("could not run '{}': executable not found. {hint}", bin.display()),
+            format!(
+                "could not run '{}': executable not found. {hint}",
+                bin.display()
+            ),
         )
     } else {
         e

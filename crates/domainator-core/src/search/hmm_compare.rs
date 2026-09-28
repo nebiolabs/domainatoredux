@@ -155,7 +155,10 @@ pub fn compare_hmmer_aligned(q: &Hmm, r: &Hmm, bg: &[f32]) -> Alignment {
     let nr = r.mat.len();
     let k = q.abc_k;
     if nq < 2 || nr < 2 {
-        return Alignment { score: 0.0, text: String::new() };
+        return Alignment {
+            score: 0.0,
+            text: String::new(),
+        };
     }
 
     let qt: Vec<[f32; 7]> = q.t.iter().map(neg_log7).collect();
@@ -176,8 +179,11 @@ pub fn compare_hmmer_aligned(q: &Hmm, r: &Hmm, bg: &[f32]) -> Alignment {
             let cim = scores[qi - 1][ri - 1][SIM] - qt[qi - 1][IM] - rt[ri - 1][MM];
             let cdg = scores[qi - 1][ri - 1][SDG] - qt[qi - 1][DM] - rt[ri - 1][MM];
             let cgd = scores[qi - 1][ri - 1][SGD] - qt[qi - 1][MM] - rt[ri - 1][DM];
-            let (mut sc, mut layer): (f32, u8) =
-                if 0.0 > cmm { (0.0, STOP) } else { (cmm, SMM as u8) };
+            let (mut sc, mut layer): (f32, u8) = if 0.0 > cmm {
+                (0.0, STOP)
+            } else {
+                (cmm, SMM as u8)
+            };
             if cim > sc {
                 sc = cim;
                 layer = SIM as u8;
@@ -349,7 +355,11 @@ pub fn hmm_compare_scores(query: &[Hmm], reference: &[Hmm], lb: f64) -> Vec<CmpR
                 if score <= lb {
                     continue;
                 }
-                row.push(CmpResult { score, query: q.name.clone(), subject: r.name.clone() });
+                row.push(CmpResult {
+                    score,
+                    query: q.name.clone(),
+                    subject: r.name.clone(),
+                });
             }
             row.into_iter()
         })
@@ -467,9 +477,7 @@ pub fn check_alphabets_match(
     tool_name: &str,
 ) -> Result<(), String> {
     match (input, reference) {
-        (Some(i), Some(r)) if i != r => {
-            Err(alphabet_mismatch_message(i, r, input_name, tool_name))
-        }
+        (Some(i), Some(r)) if i != r => Err(alphabet_mismatch_message(i, r, input_name, tool_name)),
         _ => Ok(()),
     }
 }

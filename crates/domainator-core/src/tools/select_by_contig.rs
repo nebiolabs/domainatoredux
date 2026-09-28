@@ -57,12 +57,17 @@ fn count_cds(contig: &SeqRecord) -> i64 {
 fn db_ok(databases: Option<&HashSet<String>>, f: &crate::seq::SeqFeature) -> bool {
     match databases {
         None => true,
-        Some(dbs) => f.get_first("database").map(|d| dbs.contains(d)).unwrap_or(false),
+        Some(dbs) => f
+            .get_first("database")
+            .map(|d| dbs.contains(d))
+            .unwrap_or(false),
     }
 }
 
 fn feat_evalue(f: &crate::seq::SeqFeature) -> f64 {
-    f.get_first("evalue").and_then(|v| v.parse().ok()).unwrap_or(f64::INFINITY)
+    f.get_first("evalue")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(f64::INFINITY)
 }
 
 /// Run the selection. `ncbi_taxonomy` is required iff a taxonomy filter is set.
@@ -75,18 +80,28 @@ pub fn select_by_contig(
     let def_re = compile(opts.definition_regex.as_deref())?;
     let seq_re = compile(opts.sequence_regex.as_deref())?;
     let name_re = compile(opts.contigs_regex.as_deref())?;
-    let domain_type = if opts.domain_type.is_empty() { "domain" } else { opts.domain_type.as_str() };
+    let domain_type = if opts.domain_type.is_empty() {
+        "domain"
+    } else {
+        opts.domain_type.as_str()
+    };
 
     // Taxonomy filter compiled to an allowed-taxid set (O(1) membership).
     let allowed: Option<HashSet<i64>> = {
         let has_tax = opts.include_taxids.as_ref().is_some_and(|s| !s.is_empty())
             || opts.exclude_taxids.as_ref().is_some_and(|s| !s.is_empty())
-            || opts.taxonomy_expr.as_deref().is_some_and(|e| !e.trim().is_empty());
+            || opts
+                .taxonomy_expr
+                .as_deref()
+                .is_some_and(|e| !e.trim().is_empty());
         if !has_tax {
             None
         } else {
             let tax = ncbi_taxonomy.ok_or("taxonomy filter requires an NCBI taxonomy database")?;
-            if opts.taxonomy_expr.as_deref().is_some_and(|e| !e.trim().is_empty())
+            if opts
+                .taxonomy_expr
+                .as_deref()
+                .is_some_and(|e| !e.trim().is_empty())
                 && (opts.include_taxids.as_ref().is_some_and(|s| !s.is_empty())
                     || opts.exclude_taxids.as_ref().is_some_and(|s| !s.is_empty()))
             {
@@ -95,10 +110,17 @@ pub fn select_by_contig(
                         .into(),
                 );
             }
-            if let Some(e) = opts.taxonomy_expr.as_deref().filter(|e| !e.trim().is_empty()) {
+            if let Some(e) = opts
+                .taxonomy_expr
+                .as_deref()
+                .filter(|e| !e.trim().is_empty())
+            {
                 tax.compile_taxonomy_expression(e)
             } else {
-                tax.compile_taxonomy_filter(opts.include_taxids.as_ref(), opts.exclude_taxids.as_ref())
+                tax.compile_taxonomy_filter(
+                    opts.include_taxids.as_ref(),
+                    opts.exclude_taxids.as_ref(),
+                )
             }
         }
     };
@@ -200,8 +222,10 @@ pub fn select_by_contig(
 
             if use_search_score {
                 if let Some(sf) = search_feature {
-                    let score: f64 =
-                        sf.get_first("score").and_then(|v| v.parse().ok()).unwrap_or(f64::NAN);
+                    let score: f64 = sf
+                        .get_first("score")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(f64::NAN);
                     if score >= score_lb && score <= score_ub {
                         selected = true;
                     }
@@ -243,6 +267,8 @@ pub fn select_by_contig(
 fn compile(pattern: Option<&str>) -> Result<Option<Regex>, String> {
     match pattern {
         None => Ok(None),
-        Some(p) => Regex::new(p).map(Some).map_err(|e| format!("invalid regex {p:?}: {e}")),
+        Some(p) => Regex::new(p)
+            .map(Some)
+            .map_err(|e| format!("invalid regex {p:?}: {e}")),
     }
 }

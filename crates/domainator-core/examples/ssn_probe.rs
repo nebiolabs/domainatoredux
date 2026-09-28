@@ -80,9 +80,18 @@ fn main() {
     let all_rows = threshold_merge_event_rows(&summary);
     // The moving sum MUST see the uncapped rows; filtering first undercounts exactly
     // the small events the series exists to reveal.
-    let moving = merge_event_moving_sum(&all_rows, MOVING_SUM_WINDOW_FRACTION, MOVING_SUM_GRID_POINTS);
-    let events =
-        filter_merge_event_rows_binned(&all_rows, max_merge_events, MERGE_EVENT_DENSITY_BINS, None, None);
+    let moving = merge_event_moving_sum(
+        &all_rows,
+        MOVING_SUM_WINDOW_FRACTION,
+        MOVING_SUM_GRID_POINTS,
+    );
+    let events = filter_merge_event_rows_binned(
+        &all_rows,
+        max_merge_events,
+        MERGE_EVENT_DENSITY_BINS,
+        None,
+        None,
+    );
     // `true`: only a caller holding the threshold tables can index them, and this probe
     // builds its tree from the matrix, so it does.
     let stops = threshold_slider_stops(&events, Some(&tree), true);
@@ -92,8 +101,11 @@ fn main() {
     // from the data so `sync_upstream.sh` needs no extra flags: the middle 40% of the
     // finite threshold axis, pinned at the first dropped event — which is what makes the
     // pin actually bite rather than being a no-op that proves nothing.
-    let finite: Vec<f64> =
-        all_rows.iter().map(|e| e.threshold_value).filter(|v| v.is_finite()).collect();
+    let finite: Vec<f64> = all_rows
+        .iter()
+        .map(|e| e.threshold_value)
+        .filter(|v| v.is_finite())
+        .collect();
     let window = match (
         finite.iter().cloned().fold(f64::INFINITY, f64::min),
         finite.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
@@ -113,15 +125,23 @@ fn main() {
         .iter()
         .map(|e| e.threshold_value)
         .find(|t| !kept_thresholds.iter().any(|k| k == t));
-    let windowed_pinned =
-        filter_merge_event_rows_binned(&all_rows, max_merge_events, MERGE_EVENT_DENSITY_BINS, window, pin);
+    let windowed_pinned = filter_merge_event_rows_binned(
+        &all_rows,
+        max_merge_events,
+        MERGE_EVENT_DENSITY_BINS,
+        window,
+        pin,
+    );
 
     let mst: Vec<String> = tree
         .mst_edges()
         .map(|(i, j, w)| format!("[{i},{j},{}]", num(w)))
         .collect();
     let pair = |v: &Vec<(f64, f64)>| -> String {
-        arr(&v.iter().map(|(a, b)| format!("[{},{}]", num(*a), num(*b))).collect::<Vec<_>>())
+        arr(&v
+            .iter()
+            .map(|(a, b)| format!("[{},{}]", num(*a), num(*b)))
+            .collect::<Vec<_>>())
     };
     let events_json: Vec<String> = events
         .iter()
@@ -157,23 +177,36 @@ fn main() {
                 "{{\"edge_index\":{},\"threshold_index\":{},\"threshold_label\":\"{}\",\
                  \"threshold_value\":{}}}",
                 s.edge_index,
-                s.threshold_index.map(|v| v.to_string()).unwrap_or_else(|| "null".into()),
+                s.threshold_index
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "null".into()),
                 s.threshold_label,
                 s.threshold_value.map(num).unwrap_or_else(|| "null".into()),
             )
         })
         .collect();
-    let usize_arr =
-        |v: &[usize]| arr(&v.iter().map(|x| x.to_string()).collect::<Vec<_>>());
+    let usize_arr = |v: &[usize]| arr(&v.iter().map(|x| x.to_string()).collect::<Vec<_>>());
     let u64_arr = |v: &[u64]| arr(&v.iter().map(|x| x.to_string()).collect::<Vec<_>>());
 
     // Keys are emitted in sorted order to match the Python probe's `sort_keys=True`,
     // so a plain `diff` is also readable (json_parity.py ignores key order anyway).
     print!("{{");
-    print!("\"cluster_count_by_edge_count\":{},", pair(&tree.cluster_count_by_edge_count()));
-    print!("\"cluster_count_by_threshold\":{},", pair(&tree.cluster_count_by_threshold()));
-    print!("\"edges_above_threshold\":{},", u64_arr(tree.edges_above_threshold()));
-    print!("\"edges_by_threshold\":{},", pair(&tree.edges_by_threshold()));
+    print!(
+        "\"cluster_count_by_edge_count\":{},",
+        pair(&tree.cluster_count_by_edge_count())
+    );
+    print!(
+        "\"cluster_count_by_threshold\":{},",
+        pair(&tree.cluster_count_by_threshold())
+    );
+    print!(
+        "\"edges_above_threshold\":{},",
+        u64_arr(tree.edges_above_threshold())
+    );
+    print!(
+        "\"edges_by_threshold\":{},",
+        pair(&tree.edges_by_threshold())
+    );
     print!(
         "\"hierarchy\":{{\"leaf_order\":{},\"n_nodes\":{},\"roots\":{}}},",
         usize_arr(&hier.leaf_order),
@@ -183,10 +216,12 @@ fn main() {
     print!("\"max_merge_events\":{},", max_merge_events);
     print!("\"merge_event_total\":{},", all_rows.len());
     print!("\"merge_events\":{},", arr(&events_json));
-    let edge_indices =
-        |rows: &[domainator_core::matrix::ssn::MergeEvent]| -> String {
-            arr(&rows.iter().map(|e| e.edge_index.to_string()).collect::<Vec<_>>())
-        };
+    let edge_indices = |rows: &[domainator_core::matrix::ssn::MergeEvent]| -> String {
+        arr(&rows
+            .iter()
+            .map(|e| e.edge_index.to_string())
+            .collect::<Vec<_>>())
+    };
     print!(
         "\"merge_events_windowed\":{{\"pinned_threshold\":{},\"selected\":{},\
          \"selected_pinned\":{},\"window\":{}}},",
@@ -205,7 +240,10 @@ fn main() {
         arr(&moving.y.iter().map(|v| num(*v)).collect::<Vec<_>>())
     );
     print!("\"mst_edges\":{},", arr(&mst));
-    print!("\"mst_edges_above_threshold\":{},", u64_arr(tree.mst_edges_above_threshold()));
+    print!(
+        "\"mst_edges_above_threshold\":{},",
+        u64_arr(tree.mst_edges_above_threshold())
+    );
     print!("\"n_edges\":{},", tree.n_edges());
     print!("\"n_nodes\":{},", tree.n_nodes);
     print!("\"slider_stops\":{},", arr(&stops_json));
@@ -219,7 +257,11 @@ fn main() {
     );
     print!(
         "\"thresholds\":{}",
-        arr(&tree.thresholds().iter().map(|&t| num(t)).collect::<Vec<_>>())
+        arr(&tree
+            .thresholds()
+            .iter()
+            .map(|&t| num(t))
+            .collect::<Vec<_>>())
     );
     println!("}}");
 }

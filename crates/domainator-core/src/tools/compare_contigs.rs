@@ -47,7 +47,16 @@ pub struct CompareContigsOptions {
 
 impl Default for CompareContigsOptions {
     fn default() -> Self {
-        CompareContigsOptions { ji_weight: 0.5, ai_weight: 0.5, databases: None, k: None, lb: 0.0, mst_knn: None, knn: None, cpu: 0 }
+        CompareContigsOptions {
+            ji_weight: 0.5,
+            ai_weight: 0.5,
+            databases: None,
+            k: None,
+            lb: 0.0,
+            mst_knn: None,
+            knn: None,
+            cpu: 0,
+        }
     }
 }
 
@@ -99,7 +108,10 @@ fn feature_sets(
                     .iter()
                     .filter(|f| f.kind == DOMAIN_FEATURE_NAME)
                     .filter(|f| match databases {
-                        Some(dbs) => f.get_first("database").map(|db| dbs.contains(db)).unwrap_or(false),
+                        Some(dbs) => f
+                            .get_first("database")
+                            .map(|db| dbs.contains(db))
+                            .unwrap_or(false),
                         None => true,
                     })
                     .collect();
@@ -144,14 +156,24 @@ fn intersection_size(a: &[u32], b: &[u32]) -> usize {
 
 /// Compute the combined JI/AI similarity matrix for `recs`. `k` is the per-row
 /// top-N cap (`None` keeps every non-zero entry — used by `--mst_knn`).
-fn combined_matrix(recs: &[SeqRecord], opts: &CompareContigsOptions, k: Option<usize>) -> DataMatrix {
+fn combined_matrix(
+    recs: &[SeqRecord],
+    opts: &CompareContigsOptions,
+    k: Option<usize>,
+) -> DataMatrix {
     let n = recs.len();
     let mut metrics: Vec<(f64, Vec<Vec<u32>>)> = Vec::new();
     if opts.ji_weight != 0.0 {
-        metrics.push((opts.ji_weight, feature_sets(recs, Metric::Jaccard, opts.databases.as_ref())));
+        metrics.push((
+            opts.ji_weight,
+            feature_sets(recs, Metric::Jaccard, opts.databases.as_ref()),
+        ));
     }
     if opts.ai_weight != 0.0 {
-        metrics.push((opts.ai_weight, feature_sets(recs, Metric::Adjacency, opts.databases.as_ref())));
+        metrics.push((
+            opts.ai_weight,
+            feature_sets(recs, Metric::Adjacency, opts.databases.as_ref()),
+        ));
     }
     let diag: f64 = metrics.iter().map(|(w, _)| *w).sum();
 
@@ -255,7 +277,11 @@ pub fn compare_contigs(
             row_lengths: None,
             col_lengths: None,
             data_type: "score".to_string(),
-            storage: Storage::Sparse { values: vec![], indices: vec![], indptr: vec![0; recs.len() + 1] },
+            storage: Storage::Sparse {
+                values: vec![],
+                indices: vec![],
+                indptr: vec![0; recs.len() + 1],
+            },
         });
     }
 
@@ -266,10 +292,18 @@ pub fn compare_contigs(
         ));
     }
     // Either sparsifier bypasses per-row top-k so the pruning sees the full candidate set.
-    let k = if opts.mst_knn.is_some() || opts.knn.is_some() { None } else { opts.k };
+    let k = if opts.mst_knn.is_some() || opts.knn.is_some() {
+        None
+    } else {
+        opts.k
+    };
     let matrix = combined_matrix(&recs, opts, k);
 
-    match opts.mst_knn.map(|k| (k, true)).or_else(|| opts.knn.map(|k| (k, false))) {
+    match opts
+        .mst_knn
+        .map(|k| (k, true))
+        .or_else(|| opts.knn.map(|k| (k, false)))
+    {
         Some((k, include_mst)) => Ok(apply_mst_knn(&matrix, k, opts.lb, include_mst)),
         None => Ok(matrix),
     }
@@ -291,7 +325,8 @@ mod tests {
         let features = domains
             .iter()
             .map(|(name, start)| {
-                let mut f = SeqFeature::new(DOMAIN_FEATURE_NAME, Location::range(*start, *start + 30, 1));
+                let mut f =
+                    SeqFeature::new(DOMAIN_FEATURE_NAME, Location::range(*start, *start + 30, 1));
                 f.set("name", *name);
                 f.set("database", "DB");
                 f
@@ -312,8 +347,15 @@ mod tests {
     #[test]
     fn jaccard_only_combined_matrix() {
         // A={X,Y}, B={Y,Z}: shared 1, union 3 -> JI = 1/3.
-        let recs = vec![contig("A", &[("X", 10), ("Y", 50)]), contig("B", &[("Y", 10), ("Z", 50)])];
-        let opts = CompareContigsOptions { ji_weight: 1.0, ai_weight: 0.0, ..Default::default() };
+        let recs = vec![
+            contig("A", &[("X", 10), ("Y", 50)]),
+            contig("B", &[("Y", 10), ("Z", 50)]),
+        ];
+        let opts = CompareContigsOptions {
+            ji_weight: 1.0,
+            ai_weight: 0.0,
+            ..Default::default()
+        };
         let d = combined_matrix(&recs, &opts, None).densify();
         // [A-A, A-B, B-A, B-B]
         assert!((d[0] - 1.0).abs() < 1e-9); // diagonal = sum of weights = 1.0
@@ -329,7 +371,11 @@ mod tests {
             contig("A", &[("X", 10), ("Y", 50), ("Z", 90)]),
             contig("B", &[("X", 10), ("Y", 50), ("W", 90)]),
         ];
-        let opts = CompareContigsOptions { ji_weight: 0.0, ai_weight: 1.0, ..Default::default() };
+        let opts = CompareContigsOptions {
+            ji_weight: 0.0,
+            ai_weight: 1.0,
+            ..Default::default()
+        };
         let d = combined_matrix(&recs, &opts, None).densify();
         assert!((d[1] - 1.0 / 3.0).abs() < 1e-9);
     }
@@ -337,7 +383,11 @@ mod tests {
     #[test]
     fn no_shared_domains_gives_no_offdiagonal_edge() {
         let recs = vec![contig("A", &[("X", 10)]), contig("B", &[("Z", 10)])];
-        let opts = CompareContigsOptions { ji_weight: 0.5, ai_weight: 0.5, ..Default::default() };
+        let opts = CompareContigsOptions {
+            ji_weight: 0.5,
+            ai_weight: 0.5,
+            ..Default::default()
+        };
         let d = combined_matrix(&recs, &opts, None).densify();
         assert_eq!(d[1], 0.0);
         assert_eq!(d[2], 0.0);

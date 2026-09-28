@@ -51,7 +51,10 @@ pub fn output_role(path: &str) -> String {
         Some(FileType::Fasta) => return "fasta".into(),
         None => {}
     }
-    let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
     let name = name.strip_suffix(".gz").unwrap_or(&name);
     let ext = name.rsplit('.').next().unwrap_or("");
     match ext {
@@ -98,7 +101,12 @@ pub fn declared_inputs(spec: &ToolSpec, params: &Value) -> Vec<IoRef> {
         .filter(|f| is_input(f))
         .flat_map(|f| {
             let role = input_role(f);
-            paths_of(params.get(&f.name)).into_iter().map(move |path| IoRef { path, role: role.clone() })
+            paths_of(params.get(&f.name))
+                .into_iter()
+                .map(move |path| IoRef {
+                    path,
+                    role: role.clone(),
+                })
         })
         .collect()
 }
@@ -131,7 +139,10 @@ pub fn existing_outputs(outputs: &[String]) -> Vec<IoRef> {
     outputs
         .iter()
         .filter(|p| Path::new(p).exists())
-        .map(|p| IoRef { path: p.clone(), role: output_role(p) })
+        .map(|p| IoRef {
+            path: p.clone(),
+            role: output_role(p),
+        })
         .collect()
 }
 
@@ -160,7 +171,12 @@ pub struct Cleanup {
 
 impl OutputSnapshot {
     pub fn take(outputs: &[String]) -> Self {
-        OutputSnapshot(outputs.iter().map(|p| (PathBuf::from(p), stamp(Path::new(p)))).collect())
+        OutputSnapshot(
+            outputs
+                .iter()
+                .map(|p| (PathBuf::from(p), stamp(Path::new(p))))
+                .collect(),
+        )
     }
 
     /// Delete every declared output that did not exist before the job, or that
@@ -188,7 +204,10 @@ impl OutputSnapshot {
 }
 
 fn file_name(p: &str) -> String {
-    Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.to_string())
+    Path::new(p)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| p.to_string())
 }
 
 /// The job message for a canceled run, saying what the cleanup removed.
@@ -226,7 +245,10 @@ fn last_line(s: &str) -> Option<&str> {
 /// A successful run's message: the tool's last line of output (the CLI's tools
 /// end on a summary such as `wrote 12 records to out.gb`), else `completed`.
 pub fn success_message(stdout: &str, stderr: &str) -> String {
-    last_line(stdout).or_else(|| last_line(stderr)).map(clip).unwrap_or_else(|| "completed".into())
+    last_line(stdout)
+        .or_else(|| last_line(stderr))
+        .map(clip)
+        .unwrap_or_else(|| "completed".into())
 }
 
 /// A failed run's message, from its stderr.
@@ -236,7 +258,10 @@ pub fn success_message(stdout: &str, stderr: &str) -> String {
 /// `<msg>: <cause>: <cause>`, the way the dialog showed errors before. The full
 /// text is in the job's `worker.log`.
 pub fn failure_message(stderr: &str, exit: &str) -> String {
-    let at = stderr.rfind("\nError: ").map(|i| i + 1).or_else(|| stderr.starts_with("Error: ").then_some(0));
+    let at = stderr
+        .rfind("\nError: ")
+        .map(|i| i + 1)
+        .or_else(|| stderr.starts_with("Error: ").then_some(0));
     if let Some(at) = at {
         let report = &stderr[at + "Error: ".len()..];
         let mut parts: Vec<String> = Vec::new();
@@ -255,7 +280,9 @@ pub fn failure_message(stderr: &str, exit: &str) -> String {
             }
             let t = if in_causes {
                 // "0: reading references" -> "reading references"
-                t.split_once(": ").filter(|(n, _)| n.chars().all(|c| c.is_ascii_digit())).map_or(t, |(_, r)| r)
+                t.split_once(": ")
+                    .filter(|(n, _)| n.chars().all(|c| c.is_ascii_digit()))
+                    .map_or(t, |(_, r)| r)
             } else {
                 t
             };
@@ -266,7 +293,11 @@ pub fn failure_message(stderr: &str, exit: &str) -> String {
         }
     }
     // A panic, a clap usage error, or a crash with nothing printed.
-    let tail: Vec<&str> = stderr.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let tail: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
     let tail = tail[tail.len().saturating_sub(3)..].join(" ");
     if tail.is_empty() {
         format!("the tool {exit}")
@@ -306,7 +337,10 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("domainator-gui-jobio-{}-{name}", std::process::id()));
+        let d = std::env::temp_dir().join(format!(
+            "domainator-gui-jobio-{}-{name}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -322,7 +356,12 @@ mod tests {
         std::fs::write(p("untouched.gb"), "old").unwrap();
         std::fs::write(p("rewritten.gb"), "old").unwrap();
         std::fs::write(p("neighbor.gb"), "not an output").unwrap();
-        let outputs = vec![p("new.gb"), p("untouched.gb"), p("rewritten.gb"), p("never_written.gb")];
+        let outputs = vec![
+            p("new.gb"),
+            p("untouched.gb"),
+            p("rewritten.gb"),
+            p("never_written.gb"),
+        ];
         let snap = OutputSnapshot::take(&outputs);
 
         // The "run": creates one output, rewrites another (a different size, so
@@ -339,10 +378,16 @@ mod tests {
         assert!(!Path::new(&p("rewritten.gb")).exists());
         assert_eq!(std::fs::read_to_string(p("untouched.gb")).unwrap(), "old");
         assert!(Path::new(&p("neighbor.gb")).exists());
-        assert!(Path::new(&p("new.gb.didx")).exists(), "an undeclared file was deleted");
+        assert!(
+            Path::new(&p("new.gb.didx")).exists(),
+            "an undeclared file was deleted"
+        );
 
         let msg = canceled_message(&c);
-        assert!(msg.contains("new.gb") && msg.contains("rewritten.gb") && msg.contains("gone"), "{msg}");
+        assert!(
+            msg.contains("new.gb") && msg.contains("rewritten.gb") && msg.contains("gone"),
+            "{msg}"
+        );
     }
 
     #[test]
@@ -352,17 +397,30 @@ mod tests {
             failure_message(stderr, "exited with code 1"),
             "reading references: opening x.hmm: No such file or directory (os error 2)"
         );
-        assert_eq!(failure_message("Error: plain\n", "exited with code 1"), "plain");
+        assert_eq!(
+            failure_message("Error: plain\n", "exited with code 1"),
+            "plain"
+        );
         // No CLI error report: the tail of stderr, said to be a crash.
-        let panic = "thread 'main' panicked at src/x.rs:1:1:\nboom\nnote: run with `RUST_BACKTRACE=1`\n";
+        let panic =
+            "thread 'main' panicked at src/x.rs:1:1:\nboom\nnote: run with `RUST_BACKTRACE=1`\n";
         let m = failure_message(panic, "crashed");
-        assert!(m.starts_with("the tool crashed: ") && m.contains("boom"), "{m}");
-        assert_eq!(failure_message("", "exited with code 7"), "the tool exited with code 7");
+        assert!(
+            m.starts_with("the tool crashed: ") && m.contains("boom"),
+            "{m}"
+        );
+        assert_eq!(
+            failure_message("", "exited with code 7"),
+            "the tool exited with code 7"
+        );
     }
 
     #[test]
     fn the_success_message_is_the_last_line_printed() {
-        assert_eq!(success_message("reading\nwrote 3 records to o.gb\n\n", ""), "wrote 3 records to o.gb");
+        assert_eq!(
+            success_message("reading\nwrote 3 records to o.gb\n\n", ""),
+            "wrote 3 records to o.gb"
+        );
         assert_eq!(success_message("", "done\n"), "done");
         assert_eq!(success_message(" \n", ""), "completed");
     }

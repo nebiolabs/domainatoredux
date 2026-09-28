@@ -38,7 +38,11 @@ fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractDomainsOptions) -> Vec<&'
             continue;
         }
         if let Some(dbs) = &opts.databases {
-            if !feature.get_first("database").map(|d| dbs.contains(d)).unwrap_or(false) {
+            if !feature
+                .get_first("database")
+                .map(|d| dbs.contains(d))
+                .unwrap_or(false)
+            {
                 continue;
             }
         }
@@ -51,12 +55,18 @@ fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractDomainsOptions) -> Vec<&'
         } else if opts.search_hits && is_dom && opts.domains.is_none() {
             keep = false;
         } else if let Some(e) = opts.evalue {
-            let ev: f64 = feature.get_first("evalue").and_then(|v| v.parse().ok()).unwrap_or(f64::INFINITY);
+            let ev: f64 = feature
+                .get_first("evalue")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(f64::INFINITY);
             if ev > e {
                 keep = false;
             }
         } else if let Some(s) = opts.score {
-            let sc: f64 = feature.get_first("score").and_then(|v| v.parse().ok()).unwrap_or(f64::NEG_INFINITY);
+            let sc: f64 = feature
+                .get_first("score")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(f64::NEG_INFINITY);
             if sc < s {
                 keep = false;
             }
@@ -105,13 +115,34 @@ pub fn extract_domains(
                 ));
             }
             // Domain with the lowest start / highest end.
-            let start_i = hits.iter().enumerate().min_by_key(|(_, f)| feature_loc(f).start()).map(|(i, _)| i).unwrap();
-            let end_i = hits.iter().enumerate().max_by_key(|(_, f)| feature_loc(f).end()).map(|(i, _)| i).unwrap();
-            let start_strand = hits[start_i].location.parts.first().map(|p| p.2).unwrap_or(1);
+            let start_i = hits
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, f)| feature_loc(f).start())
+                .map(|(i, _)| i)
+                .unwrap();
+            let end_i = hits
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, f)| feature_loc(f).end())
+                .map(|(i, _)| i)
+                .unwrap();
+            let start_strand = hits[start_i]
+                .location
+                .parts
+                .first()
+                .map(|p| p.2)
+                .unwrap_or(1);
             let (mut start, mut end) = if start_strand == -1 {
-                (feature_loc(hits[start_i]).start() - opts.pad_down, feature_loc(hits[end_i]).end() + opts.pad_up)
+                (
+                    feature_loc(hits[start_i]).start() - opts.pad_down,
+                    feature_loc(hits[end_i]).end() + opts.pad_up,
+                )
             } else {
-                (feature_loc(hits[start_i]).start() - opts.pad_up, feature_loc(hits[end_i]).end() + opts.pad_down)
+                (
+                    feature_loc(hits[start_i]).start() - opts.pad_up,
+                    feature_loc(hits[end_i]).end() + opts.pad_down,
+                )
             };
             let new_strand = if opts.keep_direction { 1 } else { start_strand };
             if start < 0 {
@@ -124,7 +155,12 @@ pub fn extract_domains(
             let mut slice = slice_from_location(rec, &loc, &rec.features, false);
             let mut new_name = rec.id.clone();
             if slice.seq.len() as i64 != rec_len {
-                new_name = format!("{}_{}:{}", rec.id, loc.stranded_start_hr(), loc.stranded_end_hr());
+                new_name = format!(
+                    "{}_{}:{}",
+                    rec.id,
+                    loc.stranded_start_hr(),
+                    loc.stranded_end_hr()
+                );
             }
             if !protein && new_strand == -1 {
                 new_name.push_str("rc");
@@ -153,7 +189,10 @@ pub fn extract_domains(
             }
             let merged = merge_parts(&splice_parts);
             let strand = merged[0].2;
-            let loc = Loc { parts: merged.iter().map(|&(s, e, _)| (s, e)).collect(), strand };
+            let loc = Loc {
+                parts: merged.iter().map(|&(s, e, _)| (s, e)).collect(),
+                strand,
+            };
             let mut slice = slice_from_location(rec, &loc, &rec.features, true);
             if rec.topology == Topology::Circular {
                 slice.topology = Topology::Circular;
@@ -184,7 +223,12 @@ pub fn extract_domains(
                 let mut slice = slice_from_location(rec, &loc, &rec.features, false);
                 let mut new_name = rec.id.clone();
                 if slice.seq.len() as i64 != rec_len {
-                    new_name = format!("{}_{}:{}", rec.id, loc.stranded_start_hr(), loc.stranded_end_hr());
+                    new_name = format!(
+                        "{}_{}:{}",
+                        rec.id,
+                        loc.stranded_start_hr(),
+                        loc.stranded_end_hr()
+                    );
                 }
                 if !protein && opts.keep_direction && strand == -1 {
                     // slice already flipped to forward; flip back to original.
@@ -255,8 +299,15 @@ mod tests {
     #[test]
     fn single_forward_protein() {
         // protein 20 aa, domain [5,10)
-        let r = rec(b"ACDEFGHIKLMNPQRSTVWY", vec![dom("A", 5, 10, 1, "db")], true);
-        let opts = ExtractDomainsOptions { domains: Some(["A".to_string()].into_iter().collect()), ..Default::default() };
+        let r = rec(
+            b"ACDEFGHIKLMNPQRSTVWY",
+            vec![dom("A", 5, 10, 1, "db")],
+            true,
+        );
+        let opts = ExtractDomainsOptions {
+            domains: Some(["A".to_string()].into_iter().collect()),
+            ..Default::default()
+        };
         let out = extract_domains(&[r], &opts).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].seq, b"GHIKL"); // indices 5..10
@@ -267,7 +318,10 @@ mod tests {
     fn single_reverse_dna_rc_suffix() {
         // DNA 12 nt, domain [0,6) reverse strand.
         let r = rec(b"AAACCCGGGTTT", vec![dom("A", 0, 6, -1, "db")], false);
-        let opts = ExtractDomainsOptions { domains: Some(["A".to_string()].into_iter().collect()), ..Default::default() };
+        let opts = ExtractDomainsOptions {
+            domains: Some(["A".to_string()].into_iter().collect()),
+            ..Default::default()
+        };
         let out = extract_domains(&[r], &opts).unwrap();
         // seq[0:6]="AAACCC"; revcomp -> "GGGTTT"
         assert_eq!(out[0].seq, b"GGGTTT");
@@ -290,7 +344,11 @@ mod tests {
 
     #[test]
     fn combine_two_domains() {
-        let r = rec(b"ACDEFGHIKLMNPQRSTVWY", vec![dom("A", 2, 5, 1, "db"), dom("B", 12, 15, 1, "db")], true);
+        let r = rec(
+            b"ACDEFGHIKLMNPQRSTVWY",
+            vec![dom("A", 2, 5, 1, "db"), dom("B", 12, 15, 1, "db")],
+            true,
+        );
         let opts = ExtractDomainsOptions {
             domains: Some(["A".to_string(), "B".to_string()].into_iter().collect()),
             combine: true,
@@ -304,7 +362,11 @@ mod tests {
 
     #[test]
     fn splice_two_domains() {
-        let r = rec(b"ACDEFGHIKLMNPQRSTVWY", vec![dom("A", 2, 5, 1, "db"), dom("B", 12, 15, 1, "db")], true);
+        let r = rec(
+            b"ACDEFGHIKLMNPQRSTVWY",
+            vec![dom("A", 2, 5, 1, "db"), dom("B", 12, 15, 1, "db")],
+            true,
+        );
         let opts = ExtractDomainsOptions {
             domains: Some(["A".to_string(), "B".to_string()].into_iter().collect()),
             splice: true,
@@ -318,7 +380,11 @@ mod tests {
     #[test]
     fn splice_combine_conflict_errors() {
         let r = rec(b"ACDEF", vec![dom("A", 0, 3, 1, "db")], true);
-        let opts = ExtractDomainsOptions { splice: true, combine: true, ..Default::default() };
+        let opts = ExtractDomainsOptions {
+            splice: true,
+            combine: true,
+            ..Default::default()
+        };
         assert!(extract_domains(&[r], &opts).is_err());
     }
 }
