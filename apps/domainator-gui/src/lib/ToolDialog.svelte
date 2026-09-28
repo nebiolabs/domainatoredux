@@ -1,7 +1,7 @@
 <script lang="ts">
   import { runTool, toolSchemaCached } from "./api";
   import { ws } from "./state.svelte";
-  import { fieldAccepts, isInputRole } from "./toolInputs";
+  import { fieldAccepts, isInputRole, placeFiles, type TypedPath } from "./toolInputs";
   import ColumnBuilder from "./ColumnBuilder.svelte";
   import { columnTypes, toColumns, toRows } from "./columns";
   import type { JsonSchema, JsonSchemaProp, ToolField, ToolMeta } from "./types";
@@ -10,19 +10,16 @@
     tool,
     meta,
     initial = null,
-    seedActive = true,
+    files = [],
     onclose,
   }: {
     tool: string;
     meta: ToolMeta | null;
-    // Pre-fill values (from a cloned job's params, or the file table's selection);
-    // overrides the seeded defaults.
+    // A cloned job's params; overrides the seeded defaults.
     initial?: Record<string, any> | null;
-    // Whether input fields `initial` leaves empty may seed from the active tab.
-    // Off when `initial` is the file selection: it already says which files the
-    // user meant, and the open tab would otherwise land in a spare field of the
-    // same type (build-ssn's cluster table, say).
-    seedActive?: boolean;
+    // The selected files (`ws.toolTargets`), placed in the inputs that fit them
+    // (`placeFiles`). An input left without one starts on its spec's `select`.
+    files?: TypedPath[];
     onclose: () => void;
   } = $props();
 
@@ -34,6 +31,8 @@
   let error = $state<string | null>(null);
   let running = $state(false);
   let editedOutputs = new Set<string>();
+  // Selected files that fit no free input, named under the directory line.
+  let leftOut = $state<string[]>([]);
 
   // The current directory: outputs land here, and input dropdowns list its files.
   const folder = $derived(ws.selectedFolder ?? ws.root ?? "");
@@ -70,15 +69,13 @@
       }))
       .filter((g) => g.items.length > 0);
   }
-  // The dropdown's starting value, per the spec's `select`. Whatever it names,
-  // when that is not on offer the first entry is used, except for `none` and
-  // `active_file_or_none`, which leave it blank.
-  function initialChoice(field: ToolField, groups: ChoiceGroup[], activePath: string | null): string {
-    const select = field.select ?? (field.required ? "active_file" : "none");
+  // The starting value of a dropdown no selected file was placed in, per the
+  // spec's `select`. A `database:<id>` that is not on offer falls back to the
+  // first entry.
+  function initialChoice(field: ToolField, groups: ChoiceGroup[]): string {
+    const select = field.select ?? (field.required ? "first" : "none");
     if (select === "none") return "";
     const offered = (p: string | null | undefined) => !!p && groups.some((g) => g.items.some((c) => c.value === p));
-    if ((select === "active_file" || select === "active_file_or_none") && offered(activePath)) return activePath!;
-    if (select === "active_file_or_none") return "";
     if (select.startsWith("database:")) {
       const id = select.slice("database:".length);
       const db = ws.databases.find((d) => d.managed_id === id);
@@ -118,6 +115,8 @@
   $effect(() => {
     void tool;
     void initial;
+    const placement = meta ? placeFiles(meta, files) : { assigned: {}, left: [] };
+    leftOut = placement.left.map((f) => f.path.split(/[\\/]/).pop() ?? f.path);
     error = null;
     schema = null;
     editedOutputs = new Set();
@@ -142,14 +141,13 @@
             v[field.name] = ""; // optional enum → blank, matching the CLI's unset default
           }
         }
-        // Seed input dropdowns per the spec's `select`.
-        const active = seedActive ? (ws.tabs.find((t) => t.id === ws.activeTabId)?.file ?? null) : null;
+        // Seed input dropdowns with the placed files, else per the spec's `select`.
         let primaryInput = "";
         for (const field of meta?.fields ?? []) {
           if (isInputRole(field.role)) {
-            const seeded = initial?.[field.name];
+            const seeded = initial?.[field.name] ?? placement.assigned[field.name];
             const picks: string[] = seeded == null
-              ? [initialChoice(field, fileGroups(field), active?.path ?? null)]
+              ? [initialChoice(field, fileGroups(field))]
               : (Array.isArray(seeded) ? seeded : [seeded]).map(String);
             const pick = picks.find(Boolean) ?? "";
             // `input_files` is a list of dropdowns, one per file.
@@ -278,6 +276,12 @@
     </header>
     {#if meta}<p class="desc">{meta.description}</p>{/if}
     <p class="folder">Directory: <code>{folderName}</code></p>
+    {#if leftOut.length}
+      <p class="left-out">
+        {leftOut.length === 1 ? "1 selected file doesn't" : `${leftOut.length} selected files don't`} fit any input:
+        {leftOut.join(", ")}
+      </p>
+    {/if}
 
     {#if error}<div class="err">{error}</div>{/if}
 
@@ -440,6 +444,12 @@
   .folder code {
     font-family: var(--mono);
     color: var(--text);
+  }
+  .left-out {
+    margin: -8px 0 12px;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-style: italic;
   }
   .fields {
     display: flex;

@@ -92,7 +92,7 @@ class WorkspaceStore {
   jobs = $state<JobInfo[]>([]);
   // A request to open the tool dialog (from the Tools menu or a job "clone"),
   // consumed by App. `initial` pre-fills the form (clone).
-  requestedTool = $state<{ id: string; initial?: Record<string, unknown>; seedActive?: boolean } | null>(null);
+  requestedTool = $state<{ id: string; initial?: Record<string, unknown>; files?: FileEntry[] } | null>(null);
   // A request to open the "new subfolder" input for this folder (from the folder
   // tree's context menu), consumed by App -- which owns that inline form. Same
   // consume-and-clear channel as `requestedTool`.
@@ -104,11 +104,10 @@ class WorkspaceStore {
     this.activeTabId = path;
   }
 
-  /// Open the tool dialog for `id`, optionally pre-filled with `initial` params.
-  /// `seedActive: false` keeps inputs `initial` leaves empty from seeding with
-  /// the active tab (see `ToolDialog`'s prop of the same name).
-  openTool(id: string, initial?: Record<string, unknown>, opts?: { seedActive?: boolean }): void {
-    this.requestedTool = { id, initial, seedActive: opts?.seedActive };
+  /// Open the tool dialog for `id`, pre-filled with a cloned job's `initial`
+  /// params, or with `files` placed in its inputs (`toolInputs.placeFiles`).
+  openTool(id: string, initial?: Record<string, unknown>, files?: FileEntry[]): void {
+    this.requestedTool = { id, initial, files };
   }
 
   // ── file table selection ────────────────────────────────────────────────────
@@ -124,13 +123,16 @@ class WorkspaceStore {
     return this.files.filter((f) => this.selectedPaths[f.path]);
   }
 
-  /// The files a tool should be offered for: the selection, or failing that the
-  /// active tab (the table highlights it, and the tool dialog seeds from it).
+  /// The files a tool is offered for and pre-filled with: the selection, or
+  /// failing that the active tab's file when it is in the current folder (the
+  /// table highlights it). A tab open on a file from elsewhere counts for
+  /// nothing: the dialog's dropdowns list only this folder's files.
   get toolTargets(): FileEntry[] {
     const sel = this.selectedFiles;
     if (sel.length) return sel;
     const active = this.tabs.find((t) => t.id === this.activeTabId)?.file;
-    return active ? [active] : [];
+    const here = active && this.files.find((f) => f.path === active.path);
+    return here ? [here] : [];
   }
 
   setSelection(paths: string[], anchor: string | null = paths[0] ?? null): void {

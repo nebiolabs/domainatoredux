@@ -10,7 +10,7 @@ fields:
     file_type: sequence
     required: true
     sources: workspace_first
-    select: active_file
+    select: first
   - name: output
     label: "Output (FASTA)"
     role: output_file

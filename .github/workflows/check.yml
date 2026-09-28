@@ -110,7 +110,7 @@ jobs:
       - name: Test the apps
         run: cargo test -p domainator-gui -p domainator-genbank-summary
 
-  # Type checks only; no Rust toolchain needed. genbank-summary has no svelte-check,
+  # Type checks and the frontend's unit tests; no Rust toolchain needed. genbank-summary has no svelte-check,
   # but its `build` script runs `tsc`, which is the same gate.
   frontend:
     name: frontend type check
@@ -127,6 +127,10 @@ jobs:
         run: |
           npm ci
           npx svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+
+      - name: vitest (domainator-gui)
+        working-directory: apps/domainator-gui
+        run: npm test
 
       - name: tsc (genbank-summary, desktop and wasm)
         run: |

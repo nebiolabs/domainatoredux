@@ -75,7 +75,8 @@ fn ms_str(ms: u128) -> String {
 /// six the dialog knows — a role it does not handle renders as nothing at all:
 ///
 /// * `input_file` / `input_files` — a dropdown of registered databases and
-///   current-dir files of any of `file_types`, grouped in `sources` order, starting on `select`
+///   current-dir files of any of `file_types`, grouped in `sources` order,
+///   pre-filled from the selected files (in `prefill_priority` order), else starting on `select`
 /// * `output_file` — a filename (seeded from `output_name`); the app prepends the
 ///   current directory
 /// * `param` — rendered from the tool's JSON schema by type
@@ -101,8 +102,12 @@ pub struct ToolField {
     pub cli_default: Option<Value>,
     /// Inputs: `databases_first` | `workspace_first`.
     pub sources: Option<String>,
-    /// Inputs: `active_file` | `active_file_or_none` | `first` | `none` | `database:<managed id>`.
+    /// Inputs: `first` | `none` | `database:<managed id>`, for when no selected
+    /// file was placed in the field.
     pub select: Option<String>,
+    /// Inputs: selected files fill inputs in descending priority, ties in spec
+    /// order (the spec's `prefill_priority`, unset being 0).
+    pub prefill_priority: i32,
     /// Outputs: the seeded file name, with `{stem}` for the primary input's stem.
     pub output_name: Option<String>,
     /// `columns`: the spec's per-type overrides for the column builder.
@@ -191,6 +196,7 @@ fn tool_meta(spec: &crate::tool_specs::ToolSpec) -> ToolMeta {
                     cli_default: f.cli_default.clone(),
                     sources: f.sources.map(|s| s.as_str().to_string()),
                     select: f.select.as_ref().map(|s| s.to_string()),
+                    prefill_priority: f.prefill_priority.unwrap_or(0),
                     output_name: f.output_name.clone(),
                     column_types: f.column_types.clone(),
                 }

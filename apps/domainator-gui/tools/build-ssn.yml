@@ -10,7 +10,7 @@ fields:
     file_type: hdf5
     required: true
     sources: workspace_first
-    select: active_file
+    select: first
   - name: xgmml
     label: "Output (XGMML)"
     role: output_file

@@ -12,8 +12,8 @@
 
   let btn = $state<HTMLButtonElement>();
 
-  // The file table's selection, else the active tab -- the file the table
-  // highlights and the one ToolDialog pre-fills its inputs with.
+  // The file table's selection, else the active tab's file when it is in the
+  // current folder -- the files ToolDialog places in its inputs.
   const files = $derived(ws.toolTargets);
   const groups = $derived(toolChoices(tools, files));
   const title = $derived(files.length === 1 ? files[0].name : `${files.length} files`);

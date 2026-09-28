@@ -102,8 +102,10 @@ export const HANDLERS: Record<MenuId, Handler> = {
 
 /// Handlers for parameterized ids (`<prefix>:<arg>`), keyed by prefix.
 const PREFIX_HANDLERS: Record<(typeof MENU_PREFIXES)[number], Handler> = {
+  // Any tool, whatever is selected: the dialog places the files that fit and
+  // says which it left out.
   "tools.run": (id) => {
-    if (id) ws.openTool(id);
+    if (id) ws.openTool(id, undefined, ws.toolTargets);
   },
   "file.open_recent": async (path) => {
     if (path) await ws.open(path);

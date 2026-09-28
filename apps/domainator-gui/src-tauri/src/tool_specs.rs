@@ -382,8 +382,8 @@ mod tests {
                     }
                 } else {
                     assert!(
-                        f.sources.is_none() && f.select.is_none(),
-                        "{at}: `sources`/`select` only apply to inputs"
+                        f.sources.is_none() && f.select.is_none() && f.prefill_priority.is_none(),
+                        "{at}: `sources`/`select`/`prefill_priority` only apply to inputs"
                     );
                     assert!(
                         f.file_type.is_empty(),

@@ -47,6 +47,7 @@ fields:
     required: true
     sources: databases_first
     select: "database:pfam"
+    prefill_priority: 1               # a selected FASTA goes here, not to `input`
   - name: output
     label: "Output (GenBank)"
     role: output_file
@@ -87,7 +88,8 @@ fields:
 | `gui_default` | shown `param` / `columns` fields | none | What the dialog starts with instead of `cli_default`. |
 | `file_type` | inputs | (required) | Which files and databases the dropdown offers. See [File types](#file-types). |
 | `sources` | inputs | (required) | Which dropdown group comes first: `databases_first` or `workspace_first`. |
-| `select` | inputs | (required) | The dropdown's starting entry. See [Input dropdowns](#input-dropdowns). |
+| `select` | inputs | (required) | The dropdown's starting entry when no selected file was placed in it. See [Input dropdowns](#input-dropdowns). |
+| `prefill_priority` | inputs | `0` | Which inputs selected files fill first. See [Selected files](#selected-files). |
 | `output_name` | outputs | none | The file name the output starts with. See [Outputs](#outputs). |
 | `column_types` | `columns` | none | Per-type labels, hints, parameter defaults and suggested values for the column builder. See [Column builder](#column-builder). |
 
@@ -147,8 +149,8 @@ or `.bgzf`:
 `file_type` only filters what the dropdown offers. The tool receives the chosen path and
 reads it however it reads that input, so list only types the tool can actually take.
 
-`file_type` also drives the toolbar's Tools button. For the selected file, it offers each
-tool with a shown input that accepts the file's type.
+`file_type` also decides which inputs the selected files can go to. See
+[Selected files](#selected-files).
 
 ## Input dropdowns
 
@@ -160,19 +162,40 @@ An input lists two groups with a bar between them:
 the first group. An empty group isn't shown. When both are empty, the dropdown is replaced
 by "No … files/databases available".
 
-`select` picks the starting entry. The "active file" is the active tab's file, which is
-also the file the file table highlights.
+An input a selected file was placed in starts on that file (see
+[Selected files](#selected-files)). Otherwise `select` picks the starting entry:
 
 | `select` | Starts on | When that isn't on offer |
 |---|---|---|
-| `active_file` | the active file, when it matches `file_type` | the first entry |
-| `active_file_or_none` | the active file, when it matches `file_type` | blank |
 | `database:<id>` | the managed reference download with that id: `pfam`, `swissprot`, `uniref50`, `uniref90`, `trembl` or `ncbi_taxonomy` (`reference_dbs::specs`) | the first entry |
 | `first` | the first entry, which `sources` decides | blank, when nothing is on offer |
 | `none` | blank ("(none)") | blank |
 
 `none` suits optional inputs. A test checks that a `database:<id>` exists and that its
 format can appear in the field's dropdown.
+
+## Selected files
+
+Every way into a dialog starts it with the selected files placed in its inputs. That
+covers the Tools menu, the toolbar's Tools button and the file table's right-click Tools
+submenu. The "selected files" are the file table's selection. With nothing selected, they
+are the active tab's file, but only when it is in the current folder.
+
+A file can go to any input whose `file_type` accepts it (`placeFiles` in
+`src/lib/toolInputs.ts`):
+- An `input_file` takes one file, and an `input_files` takes any number.
+- A file only single inputs can take is matched first, so it always gets an input when
+  one is free. A GenBank file goes to domain-search's `input` whatever else is selected.
+- The other files go to the first list input that takes their type. A type with just one
+  selected file goes to a free single input instead, when one comes before that list
+  input.
+- "First" and "before" are in `prefill_priority` order: higher first, ties in field
+  order. domain-search and domainate set `prefill_priority: 1` on `references`, so a
+  selected FASTA becomes a reference and `input` starts on its `select`.
+
+The toolbar's Tools button and the right-click submenu offer only the tools that can
+take every selected file at once. The Tools menu offers every tool. Its dialog places
+what fits and lists the files it left out under the directory line.
 
 ## Column builder
 
@@ -283,7 +306,7 @@ from the shared `common_help` list by `fill_common_descriptions`.
 | `every_schema_property_is_listed_once` | a schema property missing here, a field that isn't a schema property, a field listed twice |
 | `cli_defaults_match_the_schema` | a `cli_default` that is stale, missing, or has no schema default behind it |
 | `gui_defaults_fit_their_property` | a `gui_default` of the wrong type, outside its enum, on a hidden field, or on a file field; for `columns`, a column object its type rejects or a hidden type |
-| `input_fields_declare_sources_and_select` | an input missing `file_type`/`sources`/`select`; an unknown `file_type`; an unknown or unfitting `database:<id>`; those keys on a non-input; a hidden required field; a hidden or empty `help` |
+| `input_fields_declare_sources_and_select` | an input missing `file_type`/`sources`/`select`; an unknown `file_type`; an unknown or unfitting `database:<id>`; those keys or `prefill_priority` on a non-input; a hidden required field; a hidden or empty `help` |
 | `column_type_overrides_name_real_types_and_parameters` | a `column_types` type or parameter the schema lacks; a `default` or `choice` that doesn't fit; `column_types` on a non-`columns` field; every type hidden |
 | `column_schemas_match_their_enums` (`domainator-config`) | a column type or parameter in the schema that the column enum lacks, or the reverse |
 | `required_outputs_have_a_name_template` | a required output with no `output_name`, or one with another placeholder or a path |
@@ -292,4 +315,5 @@ from the shared `common_help` list by `fill_common_descriptions`.
 | `every_tools_dialog_params_parse_as_its_cli_config` (`cmd_tools.rs`) | a dialog whose default params (seeded values, files filled, default columns) the CLI rejects |
 | `derived_provenance_roles_match_the_golden_table` (`cmd_tools.rs`) | a `file_type` or field-name change that alters an input role the SSN tracing follows |
 
-Run them with `cargo test -p domainator-gui`.
+Run them with `cargo test -p domainator-gui`. Where selected files land is tested by
+`src/lib/toolInputs.test.ts` (`npm test`).

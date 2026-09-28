@@ -93,6 +93,14 @@ alignments do not offer hmmer-build. Fields that take several files (enum-report
 input, domainate's references) list one dropdown per file, with **＋ Add file** and ✕ to
 change the list.
 
+The **Tools** menu offers every tool whatever is selected. Its dialog fills in the
+selected files that fit and names the ones that don't fit any input. With nothing
+selected, the file open in the active tab counts as the selection when it is in the
+current folder. Each tool decides which input a file goes to when it fits more than one:
+Domain search and Domainate put a FASTA in References, so the search database starts on
+the first registered database. A file only one input can take, such as a GenBank file,
+always goes to that input.
+
 Each dialog is generated from the same JSON Schema the CLI prints
 (`domainator schema <tool>`), so the options and their types are exactly the CLI's — they
 cannot drift apart. Booleans render as checkboxes, enumerations as dropdowns, lists as

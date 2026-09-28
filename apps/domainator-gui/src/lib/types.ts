@@ -276,8 +276,11 @@ export interface ToolField {
   cli_default: unknown;
   /// Inputs: which group of the dropdown comes first.
   sources: "databases_first" | "workspace_first" | null;
-  /// Inputs: `active_file` | `active_file_or_none` | `first` | `none` | `database:<managed id>`.
+  /// Inputs: `first` | `none` | `database:<managed id>`, for when no selected
+  /// file was placed in the field.
   select: string | null;
+  /// Inputs: selected files fill inputs in descending priority, ties in spec order.
+  prefill_priority: number;
   /// Outputs: the seeded file name, `{stem}` being the primary input's stem.
   output_name: string | null;
   /// `columns`: the spec's per-type overrides for the column builder.

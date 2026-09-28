@@ -54,9 +54,14 @@ pub struct FieldSpec {
     /// Input roles only: which group of the dropdown comes first.
     #[serde(default)]
     pub sources: Option<Sources>,
-    /// Input roles only: what the dropdown starts on.
+    /// Input roles only: what the dropdown starts on when no selected file was
+    /// placed in it.
     #[serde(default)]
     pub select: Option<Select>,
+    /// Input roles only: selected files fill inputs in descending priority, ties
+    /// in spec order. Unset is 0.
+    #[serde(default)]
+    pub prefill_priority: Option<i32>,
     /// Output roles only: the seeded file name, `{stem}` being the primary
     /// input's name without its final extension.
     #[serde(default)]
@@ -141,16 +146,11 @@ impl Sources {
     }
 }
 
-/// An input dropdown's initial choice. Whatever it names, when that is not on
-/// offer the dropdown falls back to its first entry — except `None` and
-/// `ActiveFileOrNone`, which leave it blank.
+/// An input dropdown's initial choice when no selected file was placed in it.
+/// A `Database` that is not on offer falls back to the first entry.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
 pub enum Select {
-    /// The active tab's file, when it fits the field.
-    ActiveFile,
-    /// The active tab's file when it fits the field, else blank.
-    ActiveFileOrNone,
     First,
     None,
     /// The managed reference database with this id (`reference_dbs`).
@@ -161,15 +161,13 @@ impl TryFrom<String> for Select {
     type Error = String;
     fn try_from(s: String) -> Result<Self, String> {
         Ok(match s.as_str() {
-            "active_file" => Select::ActiveFile,
-            "active_file_or_none" => Select::ActiveFileOrNone,
             "first" => Select::First,
             "none" => Select::None,
             _ => match s.strip_prefix("database:") {
                 Some(id) if !id.is_empty() => Select::Database(id.to_string()),
                 _ => {
                     return Err(format!(
-                        "select {s:?}: expected active_file, active_file_or_none, first, none or database:<id>"
+                        "select {s:?}: expected first, none or database:<id>"
                     ))
                 }
             },
@@ -180,8 +178,6 @@ impl TryFrom<String> for Select {
 impl std::fmt::Display for Select {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Select::ActiveFile => f.write_str("active_file"),
-            Select::ActiveFileOrNone => f.write_str("active_file_or_none"),
             Select::First => f.write_str("first"),
             Select::None => f.write_str("none"),
             Select::Database(id) => write!(f, "database:{id}"),

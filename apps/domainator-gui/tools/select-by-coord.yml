@@ -10,14 +10,14 @@ fields:
     file_type: sequence
     required: true
     sources: workspace_first
-    select: active_file
+    select: first
   - name: coords
     label: "Coordinate table"
     role: input_file
     file_type: table
     required: true
     sources: workspace_first
-    select: active_file
+    select: first
   - name: output
     label: "Output (GenBank)"
     role: output_file

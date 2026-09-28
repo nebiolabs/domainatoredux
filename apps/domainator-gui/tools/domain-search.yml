@@ -10,14 +10,15 @@ fields:
     file_type: sequence
     required: true
     sources: databases_first
-    select: "first"
+    select: first
   - name: references
     label: "References (HMM/FASTA)"
     role: input_files
     file_type: reference
     required: true
     sources: workspace_first
-    select: active_file_or_none
+    select: none
+    prefill_priority: 1
   - name: output
     label: "Output (GenBank)"
     role: output_file

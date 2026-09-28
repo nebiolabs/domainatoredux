@@ -31,7 +31,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { standaloneParams } from "./lib/api";
-  import type { JobInfo, ToolMeta } from "./lib/types";
+  import type { FileEntry, JobInfo, ToolMeta } from "./lib/types";
 
   // Detached window mode: `?view=contig` (a single sequence), `?view=hmmlogo` (one
   // popped-out HMM logo), or `?view=file` (a whole file with its viewer sub-tabs)
@@ -167,7 +167,7 @@
   let tools = $state<ToolMeta[]>([]);
   let activeTool = $state<string | null>(null);
   let toolInitial = $state<Record<string, unknown> | null>(null);
-  let toolSeedActive = $state(true);
+  let toolFiles = $state<FileEntry[]>([]);
   let aboutOpen = $state(false);
   let prefsOpen = $state(false);
   let pendingClose = $state<string[] | null>(null);
@@ -175,13 +175,13 @@
   let newFolderOpen = $state(false);
   let newFolderName = $state("");
 
-  // Open the tool dialog on request (Tools menu → no initial; job "clone" → params).
+  // Open the tool dialog on request (a menu → the files to place; job "clone" → params).
   $effect(() => {
     const req = ws.requestedTool;
     if (!req) return;
     activeTool = req.id;
     toolInitial = req.initial ?? null;
-    toolSeedActive = req.seedActive ?? true;
+    toolFiles = req.files ?? [];
     ws.requestedTool = null;
   });
 
@@ -504,7 +504,7 @@
       tool={activeTool}
       meta={tools.find((m) => m.id === activeTool) ?? null}
       initial={toolInitial}
-      seedActive={toolSeedActive}
+      files={toolFiles}
       onclose={() => {
         activeTool = null;
         toolInitial = null;

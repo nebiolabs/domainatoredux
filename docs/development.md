@@ -37,6 +37,7 @@ cargo deny check      # deny.toml: license allowlist, RustSec advisories, git so
 typos                 # _typos.toml: spelling, including the American-English rule
 mdbook build          # the docs book; a SUMMARY.md entry with no file fails
 (cd apps/domainator-gui && npm run check)                  # svelte-check
+(cd apps/domainator-gui && npm test)                       # vitest (tool-dialog file placement)
 (cd apps/genbank-summary && npx tsc --noEmit)
 (cd wasm_apps/genbank-summary && npx tsc --noEmit)
 ```
@@ -154,7 +155,7 @@ run the same checks locally before pushing (the commands under "Build / run", pl
   `dist/` at compile time), then runs workspace-wide clippy and rustdoc and the two apps'
   tests. This is the only CI run of the GUI's registry, tool-spec and reference-database
   guards.
-- **`frontend`**: `svelte-check --fail-on-warnings` for the GUI, `tsc --noEmit` for both
+- **`frontend`**: `svelte-check --fail-on-warnings` and `npm test` (vitest) for the GUI, `tsc --noEmit` for both
   genbank-summary frontends, and `npm audit` on shipped (non-dev) dependencies.
 - **`policy`**: `cargo deny check`, `typos` (pinned to an exact release) and `mdbook build`.
 - **`msrv`**: `cargo check` of the pure-Rust crates at the `rust-version` in `Cargo.toml`.
@@ -261,6 +262,7 @@ npm install
 npm run tauri dev    # needs a display
 npm run build        # frontend only, no display needed
 npm run check        # svelte-check
+npm test             # vitest
 cargo build -p domainator-gui
 ```
 
