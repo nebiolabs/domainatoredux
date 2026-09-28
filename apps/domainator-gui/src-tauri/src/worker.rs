@@ -484,7 +484,7 @@ mod win {
                     job,
                     JobObjectExtendedLimitInformation,
                     &info as *const _ as *const core::ffi::c_void,
-                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                    size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
                 );
                 if ok == 0 {
                     return Err(std::io::Error::last_os_error());
