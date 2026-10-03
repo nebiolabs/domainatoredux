@@ -39,7 +39,6 @@
   const SEQ_H = 16; // nucleotide/residue letter track
   const SEQBAR_H = 7; // collapsed sequence bar (zoomed out)
   const TRANS_H = 16; // translation track (nucleotide contigs)
-  const FEAT_H = 14;
   const LETTERS_MIN = 4.5; // px/bp at/above which residue letters render (~1 zoom step earlier)
   const CONTIG_PAD_TOP = 4;
 
@@ -55,15 +54,27 @@
   let rulerUnits = $state<"auto" | "bp" | "kb">("auto");
   let sharedRuler = $state(false); // one pinned ruler instead of one per contig
   let labelPlacement = $state<"inside" | "outside" | "both">("inside");
+  let annotH = $state(14); // requested feature-bar height
+  // Overlapping lanes are offset by part of a bar instead of a full lane pitch,
+  // so later lanes partly cover earlier ones (CDS on top, its domains below).
+  let stackAnnotations = $state(false);
+
+  // Drawn bar height: never shorter than the label text it has to hold.
+  const featH = $derived(Math.max(labelFontSize, annotH));
+  // Spaced-lane pitch, grown when the bar would not otherwise fit.
+  const lanePitch = $derived(Math.max(laneH, featH + 2));
+  // Vertical offset between consecutive lanes in stacked mode.
+  const stackShift = $derived(Math.max(3, Math.round(featH / 2)));
 
   // Height of a ruler band (the tick label plus its tick mark and padding).
   const rulerBandH = $derived(rulerFontSize + 7);
   // Per-contig ruler height — zero when a single shared ruler is pinned on top.
   const perContigRulerH = $derived(sharedRuler ? 0 : rulerBandH);
   // Outside labels need their own strip above each feature box.
-  const outsideLabelH = $derived(labelPlacement === "inside" ? 0 : labelFontSize + 3);
+  // Stacked lanes have no room for per-lane strips, so they use inside labels only.
+  const outsideLabelH = $derived(labelPlacement === "inside" || stackAnnotations ? 0 : labelFontSize + 3);
   // Full vertical pitch of a lane slot (label strip + feature row).
-  const laneSlotH = $derived(laneH + outsideLabelH);
+  const laneSlotH = $derived(lanePitch + outsideLabelH);
 
   function resetViewOptions() {
     laneH = 20;
@@ -73,6 +84,8 @@
     rulerUnits = "auto";
     sharedRuler = false;
     labelPlacement = "inside";
+    annotH = 14;
+    stackAnnotations = false;
   }
 
   // ── lane-stacking (port of plot_contigs.py add_z_order) ─────────────────────
@@ -87,7 +100,9 @@
   };
 
   type Placed = { f: FeatureView; lane: number };
-  type Layout = { placed: Placed[]; maxLane: number };
+  // `byLane` is `placed` stably sorted by lane: the paint order in stacked mode,
+  // where a higher lane must always cover the lane it overlaps.
+  type Layout = { placed: Placed[]; byLane: Placed[]; maxLane: number };
 
   // Greedy interval lane-assignment (port of plot_contigs.py add_z_order), but
   // O(n·depth) via a per-lane running-max-end array instead of the old O(n²)
@@ -124,7 +139,8 @@
       placed.push({ f, lane });
     }
     const maxLane = Math.max(0, laneEnd.length - 1);
-    return { placed, maxLane };
+    const byLane = [...placed].sort((a, b) => a.lane - b.lane);
+    return { placed, byLane, maxLane };
   }
 
   function visible(f: FeatureView): boolean {
@@ -154,13 +170,24 @@
   function transTrackH(c: Contig): number {
     return showLetters && !c.is_protein ? TRANS_H : 0;
   }
+  // Height of a contig's whole feature-lane track.
+  function lanesTrackH(lay: Layout): number {
+    return stackAnnotations ? featH + lay.maxLane * stackShift + 2 : (lay.maxLane + 1) * laneSlotH;
+  }
+  // Top of a lane's feature bar, relative to the frame's `laneBaseY`. Spaced lanes
+  // draw lane 0 at the bottom; stacked lanes draw it on top, later lanes below.
+  function laneTopOffset(lay: Layout, lane: number): number {
+    if (stackAnnotations) return 1 + lane * stackShift;
+    return (lay.maxLane - lane) * laneSlotH + outsideLabelH + (lanePitch - featH) / 2;
+  }
+
   function contigHeight(c: Contig, lay: Layout): number {
     return (
       CONTIG_PAD_TOP +
       perContigRulerH +
       seqTrackH() +
       transTrackH(c) +
-      (lay.maxLane + 1) * laneSlotH +
+      lanesTrackH(lay) +
       contigGap
     );
   }
@@ -173,6 +200,10 @@
     if (!data) return { offsets: [] as number[], total: 0 };
     void filterSig;
     void pxPerBp;
+    void featH;
+    void laneSlotH;
+    void stackShift;
+    void stackAnnotations;
     const contigs = data.contigs;
     const offsets: number[] = new Array(contigs.length + 1);
     // A pinned shared ruler occupies the top of the viewport, so the content
@@ -492,9 +523,22 @@
     if (!fr) return null;
     const laneRegion = contentY - fr.laneBaseY;
     if (laneRegion < 0) return null;
+    const bp = bpAt(clientX);
+    if (stackAnnotations) {
+      // Lanes overlap: the last-painted bar under the pointer wins.
+      const ps = fr.lay.byLane;
+      for (let i = ps.length - 1; i >= 0; i--) {
+        const p = ps[i];
+        const top = laneTopOffset(fr.lay, p.lane);
+        if (laneRegion < top || laneRegion >= top + featH) continue;
+        for (const part of p.f.parts) {
+          if (bp >= part.start && bp <= part.end) return { ci: fr.ci, f: p.f };
+        }
+      }
+      return null;
+    }
     const laneFromTop = Math.floor(laneRegion / laneSlotH);
     const lane = fr.lay.maxLane - laneFromTop; // lane 0 drawn at bottom
-    const bp = bpAt(clientX);
     // topmost matching feature in that lane
     for (const p of fr.lay.placed) {
       if (p.lane !== lane) continue;
@@ -829,7 +873,7 @@
   type Ctx2D = CanvasRenderingContext2D;
 
   function drawArrow(ctx: Ctx2D, x: number, y: number, w: number, h: number, mode: "box" | "right" | "left") {
-    const head = Math.min(8, Math.max(0, w));
+    const head = Math.min(Math.round((h * 4) / 7), Math.max(0, w)); // 8px at the default 14px bar
     ctx.beginPath();
     if (mode === "right") {
       const b = x + w - head;
@@ -1012,13 +1056,10 @@
       // left-to-right order within a lane (the layout sorts by start), so one
       // running value per lane is enough.
       const labelRight = new Map<number, number>();
-      for (const p of fr.lay.placed) {
+      for (const p of stackAnnotations ? fr.lay.byLane : fr.lay.placed) {
         const f = p.f;
         if (f.end < fr.winL || f.start > fr.winR) continue;
-        // Lane 0 is drawn at the bottom; within a slot the outside-label strip sits
-        // above the feature row.
-        const laneTop =
-          fr.laneBaseY - vTop + (fr.lay.maxLane - p.lane) * laneSlotH + outsideLabelH + (laneH - FEAT_H) / 2;
+        const laneTop = fr.laneBaseY - vTop + laneTopOffset(fr.lay, p.lane);
         // parts + connectors
         const sp = [...f.parts].sort((a, b) => a.start - b.start);
         let term = -1;
@@ -1033,8 +1074,8 @@
           const gap = sp[i + 1].start - sp[i].end;
           if (gap > 0 && gap < fr.c.length * 0.5) {
             ctx.beginPath();
-            ctx.moveTo(sx(sp[i].end), laneTop + FEAT_H / 2);
-            ctx.lineTo(sx(sp[i + 1].start), laneTop + FEAT_H / 2);
+            ctx.moveTo(sx(sp[i].end), laneTop + featH / 2);
+            ctx.lineTo(sx(sp[i + 1].start), laneTop + featH / 2);
             ctx.stroke();
           }
         }
@@ -1043,7 +1084,7 @@
           const x = sx(sp[i].start);
           const w = Math.max(1.5, (sp[i].end - sp[i].start) * pxPerBp);
           const mode = i === term ? (f.strand === 1 ? "right" : "left") : "box";
-          drawArrow(ctx, x, laneTop, w, FEAT_H, mode);
+          drawArrow(ctx, x, laneTop, w, featH, mode);
           ctx.fillStyle = f.color;
           ctx.fill();
           ctx.lineWidth = isSel ? 2 : 0.5;
@@ -1052,21 +1093,21 @@
         }
         const fw = (f.end - f.start) * pxPerBp;
         // inside label: clipped to the feature box, only when it has room
-        if (labelPlacement !== "outside" && fw > 34) {
+        if ((labelPlacement !== "outside" || stackAnnotations) && fw > 34) {
           const lx = Math.max(GUTTER + 2, sx(f.start) + 4);
           ctx.fillStyle = labelColor(f.color);
           ctx.textAlign = "left";
           ctx.save();
           ctx.beginPath();
-          ctx.rect(sx(f.start), laneTop, fw, FEAT_H);
+          ctx.rect(sx(f.start), laneTop, fw, featH);
           ctx.clip();
-          ctx.fillText(f.label, lx, laneTop + FEAT_H / 2 + 0.5);
+          ctx.fillText(f.label, lx, laneTop + featH / 2 + 0.5);
           ctx.restore();
         }
         // outside label: centered over the feature in its own strip, unclipped.
         // Neighbors in the same lane would otherwise overprint each other, so a
         // label is skipped when it would collide with the last one drawn there.
-        if (labelPlacement !== "inside" && fw > 2) {
+        if (labelPlacement !== "inside" && !stackAnnotations && fw > 2) {
           // Center on the visible part of the feature, so a feature running off
           // the edge still labels the part you can see.
           const l = Math.max(sx(f.start), GUTTER);
@@ -1490,6 +1531,8 @@
     void rulerFontSize;
     void labelPlacement;
     void sharedRuler;
+    void featH;
+    void stackAnnotations;
     // Batch-fetch the visible window's sequences in one call (with overscan) so
     // scrolling doesn't fire one backend round-trip per contig.
     if (showLetters && frames.length) ensureSeqRange(frames[0].ci, frames[frames.length - 1].ci);
@@ -1690,8 +1733,13 @@
               <div class="pop-head">View options<button class="pop-x" onclick={() => (optsOpen = false)} aria-label="Close">×</button></div>
               <label class="orow">
                 Lane spacing
-                <input type="range" min="12" max="48" step="1" bind:value={laneH} />
-                <span class="onum">{laneH}px</span>
+                <input type="range" min="12" max="48" step="1" bind:value={laneH} disabled={stackAnnotations} />
+                <span class="onum">{lanePitch}px</span>
+              </label>
+              <label class="orow" title={featH > annotH ? "Held at the label font size" : undefined}>
+                Annotation height
+                <input type="range" min="4" max="40" step="1" bind:value={annotH} />
+                <span class="onum">{featH}px</span>
               </label>
               <label class="orow">
                 Contig spacing
@@ -1720,13 +1768,17 @@
                 Feature labels
                 <select bind:value={labelPlacement}>
                   <option value="inside">inside</option>
-                  <option value="outside">outside</option>
-                  <option value="both">both</option>
+                  <option value="outside" disabled={stackAnnotations}>outside</option>
+                  <option value="both" disabled={stackAnnotations}>both</option>
                 </select>
               </label>
               <label class="orow check">
                 <input type="checkbox" bind:checked={sharedRuler} />
                 Single shared ruler
+              </label>
+              <label class="orow check">
+                <input type="checkbox" bind:checked={stackAnnotations} />
+                Stack annotations
               </label>
               <div class="pop-foot"><button onclick={resetViewOptions}>Reset</button></div>
             </div>
