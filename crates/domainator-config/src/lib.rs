@@ -1655,7 +1655,7 @@ fn common_help(name: &str) -> Option<&'static str> {
         "no_annotations" => "Don't write domain annotations (report hits only).",
         "no_domain" => "Drop contigs that have no matching domain.",
         "pad" => "Pad extracted regions to equal length.",
-        "partial" => "Select by fragment status: include (all), exclude (skip fragments), or only (only fragments). A CDS is a fragment if its location has '<' or '>'; a protein record if it has a UniProt ' (Fragment)' header, a 'Flags: Fragment' definition, NON_TER features, or a CDS/Protein feature with '<' or '>' spanning it. Never inverted by --invert.",
+        "partial" => "Select by fragment status: include (all), exclude (skip fragments), or only (only fragments). A CDS is a fragment if its location has '<' or '>', or it has a bare /partial qualifier; a protein record if it has a UniProt ' (Fragment)' header, a 'Flags: Fragment' definition, NON_TER features, or a CDS/Protein feature with '<' or '>' spanning it. Never inverted by --invert.",
         "pad_up" => "Pad the extracted region this many residues upstream.",
         "pad_down" => "Pad the extracted region this many residues downstream.",
         "prefix_count" => "Prefix the cluster size to each representative's name.",

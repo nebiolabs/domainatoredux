@@ -301,6 +301,9 @@ pub fn parse_record(
             .cloned()
             .unwrap_or_else(|| rec.id.clone());
     }
+    // Gene-caller /partial codes become `<`/`>` markers on read, as in Python's
+    // `parse_seqfiles` (upstream `0a8ba4c`).
+    crate::seq::partial::normalize_partial_codes(&mut rec);
     rec
 }
 

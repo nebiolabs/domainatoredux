@@ -92,10 +92,19 @@ pub fn partial_ends_to_status(five_prime: bool, three_prime: bool) -> Option<&'s
     }
 }
 
-/// Fragment status of a feature, from its location's partial ends.
+/// Fragment status of a feature, from its location's partial ends; failing those, a
+/// legacy bare `/partial` (no value) gives `?`: partial, missing end unknown
+/// (upstream `02a31c1`).
 pub fn feature_fragment_status(feature: &SeqFeature) -> Option<&'static str> {
     let (five, three) = location_partial_ends(&feature.location);
-    partial_ends_to_status(five, three)
+    partial_ends_to_status(five, three).or_else(|| has_bare_partial(feature).then_some("?"))
+}
+
+/// The legacy INSDC `/partial` qualifier with no value (`lean_record.has_bare_partial`).
+fn has_bare_partial(feature: &SeqFeature) -> bool {
+    feature
+        .get_first(PARTIAL_QUALIFIER)
+        .is_some_and(|v| v.trim().trim_matches('"').is_empty())
 }
 
 /// True if a description carries a UniProt fragment marker: ` (Fragment)` or
@@ -264,10 +273,109 @@ pub fn on_contig_cds_translation(feature: &SeqFeature, contig_seq: &[u8]) -> (St
     (translation, warned)
 }
 
+/// The qualifier gene callers (prodigal, GeneMark) put their partial code in.
+pub const PARTIAL_QUALIFIER: &str = "partial";
+
+/// `(left_partial, right_partial)` from a prodigal-style `/partial` code like `10`
+/// (`lean_record.partial_code_ends`): the first digit is the low-coordinate end, the
+/// second the high one, whatever the strand. `None` without such a code -- including
+/// the legacy bare `/partial`, which says nothing about which end is missing.
+fn partial_code_ends(feature: &SeqFeature) -> Option<(bool, bool)> {
+    let value = feature.get_first(PARTIAL_QUALIFIER)?;
+    let code = value.trim().trim_matches('"').as_bytes();
+    if code.len() != 2 || !code.iter().all(|c| matches!(c, b'0' | b'1')) {
+        return None;
+    }
+    Some((code[0] == b'1', code[1] == b'1'))
+}
+
+/// `/codon_start` after adding `five_prime_extension` bases to a CDS's 5' end
+/// (`lean_record.new_codon_start`); `None` when it stays 1 and was absent.
+fn shifted_codon_start(feature: &SeqFeature, five_prime_extension: i64) -> Option<String> {
+    let new_offset = (codon_offset(feature) + five_prime_extension).rem_euclid(3);
+    if new_offset == 0 && !feature.has("codon_start") {
+        return None;
+    }
+    Some((new_offset + 1).to_string())
+}
+
+/// Convert prodigal-style `/partial="10"` codes to `<`/`>` markers and remove them
+/// (upstream `0a8ba4c`, `utils.normalize_partial_codes`, run on every GenBank record
+/// read). The code is tied to the coordinates, so it would be wrong after a reverse
+/// complement. A partial end within 2 bases of the contig edge is extended to the
+/// edge (gene callers stop at the last whole codon), and an extended 5' end moves
+/// `/codon_start`; a partial end elsewhere (a gap) is marked where it is. Markers
+/// already on the location win, and the code is just dropped.
+pub fn normalize_partial_codes(record: &mut SeqRecord) {
+    let contig_len = record.seq.len() as i64;
+    for f in &mut record.features {
+        let Some((left, right)) = partial_code_ends(f) else {
+            continue;
+        };
+        // The native parser (the default) leaves between-bases and empty locations
+        // alone, code and all.
+        if f.location.parts.is_empty() || f.location.between {
+            continue;
+        }
+        f.qualifiers.retain(|(k, _)| k != PARTIAL_QUALIFIER);
+        let (five, three) = location_partial_ends(&f.location);
+        if five || three || !(left || right) {
+            continue;
+        }
+        let parts = &mut f.location.parts;
+        // First minimum / first maximum, like Python's `min`/`max` with a key.
+        let mut leftmost = 0;
+        let mut rightmost = 0;
+        for (i, p) in parts.iter().enumerate() {
+            if p.0 < parts[leftmost].0 {
+                leftmost = i;
+            }
+            if p.1 > parts[rightmost].1 {
+                rightmost = i;
+            }
+        }
+        let (mut left_extension, mut right_extension) = (0, 0);
+        if left {
+            let p = &mut parts[leftmost];
+            if p.0 < 3 {
+                left_extension = p.0;
+                p.0 = 0;
+            }
+            p.3 = true;
+        }
+        if right {
+            let p = &mut parts[rightmost];
+            if contig_len - p.1 < 3 {
+                right_extension = contig_len - p.1;
+                p.1 = contig_len;
+            }
+            p.4 = true;
+        }
+        // The 5' end is the start of the first part on the plus strand, its end on
+        // the minus strand.
+        let five_prime_extension = if parts[0].2 == -1 {
+            if rightmost == 0 {
+                right_extension
+            } else {
+                0
+            }
+        } else if leftmost == 0 {
+            left_extension
+        } else {
+            0
+        };
+        if f.kind == "CDS" {
+            if let Some(cs) = shifted_codon_start(f, five_prime_extension) {
+                f.set("codon_start", cs);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::seq::location::parse_location;
+    use crate::seq::location::{parse_location, Part};
 
     fn cds(loc: &str) -> SeqFeature {
         SeqFeature::new("CDS", parse_location(loc))
@@ -423,6 +531,78 @@ mod tests {
                 "{translation} {five} {three}"
             );
         }
+    }
+
+    fn coded(loc: &str, code: &str) -> SeqFeature {
+        let mut f = cds(loc);
+        f.set(PARTIAL_QUALIFIER, code);
+        f
+    }
+
+    fn normalized(features: Vec<SeqFeature>, len: usize) -> Vec<SeqFeature> {
+        let mut rec = protein("", features);
+        rec.molecule_type = Some("DNA".into());
+        rec.seq = vec![b'A'; len];
+        normalize_partial_codes(&mut rec);
+        rec.features
+    }
+
+    /// Upstream's `test_normalize_partial_codes` table (a 60 nt record).
+    #[test]
+    fn prodigal_partial_codes_become_markers() {
+        type Case = (&'static str, &'static str, Part, Option<&'static str>);
+        let cases: [Case; 8] = [
+            // The left end runs off the sequence; the gene caller stopped 1 base short.
+            ("2..30", "10", (0, 30, 1, true, false), Some("2")), // plus: left is 5'
+            ("complement(2..30)", "10", (0, 30, -1, true, false), None), // minus: left is 3'
+            (
+                "complement(31..58)",
+                "01",
+                (30, 60, -1, false, true),
+                Some("3"),
+            ), // minus: right is 5'
+            ("31..58", "01", (30, 60, 1, false, true), None),
+            ("1..60", "11", (0, 60, 1, true, true), None),
+            // Runs into a gap, not the edge: marked where it is.
+            ("11..30", "10", (10, 30, 1, true, false), None),
+            ("2..30", "00", (1, 30, 1, false, false), None),
+            // Existing markers win.
+            ("<1..30", "01", (0, 30, 1, true, false), None),
+        ];
+        for (loc, code, expected, codon_start) in cases {
+            let f = &normalized(vec![coded(loc, code)], 60)[0];
+            assert_eq!(f.location.parts, vec![expected], "{loc} {code}");
+            assert_eq!(f.get_first("codon_start"), codon_start, "{loc} {code}");
+            assert!(!f.has(PARTIAL_QUALIFIER), "{loc} {code}");
+        }
+    }
+
+    /// `test_normalize_partial_codes_keeps_bare_partial_and_combines_codon_start`.
+    #[test]
+    fn bare_partial_stays_and_codon_start_combines() {
+        let f = &normalized(vec![coded("2..30", "")], 60)[0];
+        assert_eq!(f.get_first(PARTIAL_QUALIFIER), Some(""));
+        assert_eq!(f.location.parts, vec![(1, 30, 1, false, false)]);
+        let mut f = coded("2..30", "10");
+        f.set("codon_start", "2");
+        let f = &normalized(vec![f], 60)[0];
+        assert_eq!(f.get_first("codon_start"), Some("3"));
+    }
+
+    /// A bare `/partial` makes a CDS (and a protein spanned by one) a `?` fragment,
+    /// survives reading, and loses to markers (upstream `test_utils.py`,
+    /// `test_bare_partial_qualifier_is_a_fragment` and its neighbor).
+    #[test]
+    fn bare_partial_is_an_unknown_fragment() {
+        let f = &normalized(vec![coded("2..30", "")], 60)[0];
+        assert_eq!(feature_fragment_status(f), Some("?"));
+        let f = &normalized(vec![coded("<1..30", "")], 60)[0];
+        assert_eq!(feature_fragment_status(f), Some("N"));
+        let mut contig = protein("", normalized(vec![coded("2..30", "")], 60));
+        contig.molecule_type = Some("DNA".into());
+        assert!(contig_has_fragment(&contig));
+        let rec = protein("x", vec![coded("1..12", "")]);
+        assert_eq!(record_fragment_status(&rec), Some("?"));
     }
 
     /// `test_fragment_status_allowed`.

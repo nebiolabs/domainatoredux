@@ -61,6 +61,13 @@ def generate(data_dir, test_dir, out_dir):
     partial_cds.qualifiers["translation"] = ["MKRFSLAIL" + on_contig]
     SeqIO.write([record], str(out / "overlong.gb"), "genbank")
 
+    # The partial fixture with a legacy bare /partial on its complete CDS
+    # (test_utils.py's test_bare_partial_qualifier_is_a_fragment).
+    text = (data / helpers.PARTIAL_FIXTURE).read_text()
+    text = text.replace("     CDS             complement(280..780)\n",
+                        "     CDS             complement(280..780)\n                     /partial\n", 1)
+    (out / "bare_partial.gb").write_text(text)
+
     # swissprot_CuSOD_subset.fasta with ' (Fragment)' on the first header, and an
     # HMM built from that first sequence.
     helpers.write_uniprot_fragment_fasta(data, str(out / "fragments.fasta"))

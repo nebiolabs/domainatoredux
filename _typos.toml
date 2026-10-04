@@ -26,6 +26,8 @@ extend-ignore-re = [
     'b"fo"',
     # Non-ASCII test input, `caf\u{e9}`.
     'caf\\u\{e9\}',
+    # Short git commit hashes (`0a8ba4c`), which can contain a "word".
+    '\b[0-9a-f]*[0-9][0-9a-f]*\b',
 ]
 
 [default.extend-words]

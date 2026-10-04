@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 0.12.0 @ `0394886`.
+Parity: Python domainator 0.12.0 @ `02a31c1`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - The app runs each Tools-menu job in its own background process, running the same code as
@@ -48,6 +48,11 @@ Parity: Python domainator 0.12.0 @ `0394886`.
   `--fragment` and `--partial_count` columns. `summary-report` reports
   `partial_cdss` and `fragment_proteins`, and the app's Summary tab shows the same two
   counts as **partial CDS** and **fragments** tiles.
+- Gene-caller partial codes (`/partial="10"` from prodigal or GeneMark) are converted to `<`/`>`
+  markers when a GenBank file is read, and the qualifier is removed. An end within 2 bases
+  of the contig edge is extended to the edge, with `/codon_start` updated. A bare
+  `/partial` (no value) is kept, and makes its CDS a fragment with unknown missing ends
+  (`?`).
 - Fixed, found while syncing: header text in GenBank files is wrapped the way Biopython wraps
   it, so lines can now be the full 80 columns. A reverse-strand CDS ending at the last base
   of a contig no longer sorts ahead of every other CDS in `select-by-cds`. Sliced records

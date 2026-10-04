@@ -88,10 +88,23 @@ codon, which GenBank translations omit and Domainator's own translations include
 Domain hits on a CDS are placed relative to its `/codon_start`: residue 1 of the
 translation starts `codon_start - 1` bases into the CDS.
 
+**Gene-caller partial codes.** prodigal and GeneMark mark partial genes with a two-digit
+code, which some conversions copy into a `/partial` qualifier, e.g. `/partial="10"`. The
+first digit is the left (low-coordinate) end and the second the right end, whatever the
+strand; `1` means the gene runs off that end (or into a gap). Domainator converts these
+codes to `<`/`>` markers when it reads a GenBank file, and removes the qualifier, because the
+code is tied to the coordinates and would be wrong after a reverse complement. A partial
+end within 2 bases of the contig edge is extended to the edge, with `/codon_start` set if
+the 5' end moved; a partial end elsewhere (a gap) is marked where it is. For example,
+`2..106 /partial="10"` becomes `<1..106 /codon_start=2`. Existing `<`/`>` markers take
+precedence over a code. A bare `/partial` with no value says nothing about which end is
+missing, so it is left as is, and its CDS is a fragment with unknown missing ends (`?`).
+
 **Fragment status.** Like a taxid, each protein or CDS has a fragment status:
 
 - A CDS is a fragment if either outer end of its location has a `<` or `>`. Its status is
-  `N` (5' end, and so the N-terminus, missing), `C` (3' end missing), or `NC` (both).
+  `N` (5' end, and so the N-terminus, missing), `C` (3' end missing), or `NC` (both). A
+  CDS with a bare `/partial` qualifier (no value) and no markers is `?`.
 - For a protein record, a `CDS` or `Protein` feature spanning the record decides, the same
   way. `domain-search --translate` writes such a feature, and NCBI GenPept records carry one.
 - Otherwise, UniProt `NON_TER` features on the first or last residue decide: `N`, `C` or

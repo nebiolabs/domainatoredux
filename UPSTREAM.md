@@ -7,8 +7,8 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `0394886` — *version bump* (2026-10-03; upstream `__version__`
-  0.12.0). The six commits since `9c70934`:
+- **Caught up to:** `02a31c1` — *handling bare /partial qualifiers* (2026-10-04; upstream
+  `__version__` 0.12.0). The nine commits since `9c70934`:
 - **Wheels / CI** (`4b67f66`, `e55c56c`, `6aa216f`): packaging only; nothing to port.
 - **Partial features** (`8bf3c42`), ported. `slice_record_from_location` now truncates
   every feature a slice cuts and marks the cut ends with `<`/`>`. The exceptions: `source`
@@ -29,6 +29,22 @@ file records how far the port is caught up and how to advance it.
   `--partial_count`. `summary-report` reports `partial_cdss`/`fragment_proteins`. Fragment
   status also reads `NON_TER` features and `Flags: Fragment`. The `find_features` and
   `domainator_db_download` halves have no counterpart, since both tools are unported.
+- **Gene calling keeps partial genes** (`f39ec15`): prodigal genes running off a linear
+  contig become `<`/`>` partial CDSs, and origin-crossing genes on circular contigs are
+  called from a window across the origin. Not ported, because `--gene_call` is deferred
+  (see below). When it is ported, it must follow these rules.
+- **Gene-caller `/partial` codes** (`0a8ba4c`), ported. On every GenBank read, a
+  prodigal/GeneMark `/partial="10"` code becomes `<`/`>` markers and is removed. An end
+  within 2 bases of the contig edge is extended to the edge, with `/codon_start` moved if
+  the 5' end moved. Existing markers win, and a bare `/partial` is kept. See
+  `seq/partial.rs` (`normalize_partial_codes`), called at the end of
+  `io/genbank/parse.rs::parse_record`, the one place every GenBank read goes through.
+  `pDONR201_multi_genemark*.gb` carry these codes, so many existing invocations now
+  see partial CDSs.
+- **Bare `/partial`** (`02a31c1`), ported. A CDS with the legacy `/partial` qualifier with
+  no value, and no `<`/`>`, is a `?` fragment. This is one change to
+  `seq/partial.rs::feature_fragment_status`, which every `--partial` filter, count and
+  column reads. The `extra:test_bare_partial_qualifier_is_a_fragment` invocations cover it.
 - **Version bump** (`0394886`): 0.12.0. The viewer shell was regenerated (only
   `DOMAINATOR_VERSION` changed).
 - **Found while syncing** (pre-existing, now fixed):
@@ -37,8 +53,6 @@ file records how far the port is caught up and how to advance it.
   - A reverse-strand CDS ending at a contig's last base sorted first in `select-by-cds`.
   - `trim-contigs`/`clean-sequences --strip` kept header annotations Python's slice drops.
   - `extract-domains` let a `--domains` match skip `--evalue`/`--score`.
-  - The installed `_gbfast` native parser in the reference env predates `bdc74bb`, so its
-    FASTA path misses the `Flags:` rule. No fixture exercises it.
 - **Vendored copy:** `external/domainator/` (gitignored; a git clone of upstream, kept at
   the pin above). It is the deterministic, repo-local source for regeneration and drift
   checks. Refresh it with `scripts/sync_upstream.sh` (fast-forwards to a target ref).
