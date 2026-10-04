@@ -60,6 +60,10 @@ fields:
         params:
           value_type:
             default: "str"
+  - name: partial
+    label: "Fragments"
+    help: "Which rows to report, by fragment status. By contig, a nucleotide contig is a fragment if any of its CDSs is; by domain, the CDS or protein the domain is on decides."
+    cli_default: "include"
   - name: databases
     show: false
     label: "Databases"

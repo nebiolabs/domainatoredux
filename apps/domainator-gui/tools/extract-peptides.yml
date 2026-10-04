@@ -46,6 +46,10 @@ fields:
     cli_default: 100000000.0
   - name: contigs
     label: "Restrict to contigs"
+  - name: partial
+    label: "Fragments"
+    help: "Which CDSs to extract peptides from, by fragment status. Not affected by Invert."
+    cli_default: "include"
   - name: domains_file
     show: false
     label: "Domains file"

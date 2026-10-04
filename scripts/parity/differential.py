@@ -28,6 +28,7 @@ import argparse
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -232,6 +233,7 @@ def run_one(row, cfg, helpers, SeqIO):
 
         def substitute(arg, out_dir):
             return (arg.replace("@DATA@", cfg.data_dir)
+                       .replace("@GEN@", cfg.gen_dir or "@GEN@")
                        .replace("@TMP@", out_dir)
                        .replace("@OUT@", os.path.join(out_dir, "out")))
 
@@ -330,6 +332,9 @@ def main(argv=None):
                     help="fixture directory substituted for @DATA@")
     ap.add_argument("--python", default="/home/sean/miniforge3/envs/domainator/bin/python")
     ap.add_argument("--rust", default=str(REPO / "target" / "debug" / "domainator"))
+    ap.add_argument("--extra", default=str(REPO / "scripts" / "parity" / "extra_invocations.tsv"),
+                    help="hand-written invocations appended to the harvest; their @GEN@ "
+                         "fixtures are built by generated_fixtures.py (pass '' to skip)")
     ap.add_argument("--toolmap", default=str(REPO / "scripts" / "parity" / "toolmap.tsv"))
     ap.add_argument("--baseline", default=str(REPO / "scripts" / "parity" / "known_gaps.tsv"))
     ap.add_argument("--update_baseline", action="store_true",
@@ -371,8 +376,21 @@ def main(argv=None):
                 pathlib.Path(harvested.name).read_text().splitlines() if l.strip()]
         os.unlink(harvested.name)
 
+    if cfg.extra and pathlib.Path(cfg.extra).exists():
+        rows += [l.split("\t") for l in pathlib.Path(cfg.extra).read_text().splitlines()
+                 if l.strip() and not l.startswith("#")]
+
     if cfg.only:
         rows = [r for r in rows if r[0] in cfg.only]
+
+    # Fixtures upstream's tests build at test time (`@GEN@`), built once per sweep
+    # with upstream's own helpers, in the Python environment under test.
+    cfg.gen_dir = None
+    if any("@GEN@" in a for r in rows for a in r[3:]):
+        cfg.gen_dir = tempfile.mkdtemp(prefix="domainator_gen_")
+        subprocess.run([cfg.python, str(REPO / "scripts" / "parity" / "generated_fixtures.py"),
+                        "--data_dir", cfg.data_dir, "--test_dir", cfg.test_dir,
+                        "-o", cfg.gen_dir], check=True, capture_output=True)
 
     tally = {k: 0 for k in ("identical", "tolerated", "differs", "rust-failed", "error", "skipped")}
     found = {}
@@ -392,6 +410,8 @@ def main(argv=None):
 
     if report:
         report.close()
+    if cfg.gen_dir:
+        shutil.rmtree(cfg.gen_dir, ignore_errors=True)
 
     print()
     for label, key in (("identical (bytes)", "identical"),

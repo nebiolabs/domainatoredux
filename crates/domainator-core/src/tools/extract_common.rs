@@ -397,15 +397,9 @@ fn single_pad_extensions(
 
 /// Slice `rec` to `loc` with `keep_features`, mirroring
 /// `slice_record_from_location`: each sub-part is extracted (reverse-strand parts
-/// are reverse-complemented and concatenated in listed order), contained features
-/// are remapped, source features truncated. When `truncate_features` is true,
-/// partially-overlapping non-source features are truncated instead of dropped.
-pub fn slice_from_location(
-    rec: &SeqRecord,
-    loc: &Loc,
-    keep_features: &[SeqFeature],
-    truncate_features: bool,
-) -> SeqRecord {
+/// are reverse-complemented and concatenated in listed order) and the features are
+/// truncated to it with `<`/`>` on the cut ends (see `neighborhood::slice_features`).
+pub fn slice_from_location(rec: &SeqRecord, loc: &Loc, keep_features: &[SeqFeature]) -> SeqRecord {
     let parts: Vec<Env> = loc
         .parts
         .iter()
@@ -428,112 +422,20 @@ pub fn slice_from_location(
         dist_to_start: 0,
         dist_to_end: 0,
     };
-    if truncate_features {
-        slice_record_truncating(rec, &slice, keep_features)
-    } else {
-        slice_record(rec, &slice, keep_features)
-    }
+    slice_record(rec, &slice, keep_features)
 }
 
-/// Like [`slice_record`] but partially-overlapping non-source features are
-/// truncated to the slice instead of dropped (the `truncate_features=True` case).
-/// Only supports the single-part forward slice used by the splice path.
-fn slice_record_truncating(
-    rec: &SeqRecord,
-    slice: &SliceLoc,
-    keep_features: &[SeqFeature],
-) -> SeqRecord {
-    use crate::seq::location::{to_index, CompoundOp, Location};
-    // Build sequence + per-part shifts.
-    let mut seq = Vec::new();
-    let mut shifts = Vec::with_capacity(slice.parts.len());
-    let mut acc = 0i64;
-    for p in &slice.parts {
-        shifts.push(acc);
-        let sub = &rec.seq[to_index(p.start)..to_index(p.end)];
-        if p.strand == -1 {
-            seq.extend(crate::seq::translate::revcomp(sub));
-        } else {
-            seq.extend_from_slice(sub);
+/// Convert the features of a CDS-sized nucleotide slice to peptide coordinates, in
+/// place (`extract_peptides.dna_to_peptide_location`): each position becomes
+/// `max(0, (position - offset) // 3)`, where `offset` is the CDS's reading-frame
+/// offset (`/codon_start - 1`), and `<`/`>` markers stay on their ends.
+pub fn dna_to_peptide_features(features: &mut [SeqFeature], offset: i64) {
+    let to_pep = |pos: i64| ((pos - offset).div_euclid(3)).max(0);
+    for f in features {
+        for p in &mut f.location.parts {
+            p.0 = to_pep(p.0);
+            p.1 = to_pep(p.1);
         }
-        acc += p.end - p.start;
-    }
-
-    let mut new_features: Vec<SeqFeature> = Vec::new();
-    for f in keep_features {
-        let mut remapped: Vec<(i64, i64, i32, bool, bool)> = Vec::new();
-        for &(fs0, fe0, fstrand, _, _) in &f.location.parts {
-            let (fs, fe) = if fs0 <= fe0 { (fs0, fe0) } else { (fe0, fs0) };
-            for (li, lp) in slice.parts.iter().enumerate() {
-                let (ls, le) = (lp.start, lp.end);
-                let ns = fs.max(ls);
-                let ne = fe.min(le);
-                if ns < ne {
-                    let part_len = le - ls;
-                    let (mut a, mut b, mut st) = (ns - ls, ne - ls, fstrand);
-                    if lp.strand == -1 {
-                        let (fa, fb) = (part_len - b, part_len - a);
-                        a = fa;
-                        b = fb;
-                        st = -st;
-                    }
-                    a += shifts[li];
-                    b += shifts[li];
-                    // Python builds `FeatureLocation(new_start, new_end, strand)` from
-                    // plain ints, so every remapped part comes out `ExactPosition`: a
-                    // `<`/`>` partial marker on the original does not survive the slice.
-                    // Carrying it over is wrong twice -- it disagrees with the reference
-                    // and it claims the *new* record is truncated at a boundary that is
-                    // now interior.
-                    remapped.push((a, b, st, false, false));
-                }
-            }
-        }
-        if remapped.is_empty() {
-            continue;
-        }
-        remapped.sort_by_key(|p| p.0);
-        // Same coalescing as `slice_record`: an origin-crossing slice cuts a feature at
-        // the junction and the halves come back abutting. `extract_peptides` divides
-        // these by 3 afterwards, so an unmerged pair survives into peptide coordinates
-        // as a spurious `join`.
-        if matches!(f.location.operator, None | Some(CompoundOp::Join)) {
-            super::neighborhood::merge_touching_parts(&mut remapped);
-        }
-        let operator = if remapped.len() > 1 {
-            Some(CompoundOp::Join)
-        } else {
-            None
-        };
-        new_features.push(SeqFeature {
-            kind: f.kind.clone(),
-            location: Location {
-                operator,
-                between: false,
-                parts: remapped,
-            },
-            qualifiers: f.qualifiers.clone(),
-        });
-    }
-
-    let src = &rec.annotations;
-    let annotations = crate::seq::Annotations {
-        accessions: src.accessions.clone(),
-        sequence_version: src.sequence_version,
-        source: src.source.clone(),
-        organism: src.organism.clone(),
-        taxonomy: src.taxonomy.clone(),
-        ..Default::default()
-    };
-    SeqRecord {
-        id: rec.id.clone(),
-        name: rec.name.clone(),
-        description: rec.description.clone(),
-        seq,
-        molecule_type: rec.molecule_type.clone(),
-        topology: Topology::Linear,
-        annotations,
-        features: new_features,
     }
 }
 
@@ -643,7 +545,7 @@ mod tests {
             parts: vec![(14, 20), (0, 4)],
             strand: 1,
         };
-        let out = slice_from_location(&rec, &loc, &rec.features, true);
+        let out = slice_from_location(&rec, &loc, &rec.features);
         assert_eq!(out.seq, b"TTACGTAAAA");
         assert_eq!(
             out.features[0].location.parts,

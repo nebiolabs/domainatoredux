@@ -159,6 +159,10 @@ export interface SummaryStats {
   length_median: number;
   length_histogram: [number, number][];
   n_cds: number;
+  /** CDSs with a `<`/`>` partial end. */
+  n_partial_cds: number;
+  /** Protein records that are fragments (UniProt `(Fragment)`, `NON_TER`, a partial CDS/Protein feature). */
+  n_fragment_proteins: number;
   n_domain_features: number;
   distinct_domains: number;
   top_domains: NameCount[];

@@ -82,6 +82,10 @@ fields:
     file_type: taxonomy
     sources: databases_first
     select: "database:ncbi_taxonomy"
+  - name: partial
+    label: "Fragments"
+    help: "Which CDSs/proteins to search, by fragment status: include (all), exclude (skip fragments), only (only fragments)."
+    cli_default: "include"
   - name: min_evalue
     show: false
     label: "Min evalue"

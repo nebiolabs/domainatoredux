@@ -12,12 +12,12 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 // handed to clap, which wants a `&'static str`.
 macro_rules! upstream_version {
     () => {
-        "0.11.0"
+        "0.12.0"
     };
 }
 macro_rules! upstream_commit {
     () => {
-        "9c70934"
+        "0394886"
     };
 }
 

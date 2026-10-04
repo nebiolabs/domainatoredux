@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-use crate::seq::location::{CompoundOp, Location};
-use crate::seq::{SeqFeature, SeqRecord};
+use crate::seq::{SeqRecord, Topology};
+use crate::tools::neighborhood::{slice_annotations, slice_linear_features};
 
 /// The 20 canonical amino acids.
 const CANONICAL_PROTEIN: &[u8] = b"ACDEFGHIKLMNPQRSTVWY";
@@ -83,44 +83,15 @@ fn deduplicate_name(name: &str, seen: &mut HashMap<String, usize>) -> String {
     }
 }
 
-/// Linear slice `[start, end)` keeping (and truncating) all overlapping features,
-/// shifting coordinates by `-start`. Mirrors `utils.slice_record` with
-/// `truncate_features=True` for the simple forward-strand case used by `--strip`.
+/// Linear slice `[start, end)` (`utils.slice_record(contig, start, end)`), used by
+/// `--strip`: features truncated with `<`/`>` on the cut ends, coordinates shifted
+/// by `-start`, annotations pruned as in every slice, topology linear.
 fn slice_linear(rec: &SeqRecord, start_idx: usize, end_idx: usize) -> SeqRecord {
-    let (start, end) = (start_idx as i64, end_idx as i64);
-    let mut features = Vec::new();
-    for f in &rec.features {
-        let mut parts: Vec<(i64, i64, i32, bool, bool)> = Vec::new();
-        for &(s0, e0, strand, before, after) in &f.location.parts {
-            let (s, e) = if s0 <= e0 { (s0, e0) } else { (e0, s0) };
-            let ns = s.max(start);
-            let ne = e.min(end);
-            if ns < ne {
-                parts.push((ns - start, ne - start, strand, before, after));
-            }
-        }
-        if parts.is_empty() {
-            continue;
-        }
-        parts.sort_by_key(|p| p.0);
-        let operator = if parts.len() > 1 {
-            f.location.operator.or(Some(CompoundOp::Join))
-        } else {
-            None
-        };
-        features.push(SeqFeature {
-            kind: f.kind.clone(),
-            location: Location {
-                operator,
-                between: false,
-                parts,
-            },
-            qualifiers: f.qualifiers.clone(),
-        });
-    }
     SeqRecord {
         seq: rec.seq[start_idx..end_idx].to_vec(),
-        features,
+        features: slice_linear_features(rec, start_idx as i64, end_idx as i64),
+        annotations: slice_annotations(rec),
+        topology: Topology::Linear,
         ..rec.clone()
     }
 }

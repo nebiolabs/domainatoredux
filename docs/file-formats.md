@@ -51,6 +51,83 @@ Two conventions that matter if you compare output between implementations:
 A record with no date is stamped with today's date when written, matching the Python
 suite's behavior (ours in UTC, theirs in local time).
 
+### Partial features and fragments
+
+Domainator keeps the GenBank partial markers `<` and `>` on feature locations. `<` means
+the feature starts before the given position, and `>` means it ends after it. For example,
+`complement(803..>2688)` is a CDS on the minus strand that runs off the end of the contig,
+so its 5' end (and its protein's N-terminus) is missing.
+
+**Slicing.** Tools that extract part of a record keep the features the slice cuts, and
+mark the cut ends with `<` or `>`. These tools are the `select-by-cds` and `domain-search`
+neighborhoods, `select-by-coord`, `extract-domains`, `extract-peptides`,
+`extract-unannotated`, `trim-contigs`, `clean-sequences --strip` and
+`enum-report --by cds|domain`. A marker already on an end that the slice keeps is kept.
+There are three exceptions:
+
+- `source` features don't get new markers.
+- `Domainator` and `Domain_Search` features that the slice cuts are dropped, because their
+  scores and coordinates describe the whole hit.
+- A feature split across the ends of a rotated circular contig is not cut, since all of
+  its sequence is still in the record. It is written as a `join` without markers.
+
+**Reading frame and translation.** When a CDS is cut, its `/codon_start` is updated so its
+reading frame is preserved. Its `/translation` is trimmed to the residues whose codons are
+completely kept, following the NCBI convention that a partial CDS's translation covers only
+the part on the contig. If the kept part is not contiguous (an interior exon was cut out),
+the `/translation` is removed, and `domainate` translates it again the next time the record
+goes through it.
+
+Some files give a partial CDS the translation of the full protein, including residues
+encoded off the edge of the contig. When `domainate` and `domain-search` read such a CDS,
+they trim the translation to the on-contig residues, from the partial end. If both ends
+are partial, they can't tell where the extra residues belong, so they translate the CDS
+again from the contig and print a warning. A complete 3' end is assumed to end in a stop
+codon, which GenBank translations omit and Domainator's own translations include as `*`.
+
+Domain hits on a CDS are placed relative to its `/codon_start`: residue 1 of the
+translation starts `codon_start - 1` bases into the CDS.
+
+**Fragment status.** Like a taxid, each protein or CDS has a fragment status:
+
+- A CDS is a fragment if either outer end of its location has a `<` or `>`. Its status is
+  `N` (5' end, and so the N-terminus, missing), `C` (3' end missing), or `NC` (both).
+- For a protein record, a `CDS` or `Protein` feature spanning the record decides, the same
+  way. `domain-search --translate` writes such a feature, and NCBI GenPept records carry one.
+- Otherwise, UniProt `NON_TER` features on the first or last residue decide: `N`, `C` or
+  `NC`.
+- Otherwise, a protein record is a fragment with unknown missing ends, `?`, if its
+  description contains ` (Fragment)` or ` (Fragments)`, or a `Flags:` list naming
+  `Fragment(s)`. The first is how UniProt marks fragments in FASTA headers, e.g.
+  `>tr|A0A0|A0A0_ECOLI Superoxide dismutase (Fragment) OS=Escherichia coli OX=562`. The
+  second is the `DE   Flags: Fragment;` line of a UniProt text entry. The status is never
+  written into descriptions, so headers come back out unchanged.
+
+These tools take `--partial include|exclude|only` (default `include`) to select by
+fragment status. `--partial` is never inverted by `--invert`.
+
+| Tool | What `--partial` selects |
+| --- | --- |
+| `domainate`, `domain-search` | which CDSs/proteins are searched. `domainate` still writes every record. |
+| `select-by-cds` | which CDSs regions are extracted around |
+| `extract-peptides` | which CDSs peptides are extracted from |
+| `extract-domains` | which domains are extracted, by the CDS or protein they are on. Contig-level nucleotide hits are never on fragments. |
+| `select-by-contig` | which contigs are selected. A protein record is judged by its own status; a nucleotide contig is a fragment if it contains any partial CDS. |
+| `enum-report` | which rows are reported: by contig (as for `select-by-contig`), by CDS, or by domain (by the CDS or protein the domain is on) |
+| `summary-report` | which CDSs/proteins are counted. Filtered protein records are skipped. On nucleotide contigs, filtered CDSs and the domains on them aren't counted, but the contig is. The report always gives the number of partial CDSs and protein fragments among those counted. |
+
+`enum-report --fragment` adds a `fragment` column with the status (`complete`, `N`, `C`,
+`NC` or `?`) for rows that are a single protein or CDS: protein records, CDSs, and domains
+on protein records (which get the status of their protein). For other rows it is empty,
+with a warning. `enum-report --partial_count` adds a `partial_count` column. By contig, it
+is the number of partial CDSs on the contig (for a protein record, 1 if it is a fragment).
+By CDS, it is 1 if the CDS or protein is a fragment. By domain, it is 1 if the CDS or protein
+the domain is on is a fragment, whether or not the domain reaches the missing end. In every
+other case it is 0.
+
+FASTA output (`--fasta_out`, `genbank-to-fasta`) carries no locations, so a fragment's
+status survives only if its header already says ` (Fragment)`.
+
 ## FASTA
 
 `.fasta` `.fa` `.fna` `.faa` `.pep`

@@ -60,6 +60,8 @@ skips, a binary is missing rather than anything being fine.
 |---|---|
 | `scripts/parity/harvest_invocations.py` | AST-walks upstream's tests, emits one TSV row per `main([...])` |
 | `scripts/parity/differential.py` | replays each row through both implementations and classifies the result |
+| `scripts/parity/extra_invocations.tsv` | hand-written invocations for upstream tests the harvester cannot replay (inputs built at test time, loops over flag values) |
+| `scripts/parity/generated_fixtures.py` | builds those tests' inputs once per sweep with upstream's own `test/helpers.py`, into the `@GEN@` directory |
 | `scripts/parity/toolmap.tsv` | `<python module>` → `<domainator subcommand>` |
 | `scripts/parity/known_gaps.tsv` | the tracked list of invocations that do not yet reproduce |
 | `scripts/parity/sync_fixtures.py` | keeps `test/data/` in step with upstream's `test/data` |
@@ -69,7 +71,13 @@ Three placeholders carry through the harvest and are substituted at replay time:
 `@DATA@` (the fixture directory, upstream's `shared_datadir` fixture), `@TMP@` (a
 scratch directory, **distinct per implementation** — which is why upstream's
 `output_dir = "test_out"` is deliberately not allowed to shadow it), and `@OUT@`
-(a fallback for an output path whose binding would not resolve).
+(a fallback for an output path whose binding would not resolve). A fourth, `@GEN@`, is
+used only by `extra_invocations.tsv`. It names a directory that
+`generated_fixtures.py` fills before the run, with the HMMs, edited FASTA and annotated
+GenBank files that some upstream tests build at test time. Without them, the
+harvested copies of those invocations name files that never exist, and Python rejects them
+as `skipped`. The extra rows are keyed `extra:<upstream test>#<n>` and are tracked in
+`known_gaps.tsv` like any other. Pass `--extra ''` to leave them out.
 
 ## Outcomes
 

@@ -148,13 +148,12 @@ pub fn is_searchable_cds(feature: &SeqFeature) -> bool {
     feature.kind == "CDS" && !feature.has("pseudo") && !feature.has("pseudogene")
 }
 
-/// Alnum-filtered search peptide for a CDS: its `/translation` if present, else the
-/// translated spliced nucleotide sequence (matches Python's `get_prot_list`).
+/// Alnum-filtered search peptide for a CDS: the on-contig part of its
+/// `/translation` if present, else the CDS translated from the contig at its
+/// `/codon_start` frame (Python's `get_prot_list` after `clean_rec`, and the native
+/// parser's `cds_peptide`). See [`super::partial::on_contig_cds_translation`].
 pub fn cds_peptide(feature: &SeqFeature, seq: &[u8]) -> String {
-    let raw = match feature.get_first("translation").filter(|s| !s.is_empty()) {
-        Some(tr) => tr.to_string(),
-        None => translate_dna(&extract_location_seq(&feature.location, seq)),
-    };
+    let (raw, _) = super::partial::on_contig_cds_translation(feature, seq);
     raw.chars().filter(|c| c.is_ascii_alphanumeric()).collect()
 }
 

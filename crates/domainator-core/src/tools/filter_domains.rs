@@ -65,13 +65,6 @@ fn overlap_size(a: &crate::seq::Location, b: &crate::seq::Location) -> i64 {
     total
 }
 
-fn location_len(loc: &crate::seq::Location) -> i64 {
-    loc.parts
-        .iter()
-        .map(|&(s, e, ..)| if s <= e { e - s } else { s - e })
-        .sum()
-}
-
 /// `domain_overlap`: greedily keep the highest-scoring domains such that no kept
 /// pair overlaps more than `allowed_fraction_overlap` (measured against the
 /// candidate's own length). Returns the indices (into `feats`) to keep.
@@ -87,7 +80,7 @@ fn domain_overlap(feats: &[&SeqFeature], indices: &[usize], allowed: f64) -> Vec
     for &i in order.iter().skip(1) {
         let mut overlaps = false;
         for &k in &kept {
-            let denom = location_len(&feats[i].location);
+            let denom = feats[i].location.len();
             if denom > 0
                 && overlap_size(&feats[i].location, &feats[k].location) as f64 / denom as f64
                     > allowed

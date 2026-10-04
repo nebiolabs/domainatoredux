@@ -50,6 +50,10 @@ fields:
     cli_default: false
   - name: contigs
     label: "Restrict to contigs"
+  - name: partial
+    label: "Fragments"
+    help: "Which domains to extract, by the fragment status of the CDS or protein they are on."
+    cli_default: "include"
   - name: domains_file
     show: false
     label: "Domains file"

@@ -125,6 +125,10 @@ enum Command {
         /// Print the resolved parameters as YAML and exit.
         #[arg(long = "print_config")]
         print_config: bool,
+        /// Which CDSs/proteins to search, by fragment status: include (all), exclude (skip fragments) or
+        /// only (only fragments). Default: include.
+        #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
+        partial: Option<String>,
     },
     /// Search references against a (possibly sharded/BGZF/indexed) database.
     DomainSearch {
@@ -233,6 +237,10 @@ enum Command {
         /// Print the resolved parameters as YAML and exit.
         #[arg(long = "print_config")]
         print_config: bool,
+        /// Which CDSs/proteins to search, by fragment status: include (all), exclude (skip fragments) or
+        /// only (only fragments). Default: include.
+        #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
+        partial: Option<String>,
     },
     /// Remove redundant sequences (hash exact-dedup, or cd-hit/diamond/usearch clustering).
     Deduplicate {
@@ -579,6 +587,10 @@ enum Command {
         config: Option<String>,
         #[arg(long = "print_config")]
         print_config: bool,
+        /// Which domains to extract, by the CDS or protein they are on, by fragment status: include (all), exclude (skip fragments) or
+        /// only (only fragments). Default: include.
+        #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
+        partial: Option<String>,
     },
     /// Extract peptide sequences from selected CDSs.
     ExtractPeptides {
@@ -637,6 +649,10 @@ enum Command {
         config: Option<String>,
         #[arg(long = "print_config")]
         print_config: bool,
+        /// Which CDSs to extract peptides from (not affected by --invert), by fragment status: include (all), exclude (skip fragments) or
+        /// only (only fragments). Default: include.
+        #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
+        partial: Option<String>,
     },
     /// Extract regions of proteins not containing domain annotations.
     #[command(allow_negative_numbers = true)]
@@ -1002,6 +1018,10 @@ enum Command {
         /// Print the resolved parameters as YAML and exit.
         #[arg(long = "print_config")]
         print_config: bool,
+        /// Which CDSs/proteins to count, by fragment status: include (all), exclude (skip fragments) or
+        /// only (only fragments). Default: include.
+        #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
+        partial: Option<String>,
     },
     /// Navigate a `.dsnv` bundle: clusters, cluster contents, and metadata, as JSON.
     SsnNavigator {
@@ -1147,6 +1167,10 @@ enum Command {
         /// Print the resolved parameters as YAML and exit.
         #[arg(long = "print_config")]
         print_config: bool,
+        /// Which CDSs to extract regions around (not affected by --invert), by fragment status: include (all), exclude (skip fragments) or
+        /// only (only fragments). Default: include.
+        #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
+        partial: Option<String>,
     },
     /// Select a subset of contigs from a GenBank/FASTA file by various criteria.
     SelectByContig {
@@ -1237,6 +1261,10 @@ enum Command {
         /// Print the resolved parameters as YAML and exit.
         #[arg(long = "print_config")]
         print_config: bool,
+        /// Which contigs to select; a nucleotide contig is a fragment if any of its CDSs is (not affected by --invert), by fragment status: include (all), exclude (skip fragments) or
+        /// only (only fragments). Default: include.
+        #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
+        partial: Option<String>,
     },
     /// Align HMM profiles against reference HMM profiles (hhsearch-like).
     HmmerCompare {
@@ -1762,6 +1790,7 @@ fn parse_enum_args(args: &[String]) -> Result<EnumCli> {
             "-i" | "--input" => cfg.input.extend(consume_multi(&mut i)),
             "-o" | "--output" => cfg.output = Some(next(&mut i, "--output")?),
             "--by" => cfg.by = Some(next(&mut i, "--by")?.to_lowercase()),
+            "--partial" => cfg.partial = Some(next(&mut i, "--partial")?),
             "--databases" => cfg.databases.extend(consume_multi(&mut i)),
             "--contigs" => cfg.contigs.extend(consume_multi(&mut i)),
             "--contigs_file" => cfg.contigs_file = Some(next(&mut i, "--contigs_file")?),
@@ -1976,6 +2005,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             exclude_taxids,
             taxonomy_expr,
             ncbi_taxonomy_path,
+            partial,
             config: config_path,
             print_config: do_print,
         } => {
@@ -1998,6 +2028,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 exclude_taxids,
                 taxonomy_expr,
                 ncbi_taxonomy_path,
+                partial,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::DomainateConfig>(p)?,
@@ -2047,6 +2078,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 max_mode: cfg.max_mode,
                 allowed_taxids,
                 cpu: cfg.cpu.unwrap_or(0),
+                partial: config::parse_partial(cfg.partial.as_deref())?,
                 ..Default::default()
             };
             let annotated = domainate::domainate(records, &dbs, &opts);
@@ -2087,6 +2119,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             taxonomy_expr,
             ncbi_taxonomy_path,
             max_output_gb,
+            partial,
             config: config_path,
             print_config: do_print,
         } => {
@@ -2124,6 +2157,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 taxonomy_expr,
                 ncbi_taxonomy_path,
                 max_output_gb,
+                partial,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::DomainSearchConfig>(p)?,
@@ -2195,6 +2229,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 max_mode: cfg.max_mode,
                 allowed_taxids,
                 decoys,
+                partial: config::parse_partial(cfg.partial.as_deref())?,
             };
             let hits = domain_search::domain_search(&[input], &dbs, &opts)
                 .context("running domain_search")?;
@@ -2828,6 +2863,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             fasta_out,
             contigs,
             contigs_file,
+            partial,
             config: config_path,
             print_config: do_print,
         } => {
@@ -2849,6 +2885,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 fasta_out,
                 contigs,
                 contigs_file,
+                partial,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::ExtractDomainsConfig>(p)?,
@@ -2880,6 +2917,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 search_hits: cfg.search_hits,
                 databases,
                 splice: cfg.splice,
+                partial: config::parse_partial(cfg.partial.as_deref())?,
             };
             let out = tools::extract_domains::extract_domains(&records, &opts)
                 .map_err(|e| anyhow::anyhow!(e))?;
@@ -2907,6 +2945,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             fasta_out,
             contigs,
             contigs_file,
+            partial,
             config: config_path,
             print_config: do_print,
         } => {
@@ -2928,6 +2967,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 fasta_out,
                 contigs,
                 contigs_file,
+                partial,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::ExtractPeptidesConfig>(p)?,
@@ -2970,6 +3010,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 keep_name: cfg.keep_name,
                 name_field: cfg.name_field.clone(),
                 extract_all,
+                partial: config::parse_partial(cfg.partial.as_deref())?,
             };
             let out = tools::extract_peptides::extract_peptides(&records, &opts);
             if cfg.fasta_out {
@@ -3666,6 +3707,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             databases,
             taxonomy,
             ncbi_taxonomy_path,
+            partial,
             config: config_path,
             print_config: do_print,
         } => {
@@ -3678,6 +3720,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 databases,
                 taxonomy,
                 ncbi_taxonomy_path,
+                partial,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::SummaryReportConfig>(p)?,
@@ -3710,6 +3753,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 focus_domains: cfg.domains.clone(),
                 databases: cfg.databases.clone(),
                 report_taxonomy: cfg.taxonomy,
+                partial: config::parse_partial(cfg.partial.as_deref())?,
             };
             let report = sr::summary_report(&records, &opts, tax.as_ref());
 
@@ -3803,6 +3847,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             let by = cfg.by_enum()?;
+            let partial = config::parse_partial(cfg.partial.as_deref())?;
             let analyses: Vec<Analysis> = cfg
                 .columns
                 .iter()
@@ -3859,6 +3904,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                             col_names,
                             tax.as_ref(),
                             databases.as_ref(),
+                            partial,
                             format,
                             &mut f,
                         );
@@ -3875,6 +3921,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                             col_names,
                             tax.as_ref(),
                             databases.as_ref(),
+                            partial,
                             format,
                             &mut h,
                         )
@@ -3911,6 +3958,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             evalue,
             invert,
             include_nucleic_acids,
+            partial,
             config: config_path,
             print_config: do_print,
         } => {
@@ -3942,6 +3990,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 evalue,
                 invert,
                 include_nucleic_acids,
+                partial,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::SelectByCdsConfig>(p)?,
@@ -3994,6 +4043,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 },
                 unannotated: cfg.unannotated,
                 include_nucleic_acids: cfg.include_nucleic_acids,
+                partial: config::parse_partial(cfg.partial.as_deref())?,
             };
             let mut regions = select_by_cds(&records, &opts);
             // Deduplicate by record name (LOCUS), keeping the first occurrence.
@@ -4035,6 +4085,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             search_score_lb,
             search_score_ub,
             invert,
+            partial,
             config: config_path,
             print_config: do_print,
         } => {
@@ -4066,6 +4117,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 search_score_lb,
                 search_score_ub,
                 invert,
+                partial,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::SelectByContigConfig>(p)?,
@@ -4129,6 +4181,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 search_score_lb: cfg.search_score_lb,
                 search_score_ub: cfg.search_score_ub,
                 domain_type: cfg.domain_type.unwrap_or_else(|| "domain".into()),
+                partial: config::parse_partial(cfg.partial.as_deref())?,
             };
             let out_path = cfg.output.map(PathBuf::from);
             let selected =

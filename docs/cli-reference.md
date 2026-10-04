@@ -61,6 +61,13 @@ column. It can be a directory of extracted `.dmp` files, a directory holding
 Taxonomy download). enum-report's `--rank_lineage` loads it too; the Python tool does not,
 and crashes on that column alone.
 
+**`--partial include|exclude|only`** selects by fragment status: a CDS with a `<`/`>`
+end, or a protein record marked as a fragment (UniProt ` (Fragment)`, `NON_TER`, ...).
+`exclude` skips fragments and `only` keeps only them; `--invert` never inverts it. On
+`domainate`, `domain-search`, `select-by-cds`, `select-by-contig`, `extract-peptides`,
+`extract-domains`, `enum-report` and `summary-report`. What each one selects, and how
+slicing marks the features it cuts: [File formats](file-formats.md#partial-features-and-fragments).
+
 ## The tools at a glance
 
 | Role | Tools |
@@ -423,7 +430,8 @@ Bare column flags: `--domains`, `--domain_descriptions`, `--sequence`, `--start`
 `--strand`, `--length`, `--topology`, `--architecture`, `--architecture_detailed`,
 `--score`, `--identity`, `--definition`, `--filename`, `--cds_count`, `--domain_count`,
 `--domain_search`, `--taxid_lineage`, `--taxname_lineage`, `--rank_lineage`,
-`--isoelectric_point`, `--molecular_weight`, `--starts_with`.
+`--isoelectric_point`, `--molecular_weight`, `--starts_with`, `--fragment` (`complete`,
+`N`, `C`, `NC` or `?`), `--partial_count`.
 
 Column flags that take values: `--taxid [ranks...]`, `--taxname [ranks...]`,
 `--qualifier <feature> <qualifier>`, `--feature_count <feature>`,
@@ -431,7 +439,7 @@ Column flags that take values: `--taxid [ranks...]`, `--taxname [ranks...]`,
 `--named_domain_count <name>`, `--append <name> <value_type> <value>` (a constant column).
 
 `--json <path|->` writes streaming NDJSON — one object per row — independently of `-o`, so
-a single run can emit both.
+a single run can emit both. `--partial` filters rows by fragment status.
 
 ```bash
 domainator enum-report -i annotated.gb --by cds \
@@ -445,7 +453,9 @@ HTML output is not ported; use TSV or `--json`.
 
 Dataset-level statistics: contig and CDS counts, length distribution, domain frequency,
 taxonomy. `--domains` and `--databases` restrict the rollup; `--taxonomy` adds a taxonomic
-breakdown. `--json <path|->` emits one JSON object.
+breakdown. `--json <path|->` emits one JSON object. The counts include partial CDSs and
+protein fragments (`partial_cdss`, `fragment_proteins`), and `--partial` restricts what
+is counted.
 
 ```bash
 domainator summary-report -i annotated.gb -o summary.txt

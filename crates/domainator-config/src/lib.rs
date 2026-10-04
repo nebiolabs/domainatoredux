@@ -3,6 +3,9 @@
 //! parameter schema (not byte-compatible with the Python jsonargparse files, but
 //! serving the same purpose: declarative, agent-friendly, quoting-free params).
 
+// `domain_search_schema`'s `json!` literal outgrew the default limit of 128.
+#![recursion_limit = "256"]
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
@@ -104,6 +107,8 @@ pub enum ColumnSpec {
     IsoelectricPoint,
     StartsWith,
     MolecularWeight,
+    Fragment,
+    PartialCount,
     Taxid {
         ranks: Vec<String>,
     },
@@ -164,6 +169,8 @@ impl ColumnSpec {
             IsoelectricPoint => "isoelectric_point",
             StartsWith => "starts_with",
             MolecularWeight => "molecular_weight",
+            Fragment => "fragment",
+            PartialCount => "partial_count",
             _ => return None,
         })
     }
@@ -195,6 +202,8 @@ impl ColumnSpec {
             "isoelectric_point" => IsoelectricPoint,
             "starts_with" => StartsWith,
             "molecular_weight" => MolecularWeight,
+            "fragment" => Fragment,
+            "partial_count" => PartialCount,
             _ => return None,
         })
     }
@@ -250,6 +259,17 @@ pub struct EnumConfig {
     /// Write streaming NDJSON here (`-` = stdout). Sits alongside `output`, which
     /// stays TSV, so both can be produced in one run.
     pub json: Option<String>,
+    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
+    pub partial: Option<String>,
+}
+
+/// Parse a resolved `partial` value (`None` = the default, `include`). Config files
+/// skip clap's `value_parser`, so every tool validates here after the merge.
+pub fn parse_partial(value: Option<&str>) -> Result<domainator_core::seq::partial::Partial> {
+    value
+        .unwrap_or("include")
+        .parse()
+        .map_err(|e: String| anyhow::anyhow!(e))
 }
 
 impl EnumConfig {
@@ -293,6 +313,9 @@ impl EnumConfig {
         self.columns.extend(cli.columns);
         if cli.json.is_some() {
             self.json = cli.json;
+        }
+        if cli.partial.is_some() {
+            self.partial = cli.partial;
         }
     }
 }
@@ -348,6 +371,8 @@ pub struct SelectByContigConfig {
     pub search_score_lb: Option<f64>,
     pub search_score_ub: Option<f64>,
     pub invert: bool,
+    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
+    pub partial: Option<String>,
 }
 
 impl SelectByContigConfig {
@@ -379,6 +404,7 @@ impl SelectByContigConfig {
         merge_scalar!(self, cli, search_score_lb);
         merge_scalar!(self, cli, search_score_ub);
         self.invert |= cli.invert;
+        merge_scalar!(self, cli, partial);
     }
 }
 
@@ -413,6 +439,8 @@ pub struct SelectByCdsConfig {
     pub evalue: Option<f64>,
     pub invert: bool,
     pub include_nucleic_acids: bool,
+    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
+    pub partial: Option<String>,
 }
 
 impl SelectByCdsConfig {
@@ -444,6 +472,7 @@ impl SelectByCdsConfig {
         merge_scalar!(self, cli, evalue);
         self.invert |= cli.invert;
         self.include_nucleic_acids |= cli.include_nucleic_acids;
+        merge_scalar!(self, cli, partial);
     }
 }
 
@@ -473,6 +502,8 @@ pub struct DomainateConfig {
     pub exclude_taxids: Vec<i64>,
     pub taxonomy_expr: Option<String>,
     pub ncbi_taxonomy_path: Option<String>,
+    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
+    pub partial: Option<String>,
 }
 
 impl DomainateConfig {
@@ -495,6 +526,7 @@ impl DomainateConfig {
         merge_vec!(self, cli, exclude_taxids);
         merge_scalar!(self, cli, taxonomy_expr);
         merge_scalar!(self, cli, ncbi_taxonomy_path);
+        merge_scalar!(self, cli, partial);
     }
 }
 
@@ -535,6 +567,8 @@ pub struct DomainSearchConfig {
     pub taxonomy_expr: Option<String>,
     pub ncbi_taxonomy_path: Option<String>,
     pub max_output_gb: Option<f64>,
+    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
+    pub partial: Option<String>,
 }
 
 impl DomainSearchConfig {
@@ -572,6 +606,7 @@ impl DomainSearchConfig {
         merge_scalar!(self, cli, taxonomy_expr);
         merge_scalar!(self, cli, ncbi_taxonomy_path);
         merge_scalar!(self, cli, max_output_gb);
+        merge_scalar!(self, cli, partial);
     }
 }
 
@@ -841,6 +876,8 @@ pub struct ExtractDomainsConfig {
     pub fasta_out: bool,
     pub contigs: Vec<String>,
     pub contigs_file: Option<String>,
+    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
+    pub partial: Option<String>,
 }
 
 impl ExtractDomainsConfig {
@@ -862,6 +899,7 @@ impl ExtractDomainsConfig {
         self.fasta_out |= cli.fasta_out;
         merge_vec!(self, cli, contigs);
         merge_scalar!(self, cli, contigs_file);
+        merge_scalar!(self, cli, partial);
     }
 }
 
@@ -886,6 +924,8 @@ pub struct ExtractPeptidesConfig {
     pub fasta_out: bool,
     pub contigs: Vec<String>,
     pub contigs_file: Option<String>,
+    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
+    pub partial: Option<String>,
 }
 
 impl ExtractPeptidesConfig {
@@ -907,6 +947,7 @@ impl ExtractPeptidesConfig {
         self.fasta_out |= cli.fasta_out;
         merge_vec!(self, cli, contigs);
         merge_scalar!(self, cli, contigs_file);
+        merge_scalar!(self, cli, partial);
     }
 }
 
@@ -1131,6 +1172,8 @@ pub struct SummaryReportConfig {
     pub databases: Vec<String>,
     pub taxonomy: bool,
     pub ncbi_taxonomy_path: Option<String>,
+    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
+    pub partial: Option<String>,
 }
 
 impl SummaryReportConfig {
@@ -1142,6 +1185,7 @@ impl SummaryReportConfig {
         merge_vec!(self, cli, databases);
         self.taxonomy |= cli.taxonomy;
         merge_scalar!(self, cli, ncbi_taxonomy_path);
+        merge_scalar!(self, cli, partial);
     }
 }
 
@@ -1611,6 +1655,7 @@ fn common_help(name: &str) -> Option<&'static str> {
         "no_annotations" => "Don't write domain annotations (report hits only).",
         "no_domain" => "Drop contigs that have no matching domain.",
         "pad" => "Pad extracted regions to equal length.",
+        "partial" => "Select by fragment status: include (all), exclude (skip fragments), or only (only fragments). A CDS is a fragment if its location has '<' or '>'; a protein record if it has a UniProt ' (Fragment)' header, a 'Flags: Fragment' definition, NON_TER features, or a CDS/Protein feature with '<' or '>' spanning it. Never inverted by --invert.",
         "pad_up" => "Pad the extracted region this many residues upstream.",
         "pad_down" => "Pad the extracted region this many residues downstream.",
         "prefix_count" => "Prefix the cluster size to each representative's name.",
@@ -1639,6 +1684,7 @@ fn enum_schema() -> serde_json::Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
             "input": {"type": "array", "items": {"type": "string"}, "description": "GenBank/FASTA input files"},
             "output": {"type": ["string", "null"], "description": "Output path (stdout if omitted)"},
             "by": {"enum": ["contig", "cds", "domain"], "default": "contig"},
@@ -1740,6 +1786,8 @@ fn enum_columns_schema() -> serde_json::Value {
             static_column("taxname_lineage", "Taxon-name lineage", &format!("Semicolon-separated taxon names from the root to the record's taxon. {TAX}")),
             static_column("rank_lineage", "Rank lineage", &format!("Semicolon-separated ranks from the root to the record's taxon. {TAX}")),
             static_column("molecular_weight", "Molecular weight", "The molecular weight in daltons, computed for protein, DNA or RNA from the molecule_type annotation."),
+            static_column("fragment", "Fragment status", "Whether the protein or CDS is a fragment: complete, N (missing the N-terminus), C (missing the C-terminus), NC (missing both), or ? (missing ends unknown, e.g. from a UniProt ' (Fragment)' header). Only for rows that are a single protein or CDS (protein records, CDSs, and the domains of protein records); otherwise empty, with a warning. See also partial_count."),
+            static_column("partial_count", "Partial CDS count", "The number of partial CDSs: by contig, the CDSs with '<' or '>' in their location (for a protein record, 1 if it is a fragment); by cds, 1 if the CDS or protein is a fragment; by domain, 1 if the CDS or protein the domain is on is a fragment, whether or not the domain reaches the missing end."),
             static_column("isoelectric_point", "Isoelectric point", "The protein's isoelectric point. Only defined for a contig with exactly one protein sequence."),
             column_variant("net_charge", "Net charge", "The protein's net charge at the given pH. Only defined for a contig with exactly one protein sequence.",
                 json!({"ph": {"type": "string", "description": "pH, e.g. 7.0"}})),
@@ -1774,6 +1822,7 @@ fn select_by_contig_schema() -> serde_json::Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
             "input": {"type": "array", "items": {"type": "string"}},
             "output": {"type": ["string", "null"]},
             "contigs": {"type": "array", "items": {"type": "string"}},
@@ -1813,6 +1862,7 @@ fn domainate_schema() -> serde_json::Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
             "input": {"type": ["string", "null"], "description": "Sequence file (GenBank/FASTA)"},
             "references": {"type": "array", "items": {"type": "string"}, "description": ".hmm reference files"},
             "output": {"type": ["string", "null"]},
@@ -1843,6 +1893,7 @@ fn domain_search_schema() -> serde_json::Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
             "input": {"type": ["string", "null"], "description": "Input database (GenBank/FASTA; logical shard name)"},
             "references": {"type": "array", "items": {"type": "string"}},
             "output": {"type": ["string", "null"]},
@@ -2069,6 +2120,7 @@ fn extract_domains_schema() -> serde_json::Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
             "input": {"type": "array", "items": {"type": "string"}},
             "output": {"type": ["string", "null"]},
             "evalue": {"type": ["number", "null"]},
@@ -2098,6 +2150,7 @@ fn extract_peptides_schema() -> serde_json::Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
             "input": {"type": "array", "items": {"type": "string"}},
             "output": {"type": ["string", "null"]},
             "domains": {"type": "array", "items": {"type": "string"}},
@@ -2225,6 +2278,7 @@ fn summary_report_schema() -> serde_json::Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
             "input": {"type": "array", "items": {"type": "string"}, "description": "Input GenBank file(s)"},
             "output": {"type": ["string", "null"], "description": "Text report output path"},
             "json": {"type": ["string", "null"], "description": "Write the full summary as one compact JSON object here; '-' for stdout"},
@@ -2473,6 +2527,7 @@ fn select_by_cds_schema() -> serde_json::Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
             "input": {"type": "array", "items": {"type": "string"}},
             "output": {"type": ["string", "null"]},
             "kb_range": {"type": ["number", "null"]},
@@ -2735,6 +2790,8 @@ mod tests {
             IsoelectricPoint,
             StartsWith,
             MolecularWeight,
+            Fragment,
+            PartialCount,
             Taxid { ranks: vec![s()] },
             Taxname { ranks: vec![s()] },
             Qualifier {
@@ -2779,6 +2836,8 @@ mod tests {
                 | IsoelectricPoint
                 | StartsWith
                 | MolecularWeight
+                | Fragment
+                | PartialCount
                 | Taxid { .. }
                 | Taxname { .. }
                 | Qualifier { .. }

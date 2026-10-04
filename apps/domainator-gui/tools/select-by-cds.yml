@@ -88,3 +88,7 @@ fields:
   - name: include_nucleic_acids
     label: "Include nucleic acids"
     cli_default: false
+  - name: partial
+    label: "Fragments"
+    help: "Which CDSs to extract regions around, by fragment status. Not affected by Invert."
+    cli_default: "include"

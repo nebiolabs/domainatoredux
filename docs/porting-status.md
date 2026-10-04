@@ -24,6 +24,13 @@ Three counts appear in this project and they measure different things:
 Related: [deliberate deferrals and the upstream pin](https://github.com/nebiolabs/domainatoredux/blob/main/UPSTREAM.md),
 and [the parity harness](parity.md) that enforces the port's fidelity.
 
+Partial features and fragments (upstream 0.12.0) are ported across every tool that has
+them. That covers marker-preserving slicing with `<`/`>` on cut ends, `/codon_start`
+handling, `--partial` on the eight tools that take it, and `enum_report --fragment` /
+`--partial_count`. They are checked by the parity sweep's `extra:` invocations; see
+[File formats](file-formats.md#partial-features-and-fragments). `find_features.py` and
+`domainator_db_download.py` gained `--partial` upstream, but neither tool is ported.
+
 ## Legend
 
 GUI column: how each tool is reachable in the Tauri app (`apps/domainator-gui/`).

@@ -12,6 +12,10 @@ use crate::search::hmmer::hmmsearch_db;
 use crate::search::nhmmer::nhmmer_db;
 use crate::search::references::{read_references, References};
 use crate::search::SearchResult;
+use crate::seq::partial::{
+    codon_offset, feature_fragment_status, on_contig_cds_translation, record_fragment_status,
+    Partial,
+};
 use crate::seq::taxid::record_taxid;
 use crate::seq::translate::is_searchable_cds;
 use crate::seq::Topology;
@@ -41,34 +45,40 @@ fn cds_unique_name(feature: &SeqFeature) -> String {
         .join(" ")
 }
 
-/// `clean_rec` for a nucleotide record: assign `cds_id` and a `/translation` to
-/// every non-pseudo CDS lacking one. Mutates in place; returns the CDS count.
+/// `clean_rec` for a nucleotide record: assign `cds_id` to every non-pseudo CDS and
+/// set its `/translation` to the on-contig translation (`utils.normalize_cds_translation`):
+/// translated from the contig at its `/codon_start` frame when absent or empty, and
+/// trimmed when a partial CDS carries residues encoded off the edge of the contig.
+/// Mutates in place; returns the CDS count.
 fn clean_rec_nucleotide(rec: &mut SeqRecord) -> usize {
     let seq = rec.seq.clone();
     let mut count = 0;
     for feature in &mut rec.features {
         if is_searchable_cds(feature) {
             let cds_id = cds_unique_name(feature);
-            feature.set("cds_id", cds_id);
+            feature.set("cds_id", cds_id.clone());
             count += 1;
-            let needs_translation = feature
-                .get_first("translation")
-                .map(|t| t.is_empty())
-                .unwrap_or(true);
-            if needs_translation {
-                let tr = crate::seq::translate::translate_dna(
-                    &crate::seq::translate::extract_location_seq(&feature.location, &seq),
+            let (translation, both_ends_partial) = on_contig_cds_translation(feature, &seq);
+            if both_ends_partial {
+                eprintln!(
+                    "Warning: Translation of partial CDS {cds_id} is longer than its location, \
+                     and both ends are partial. Re-translating from the contig."
                 );
-                feature.set("translation", tr);
             }
+            feature.set("translation", translation);
         }
     }
     count
 }
 
-/// Map a protein-coordinate domain `[start,end)` (aa) back onto a CDS's
-/// nucleotide location (port of `SimpleLocation`/`CompoundLocation.overlay`).
-fn overlay(loc: &Location, mut offset: i64, mut length: i64) -> Location {
+/// Map a protein-coordinate domain onto a CDS's nucleotide location: `length` bases
+/// starting `offset` bases into the CDS (port of `SimpleLocation`/
+/// `CompoundLocation.overlay`). `None` where Python raises -- a negative offset or
+/// length, or a span running past the end of the location.
+fn overlay(loc: &Location, mut offset: i64, mut length: i64) -> Option<Location> {
+    if offset < 0 || length < 0 || offset + length > loc.len() {
+        return None;
+    }
     let mut new_parts: Vec<crate::seq::location::Part> = Vec::new();
     for &(s, e, strand, _, _) in &loc.parts {
         let part_len = e - s;
@@ -89,7 +99,7 @@ fn overlay(loc: &Location, mut offset: i64, mut length: i64) -> Location {
             break;
         }
     }
-    if new_parts.len() == 1 {
+    Some(if new_parts.len() == 1 {
         Location {
             operator: None,
             between: false,
@@ -101,7 +111,7 @@ fn overlay(loc: &Location, mut offset: i64, mut length: i64) -> Location {
             between: false,
             parts: new_parts,
         }
-    }
+    })
 }
 
 /// Add `Domainator` features to a nucleotide contig (port of
@@ -120,6 +130,7 @@ fn add_nucleic_acid_annotations(
     let mut feature_ids: Vec<usize> = hits_by_cds.keys().copied().collect();
     feature_ids.sort_unstable();
     let mut to_append: Vec<SeqFeature> = Vec::new();
+    let contig_name = contig.name.clone();
     for fid in feature_ids {
         let mut hits = hits_by_cds.remove(&fid).unwrap();
         hits.sort_by(|a, b| b.score.total_cmp(&a.score));
@@ -128,21 +139,34 @@ fn add_nucleic_acid_annotations(
             .get_first("cds_id")
             .unwrap_or("")
             .to_string();
+        // Residue 0 starts `codon_start - 1` bases into the CDS.
+        let frame = codon_offset(&contig.features[fid]);
 
-        let emit = |hit: &SearchResult, ftype: &str, out: &mut Vec<SeqFeature>| {
+        // `None` when the hit cannot be placed on the CDS (Python warns and skips it).
+        let place = |hit: &SearchResult, ftype: &str| -> Option<SeqFeature> {
             let annot_len = (hit.end - hit.start) * 3;
-            let loc = overlay(&cds_loc, hit.start * 3, annot_len);
+            let Some(loc) = overlay(&cds_loc, frame + hit.start * 3, annot_len) else {
+                eprintln!(
+                    "Warning: Could not overlay location for {} on {}, {cds_id}. Skipping annotation.",
+                    hit.name, contig_name
+                );
+                return None;
+            };
             let mut f = hit.to_feature(ftype, &cds_id);
             f.location = loc;
-            out.push(f);
+            Some(f)
         };
         if best_annotation {
-            emit(&hits[0], DOMAIN_SEARCH_BEST_HIT_NAME, &mut to_append);
+            // Python `continue`s past the whole CDS when the best hit cannot be placed.
+            match place(&hits[0], DOMAIN_SEARCH_BEST_HIT_NAME) {
+                Some(f) => to_append.push(f),
+                None => continue,
+            }
         }
         if !no_annotations {
             let capped: Vec<SearchResult> = hits.into_iter().take(max_hits).collect();
             for hit in filter_by_overlap(capped, max_overlap, overlap_by_db) {
-                emit(&hit, DOMAIN_FEATURE_NAME, &mut to_append);
+                to_append.extend(place(&hit, DOMAIN_FEATURE_NAME));
             }
         }
     }
@@ -456,6 +480,9 @@ pub struct DomainateOptions {
     /// Cap on independent whole-contig (nhmmer) best hits per contig (`None` =
     /// unlimited). Only affects the contig-level best-annotation path.
     pub max_hits_per_contig: Option<usize>,
+    /// `--partial`: which proteins/CDSs are searched, by fragment status. Records
+    /// are written either way; a filtered protein/CDS is just never searched.
+    pub partial: Partial,
 }
 
 impl Default for DomainateOptions {
@@ -475,6 +502,7 @@ impl Default for DomainateOptions {
             cpu: 0,
             parallel_profiles: true,
             max_hits_per_contig: None,
+            partial: Partial::Include,
         }
     }
 }
@@ -508,6 +536,9 @@ pub fn domainate(
     let mut peptides: Vec<(String, Vec<u8>)> = Vec::new();
     for (i, rec) in records.iter().enumerate() {
         if rec.is_protein() {
+            if !opts.partial.allows(record_fragment_status(rec)) {
+                continue;
+            }
             let pep: Vec<u8> = rec
                 .seq
                 .iter()
@@ -517,6 +548,12 @@ pub fn domainate(
             peptides.push((format!("{i},0"), pep));
         } else {
             for (j, pep) in rec.cds_peptides(&empty_dropped) {
+                if !opts
+                    .partial
+                    .allows(feature_fragment_status(&rec.features[j]))
+                {
+                    continue;
+                }
                 peptides.push((format!("{i},{j}"), pep.into_bytes()));
             }
         }
@@ -692,6 +729,25 @@ pub fn read_hmm_references(files: &[String]) -> std::io::Result<References> {
 mod tests {
     use super::*;
     use crate::seq::location::CompoundOp;
+
+    /// `test_simple_location_overlay_bounds`: the bounds are relative to the
+    /// feature, not to its position on the contig.
+    #[test]
+    fn overlay_bounds() {
+        for (start, end, strand) in [(1000, 1300, 1), (1000, 1300, -1), (100, 400, 1)] {
+            let loc = Location::range(start, end, strand);
+            assert_eq!(overlay(&loc, 0, 300), Some(loc.clone()));
+            let expected = if strand == -1 {
+                Location::range(1210, 1270, -1)
+            } else {
+                Location::range(start + 30, start + 90, 1)
+            };
+            assert_eq!(overlay(&loc, 30, 60), Some(expected));
+            for (offset, length) in [(150, 300), (0, 301), (-1, 10), (0, -1)] {
+                assert_eq!(overlay(&loc, offset, length), None, "{offset} {length}");
+            }
+        }
+    }
 
     fn hit(start: i64, end: i64, strand: i32, name: &str) -> SearchResult {
         SearchResult {

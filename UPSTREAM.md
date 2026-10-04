@@ -7,26 +7,38 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `9c70934` — *Give each radial-seed ring room for the bubbles standing
-  on it* (2026-09-22; upstream's `v0.11.0` tag sits at the previous pin, `34c4b88`). The
-  nine commits since then are three kinds:
-- **SSN viewer layout** (`8d74369`, `f1f4fce`, `c3bc819`, `d29acf7`, `613cdfa`, `7bd7c74`,
-  `9c70934`): the duplicated layout source merged into one copy (shipped to the Worker as a
-  string), a more compact force layout, per-depth tree column widths, the edge-score badge
-  anchored on the drawn polyline, and concentric radial-seed rings. All client-side JS in
-  `ssn_viewer_html.py`; no bundle change. Taken by regenerating the shell (the GUI host hook
-  re-applied cleanly); the GUI picks it up through `render_html`'s `include_str!`.
-- **De-britify** (`9488aca`): comments, docstrings and viewer prose only — no on-disk key,
-  flag or JSON field changed. The port had already made the same pass.
-- **Gzipped `.hmm`, no `hmmpress`** (`eb2d524`), ported: `.hmm` inputs decompress by magic
-  bytes (gzip and BGZF), `hmmpress` sidecars are never read, `.gz` HMM output is plain gzip
-  and `.bgz` is refused before any work, `--max_output_gb` counts uncompressed bytes, and
-  database names come from `db_name_from_path` (`refs.hmm.gz` → `refs`). See
-  `search/hmm_read.rs`, `search/hmm_write.rs` (`HmmOutput`, `write_hmm_output`) and
-  `io/mod.rs` (`open_decompressed`, `db_name_from_path`); references and `seq_dist` now look
-  through a compression suffix. In the GUI the managed Pfam download stays `Pfam-A.hmm.gz`,
-  and the HMM viewer indexes and reads profiles through the gzip. `split_by_cluster`'s half
-  of the commit has no counterpart (the tool is deferred).
+- **Caught up to:** `0394886` — *version bump* (2026-10-03; upstream `__version__`
+  0.12.0). The six commits since `9c70934`:
+- **Wheels / CI** (`4b67f66`, `e55c56c`, `6aa216f`): packaging only; nothing to port.
+- **Partial features** (`8bf3c42`), ported. `slice_record_from_location` now truncates
+  every feature a slice cuts and marks the cut ends with `<`/`>`. The exceptions: `source`
+  never gets new markers, a cut `Domainator`/`Domain_Search` hit is dropped, and a feature
+  split across a rotated origin is not cut. A cut CDS gets an updated `/codon_start` and a
+  trimmed `/translation`, `merge_parts` keeps markers, and `get_cds_neighborhood` lost
+  its containment pre-filter. The port had six slicers; they are now one,
+  `neighborhood::slice_features` (with `slice_record` / `slice_linear_features` /
+  `extract_common::slice_from_location` around it). `/codon_start` is honored when
+  `domainate` places a hit (`overlay`, which now refuses out-of-bounds spans the way
+  Python raises), and in fallback translations and `extract-peptides` coordinates. An
+  overlong partial-CDS translation is trimmed (`seq/partial.rs`, `on_contig_translation`).
+  Fragment status and `--partial` on `domainate`/`domain-search` come from this commit,
+  as does `enum-report --fragment`.
+- **Fragment support in more tools** (`bdc74bb`), ported. `--partial` is now also on
+  `select-by-cds`, `select-by-contig`, `extract-peptides`, `extract-domains`,
+  `enum-report` (a row filter) and `summary-report`, and `enum-report` gains
+  `--partial_count`. `summary-report` reports `partial_cdss`/`fragment_proteins`. Fragment
+  status also reads `NON_TER` features and `Flags: Fragment`. The `find_features` and
+  `domainator_db_download` halves have no counterpart, since both tools are unported.
+- **Version bump** (`0394886`): 0.12.0. The viewer shell was regenerated (only
+  `DOMAINATOR_VERSION` changed).
+- **Found while syncing** (pre-existing, now fixed):
+  - GenBank header wrapping now follows Biopython's `_split_multi_line`, with 68 columns
+    after the indent; it was 67.
+  - A reverse-strand CDS ending at a contig's last base sorted first in `select-by-cds`.
+  - `trim-contigs`/`clean-sequences --strip` kept header annotations Python's slice drops.
+  - `extract-domains` let a `--domains` match skip `--evalue`/`--score`.
+  - The installed `_gbfast` native parser in the reference env predates `bdc74bb`, so its
+    FASTA path misses the `Flags:` rule. No fixture exercises it.
 - **Vendored copy:** `external/domainator/` (gitignored; a git clone of upstream, kept at
   the pin above). It is the deterministic, repo-local source for regeneration and drift
   checks. Refresh it with `scripts/sync_upstream.sh` (fast-forwards to a target ref).
@@ -74,6 +86,9 @@ Use this to triage which module a changed upstream file lands in:
 | `hmmer_compare.py` | `.../tools/hmmer_compare.rs`, `.../search/hmm_compare.rs` |
 | GenBank/FASTA/BGZF/didx/shards utils | `.../io/{genbank,fasta,bgzf,didx,shards,partition}.rs` |
 | `utils.py` protein/taxonomy helpers | `.../seq/{protein_analysis,taxonomy,taxid,translate}.rs` |
+| `utils.py` fragment/partial helpers (`get_fragment_status`, `on_contig_translation`, `codon_offset`, ...) | `.../seq/partial.rs` |
+| `utils.slice_record_from_location`, `slice_record`, `_truncate_cds_qualifiers`; `CompoundLocation.merge_parts` | `.../tools/neighborhood.rs` (`slice_features`), `.../seq/location.rs` (`merge_touching_parts`) |
+| `extract_domains.py`, `extract_peptides.py`, `extract_unannotated.py` | `.../tools/{extract_domains,extract_peptides,extract_unannotated,extract_common}.rs` |
 
 ## The routine
 
@@ -136,6 +151,8 @@ Tracked so a later sync does not mistake them for oversights:
 - **Infernal `.cm` references** in `domainate`/`domain_search`. (`deferred:infernal`.)
 - **`--progress`** on `seq_dist` and `compare_contigs`. (`deferred:progress`.)
 - **`color_genbank --color_domains` / `--color_both`.** (`deferred:color-domains`.)
+- **`--partial` on `find_features` and `domainator_db_download`** (`bdc74bb`). Neither tool
+  is ported. The GUI's managed UniProt download could take the same filter later.
 
 ## What the parity sweep still tracks
 

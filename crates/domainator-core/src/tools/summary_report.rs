@@ -14,8 +14,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde_json::{json, Map, Value};
 
+use crate::seq::partial::{feature_fragment_status, record_fragment_status, Partial};
 use crate::seq::taxonomy::NCBITaxonomy;
 use crate::seq::SeqRecord;
+use crate::tools::select_common::get_cds_unique_name;
 use crate::DOMAIN_FEATURE_NAME;
 
 /// One row of the domain-frequency table.
@@ -52,6 +54,10 @@ pub struct LengthStats {
 pub struct SummaryReport {
     pub contigs: usize,
     pub cdss: usize,
+    /// Counted CDSs with a `<`/`>` partial end.
+    pub partial_cdss: usize,
+    /// Counted protein records that are fragments ([`record_fragment_status`]).
+    pub fragment_proteins: usize,
     pub cds_per_10kb: f64,
     pub length: Option<LengthStats>,
     pub domains: Vec<DomainRow>,
@@ -68,6 +74,10 @@ pub struct SummaryReportOptions {
     /// Restrict counted domains to these databases; empty means all.
     pub databases: Vec<String>,
     pub report_taxonomy: bool,
+    /// `--partial`: which CDSs/proteins are counted. A filtered protein record is
+    /// skipped entirely; on a nucleotide contig the filtered CDSs and the domains on
+    /// them are not counted, but the contig is.
+    pub partial: Partial,
 }
 
 /// `np.percentile(values, 50)` — linear interpolation, not nearest-rank.
@@ -98,7 +108,10 @@ pub fn summary_report(
     };
 
     let mut lengths: Vec<f64> = Vec::with_capacity(records.len());
+    let mut num_contigs = 0usize;
     let mut num_cdss = 0usize;
+    let mut num_partial_cdss = 0usize;
+    let mut num_fragment_proteins = 0usize;
     let mut domains: HashMap<String, DomainAcc> = HashMap::new();
     // First-encounter order. Python sorts an insertion-ordered dict with a *stable*
     // sort, so equal counts keep the order the domains were first seen in -- not
@@ -109,7 +122,28 @@ pub fn summary_report(
     let mut taxa_counts: HashMap<i64, u64> = HashMap::new();
 
     for contig in records {
+        // cds_ids of the CDSs the partial filter drops.
+        let mut excluded_cds_ids: HashSet<String> = HashSet::new();
+        if !opts.partial.is_include() {
+            if contig.is_protein() {
+                if !opts.partial.allows(record_fragment_status(contig)) {
+                    continue;
+                }
+            } else {
+                excluded_cds_ids = contig
+                    .features
+                    .iter()
+                    .filter(|f| f.kind == "CDS" && !opts.partial.allows(feature_fragment_status(f)))
+                    .map(get_cds_unique_name)
+                    .collect();
+            }
+        }
+
         lengths.push(contig.len() as f64);
+        num_contigs += 1;
+        if contig.is_protein() && record_fragment_status(contig).is_some() {
+            num_fragment_proteins += 1;
+        }
 
         if opts.report_taxonomy {
             if let Some(tax) = taxonomy {
@@ -126,10 +160,21 @@ pub fn summary_report(
         // Domain names present on THIS contig, for the co-occurrence counts.
         let mut contig_domains: HashSet<String> = HashSet::new();
         for feature in &contig.features {
-            if feature.kind == "CDS" {
+            if feature.kind == "CDS"
+                && (excluded_cds_ids.is_empty()
+                    || !excluded_cds_ids.contains(&get_cds_unique_name(feature)))
+            {
                 num_cdss += 1;
+                if feature_fragment_status(feature).is_some() {
+                    num_partial_cdss += 1;
+                }
             }
             if feature.kind != DOMAIN_FEATURE_NAME {
+                continue;
+            }
+            if !excluded_cds_ids.is_empty()
+                && excluded_cds_ids.contains(feature.get_first("cds_id").unwrap_or("."))
+            {
                 continue;
             }
             let db = qualifier(feature, "database").unwrap_or_default();
@@ -245,8 +290,10 @@ pub fn summary_report(
         .collect();
 
     SummaryReport {
-        contigs: records.len(),
+        contigs: num_contigs,
         cdss: num_cdss,
+        partial_cdss: num_partial_cdss,
+        fragment_proteins: num_fragment_proteins,
         cds_per_10kb,
         length,
         domains: rows,
@@ -283,6 +330,8 @@ pub fn to_json(r: &SummaryReport) -> Value {
         json!({
             "contigs": r.contigs,
             "cdss": r.cdss,
+            "partial_cdss": r.partial_cdss,
+            "fragment_proteins": r.fragment_proteins,
             "cds_per_10kb": r.cds_per_10kb,
             "length": match &r.length {
                 Some(l) => json!({
@@ -352,6 +401,8 @@ pub fn render_text(r: &SummaryReport) -> String {
     s.push_str("Contig Stats\n\n");
     s.push_str(&format!("contigs: {}\n", r.contigs));
     s.push_str(&format!("CDSs: {}\n", r.cdss));
+    s.push_str(&format!("partial CDSs: {}\n", r.partial_cdss));
+    s.push_str(&format!("protein fragments: {}\n", r.fragment_proteins));
     s.push_str(&format!("CDSs per 10 kb: {:.2}\n\n", r.cds_per_10kb));
 
     s.push_str("Domain Stats\n        \n        Domain Frequency\n\n");

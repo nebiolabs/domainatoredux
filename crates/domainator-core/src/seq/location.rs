@@ -67,6 +67,47 @@ impl Location {
             .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
             .collect()
     }
+
+    /// Total length over all parts (Python's `len(location)`).
+    pub fn len(&self) -> i64 {
+        self.parts.iter().map(|&(s, e, ..)| (e - s).abs()).sum()
+    }
+
+    /// True if the location covers no bases.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// Coalesce touching or overlapping consecutive same-strand parts in place,
+/// mirroring `CompoundLocation.merge_parts`.
+///
+/// "Touching" is inclusive at the endpoints, so the abutting halves `[0,130)` and
+/// `[130,840)` that an origin-crossing slice produces merge back into `[0,840)`.
+/// Only consecutive parts are considered and nothing is sorted, as in Python: the
+/// caller lists the parts in order along the feature.
+///
+/// A merged part keeps the position types of the ends it takes (`min(..., key=int)`
+/// / `max(..., key=int)`, the earlier part winning a tie), so a `<`/`>` on an outer
+/// end survives the merge (upstream `8bf3c42`).
+pub fn merge_touching_parts(parts: &mut Vec<Part>) {
+    if parts.len() < 2 {
+        return;
+    }
+    let mut merged: Vec<Part> = Vec::with_capacity(parts.len());
+    for &(s, e, st, before, after) in parts.iter() {
+        match merged.last_mut() {
+            // `l.0 <= e && s <= l.1` is Python's `touches`: inclusive at both ends, so
+            // adjacency (not just overlap) merges.
+            Some(l) if l.2 == st && l.0 <= e && s <= l.1 => {
+                let (ns, nb) = if s < l.0 { (s, before) } else { (l.0, l.3) };
+                let (ne, na) = if e > l.1 { (e, after) } else { (l.1, l.4) };
+                *l = (ns, ne, st, nb, na);
+            }
+            _ => merged.push((s, e, st, before, after)),
+        }
+    }
+    *parts = merged;
 }
 
 /// Split `s` on top-level commas, respecting nested parentheses.
@@ -180,6 +221,49 @@ pub fn parse_location(s: &str) -> Location {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_touching_parts_cases() {
+        let m = |v: &[Part]| {
+            let mut v = v.to_vec();
+            merge_touching_parts(&mut v);
+            v
+        };
+        // Abutting parts coalesce -- the origin-crossing case.
+        assert_eq!(
+            m(&[(0, 5, 1, false, false), (5, 10, 1, false, false)]),
+            vec![(0, 10, 1, false, false)]
+        );
+        // So do overlapping ones.
+        assert_eq!(
+            m(&[(0, 5, 1, false, false), (3, 10, 1, false, false)]),
+            vec![(0, 10, 1, false, false)]
+        );
+        // A real gap is preserved: merging here would invent sequence.
+        let gap = [(0, 5, 1, false, false), (7, 10, 1, false, false)];
+        assert_eq!(m(&gap), gap.to_vec());
+        // Opposite strands never merge -- the result would have no defined strand.
+        let strands = [(0, 5, 1, false, false), (5, 10, -1, false, false)];
+        assert_eq!(m(&strands), strands.to_vec());
+        // `test_merge_parts_keeps_partial_markers`: the outer ends keep their `<`/`>`.
+        assert_eq!(
+            m(&[(0, 5, 1, true, false), (5, 10, 1, false, true)]),
+            vec![(0, 10, 1, true, true)]
+        );
+        // Minus-strand parts are listed high to low; the markers follow their ends.
+        assert_eq!(
+            m(&[(5, 10, -1, false, true), (0, 5, -1, true, false)]),
+            vec![(0, 10, -1, true, true)]
+        );
+        // An interior marker is absorbed by the end that reaches past it.
+        assert_eq!(
+            m(&[(0, 6, 1, false, true), (5, 10, 1, false, false)]),
+            vec![(0, 10, 1, false, false)]
+        );
+        // Untouched parts keep theirs.
+        let fuzzy = [(0, 5, 1, true, false), (7, 10, 1, false, true)];
+        assert_eq!(m(&fuzzy), fuzzy.to_vec());
+    }
 
     #[test]
     fn simple_span_is_zero_based_half_open() {

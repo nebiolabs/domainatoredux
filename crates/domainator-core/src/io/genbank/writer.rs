@@ -76,28 +76,58 @@ fn write_indented<W: Write>(w: &mut W, text: &str) -> io::Result<()> {
 /// leading indent (e.g. `  ORGANISM`). Continuation join is space, matching how the
 /// reader and Biopython re-join these fields.
 fn write_wrapped<W: Write>(w: &mut W, tag: &str, value: &str) -> io::Result<()> {
-    let width = 79usize.saturating_sub(HEADER_INDENT.len());
-    let mut first = true;
-    let mut remaining = value;
-    loop {
-        let prefix = if first {
+    for (i, line) in split_multi_line(value, 80 - HEADER_INDENT.len())
+        .iter()
+        .enumerate()
+    {
+        let prefix = if i == 0 {
             format!("{:<12}", tag)
         } else {
             HEADER_INDENT.to_string()
         };
-        if remaining.len() <= width {
-            writeln!(w, "{prefix}{remaining}")?;
-            break;
-        }
-        let mut cut = remaining[..width].rfind(' ').unwrap_or(width);
-        if cut == 0 {
-            cut = width;
-        }
-        writeln!(w, "{prefix}{}", &remaining[..cut])?;
-        remaining = remaining[cut..].trim_start_matches(' ');
-        first = false;
+        writeln!(w, "{prefix}{line}")?;
     }
     Ok(())
+}
+
+/// Biopython's `_split_multi_line`: greedy word wrap to lines of at most `max_len`
+/// characters (`MAX_WIDTH - HEADER_WIDTH`, so a full header line is exactly 80
+/// columns). Runs of whitespace collapse to one space once wrapping kicks in, and
+/// a word longer than `max_len` gets a line of its own rather than being broken.
+fn split_multi_line(text: &str, max_len: usize) -> Vec<String> {
+    let text = text.trim();
+    if text.chars().count() <= max_len {
+        return vec![text.to_string()];
+    }
+    let mut words = text.split_whitespace().peekable();
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    // The first line may stay empty when the first word alone is too long, exactly
+    // as in Python.
+    while let Some(word) = words.peek() {
+        if line.chars().count() + 1 + word.chars().count() > max_len {
+            break;
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+        words.next();
+    }
+    lines.push(line);
+    while let Some(first) = words.next() {
+        let mut line = first.to_string();
+        while let Some(word) = words.peek() {
+            if line.chars().count() + 1 + word.chars().count() > max_len {
+                break;
+            }
+            line.push(' ');
+            line.push_str(word);
+            words.next();
+        }
+        lines.push(line);
+    }
+    lines
 }
 
 /// Today's date as GenBank writes it, `DD-MON-YYYY` upper-cased.

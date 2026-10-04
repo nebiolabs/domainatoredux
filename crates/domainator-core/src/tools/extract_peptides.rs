@@ -6,9 +6,10 @@
 
 use std::collections::HashSet;
 
+use crate::seq::partial::{codon_offset, feature_fragment_status, Partial};
 use crate::seq::translate::translate_dna;
 use crate::seq::{Annotations, SeqFeature, SeqRecord};
-use crate::tools::extract_common::{slice_from_location, Loc};
+use crate::tools::extract_common::{dna_to_peptide_features, slice_from_location, Loc};
 use crate::tools::select_common::DomainatorCds;
 
 /// Options for [`extract_peptides`].
@@ -28,6 +29,8 @@ pub struct ExtractPeptidesOptions {
     pub name_field: Option<String>,
     /// Set when no selection criteria supplied (extract every CDS).
     pub extract_all: bool,
+    /// `--partial`: CDSs by fragment status; never inverted by `invert`.
+    pub partial: Partial,
 }
 
 /// Extract peptides from all records.
@@ -97,13 +100,20 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
             if opts.invert {
                 keep = !keep;
             }
+            if keep && !opts.partial.allows(feature_fragment_status(&cds.feature)) {
+                keep = false;
+            }
             if !keep {
                 continue;
             }
 
             // Assemble features to carry (source, domain_search, domains, CDS).
             let mut cds_feature = cds.feature.clone();
-            cds_feature.qualifiers.retain(|(k, _)| k != "translation");
+            // Neither the translation nor the reading frame mean anything in peptide
+            // coordinates.
+            cds_feature
+                .qualifiers
+                .retain(|(k, _)| k != "translation" && k != "codon_start");
             // `source_contig` is the contig LOCUS name (Python's contig.id).
             cds_feature.set("source_contig", contig.id.clone());
 
@@ -125,23 +135,20 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
                 .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
                 .collect();
             let loc = Loc { parts, strand };
-            let mut region = slice_from_location(contig, &loc, &keep_features, true);
+            let mut region = slice_from_location(contig, &loc, &keep_features);
 
-            // Peptide sequence: CDS /translation if present & non-empty, else translate.
+            // Peptide sequence: CDS /translation if present & non-empty, else translate
+            // from the CDS's reading frame.
+            let frame = codon_offset(&cds.feature);
             let pep = match cds.feature.get_first("translation") {
                 Some(t) if !t.is_empty() => t.to_string(),
-                _ => translate_dna(&region.seq),
+                _ => translate_dna(
+                    &region.seq[usize::try_from(frame).unwrap_or(0).min(region.seq.len())..],
+                ),
             };
             region.seq = pep.into_bytes();
             region.molecule_type = Some("protein".to_string());
-
-            // DNA -> peptide coordinates (start//3, end//3).
-            for f in &mut region.features {
-                for p in &mut f.location.parts {
-                    p.0 = p.0.div_euclid(3);
-                    p.1 = p.1.div_euclid(3);
-                }
-            }
+            dna_to_peptide_features(&mut region.features, frame);
 
             // Name: the CDS name (or the contig name with --keep_name). Peptide has
             // no carried accession identity.

@@ -3,7 +3,7 @@
 //!
 //! Selection is:
 //! ```text
-//! (length in [lb,ub]) AND (cds_count in [lb,ub]) AND (taxonomy) AND
+//! (length in [lb,ub]) AND (cds_count in [lb,ub]) AND (taxonomy) AND (partial) AND
 //! INVERT( name-in-list OR name-regex OR definition-regex OR sequence-regex
 //!         OR has-target-domain OR domain-expr OR unannotated OR search-score )
 //! AND (count <= first)
@@ -14,6 +14,7 @@ use std::collections::HashSet;
 
 use regex::Regex;
 
+use crate::seq::partial::{contig_has_fragment, Partial};
 use crate::seq::taxid::record_taxid;
 use crate::seq::taxonomy::NCBITaxonomy;
 use crate::seq::SeqRecord;
@@ -43,6 +44,9 @@ pub struct SelectByContigOptions {
     pub search_score_lb: Option<f64>,
     pub search_score_ub: Option<f64>,
     pub domain_type: String,
+    /// `--partial`: contigs by fragment status ([`contig_has_fragment`]); never
+    /// inverted by `invert`.
+    pub partial: Partial,
 }
 
 /// `select_by_contig.count_cds`: CDS features that are not pseudogenes.
@@ -136,6 +140,13 @@ pub fn select_by_contig(
         // Taxonomy pre-filter (matches filter_by_taxonomy applied first).
         if let Some(allowed) = &allowed {
             if !allowed.contains(&record_taxid(&contig)) {
+                continue;
+            }
+        }
+        // Fragment filter (filter_by_partial), applied right after the taxonomy one.
+        if !opts.partial.is_include() {
+            let status = contig_has_fragment(&contig).then_some("?");
+            if !opts.partial.allows(status) {
                 continue;
             }
         }

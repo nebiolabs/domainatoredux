@@ -98,6 +98,16 @@
         <div class="tile"><span class="v">{fmt(data.n_contigs)}</span><span class="k">contigs</span></div>
         <div class="tile"><span class="v">{fmt(data.total_residues)}</span><span class="k">total {unit}</span></div>
         <div class="tile"><span class="v">{fmt(data.n_cds)}</span><span class="k">CDS</span></div>
+        {#if data.n_cds > 0}
+          <div class="tile" title="CDSs with a '<' or '>' end: missing their 5' or 3' end">
+            <span class="v">{fmt(data.n_partial_cds)}</span><span class="k">partial CDS</span>
+          </div>
+        {/if}
+        {#if data.is_protein || data.n_fragment_proteins > 0}
+          <div class="tile" title="Protein records marked as fragments (UniProt '(Fragment)', NON_TER, or a partial CDS/Protein feature)">
+            <span class="v">{fmt(data.n_fragment_proteins)}</span><span class="k">fragments</span>
+          </div>
+        {/if}
         <div class="tile"><span class="v">{fmt(data.n_domain_features)}</span><span class="k">domains</span></div>
         <div class="tile"><span class="v">{fmt(data.distinct_domains)}</span><span class="k">distinct domains</span></div>
         <div class="tile"><span class="v">{fmt1(data.length_mean)}</span><span class="k">mean len ({unit})</span></div>

@@ -11,6 +11,7 @@
 //! the tools depend on Biopython's in-memory id/name mapping.
 
 pub mod location;
+pub mod partial;
 pub mod protein_analysis;
 pub mod taxid;
 pub mod taxonomy;

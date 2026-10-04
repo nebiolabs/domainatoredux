@@ -4,8 +4,13 @@
 
 use std::collections::HashSet;
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::seq::location::Location;
+use crate::seq::partial::{
+    cds_fragment_status, contig_has_fragment, feature_fragment_status, record_fragment_status,
+    Partial,
+};
 use crate::seq::protein_analysis::{self, SeqType};
 use crate::seq::taxid::record_taxid;
 use crate::seq::taxonomy::{NCBITaxonomy, TaxonomyData};
@@ -79,6 +84,11 @@ enum Kind {
     IsoelectricPoint,
     StartsWith,
     MolecularWeight,
+    /// The fragment status of a row that is a single protein or CDS; empty, with
+    /// one warning per run, for any other row. The flag records the warning.
+    Fragment(AtomicBool),
+    /// Partial CDSs in the row (see [`process_record`]).
+    PartialCount,
 }
 
 /// Build a static (no-argument) analysis from its flag name. Returns `None`
@@ -121,6 +131,12 @@ pub fn static_analysis(name: &str) -> Option<Analysis> {
         "isoelectric_point" => one("isoelectric_point", ColType::Float, Kind::IsoelectricPoint),
         "starts_with" => one("starts_with", ColType::Str, Kind::StartsWith),
         "molecular_weight" => one("molecular_weight", ColType::Float, Kind::MolecularWeight),
+        "fragment" => one(
+            "fragment",
+            ColType::Str,
+            Kind::Fragment(AtomicBool::new(false)),
+        ),
+        "partial_count" => one("partial_count", ColType::Int, Kind::PartialCount),
         "domain_search" => Analysis {
             columns: vec![
                 ("best_query".into(), ColType::Str),
@@ -430,6 +446,12 @@ struct Ctx<'a> {
     loc: Location,
     tax: Option<&'a TaxonomyData>,
     filename: &'a str,
+    /// The row's fragment status (Python's `_fragment_status` annotation): the
+    /// protein's, the CDS's, or the CDS a domain is on; for a contig, `?` when any
+    /// CDS is partial.
+    fragment_status: Option<&'static str>,
+    /// The row's `partial_count` (Python's `_partial_count` annotation).
+    partial_count: i64,
 }
 
 impl Analysis {
@@ -581,6 +603,32 @@ impl Analysis {
                     None => vec![Value::Null],
                 }
             }
+            Kind::Fragment(warned) => {
+                let status = if rec.is_protein() {
+                    // A protein row, or a domain of one: the protein's status.
+                    ctx.fragment_status
+                } else {
+                    let cdss: Vec<&SeqFeature> = rec
+                        .features
+                        .iter()
+                        .filter(|f| f.kind == "CDS" && !f.has("pseudo") && !f.has("pseudogene"))
+                        .collect();
+                    if cdss.len() != 1 {
+                        if !warned.swap(true, Ordering::Relaxed) {
+                            eprintln!(
+                                "Warning: --fragment is only reported for rows that are a single \
+                                 protein or CDS, so it is empty for {} and any others like it. \
+                                 Use --partial_count instead.",
+                                rec.id
+                            );
+                        }
+                        return vec![Value::Null];
+                    }
+                    feature_fragment_status(cdss[0])
+                };
+                vec![Value::Str(status.unwrap_or("complete").to_string())]
+            }
+            Kind::PartialCount => vec![Value::Int(ctx.partial_count)],
         }
     }
 }
@@ -649,12 +697,20 @@ fn domain_search(rec: &SeqRecord) -> Vec<Value> {
 // --- record processing -----------------------------------------------------
 
 /// One output row: the leading id columns + analysis values.
+///
+/// Each row also gets a fragment status, which `partial` filters on and the
+/// `fragment`/`partial_count` columns report: by contig, a protein record's own
+/// status, or `?` for a nucleotide contig with any partial CDS; by CDS, the CDS's
+/// (or protein's); by domain, that of the CDS (or protein) the domain is on.
+// The parity reference's parameter list, plus the output buffer.
+#[allow(clippy::too_many_arguments)]
 fn process_record(
     rec: &SeqRecord,
     by: By,
     analyses: &[Analysis],
     ncbi_taxonomy: Option<&NCBITaxonomy>,
     filename: &str,
+    partial: Partial,
     rows: &mut Vec<Vec<Value>>,
 ) {
     let contig_name = rec.id.clone();
@@ -662,10 +718,24 @@ fn process_record(
     let mut locs: Vec<Location> = Vec::new();
     let mut cds_names: Vec<String> = Vec::new();
     let mut domain_names: Vec<String> = Vec::new();
+    let mut fragment_statuses: Vec<Option<&'static str>> = Vec::new();
+    let mut contig_partial_count = 0i64;
 
     if by == By::Contig {
         sub_recs.push(rec.clone());
         locs.push(Location::range(0, rec.seq.len() as i64, 1));
+        if rec.is_protein() {
+            let status = record_fragment_status(rec);
+            contig_partial_count = i64::from(status.is_some());
+            fragment_statuses.push(status);
+        } else {
+            fragment_statuses.push(contig_has_fragment(rec).then_some("?"));
+            contig_partial_count = rec
+                .features
+                .iter()
+                .filter(|f| f.kind == "CDS" && feature_fragment_status(f).is_some())
+                .count() as i64;
+        }
     } else {
         let sources: Vec<SeqFeature> = get_sources(rec).into_iter().cloned().collect();
         if !rec.is_protein() {
@@ -690,6 +760,7 @@ fn process_record(
                     sub_recs.push(slice_record(rec, &slice, &keep));
                     locs.push(cds.feature.location.clone());
                     cds_names.push(cds.name.clone());
+                    fragment_statuses.push(cds_fragment_status(rec, Some(&cds.feature)));
                 } else {
                     for domain in &cds.domain_features {
                         let mut keep = sources.clone();
@@ -699,6 +770,7 @@ fn process_record(
                         locs.push(domain.location.clone());
                         cds_names.push(cds.name.clone());
                         domain_names.push(domain.get_first("name").unwrap_or("").to_string());
+                        fragment_statuses.push(cds_fragment_status(rec, Some(&cds.feature)));
                     }
                 }
             }
@@ -708,6 +780,7 @@ fn process_record(
                 sub_recs.push(rec.clone());
                 cds_names.push(" ".to_string());
                 locs.push(Location::range(0, rec.seq.len() as i64, 1));
+                fragment_statuses.push(record_fragment_status(rec));
             } else {
                 for f in &rec.features {
                     if f.kind == DOMAIN_FEATURE_NAME {
@@ -718,6 +791,7 @@ fn process_record(
                         cds_names.push(" ".to_string());
                         domain_names.push(f.get_first("name").unwrap_or("").to_string());
                         locs.push(f.location.clone());
+                        fragment_statuses.push(record_fragment_status(rec));
                     }
                 }
             }
@@ -725,6 +799,10 @@ fn process_record(
     }
 
     for (i, sub_rec) in sub_recs.iter().enumerate() {
+        let fragment_status = fragment_statuses[i];
+        if !partial.allows(fragment_status) {
+            continue;
+        }
         let mut row: Vec<Value> = vec![Value::Str(contig_name.clone())];
         if by == By::Cds || by == By::Domain {
             row.push(Value::Str(cds_names[i].clone()));
@@ -737,6 +815,12 @@ fn process_record(
             loc: locs[i].clone(),
             tax: tax_data.as_ref(),
             filename,
+            fragment_status,
+            partial_count: if by == By::Contig {
+                contig_partial_count
+            } else {
+                i64::from(fragment_status.is_some())
+            },
         };
         for analysis in analyses {
             row.extend(analysis.compute(sub_rec, &ctx));
@@ -805,6 +889,7 @@ pub fn enum_report<W: Write>(
     column_names: Option<&[String]>,
     ncbi_taxonomy: Option<&NCBITaxonomy>,
     databases: Option<&HashSet<String>>,
+    partial: Partial,
     format: OutputFormat,
     out: &mut W,
 ) -> Result<(), String> {
@@ -841,7 +926,15 @@ pub fn enum_report<W: Write>(
         if let Some(dbs) = databases {
             filter_domains_databases(rec, dbs);
         }
-        process_record(rec, by, analyses, ncbi_taxonomy, filename, &mut rows);
+        process_record(
+            rec,
+            by,
+            analyses,
+            ncbi_taxonomy,
+            filename,
+            partial,
+            &mut rows,
+        );
     }
 
     match format {

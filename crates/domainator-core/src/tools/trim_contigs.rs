@@ -4,8 +4,9 @@
 
 use std::collections::HashSet;
 
-use crate::seq::location::{to_index, CompoundOp, Location};
-use crate::seq::{SeqFeature, SeqRecord, Topology};
+use crate::seq::location::to_index;
+use crate::seq::{SeqRecord, Topology};
+use crate::tools::neighborhood::{slice_annotations, slice_linear_features};
 use crate::tools::select_common::{BooleanEvaluator, DomainatorCds};
 
 /// A validated trim window: `(kb (left, right), cds (left, right))`, each
@@ -202,44 +203,15 @@ fn trim_contig(
     }
 }
 
-/// Linear forward slice `[left, right)` truncating ALL overlapping features to
-/// the slice (matching `utils.slice_record` with `truncate_features=True`), and
-/// shifting coordinates by `-left`. Circular topology is dropped.
+/// Linear forward slice `[left, right)` (`utils.slice_record(record, left, right)`):
+/// features truncated with `<`/`>` on the cut ends, cut hit features dropped,
+/// coordinates shifted by `-left`. Circular topology is dropped.
 fn slice_forward(record: &SeqRecord, left: i64, right: i64) -> SeqRecord {
-    let mut features = Vec::new();
-    for f in &record.features {
-        let mut parts: Vec<(i64, i64, i32, bool, bool)> = Vec::new();
-        for &(s0, e0, strand, before, after) in &f.location.parts {
-            let (s, e) = if s0 <= e0 { (s0, e0) } else { (e0, s0) };
-            let ns = s.max(left);
-            let ne = e.min(right);
-            if ns < ne {
-                parts.push((ns - left, ne - left, strand, before, after));
-            }
-        }
-        if parts.is_empty() {
-            continue;
-        }
-        parts.sort_by_key(|p| p.0);
-        let operator = if parts.len() > 1 {
-            f.location.operator.or(Some(CompoundOp::Join))
-        } else {
-            None
-        };
-        features.push(SeqFeature {
-            kind: f.kind.clone(),
-            location: Location {
-                operator,
-                between: false,
-                parts,
-            },
-            qualifiers: f.qualifiers.clone(),
-        });
-    }
     SeqRecord {
         seq: record.seq[to_index(left)..to_index(right)].to_vec(),
-        features,
+        features: slice_linear_features(record, left, right),
         topology: Topology::Linear,
+        annotations: slice_annotations(record),
         ..record.clone()
     }
 }

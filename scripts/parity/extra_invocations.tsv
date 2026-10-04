@@ -1,0 +1,68 @@
+# Hand-written invocations for upstream tests the harvester cannot replay.
+#
+# Same columns as the harvest (module, key, source, args...). These tests build
+# their inputs at test time, or loop over --partial values, so their `main([...])`
+# calls either name files that never exist or do not resolve. `@GEN@` is the
+# directory `generated_fixtures.py` fills once per sweep (upstream's own helpers);
+# `@DATA@` and `@TMP@` are as in the harvest. Keys are `extra:<upstream test>#<n>`, and
+# `known_gaps.tsv` tracks them like any other invocation.
+domainate	extra:test_domainate_partial_cds_codon_start#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb
+domainate	extra:test_domainate_partial_filter#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--partial	include
+domainate	extra:test_domainate_partial_filter#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--partial	exclude
+domainate	extra:test_domainate_partial_filter#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--partial	only
+domainate	extra:test_domainate_partial_filter_excludes_complete_with_only#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_fixture.hmm	-o	@TMP@/out.gb	--partial	include
+domainate	extra:test_domainate_partial_filter_excludes_complete_with_only#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_fixture.hmm	-o	@TMP@/out.gb	--partial	exclude
+domainate	extra:test_domainate_partial_filter_excludes_complete_with_only#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_fixture.hmm	-o	@TMP@/out.gb	--partial	only
+domainate	extra:test_domainate_trims_overlong_partial_translation#0	extra_invocations.tsv	-i	@GEN@/overlong.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb
+domainate	extra:test_domainate_uniprot_fragment_filter#0	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	include	--hits_only
+domainate	extra:test_domainate_uniprot_fragment_filter#1	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	exclude	--hits_only
+domainate	extra:test_domainate_uniprot_fragment_filter#2	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	only	--hits_only
+domain_search	extra:test_domain_search_keeps_partial_markers#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb
+domain_search	extra:test_domain_search_keeps_partial_markers#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--kb_range	0.1
+domain_search	extra:test_domain_search_keeps_partial_markers#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--whole_contig
+domain_search	extra:test_domain_search_keeps_partial_markers#3	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--translate
+domain_search	extra:test_domain_search_keeps_partial_markers#4	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--cds_range	1
+domain_search	extra:test_domain_search_partial_filter#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_fixture.hmm	-o	@TMP@/out.gb	--partial	include
+domain_search	extra:test_domain_search_partial_filter#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_fixture.hmm	-o	@TMP@/out.gb	--partial	exclude
+domain_search	extra:test_domain_search_partial_filter#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_fixture.hmm	-o	@TMP@/out.gb	--partial	only
+domain_search	extra:test_domain_search_uniprot_fragment_filter#0	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	include
+domain_search	extra:test_domain_search_uniprot_fragment_filter#1	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	exclude
+domain_search	extra:test_domain_search_uniprot_fragment_filter#2	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	only
+select_by_cds	extra:test_select_by_cds_partial#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb	--partial	include
+select_by_cds	extra:test_select_by_cds_partial#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb	--partial	exclude
+select_by_cds	extra:test_select_by_cds_partial#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb	--partial	only
+select_by_cds	extra:test_select_by_cds_partial#3	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb	--partial	only	--cds	HOV79_30120	--invert
+select_by_cds	extra:test_select_by_cds_partial#4	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	-o	@TMP@/out.gb	--kb_range	0.3
+select_by_contig	extra:test_select_by_contig_partial#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	@DATA@/pDONR201_multi_genemark.gb	-o	@TMP@/out.gb	--partial	include
+select_by_contig	extra:test_select_by_contig_partial#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	@DATA@/pDONR201_multi_genemark.gb	-o	@TMP@/out.gb	--partial	exclude
+select_by_contig	extra:test_select_by_contig_partial#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	@DATA@/pDONR201_multi_genemark.gb	-o	@TMP@/out.gb	--partial	only
+select_by_contig	extra:test_select_by_contig_partial#3	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	@DATA@/pDONR201_multi_genemark.gb	-o	@TMP@/out.gb	--partial	exclude	--contigs	pDONR201_1	--invert
+select_by_contig	extra:test_select_by_contig_partial_uniprot_fasta#0	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-o	@TMP@/out.gb	--partial	only
+extract_peptides	extra:test_extract_peptides_partial#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb	--partial	include
+extract_peptides	extra:test_extract_peptides_partial#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb	--partial	exclude
+extract_peptides	extra:test_extract_peptides_partial#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb	--partial	only
+extract_domains	extra:test_extract_domains_partial#0	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	-o	@TMP@/out.gb	--partial	include
+extract_domains	extra:test_extract_domains_partial#1	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	-o	@TMP@/out.gb	--partial	exclude
+extract_domains	extra:test_extract_domains_partial#2	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	-o	@TMP@/out.gb	--partial	only
+enum_report	extra:test_enum_report_partial#0	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	contig	--domains	--partial_count	--partial	include	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial#1	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	contig	--domains	--partial_count	--partial	exclude	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial#2	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	contig	--domains	--partial_count	--partial	only	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial#3	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	cds	--domains	--partial_count	--partial	include	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial#4	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	cds	--domains	--partial_count	--partial	exclude	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial#5	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	cds	--domains	--partial_count	--partial	only	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial#6	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	domain	--domains	--partial_count	--partial	include	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial#7	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	domain	--domains	--partial_count	--partial	exclude	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial#8	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	domain	--domains	--partial_count	--partial	only	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial_count#0	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	@DATA@/pDONR201_multi_genemark.gb	--by	contig	--partial_count	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial_count#1	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	@DATA@/pDONR201_multi_genemark.gb	--by	cds	--partial_count	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial_count#2	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	@DATA@/pDONR201_multi_genemark.gb	--by	domain	--partial_count	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_partial_count_protein_fragments#0	extra_invocations.tsv	-i	@GEN@/fragments.fasta	--partial_count	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_fragment#0	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	contig	--fragment	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_fragment#1	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	cds	--fragment	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_fragment#2	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--by	domain	--fragment	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_fragment#3	extra_invocations.tsv	-i	@GEN@/fragments.fasta	--by	contig	--fragment	--partial_count	-o	@TMP@/out.tsv
+enum_report	extra:test_enum_report_fragment#4	extra_invocations.tsv	-i	@GEN@/fragments.fasta	--by	cds	--fragment	--partial_count	-o	@TMP@/out.tsv
+summary_report	extra:test_summary_report_partial#0	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--json	@TMP@/out.json	--partial	include
+summary_report	extra:test_summary_report_partial#1	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--json	@TMP@/out.json	--partial	exclude
+summary_report	extra:test_summary_report_partial#2	extra_invocations.tsv	-i	@GEN@/partial_fixture_domainated.gb	--json	@TMP@/out.json	--partial	only
+summary_report	extra:test_summary_report_counts_protein_fragments#0	extra_invocations.tsv	-i	@GEN@/fragments.fasta	--json	@TMP@/out.json

@@ -14,6 +14,7 @@ use domainator_core::io::genbank::{read_genbank, scan_genbank_ids, write_genbank
 use domainator_core::io::{detect_filetype, FileType};
 use domainator_core::matrix::read_matrix;
 use domainator_core::search::hmm_write::write_hmm_output;
+use domainator_core::seq::partial::Partial;
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools::build_ssn_viewer::render_html;
 use domainator_core::tools::enum_report::{enum_report, needs_taxonomy, By, OutputFormat};
@@ -211,6 +212,7 @@ fn run_enum_report_blocking(
         None,
         tax.as_deref(),
         None,
+        Partial::Include,
         OutputFormat::Json,
         &mut buf,
     )?;
@@ -955,6 +957,7 @@ pub async fn extract_region(
                 keep_name: false,
                 name_field: None,
                 extract_all: true,
+                partial: Partial::Include,
             };
             let peps = extract_peptides(std::slice::from_ref(&rec), &opts);
             if peps.is_empty() {

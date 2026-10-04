@@ -7,10 +7,10 @@
 use std::collections::HashSet;
 
 use crate::seq::location::to_index;
+use crate::seq::partial::{cds_fragment_status, Partial};
 use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::tools::neighborhood::{
-    cds_neighborhood, overlap_size, reverse_complement_record, slice_contains, slice_record, Cds,
-    Range, SliceLoc,
+    cds_neighborhood, overlap_size, reverse_complement_record, slice_record, Cds, Range, SliceLoc,
 };
 use crate::tools::select_common::{get_non_domainator_features, BooleanEvaluator, DomainatorCds};
 
@@ -30,6 +30,8 @@ pub struct SelectByCdsOptions {
     pub databases: Option<HashSet<String>>,
     pub unannotated: bool,
     pub include_nucleic_acids: bool,
+    /// `--partial`: focus CDSs by fragment status; never inverted by `invert`.
+    pub partial: Partial,
 }
 
 pub use crate::tools::neighborhood::Region;
@@ -143,22 +145,28 @@ fn select_one(
         if opts.invert {
             keep = !keep;
         }
+        if keep
+            && !opts
+                .partial
+                .allows(cds_fragment_status(rec, Some(&cds.feature)))
+        {
+            keep = false;
+        }
         if !keep {
             continue;
         }
 
         let slice = cds_neighborhood(rec_len, circular, &nb_list, focus_index, opts.range);
 
-        // Features: non-Domainator features (slice_record filters by containment);
-        // and, for every CDS contained in the slice, its Domainator domains and its
-        // Domain_Search feature (standalone keeps all contained search features).
+        // Features: non-Domainator features, and every CDS's Domainator domains and
+        // Domain_Search feature. `slice_record` truncates what the region cuts and
+        // drops the cut hit features (upstream `8bf3c42` removed the containment
+        // pre-filter here).
         let mut features: Vec<SeqFeature> = non_dom.clone();
-        for (i, c) in dom_list.iter().enumerate() {
-            if slice_contains(&slice, &nb_list[i].intervals) {
-                features.extend(c.domain_features.iter().cloned());
-                if let Some(sf) = &c.domain_search_feature {
-                    features.push(sf.clone());
-                }
+        for c in &dom_list {
+            features.extend(c.domain_features.iter().cloned());
+            if let Some(sf) = &c.domain_search_feature {
+                features.push(sf.clone());
             }
         }
 

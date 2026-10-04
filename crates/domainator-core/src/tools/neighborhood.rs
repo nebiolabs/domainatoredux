@@ -8,7 +8,8 @@
 //! `select_by_cds.pad_circular_cds`, for linear and circular topologies, with
 //! `normalize_direction` (reverse-complement reverse-strand neighborhoods).
 
-use crate::seq::location::{to_index, CompoundOp, Location};
+use crate::seq::location::{merge_touching_parts, to_index, CompoundOp, Location};
+use crate::seq::partial::{codon_offset, location_partial_ends, on_contig_translation};
 use crate::seq::translate::revcomp;
 use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
@@ -57,10 +58,18 @@ impl Cds {
     }
     /// Sort key matching Python's `location.stranded_start`: the gene's reading
     /// start — `end` of the covering arc on the reverse strand, else `start`.
+    ///
+    /// The arc's end is folded back only when it actually runs past the origin: a
+    /// reverse-strand CDS ending exactly at the contig end has `stranded_start ==
+    /// len`, not 0 (which sorted it ahead of every other CDS).
     pub(crate) fn sort_key(&self, l: i64) -> i64 {
         let (a, b) = min_covering_arc(&self.intervals, l);
         if self.strand == -1 {
-            b.rem_euclid(l)
+            if b > l {
+                b - l
+            } else {
+                b
+            }
         } else {
             a.rem_euclid(l)
         }
@@ -558,38 +567,10 @@ pub(crate) fn cds_neighborhood(
     build_slice_from_window(w_lo, w_hi, l, strand)
 }
 
-/// Coalesce touching or overlapping same-strand parts in place, mirroring
-/// `CompoundLocation.merge_parts`.
-///
-/// "Touching" is inclusive at the endpoints, so the abutting halves `[0,130)` and
-/// `[130,840)` that an origin-crossing slice produces merge back into `[0,840)`.
-/// Only consecutive parts are considered, as in Python — the caller has already put
-/// them in start order.
-///
-/// Fuzzy end markers are dropped on a merged part: Python builds a plain
-/// `SimpleLocation` here, so a merged part is never `<`/`>` qualified. Parts that do
-/// not merge keep their markers untouched.
-pub(crate) fn merge_touching_parts(parts: &mut Vec<(i64, i64, i32, bool, bool)>) {
-    if parts.len() < 2 {
-        return;
-    }
-    let mut merged: Vec<(i64, i64, i32, bool, bool)> = Vec::with_capacity(parts.len());
-    for &(s, e, st, before, after) in parts.iter() {
-        match merged.last_mut() {
-            // `l.0 <= e && s <= l.1` is Python's `touches`: inclusive at both ends, so
-            // adjacency (not just overlap) merges.
-            Some(l) if l.2 == st && l.0 <= e && s <= l.1 => {
-                *l = (l.0.min(s), l.1.max(e), st, false, false);
-            }
-            _ => merged.push((s, e, st, before, after)),
-        }
-    }
-    *parts = merged;
-}
-
-/// Slice `rec` to `slice`, keeping `keep_features` that are fully contained
-/// (source features are truncated to the overlap), remapping coordinates. Port of
-/// `slice_record_from_location`.
+/// Slice `rec` to `slice`, keeping `keep_features` truncated to it, remapping
+/// coordinates. Port of `slice_record_from_location` (upstream `8bf3c42`, where
+/// `truncate_features=True` became the only behavior any tool uses); the feature
+/// rules are [`slice_features`]'s.
 pub(crate) fn slice_record(
     rec: &SeqRecord,
     slice: &SliceLoc,
@@ -604,98 +585,9 @@ pub(crate) fn slice_record(
         seq.extend(extract(&rec.seq, p.start, p.end, p.strand));
         acc += p.end - p.start;
     }
+    let new_features = slice_features(keep_features, &slice.parts, &shifts, rec.is_protein());
 
-    let mut new_features: Vec<SeqFeature> = Vec::new();
-    for f in keep_features {
-        let is_source = f.kind == "source";
-        let mut remapped_parts: Vec<(i64, i64, i32, bool, bool)> = Vec::new();
-        let mut all_contained = true;
-        for &(fs0, fe0, fstrand, _, _) in &f.location.parts {
-            let (fs, fe) = if fs0 <= fe0 { (fs0, fe0) } else { (fe0, fs0) };
-            let mut found = false;
-            for (li, lp) in slice.parts.iter().enumerate() {
-                let (ls, le) = (lp.start, lp.end);
-                let contained = ls <= fs && le >= fe;
-                let overlaps = fs < le && ls < fe;
-                if contained || (is_source && overlaps) {
-                    let new_start = (fs - ls).max(0);
-                    let new_end = (fe - ls).min(le - ls);
-                    let part_len = le - ls;
-                    let (mut a, mut b, mut st) = (new_start, new_end, fstrand);
-                    if lp.strand == -1 {
-                        // flip within this part
-                        let (fa, fb) = (part_len - b, part_len - a);
-                        a = fa;
-                        b = fb;
-                        st = -st;
-                    }
-                    a += shifts[li];
-                    b += shifts[li];
-                    // Python builds `FeatureLocation(new_start, new_end, strand)` from
-                    // plain ints, so every remapped part comes out `ExactPosition`: a
-                    // `<`/`>` partial marker on the original does not survive the slice.
-                    // Carrying it over is wrong twice -- it disagrees with the reference
-                    // and it claims the *new* record is truncated at a boundary that is
-                    // now interior.
-                    remapped_parts.push((a, b, st, false, false));
-                    found = true;
-                    // Deliberately no `break`: when the window crosses the origin of a
-                    // circular contig the slice has several parts, and one feature part
-                    // can reach into more than one of them. Python collects every match
-                    // (`overlap[i]` is a set) and emits a piece per match; stopping at the
-                    // first one silently truncated the feature to that fragment.
-                }
-            }
-            if !found {
-                all_contained = false;
-            }
-        }
-        if remapped_parts.is_empty() {
-            continue;
-        }
-        if !all_contained && !is_source {
-            continue;
-        }
-        // Sort parts by start to keep them ordered after a reverse-strand flip.
-        remapped_parts.sort_by_key(|p| p.0);
-        // Then coalesce the pieces that slicing split apart, mirroring
-        // `CompoundLocation.merge_parts`. An origin-crossing window cuts a feature at
-        // the junction, and the two halves come back abutting (`[0:130]` + `[130:840]`);
-        // without this they stay a spurious `join`. Python gates the merge on the
-        // original operator, so `order` locations keep their parts distinct.
-        if matches!(f.location.operator, None | Some(CompoundOp::Join)) {
-            merge_touching_parts(&mut remapped_parts);
-        }
-        let operator = if remapped_parts.len() > 1 {
-            Some(CompoundOp::Join)
-        } else {
-            None
-        };
-        let location = Location {
-            operator,
-            between: false,
-            parts: remapped_parts,
-        };
-        new_features.push(SeqFeature {
-            kind: f.kind.clone(),
-            location,
-            qualifiers: f.qualifiers.clone(),
-        });
-    }
-
-    // slice_record_from_location keeps only molecule_type, source, organism, and
-    // taxonomy (plus the accession identity for ACCESSION/VERSION); everything else
-    // (keywords, division, date, comment, references, structured_comment, ...) is
-    // dropped so the writer emits defaults, matching the Python slice.
-    let src = &rec.annotations;
-    let annotations = crate::seq::Annotations {
-        accessions: src.accessions.clone(),
-        sequence_version: src.sequence_version,
-        source: src.source.clone(),
-        organism: src.organism.clone(),
-        taxonomy: src.taxonomy.clone(),
-        ..Default::default()
-    };
+    let annotations = slice_annotations(rec);
 
     // Do NOT sort the features here: `slice_record_from_location` preserves the
     // input order so the GenBank writer can rebuild the `domainator_<db>` rollup
@@ -710,6 +602,263 @@ pub(crate) fn slice_record(
         annotations,
         features: new_features,
     }
+}
+
+/// The annotations a sliced record keeps. `slice_record_from_location` keeps only
+/// molecule_type, source, organism, taxonomy and `dbxrefs` (DBLINK), plus the
+/// accession identity for ACCESSION/VERSION; everything else (keywords, division,
+/// date, comment, references, structured_comment, ...) is dropped so the writer
+/// emits defaults -- and stamps today's date -- matching the Python slice.
+pub(crate) fn slice_annotations(rec: &SeqRecord) -> crate::seq::Annotations {
+    let src = &rec.annotations;
+    crate::seq::Annotations {
+        accessions: src.accessions.clone(),
+        sequence_version: src.sequence_version,
+        source: src.source.clone(),
+        organism: src.organism.clone(),
+        taxonomy: src.taxonomy.clone(),
+        dblink: src.dblink.clone(),
+        ..Default::default()
+    }
+}
+
+/// The features of a forward linear slice `[start, end)` of a record: what
+/// `utils.slice_record(r, start, stop)` keeps. For the tools (`trim_contigs`,
+/// `clean_sequences --strip`) that build the rest of the record themselves.
+pub(crate) fn slice_linear_features(rec: &SeqRecord, start: i64, end: i64) -> Vec<SeqFeature> {
+    let part = Env {
+        start,
+        end,
+        strand: 1,
+    };
+    slice_features(&rec.features, &[part], &[0], rec.is_protein())
+}
+
+/// One kept piece of a feature: the overlap of one feature part with one slice part.
+struct Piece {
+    /// The piece's interval in coordinates along the feature, 5' to 3'.
+    transcript: (i64, i64),
+    /// The feature part it came from, normalized `(start, end, strand, before, after)`.
+    part: (i64, i64, i32, bool, bool),
+    /// Index of the slice part it falls in.
+    slice_part: usize,
+    kept_start: i64,
+    kept_end: i64,
+}
+
+/// Merge touching or overlapping `(start, end)` intervals, sorted by start
+/// (`utils._merge_intervals`).
+fn merge_intervals(mut intervals: Vec<(i64, i64)>) -> Vec<(i64, i64)> {
+    intervals.sort_unstable();
+    let mut merged: Vec<(i64, i64)> = Vec::with_capacity(intervals.len());
+    for (s, e) in intervals {
+        match merged.last_mut() {
+            Some(last) if s <= last.1 => last.1 = last.1.max(e),
+            _ => merged.push((s, e)),
+        }
+    }
+    merged
+}
+
+/// Remap `features` into a slice made of `parts` (concatenated in order, each
+/// starting at `shifts[i]` in the new record), the feature half of
+/// `slice_record_from_location`:
+///
+/// - a feature is kept if any part of it overlaps the slice, truncated to the slice;
+/// - an end the slice really cuts gets a new `<`/`>`, except on `source` features,
+///   and the ends of the original feature keep their own markers. "Really cut" is
+///   decided on intervals along the feature, so a feature split across the ends of
+///   a rotated circular contig -- all of it still in the record -- is not marked;
+/// - a cut `Domainator`/`Domain_Search` feature is dropped, since its score and
+///   coordinates describe the whole hit;
+/// - a cut CDS on a nucleotide record gets an updated `/codon_start` and a trimmed
+///   (or removed) `/translation`, see [`truncate_cds_qualifiers`].
+///
+/// Pieces are listed in order along the feature and merged if they touch (`join` /
+/// single-part locations only); the original operator is kept.
+pub(crate) fn slice_features(
+    features: &[SeqFeature],
+    parts: &[Env],
+    shifts: &[i64],
+    is_protein: bool,
+) -> Vec<SeqFeature> {
+    let mut new_features = Vec::new();
+    for f in features {
+        let is_source = f.kind == "source";
+        let is_hit = f.kind == DOMAIN_FEATURE_NAME || f.kind == DOMAIN_SEARCH_BEST_HIT_NAME;
+
+        let mut pieces: Vec<Piece> = Vec::new();
+        let mut transcript_len = 0i64;
+        for &(s0, e0, fstrand, before, after) in &f.location.parts {
+            let (fs, fe) = if s0 <= e0 { (s0, e0) } else { (e0, s0) };
+            // Deliberately every slice part, not the first match: when the window
+            // crosses the origin of a circular contig one feature part can reach into
+            // more than one of them, and Python emits a piece per match.
+            for (li, lp) in parts.iter().enumerate() {
+                let contained = lp.start <= fs && lp.end >= fe;
+                let overlaps = fs.max(lp.start) < fe.min(lp.end);
+                if !(contained || overlaps) {
+                    continue;
+                }
+                let kept_start = fs.max(lp.start);
+                let kept_end = fe.min(lp.end);
+                let transcript = if fstrand == -1 {
+                    (
+                        transcript_len + fe - kept_end,
+                        transcript_len + fe - kept_start,
+                    )
+                } else {
+                    (
+                        transcript_len + kept_start - fs,
+                        transcript_len + kept_end - fs,
+                    )
+                };
+                pieces.push(Piece {
+                    transcript,
+                    part: (fs, fe, fstrand, before, after),
+                    slice_part: li,
+                    kept_start,
+                    kept_end,
+                });
+            }
+            transcript_len += fe - fs;
+        }
+
+        let kept = merge_intervals(pieces.iter().map(|p| p.transcript).collect());
+        let is_cut = kept.iter().map(|(s, e)| e - s).sum::<i64>() < transcript_len;
+        if is_cut && is_hit {
+            continue;
+        }
+        let cut_5p = |t: i64| kept.iter().any(|&(s, _)| s == t && s > 0);
+        let cut_3p = |t: i64| kept.iter().any(|&(_, e)| e == t && e < transcript_len);
+
+        // In order along the feature (stable, like Python's `sorted`).
+        pieces.sort_by_key(|p| p.transcript);
+        let mut new_parts: Vec<(i64, i64, i32, bool, bool)> = Vec::with_capacity(pieces.len());
+        for p in &pieces {
+            let (fs, fe, fstrand, before, after) = p.part;
+            let (t_start, t_end) = p.transcript;
+            let (start_is_cut, end_is_cut) = if fstrand == -1 {
+                (cut_3p(t_end), cut_5p(t_start))
+            } else {
+                (cut_5p(t_start), cut_3p(t_end))
+            };
+            // Ends of the original feature keep their position type (an existing `<`
+            // or `>`); ends that are really cut get a new one, except on sources.
+            let new_before = if p.kept_start == fs {
+                before
+            } else {
+                start_is_cut && !is_source
+            };
+            let new_after = if p.kept_end == fe {
+                after
+            } else {
+                end_is_cut && !is_source
+            };
+            let lp = parts[p.slice_part];
+            let (mut a, mut b) = (p.kept_start - lp.start, p.kept_end - lp.start);
+            let (mut st, mut lo_flag, mut hi_flag) = (fstrand, new_before, new_after);
+            if lp.strand == -1 {
+                // Flip within this part; the markers swap ends with the coordinates.
+                let part_len = lp.end - lp.start;
+                (a, b) = (part_len - b, part_len - a);
+                (lo_flag, hi_flag) = (hi_flag, lo_flag);
+                st = -st;
+            }
+            new_parts.push((
+                a + shifts[p.slice_part],
+                b + shifts[p.slice_part],
+                st,
+                lo_flag,
+                hi_flag,
+            ));
+        }
+        // Coalesce the pieces slicing split apart, mirroring
+        // `CompoundLocation.merge_parts`: an origin-crossing window cuts a feature at
+        // the junction, and the two halves come back abutting (`[0:130]` +
+        // `[130:840]`); without this they stay a spurious `join`. Python gates the
+        // merge on the original operator, so `order` locations keep their parts apart.
+        if matches!(f.location.operator, None | Some(CompoundOp::Join)) {
+            merge_touching_parts(&mut new_parts);
+        }
+        if new_parts.is_empty() {
+            continue;
+        }
+        let operator = if new_parts.len() > 1 {
+            Some(f.location.operator.unwrap_or(CompoundOp::Join))
+        } else {
+            None
+        };
+        let qualifiers = if is_cut && f.kind == "CDS" && !is_protein {
+            truncate_cds_qualifiers(f, &kept)
+        } else {
+            f.qualifiers.clone()
+        };
+        new_features.push(SeqFeature {
+            kind: f.kind.clone(),
+            location: Location {
+                operator,
+                between: false,
+                parts: new_parts,
+            },
+            qualifiers,
+        });
+    }
+    new_features
+}
+
+/// The qualifiers of a CDS that slicing cut (`utils._truncate_cds_qualifiers`).
+/// `kept` is the kept part of the CDS as merged intervals along it, 5' to 3'.
+///
+/// `/codon_start` is updated so the reading frame is preserved (written when it is
+/// not 1, or was already there), and `/translation` is trimmed to the residues whose
+/// codons are completely kept -- the NCBI convention for a partial CDS. If the kept
+/// part is not contiguous (an interior exon was cut out), or the translation cannot
+/// be placed on the CDS, `/translation` is removed, to be re-translated later.
+fn truncate_cds_qualifiers(
+    feature: &SeqFeature,
+    kept: &[(i64, i64)],
+) -> Vec<(String, Vec<String>)> {
+    let mut out = feature.clone();
+    let offset = codon_offset(feature);
+    let (kept_start, kept_end) = (kept[0].0, kept[kept.len() - 1].1);
+    let new_codon_start = (offset - kept_start).rem_euclid(3) + 1;
+    if new_codon_start != 1 || out.has("codon_start") {
+        out.set("codon_start", new_codon_start.to_string());
+    }
+
+    let mut translation = Some(feature.get_first("translation").unwrap_or("").to_string());
+    if translation.as_deref().is_some_and(|t| !t.is_empty()) {
+        let (five, three) = location_partial_ends(&feature.location);
+        translation = on_contig_translation(
+            translation.as_deref().unwrap_or(""),
+            feature.location.len(),
+            offset,
+            five,
+            three,
+        );
+    }
+    match translation {
+        Some(t) if kept.len() == 1 => {
+            if !t.is_empty() {
+                // First codon starting at or after kept_start; codons ending at or
+                // before kept_end.
+                let first = (-(-(kept_start - offset)).div_euclid(3)).max(0);
+                let last = (kept_end - offset).div_euclid(3).max(0);
+                let chars: Vec<char> = t.chars().collect();
+                let clamp = |r: i64| usize::try_from(r).unwrap_or(0).min(chars.len());
+                let (first, last) = (clamp(first), clamp(last));
+                let trimmed: String = if first < last {
+                    chars[first..last].iter().collect()
+                } else {
+                    String::new()
+                };
+                out.set("translation", trimmed);
+            }
+        }
+        _ => out.qualifiers.retain(|(k, _)| k != "translation"),
+    }
+    out.qualifiers
 }
 
 /// Extract neighborhoods around every hit CDS in `rec` (a nucleotide contig that
@@ -821,6 +970,9 @@ pub fn select_by_cds_hits(
         .filter_map(|f| f.get_first("cds_id").map(|c| (f, c.to_string())))
         .collect();
 
+    let cds_ids: std::collections::HashSet<&str> =
+        cds_list.iter().map(|c| c.cds_id.as_str()).collect();
+
     let mut out: Vec<Region> = Vec::new();
     let mut selected: Vec<SliceLoc> = Vec::new();
 
@@ -848,36 +1000,15 @@ pub fn select_by_cds_hits(
 
         let slice = cds_neighborhood(rec_len, circular, &cds_list, focus_idx, range);
 
-        // The set of cds_ids whose CDS is fully contained in the slice.
-        let contained: std::collections::HashSet<&str> = cds_list
-            .iter()
-            .filter(|c| slice_contains(&slice, &c.intervals))
-            .map(|c| c.cds_id.as_str())
-            .collect();
-
-        // Collect features: non-Domainator features (filtered by slice_record);
-        // Domainator features of contained CDSs; the focus CDS's Domain_Search feature.
+        // Collect features: non-Domainator features, the Domainator features of every
+        // CDS, the contig-level (whole-contig nhmmer, `cds_id="."`) Domainator
+        // features, and the focus CDS's Domain_Search feature. `slice_record` drops
+        // the hit features the region cuts, and those outside it (upstream `8bf3c42`
+        // removed `get_cds_neighborhood`'s containment pre-filter).
         let mut keep: Vec<SeqFeature> = non_dom.iter().map(|f| (*f).clone()).collect();
         for &(domf, ref cid) in &dom_by_cid {
-            if contained.contains(cid.as_str()) {
+            if cds_ids.contains(cid.as_str()) || cid == "." {
                 keep.push(domf.clone());
-            }
-        }
-        // Contig-level (whole-contig nhmmer) `Domainator` features carry
-        // `cds_id="."` and aren't tied to a CDS; keep those whose span falls in
-        // the slice (mirrors `--add_annotations` for nucleic-acid hits).
-        for f in &rec.features {
-            if f.kind != DOMAIN_FEATURE_NAME || f.get_first("cds_id") != Some(".") {
-                continue;
-            }
-            let intervals: Vec<(i64, i64)> = f
-                .location
-                .parts
-                .iter()
-                .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
-                .collect();
-            if slice_contains(&slice, &intervals) {
-                keep.push(f.clone());
             }
         }
         if let Some(nucf) = nuc_features.get(focus_cid.as_str()) {
@@ -1023,7 +1154,9 @@ pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<Se
         };
 
         let mut cds_feat = f.clone();
-        cds_feat.qualifiers.retain(|(k, _)| k != "translation");
+        cds_feat
+            .qualifiers
+            .retain(|(k, _)| k != "translation" && k != "codon_start");
         // `source_contig` identifies the original LOCUS.
         cds_feat.set("source_contig", rec.id.clone());
         let mut keep: Vec<SeqFeature> = sources.iter().map(|x| (*x).clone()).collect();
@@ -1035,10 +1168,14 @@ pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<Se
 
         let mut region = slice_record(rec, &slice, &keep);
 
-        // Peptide sequence: the CDS `/translation` if present, else translate.
+        // Peptide sequence: the CDS `/translation` if present, else translate from
+        // its reading frame.
+        let frame = codon_offset(f);
         let pep = match f.get_first("translation") {
             Some(t) if !t.is_empty() => t.to_string(),
-            _ => translate_dna(&region.seq),
+            _ => translate_dna(
+                &region.seq[usize::try_from(frame).unwrap_or(0).min(region.seq.len())..],
+            ),
         };
         region.seq = pep.into_bytes();
         region.molecule_type = Some("protein".to_string());
@@ -1048,23 +1185,10 @@ pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<Se
         region.name = name;
         region.annotations.accessions.clear();
         region.annotations.sequence_version = None;
-        // DNA -> peptide coordinates (start//3, end//3).
-        for feat in &mut region.features {
-            for p in &mut feat.location.parts {
-                p.0 /= 3;
-                p.1 /= 3;
-            }
-        }
+        crate::tools::extract_common::dna_to_peptide_features(&mut region.features, frame);
         out.push(region);
     }
     out
-}
-
-/// Whether every interval of a feature/CDS is fully contained in some slice part.
-pub(crate) fn slice_contains(slice: &SliceLoc, intervals: &[(i64, i64)]) -> bool {
-    intervals
-        .iter()
-        .all(|&(s, e)| slice.parts.iter().any(|p| p.start <= s && p.end >= e))
 }
 
 /// Total overlap (bp) between two slice locations.
@@ -1297,39 +1421,6 @@ mod tests {
     }
 
     #[test]
-    fn merge_touching_parts_cases() {
-        let m = |v: &[(i64, i64, i32, bool, bool)]| {
-            let mut v = v.to_vec();
-            merge_touching_parts(&mut v);
-            v
-        };
-        // Abutting parts coalesce -- the origin-crossing case.
-        assert_eq!(
-            m(&[(0, 5, 1, false, false), (5, 10, 1, false, false)]),
-            vec![(0, 10, 1, false, false)]
-        );
-        // So do overlapping ones.
-        assert_eq!(
-            m(&[(0, 5, 1, false, false), (3, 10, 1, false, false)]),
-            vec![(0, 10, 1, false, false)]
-        );
-        // A real gap is preserved: merging here would invent sequence.
-        let gap = [(0, 5, 1, false, false), (7, 10, 1, false, false)];
-        assert_eq!(m(&gap), gap.to_vec());
-        // Opposite strands never merge -- the result would have no defined strand.
-        let strands = [(0, 5, 1, false, false), (5, 10, -1, false, false)];
-        assert_eq!(m(&strands), strands.to_vec());
-        // Python builds a plain SimpleLocation for a merged part, so `<`/`>` markers go.
-        assert_eq!(
-            m(&[(0, 5, 1, true, false), (5, 10, 1, false, true)]),
-            vec![(0, 10, 1, false, false)]
-        );
-        // Untouched parts keep theirs.
-        let fuzzy = [(0, 5, 1, true, false), (7, 10, 1, false, true)];
-        assert_eq!(m(&fuzzy), fuzzy.to_vec());
-    }
-
-    #[test]
     fn slice_record_source_spans_every_slice_part() {
         // A source feature covering the whole circle overlaps both slice parts. Taking
         // only the first match truncated it to that fragment (`[0,6)` here) instead of
@@ -1502,5 +1593,232 @@ mod tests {
         let out =
             select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, Some(&decoys), None).unwrap();
         assert_eq!(out.len(), 1);
+    }
+
+    // --- partial (`<`/`>`) locations and cut features: upstream `test_utils.py` ---
+
+    use crate::seq::location::Part;
+    use crate::seq::partial::{feature_fragment_status, translate_feature};
+
+    /// 74 nt (upstream's comment says 75, and its tests slice to 75, which Python
+    /// clamps; these use the record's end); ORF from 5 to 71.
+    const PARTIAL_TEST_SEQ: &[u8] =
+        b"AAAAAATGGCTAGCAAAGGTGAAGAACTGTTTACCGGTGTTGTGCCGATTCTGGTGGAACTGGATGGCAAAAAA";
+
+    /// `_partial_test_record`: a source, then a CDS at `parts` translated from the
+    /// record (unless `qualifiers` already carries a translation), then `extra`.
+    fn partial_test_record(
+        parts: Vec<Part>,
+        qualifiers: &[(&str, &str)],
+        extra: Vec<SeqFeature>,
+    ) -> SeqRecord {
+        let operator = (parts.len() > 1).then_some(CompoundOp::Join);
+        let mut cds = SeqFeature::new(
+            "CDS",
+            Location {
+                operator,
+                between: false,
+                parts,
+            },
+        );
+        for (k, v) in qualifiers {
+            cds.set(k, *v);
+        }
+        if !cds.has("translation") {
+            let t = translate_feature(&cds, PARTIAL_TEST_SEQ);
+            cds.set("translation", t);
+        }
+        let mut features = vec![
+            SeqFeature::new(
+                "source",
+                Location::range(0, PARTIAL_TEST_SEQ.len() as i64, 1),
+            ),
+            cds,
+        ];
+        features.extend(extra);
+        test_rec(PARTIAL_TEST_SEQ, features)
+    }
+
+    /// Biopython's `str(location)` for a single part: `[<3:>69](+)`.
+    fn loc_str(loc: &Location) -> String {
+        let part = |&(s, e, st, b, a): &Part| {
+            format!(
+                "[{}{s}:{}{e}]({})",
+                if b { "<" } else { "" },
+                if a { ">" } else { "" },
+                if st == -1 { '-' } else { '+' }
+            )
+        };
+        if loc.parts.len() == 1 {
+            part(&loc.parts[0])
+        } else {
+            let inner: Vec<String> = loc.parts.iter().map(part).collect();
+            format!("join{{{}}}", inner.join(", "))
+        }
+    }
+
+    fn sliced_cds(rec: &SeqRecord) -> &SeqFeature {
+        rec.features.iter().find(|f| f.kind == "CDS").unwrap()
+    }
+
+    #[test]
+    fn slice_keeps_existing_partial_markers() {
+        for (strand, expected) in [(1, "[<3:>69](+)"), (-1, "[<3:>69](-)")] {
+            let rec = partial_test_record(vec![(5, 71, 1, true, true)], &[], vec![]);
+            let sliced = slice_record(&rec, &slice1(2, 74, strand), &rec.features);
+            let cds = sliced_cds(&sliced);
+            // Reverse complemented, '<' and '>' swap ends.
+            assert_eq!(loc_str(&cds.location), expected);
+            assert_eq!(feature_fragment_status(cds), Some("NC"));
+            assert_eq!(
+                cds.get_first("translation"),
+                rec.features[1].get_first("translation")
+            );
+        }
+    }
+
+    #[test]
+    fn slice_marks_cut_ends() {
+        let rec = partial_test_record(vec![(5, 71, 1, false, false)], &[], vec![]);
+        let sliced = slice_record(&rec, &slice1(20, 74, 1), &rec.features);
+        assert_eq!(loc_str(&sliced_cds(&sliced).location), "[<0:51](+)");
+        assert_eq!(feature_fragment_status(sliced_cds(&sliced)), Some("N"));
+        // Source features don't get new markers.
+        assert_eq!(loc_str(&sliced.features[0].location), "[0:54](+)");
+
+        let sliced = slice_record(&rec, &slice1(0, 40, 1), &rec.features);
+        assert_eq!(loc_str(&sliced_cds(&sliced).location), "[5:>40](+)");
+        assert_eq!(feature_fragment_status(sliced_cds(&sliced)), Some("C"));
+
+        // Reverse slice: the cut 5' end of a forward CDS becomes the high coordinate.
+        let sliced = slice_record(&rec, &slice1(20, 74, -1), &rec.features);
+        assert_eq!(loc_str(&sliced_cds(&sliced).location), "[3:>54](-)");
+        assert_eq!(feature_fragment_status(sliced_cds(&sliced)), Some("N"));
+    }
+
+    #[test]
+    fn slice_cut_cds_codon_start_and_translation() {
+        for cut in 6..13i64 {
+            for cds_strand in [1, -1] {
+                for slice_strand in [1, -1] {
+                    for codon_start in 1..=3i64 {
+                        let rec = partial_test_record(
+                            vec![(5, 71, cds_strand, false, false)],
+                            &[("codon_start", &codon_start.to_string())],
+                            vec![],
+                        );
+                        let original = &rec.features[1];
+                        // Cut the same number of bases off the CDS's 5' end.
+                        let slice = if cds_strand == 1 {
+                            slice1(cut, rec.seq.len() as i64, slice_strand)
+                        } else {
+                            slice1(0, 71 + 5 - cut, slice_strand)
+                        };
+                        let sliced = slice_record(&rec, &slice, &rec.features);
+                        let cds = sliced_cds(&sliced);
+                        let case = format!(
+                            "cut {cut} cds {cds_strand} slice {slice_strand} cs {codon_start}"
+                        );
+                        assert_eq!(feature_fragment_status(cds), Some("N"), "{case}");
+                        let removed = cut - 5;
+                        let expected_cs = (codon_start - 1 - removed).rem_euclid(3) + 1;
+                        assert_eq!(
+                            cds.get_first("codon_start"),
+                            Some(expected_cs.to_string().as_str()),
+                            "{case}"
+                        );
+                        // The trimmed translation is the cut CDS translated in its new frame.
+                        let tr = cds.get_first("translation").unwrap();
+                        assert_eq!(tr, translate_feature(cds, &sliced.seq), "{case}");
+                        assert!(
+                            original.get_first("translation").unwrap().ends_with(tr),
+                            "{case}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn slice_cut_cds_3_prime() {
+        let rec = partial_test_record(vec![(5, 71, 1, false, false)], &[], vec![]);
+        let original = rec.features[1]
+            .get_first("translation")
+            .unwrap()
+            .to_string();
+        for end in 40..46i64 {
+            let sliced = slice_record(&rec, &slice1(0, end, 1), &rec.features);
+            let cds = sliced_cds(&sliced);
+            assert_eq!(feature_fragment_status(cds), Some("C"));
+            assert!(!cds.has("codon_start"));
+            assert_eq!(
+                cds.get_first("translation"),
+                Some(&original[..usize::try_from((end - 5) / 3).unwrap()])
+            );
+        }
+    }
+
+    #[test]
+    fn slice_cut_cds_interior_removed_drops_translation() {
+        let rec = partial_test_record(
+            vec![
+                (5, 20, 1, false, false),
+                (30, 50, 1, false, false),
+                (60, 71, 1, false, false),
+            ],
+            &[],
+            vec![],
+        );
+        let slice = SliceLoc {
+            parts: vec![
+                Env {
+                    start: 0,
+                    end: 25,
+                    strand: 1,
+                },
+                Env {
+                    start: 55,
+                    end: 74,
+                    strand: 1,
+                },
+            ],
+            ..slice1(0, 0, 1)
+        };
+        let sliced = slice_record(&rec, &slice, &rec.features);
+        assert!(!sliced_cds(&sliced).has("translation"));
+    }
+
+    #[test]
+    fn slice_drops_cut_domain_features() {
+        let mut domain = SeqFeature::new(DOMAIN_FEATURE_NAME, Location::range(10, 40, 1));
+        domain.set("name", "d");
+        let mut best = SeqFeature::new(DOMAIN_SEARCH_BEST_HIT_NAME, Location::range(30, 50, 1));
+        best.set("name", "d");
+        let rec = partial_test_record(vec![(5, 71, 1, false, false)], &[], vec![domain, best]);
+        let sliced = slice_record(&rec, &slice1(20, 74, 1), &rec.features);
+        let kinds: Vec<&str> = sliced.features.iter().map(|f| f.kind.as_str()).collect();
+        assert_eq!(kinds, ["source", "CDS", DOMAIN_SEARCH_BEST_HIT_NAME]);
+    }
+
+    /// A CDS split across the ends of a rotated circular contig is not cut: the whole
+    /// of it is still in the record, so it gets no markers and keeps its translation.
+    #[test]
+    fn slice_origin_split_feature_is_not_cut() {
+        let mut gene = SeqFeature::new(
+            "CDS",
+            Location {
+                operator: Some(CompoundOp::Join),
+                between: false,
+                parts: vec![(16, 20, 1, false, false), (0, 2, 1, false, false)],
+            },
+        );
+        gene.set("translation", "MK");
+        let rec = test_rec(b"GGAAAAAAAAAAAAAAATGA", vec![gene]);
+        let sliced = slice_record(&rec, &slice_origin_crossing(), &rec.features);
+        let cds = sliced_cds(&sliced);
+        assert_eq!(loc_str(&cds.location), "[2:8](+)");
+        assert_eq!(cds.get_first("translation"), Some("MK"));
+        assert!(!cds.has("codon_start"));
     }
 }

@@ -5,6 +5,7 @@
 
 use serde::Serialize;
 
+use crate::seq::partial::{feature_fragment_status, record_fragment_status};
 use crate::seq::taxonomy::NCBITaxonomy;
 use crate::seq::SeqRecord;
 use crate::DOMAIN_FEATURE_NAME;
@@ -66,6 +67,10 @@ pub struct SummaryStats {
     /// `[bin_low, count]` over contig lengths.
     pub length_histogram: Vec<[f64; 2]>,
     pub n_cds: usize,
+    /// CDSs with a `<`/`>` partial end (`summary-report`'s `partial_cdss`).
+    pub n_partial_cds: usize,
+    /// Protein records that are fragments (`summary-report`'s `fragment_proteins`).
+    pub n_fragment_proteins: usize,
     pub n_domain_features: usize,
     pub distinct_domains: usize,
     /// Domain-name frequency (top 20), by the `Domainator` feature `name`.
@@ -125,6 +130,8 @@ pub fn summarize_with_taxonomy(
     let length_median = sorted.get(sorted.len() / 2).copied().unwrap_or(0);
 
     let mut n_cds = 0;
+    let mut n_partial_cds = 0;
+    let mut n_fragment_proteins = 0;
     let mut n_domain_features = 0;
     let mut domain_names: HashMap<String, usize> = HashMap::new();
     let mut databases: HashMap<String, usize> = HashMap::new();
@@ -166,10 +173,16 @@ pub fn summarize_with_taxonomy(
         if let Some(org) = &rec.annotations.organism {
             *organisms.entry(org.clone()).or_default() += 1;
         }
+        if rec.is_protein() && record_fragment_status(rec).is_some() {
+            n_fragment_proteins += 1;
+        }
         for f in &rec.features {
             *feature_kinds.entry(f.kind.clone()).or_default() += 1;
             if f.kind == "CDS" {
                 n_cds += 1;
+                if feature_fragment_status(f).is_some() {
+                    n_partial_cds += 1;
+                }
             }
             if f.kind == DOMAIN_FEATURE_NAME {
                 n_domain_features += 1;
@@ -193,6 +206,8 @@ pub fn summarize_with_taxonomy(
         length_median,
         length_histogram: histogram(&lengths, 30),
         n_cds,
+        n_partial_cds,
+        n_fragment_proteins,
         n_domain_features,
         distinct_domains: domain_names.len(),
         top_domains: top_counts(domain_names, 20),
@@ -255,6 +270,32 @@ mod tests {
     fn even_counts_take_the_upper_middle_length() {
         let stats = summarize(&[rec("a", 10, None, &[]), rec("b", 20, None, &[])]);
         assert_eq!(stats.length_median, 20);
+    }
+
+    /// Counted like `summary-report`'s `partial_cdss` / `fragment_proteins`: a CDS
+    /// with a `<`/`>` end, and a protein record whose fragment status is set.
+    #[test]
+    fn partial_cdss_and_fragment_proteins_are_counted() {
+        use crate::seq::location::parse_location;
+        let mut contig = rec("c", 100, None, &[]);
+        for loc in ["1..30", "<40..60", "complement(70..>100)"] {
+            contig
+                .features
+                .push(SeqFeature::new("CDS", parse_location(loc)));
+        }
+        let protein = |id: &str, description: &str| SeqRecord {
+            description: description.into(),
+            molecule_type: Some("protein".into()),
+            ..rec(id, 10, None, &[])
+        };
+        let stats = summarize(&[
+            contig,
+            protein("p1", "Superoxide dismutase (Fragment) OS=Escherichia coli"),
+            protein("p2", "Superoxide dismutase OS=Escherichia coli"),
+        ]);
+        assert_eq!(stats.n_cds, 3);
+        assert_eq!(stats.n_partial_cds, 2);
+        assert_eq!(stats.n_fragment_proteins, 1);
     }
 
     #[test]

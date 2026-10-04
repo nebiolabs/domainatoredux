@@ -12,6 +12,7 @@ use crate::io::partition::partition_seqfile;
 use crate::io::shards::resolve_database_shards;
 use crate::io::{detect_compression, detect_filetype, fasta, genbank::GenbankReader, FileType};
 use crate::search::references::References;
+use crate::seq::partial::Partial;
 use crate::seq::SeqRecord;
 use crate::tools::domainate::{domainate, DomainateOptions};
 use crate::tools::neighborhood::{select_by_cds_hits, Range, Region};
@@ -55,6 +56,8 @@ pub struct DomainSearchOptions {
     /// `--pad`: left-pad each region so the focus CDSs align, then right-pad to a
     /// common length. Buffers the whole result and emits it in score order.
     pub pad: bool,
+    /// `--partial`: which proteins/CDSs are searched, by fragment status.
+    pub partial: Partial,
 }
 
 impl Default for DomainSearchOptions {
@@ -79,6 +82,7 @@ impl Default for DomainSearchOptions {
             decoys: None,
             max_hits_per_contig: None,
             pad: false,
+            partial: Partial::Include,
         }
     }
 }
@@ -204,6 +208,7 @@ pub fn domain_search(
         allowed_taxids: opts.allowed_taxids.clone(),
         max_hits_per_contig: opts.max_hits_per_contig,
         parallel_profiles: false,
+        partial: opts.partial,
         ..Default::default()
     };
 

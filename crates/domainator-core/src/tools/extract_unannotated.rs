@@ -164,7 +164,7 @@ pub fn extract_unannotated(
 
         for (s, e, st) in regions {
             let loc = Loc::single(s, e, st);
-            let mut slice = slice_from_location(rec, &loc, &rec.features, false);
+            let mut slice = slice_from_location(rec, &loc, &rec.features);
             let mut new_name = rec.id.clone();
             if slice.seq.len() as i64 != rec_len {
                 new_name = format!(

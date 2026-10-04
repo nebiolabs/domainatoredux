@@ -2,10 +2,12 @@
 //! optionally combining or splicing multiple hits, padding, and reorienting.
 //! Port of `domainator.extract_domains.extract_domains`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
+use crate::seq::partial::{cds_fragment_status, Partial};
 use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::tools::extract_common::{pad_location, revcomp_record, slice_from_location, Loc};
+use crate::tools::select_common::get_cds_unique_name;
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
 /// Options for [`extract_domains`].
@@ -22,6 +24,8 @@ pub struct ExtractDomainsOptions {
     pub search_hits: bool,
     pub databases: Option<HashSet<String>>,
     pub splice: bool,
+    /// `--partial`: domains by the fragment status of the CDS or protein they are on.
+    pub partial: Partial,
 }
 
 fn is_protein(rec: &SeqRecord) -> bool {
@@ -29,7 +33,21 @@ fn is_protein(rec: &SeqRecord) -> bool {
 }
 
 /// Which domain features are selected on `rec`, mirroring the Python filter cascade.
+///
+/// Python's `elif` chain stops at the first test that rejects, so a feature is kept
+/// only when every test passes: a matching `--domains` name does not exempt it
+/// from `--evalue`/`--score`/`--partial`.
 fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractDomainsOptions) -> Vec<&'a SeqFeature> {
+    // `--partial` judges a domain by the CDS (or protein record) it is on.
+    let cds_by_id: HashMap<String, &SeqFeature> = if opts.partial.is_include() {
+        HashMap::new()
+    } else {
+        rec.features
+            .iter()
+            .filter(|f| f.kind == "CDS")
+            .map(|f| (get_cds_unique_name(f), f))
+            .collect()
+    };
     let mut hits = Vec::new();
     for feature in &rec.features {
         let is_search = feature.kind == DOMAIN_SEARCH_BEST_HIT_NAME;
@@ -46,31 +64,34 @@ fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractDomainsOptions) -> Vec<&'
                 continue;
             }
         }
-        let mut keep = true;
-        if let Some(domains) = opts.domains.as_ref().filter(|_| is_dom) {
-            let name = feature.get_first("name").unwrap_or("");
-            if !domains.contains(name) {
-                keep = false;
-            }
-        } else if opts.search_hits && is_dom && opts.domains.is_none() {
-            keep = false;
-        } else if let Some(e) = opts.evalue {
-            let ev: f64 = feature
-                .get_first("evalue")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(f64::INFINITY);
-            if ev > e {
-                keep = false;
-            }
-        } else if let Some(s) = opts.score {
-            let sc: f64 = feature
-                .get_first("score")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(f64::NEG_INFINITY);
-            if sc < s {
-                keep = false;
-            }
-        }
+        let name = feature.get_first("name").unwrap_or("");
+        let evalue: f64 = feature
+            .get_first("evalue")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(f64::INFINITY);
+        let score: f64 = feature
+            .get_first("score")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(f64::NEG_INFINITY);
+        let rejected = (is_dom && opts.domains.as_ref().is_some_and(|d| !d.contains(name)))
+            || (opts.search_hits && is_dom && opts.domains.is_none())
+            || opts.evalue.is_some_and(|e| evalue > e)
+            || opts.score.is_some_and(|s| score < s);
+        let keep = if rejected {
+            false
+        } else if opts.partial.is_include() {
+            true
+        } else {
+            let status = if is_protein(rec) {
+                cds_fragment_status(rec, None)
+            } else {
+                match cds_by_id.get(feature.get_first("cds_id").unwrap_or(".")) {
+                    Some(cds) => cds_fragment_status(rec, Some(cds)),
+                    None => None, // a contig-level nucleotide hit is never on a fragment
+                }
+            };
+            opts.partial.allows(status)
+        };
         if keep {
             hits.push(feature);
         }
@@ -152,7 +173,7 @@ pub fn extract_domains(
                 end = rec_len;
             }
             let loc = Loc::single(start, end, new_strand);
-            let mut slice = slice_from_location(rec, &loc, &rec.features, false);
+            let mut slice = slice_from_location(rec, &loc, &rec.features);
             let mut new_name = rec.id.clone();
             if slice.seq.len() as i64 != rec_len {
                 new_name = format!(
@@ -193,7 +214,7 @@ pub fn extract_domains(
                 parts: merged.iter().map(|&(s, e, _)| (s, e)).collect(),
                 strand,
             };
-            let mut slice = slice_from_location(rec, &loc, &rec.features, true);
+            let mut slice = slice_from_location(rec, &loc, &rec.features);
             if rec.topology == Topology::Circular {
                 slice.topology = Topology::Circular;
             }
@@ -220,7 +241,7 @@ pub fn extract_domains(
             for domain in &hits {
                 let strand = domain.location.parts.first().map(|p| p.2).unwrap_or(1);
                 let loc = pad_location(rec, &feature_loc(domain), opts.pad_up, opts.pad_down);
-                let mut slice = slice_from_location(rec, &loc, &rec.features, false);
+                let mut slice = slice_from_location(rec, &loc, &rec.features);
                 let mut new_name = rec.id.clone();
                 if slice.seq.len() as i64 != rec_len {
                     new_name = format!(
