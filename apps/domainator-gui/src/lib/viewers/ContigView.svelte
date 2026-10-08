@@ -697,6 +697,7 @@
           ensureSeq(fr.ci);
           dragging = true;
           dragClientX = e.clientX;
+          e.preventDefault(); // no page-text selection if the drag leaves the canvas
           scrollEl.setPointerCapture?.(e.pointerId);
           scheduleDraw();
           return;
@@ -723,6 +724,7 @@
     ensureSeq(fr.ci);
     dragging = true;
     dragClientX = e.clientX;
+    e.preventDefault(); // as above: the drag is canvas state, not a text selection
     scrollEl.setPointerCapture?.(e.pointerId);
     scheduleDraw();
   }
@@ -903,18 +905,29 @@
       return;
     }
     // Horizontal intent (shift, or a trackpad's dominant deltaX) pans the track;
-    // otherwise let native vertical scroll happen.
-    const dx = e.shiftKey ? e.deltaY : e.deltaX;
+    // otherwise let native vertical scroll happen. Shift+wheel arrives as deltaY
+    // on Windows/Linux but macOS (AppKit) has already turned it into deltaX, so
+    // with shift take whichever axis carries the motion.
+    const dx = e.shiftKey
+      ? (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY)
+      : e.deltaX;
     if (dx !== 0 && (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY))) {
       e.preventDefault();
-      setViewLeft(viewLeft + dx);
+      // Line/page-mode wheels report a handful of units, not pixels.
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewW : 1;
+      setViewLeft(viewLeft + dx * unit);
       scheduleDraw();
     }
   }
 
   // Custom horizontal scrollbar: drag the thumb (or click the track) to pan.
   function onHbarDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    // Without this the press also starts a text selection, which grows over the
+    // toolbar as soon as the drag strays off the 12px bar.
+    e.preventDefault();
     const bar = e.currentTarget as HTMLElement;
+    bar.setPointerCapture(e.pointerId);
     const rect = bar.getBoundingClientRect();
     const thumbW = Math.max(24, (trackViewW / trackW) * rect.width);
     const apply = (clientX: number) => {
@@ -924,13 +937,12 @@
       scheduleDraw();
     };
     apply(e.clientX);
-    const move = (ev: PointerEvent) => apply(ev.clientX);
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+    bar.onpointermove = (ev) => apply(ev.clientX);
+    bar.onpointerup = bar.onpointercancel = () => {
+      bar.onpointermove = null;
+      bar.onpointerup = null;
+      bar.onpointercancel = null;
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
   }
 
   // ── ruler ticks ───────────────────────────────────────────────────────────────
@@ -2221,6 +2233,7 @@
     overflow-y: auto;
     position: relative;
     min-height: 0;
+    user-select: none;
   }
   .gutter-resize {
     position: absolute;
@@ -2250,6 +2263,8 @@
     background: var(--bg-panel);
     border-top: 1px solid var(--border);
     cursor: pointer;
+    user-select: none;
+    touch-action: none;
   }
   .hthumb {
     position: absolute;
