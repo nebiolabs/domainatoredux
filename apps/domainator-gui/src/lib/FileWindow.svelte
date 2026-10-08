@@ -4,13 +4,15 @@
   // path, so the detached window needs nothing but the path.
   import { viewsFor } from "./viewers/registry";
   import { fileTypeOf } from "./filetypes";
+  import { ws } from "./state.svelte";
 
   let { path }: { path: string } = $props();
 
   const fileType = $derived(fileTypeOf(path));
   const views = $derived(fileType ? viewsFor(fileType) : []);
-  let activeId = $state("");
-  const currentId = $derived(activeId || views[0]?.id || "");
+  // The active sub-view lives in `ws.subActive`, as in ViewerDock, so a view can
+  // switch to a sibling (Enum Report → Contig View) with `ws.showSubView`.
+  const currentId = $derived(ws.subActive[path] || views[0]?.id || "");
   const current = $derived(views.find((v) => v.id === currentId) ?? views[0] ?? null);
 
   // Keep-alive, as in ViewerDock: a sub-view stays mounted once shown, so
@@ -30,7 +32,7 @@
           class:active={v.id === currentId}
           role="tab"
           aria-selected={v.id === currentId}
-          onclick={() => (activeId = v.id)}
+          onclick={() => (ws.subActive[path] = v.id)}
         >
           {v.label}
         </button>

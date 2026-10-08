@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { addFeature, extractContigs, extractRegion, getContigSequences, loadContigView, removeFeature, saveBinaryFile, saveTextFile, setFeatureColor } from "../api";
+  import { addFeature, extractSelection, getContigSequences, loadContigView, removeFeature, saveBinaryFile, saveTextFile, setFeatureColor, type ExtractItem } from "../api";
   import { cached, invalidatePath } from "../cache";
   import { ws } from "../state.svelte";
   import { validateFilename } from "../filetypes";
   import NameModal from "../NameModal.svelte";
   import type { ContigFileView, ContigView as Contig, FeatureView } from "../types";
+  import { itemKey, toggleItem, type SelItem } from "../selection";
 
   let { path, active = true }: { path: string; active?: boolean } = $props();
 
@@ -17,9 +18,10 @@
 
   // ── editing (GenBank only) ─────────────────────────────────────────────────
   const canEdit = $derived(/\.(gb|gbk|genbank|gbff)$/i.test(path));
-  // The clicked feature: drives the pinned detail panel (all file types) and, for
-  // GenBank, the color/remove edit controls at the bottom of it.
-  let selected = $state<{ contigIndex: number; feat: FeatureView } | null>(null);
+  // The right-clicked feature: drives the pinned detail panel (all file types)
+  // and, for GenBank, the color/remove edit controls at the bottom of it. Apart
+  // from the selection, which can hold many features at once.
+  let inspected = $state<{ contigIndex: number; feat: FeatureView } | null>(null);
   let addOpen = $state(false);
   let addForm = $state({ contigIndex: 0, kind: "misc_feature", start: 0, end: 100, strand: 1, note: "" });
   let editMsg = $state<string | null>(null);
@@ -394,12 +396,56 @@
   }
 
   // ── selection ───────────────────────────────────────────────────────────────
-  // A bp range on one contig, drag-selected over the sequence/track area.
-  let sel = $state<{ ci: number; a: number; b: number } | null>(null);
-  // The feature a selection came from (if it was a feature click) — enables the
-  // "copy nucleotides vs. translation" choice for a CDS on a nucleotide contig.
-  let selFeat = $state<{ ci: number; feat: FeatureView } | null>(null);
+  // Any number of items at once -- whole contigs, features, bp ranges -- kept in
+  // `ws.viewSelection` (`selection.ts`) so the Enum Report tab shares it. A plain
+  // click replaces the selection; Ctrl/Cmd+click adds to it (or removes a
+  // feature or contig already in it). The last item is the "primary": the one the
+  // coordinate readout, Fit selection, zoom centering and shift-click work on.
+  const items = $derived(ws.viewSelection[path]?.items ?? []);
+  function setItems(next: SelItem[]) {
+    ws.setViewSelection(path, next, "contig");
+  }
+  // Features by `ci:feat_index`, to resolve feature items.
+  const featByKey = $derived.by(() => {
+    const m = new Map<string, FeatureView>();
+    for (const c of data?.contigs ?? []) for (const f of c.features) m.set(`${c.index}:${f.feat_index}`, f);
+    return m;
+  });
+  const featOf = (ci: number, feat: number) => featByKey.get(`${ci}:${feat}`);
+  // The bp span an item covers (0-based half-open), or null if it no longer exists.
+  function itemRange(it: SelItem): { ci: number; lo: number; hi: number } | null {
+    const c = data?.contigs[it.ci];
+    if (!c) return null;
+    if (it.kind === "contig") return { ci: it.ci, lo: 0, hi: c.length };
+    if (it.kind === "range") return { ci: it.ci, lo: Math.min(it.a, it.b), hi: Math.max(it.a, it.b) };
+    const f = featOf(it.ci, it.feat);
+    return f ? { ci: it.ci, lo: f.start, hi: f.end } : null;
+  }
+  const primary = $derived<SelItem | null>(items.length ? items[items.length - 1] : null);
+  const primaryFeat = $derived(primary?.kind === "feature" ? (featOf(primary.ci, primary.feat) ?? null) : null);
+  // Selected features (outlined) and contigs (gutter highlight), by key / index.
+  const selFeatKeys = $derived(new Set(items.filter((it) => it.kind === "feature").map((it) => `${it.ci}:${it.feat}`)));
+  const contigSel = $derived(new Set(items.filter((it) => it.kind === "contig").map((it) => it.ci)));
+  // Highlight spans per contig, for drawing.
+  const spansByContig = $derived.by(() => {
+    const m = new Map<number, { lo: number; hi: number }[]>();
+    for (const it of items) {
+      const r = itemRange(it);
+      if (!r || r.hi <= r.lo) continue;
+      const list = m.get(r.ci);
+      if (list) list.push(r);
+      else m.set(r.ci, [r]);
+    }
+    return m;
+  });
+  // A click on empty track sets a caret (no selection); a drag from it, or a
+  // later shift-click, makes a range.
+  let caret = $state<{ ci: number; a: number } | null>(null);
   let dragging = false;
+  // The range item a drag is growing (an index into `items`), or -1 until the
+  // pointer has moved off the caret.
+  let dragIdx = -1;
+  let contigAnchor = -1; // last plainly-clicked contig (shift-range base)
   // Live cursor coordinate (bp within `cursorContig`), for the toolbar readout and
   // the canvas guide line. Null when the pointer is off the track.
   let cursorBp = $state<number | null>(null);
@@ -412,34 +458,26 @@
       ? "\u2318\u21E7C"
       : "Ctrl+Shift+C";
 
-  // Multi-contig selection (by contig index) for Extract → new sequence file.
-  let contigSel = $state(new Set<number>());
-  let contigAnchor = -1; // last plainly-clicked contig (shift-range base)
-  let showExtract = $state(false);
-
-  // Throws on failure so the modal shows it inline and stays open; closes on success.
-  async function doExtractContigs(name: string) {
-    const dir = ws.currentDir;
-    if (!dir || contigSel.size === 0) return;
-    const p = await extractContigs(dir, name, path, [...contigSel].sort((a, b) => a - b));
-    await ws.refreshAndOpen(p);
-    contigSel = new Set();
-    showExtract = false;
-  }
-
-  const selRange = $derived(sel ? { ci: sel.ci, lo: Math.min(sel.a, sel.b), hi: Math.max(sel.a, sel.b) } : null);
-  const hasSel = $derived(!!selRange && selRange.hi > selRange.lo);
-  // A CDS on a nucleotide contig is selected → offer NT + translation copy.
-  const cdsSelected = $derived(
-    !!selFeat && selFeat.feat.kind === "CDS" && !!data && !data.contigs[selFeat.ci].is_protein,
+  // The primary item's span: what Fit selection, zoom centering and the readout use.
+  const selRange = $derived(primary ? itemRange(primary) : null);
+  const hasSel = $derived(items.some((it) => {
+    const r = itemRange(it);
+    return !!r && r.hi > r.lo;
+  }));
+  // Every item is a CDS on a nucleotide contig → offer the translation copy.
+  const allNucCds = $derived(
+    items.length > 0 &&
+      items.every((it) => it.kind === "feature" && featOf(it.ci, it.feat)?.kind === "CDS" && !data?.contigs[it.ci].is_protein),
   );
+  // Some item is on a nucleotide contig → offer the peptide extract.
+  const anyNuc = $derived(items.some((it) => !!data && !data.contigs[it.ci]?.is_protein));
   // Coordinates are displayed 1-based inclusive — the GenBank/annotation
   // convention — while the model is 0-based half-open.
   const selCoords = $derived(
     selRange ? `${(selRange.lo + 1).toLocaleString()}:${selRange.hi.toLocaleString()}` : null,
   );
   const selUnit = $derived(selRange && data ? (data.contigs[selRange.ci].is_protein ? "aa" : "bp") : "bp");
-  const caretLabel = $derived(sel && !hasSel ? (sel.a + 1).toLocaleString() : null);
+  const caretLabel = $derived(caret && !items.length ? (caret.a + 1).toLocaleString() : null);
   const cursorLabel = $derived(cursorBp === null ? null : (Math.floor(cursorBp) + 1).toLocaleString());
 
   async function writeClip(text: string, msg: string) {
@@ -452,58 +490,91 @@
     setTimeout(() => (copyMsg = null), 2500);
   }
 
-  async function copyNucleotides() {
-    if (!selRange) return;
-    const seq = seqCache[selRange.ci];
-    if (seq === undefined) {
-      ensureSeq(selRange.ci);
+  // The selected items' sequences, or null (and a fetch started) while any
+  // contig's sequence is still loading. `translate` gives CDS translations.
+  function selectedSeqs(translate: boolean): { name: string; seq: string }[] | null {
+    if (!data) return null;
+    const missing = [...new Set(items.map((it) => it.ci))].filter((ci) => seqCache[ci] === undefined);
+    if (missing.length) {
+      ensureSeqRange(Math.min(...missing), Math.max(...missing));
+      return null;
+    }
+    const out: { name: string; seq: string }[] = [];
+    for (const it of items) {
+      const r = itemRange(it);
+      if (!r || r.hi <= r.lo) continue;
+      const c = data.contigs[it.ci];
+      const id = c.id || c.name;
+      const seq = seqCache[it.ci];
+      if (translate) {
+        const f = it.kind === "feature" ? featOf(it.ci, it.feat) : undefined;
+        const cm = f ? codingMap(it.ci, f, seq) : null;
+        if (cm) out.push({ name: `${f!.label || id}`, seq: cm.pep });
+      } else {
+        const whole = it.kind === "contig";
+        out.push({ name: whole ? id : `${id}_${r.lo + 1}:${r.hi}`, seq: seq.slice(r.lo, r.hi) });
+      }
+    }
+    return out;
+  }
+
+  // One item copies its bare sequence; several copy as FASTA.
+  async function copySelection(translate: boolean) {
+    const seqs = selectedSeqs(translate);
+    if (seqs === null) {
       copyMsg = "loading sequence…";
       return;
     }
-    const sub = seq.slice(selRange.lo, selRange.hi);
-    const unit = data?.contigs[selRange.ci].is_protein ? "aa" : "bp";
-    await writeClip(sub, `copied ${sub.length.toLocaleString()} ${unit}`);
-  }
-
-  async function copyTranslation() {
-    if (!selFeat) return;
-    const seq = seqCache[selFeat.ci];
-    if (seq === undefined) {
-      ensureSeq(selFeat.ci);
-      copyMsg = "loading sequence…";
-      return;
+    if (!seqs.length) return;
+    if (seqs.length === 1) {
+      const unit = translate || data?.contigs[items[0].ci].is_protein ? "aa" : "bp";
+      await writeClip(seqs[0].seq, `copied ${seqs[0].seq.length.toLocaleString()} ${unit}${translate ? " (translation)" : ""}`);
+    } else {
+      const fasta = seqs.map((s) => `>${s.name}\n${s.seq}\n`).join("");
+      await writeClip(fasta, `copied ${seqs.length} sequences as FASTA`);
     }
-    const cm = codingMap(selFeat.ci, selFeat.feat, seq);
-    if (!cm) return;
-    await writeClip(cm.pep, `copied ${cm.pep.length.toLocaleString()} aa (translation)`);
   }
 
-  // ── extract the current selection to a new FASTA file ─────────────────────────
+  // ── extract the selection to a new file, one record per item ─────────────────
   let showSelExtract = $state(false);
   let selExtractKind = $state<"nt" | "aa">("nt");
-  const selIsNuc = $derived(!!selRange && !!data && !data.contigs[selRange.ci].is_protein);
   const selExtractDefault = $derived.by(() => {
-    if (!selRange || !data) return "selection.gb";
-    const c = data.contigs[selRange.ci];
-    const id = (c.id || c.name || "seq").replace(/[^\w.-]+/g, "_");
-    // Both are GenBank: NT keeps the region's features; peptide runs the region's
-    // CDSs through extract_peptides → protein GenBank.
     const suffix = selExtractKind === "aa" ? "_peptides" : "";
-    return `${id}_${selRange.lo + 1}_${selRange.hi}${suffix}.gb`;
+    if (items.length === 1 && selRange && data) {
+      const c = data.contigs[selRange.ci];
+      const id = (c.id || c.name || "seq").replace(/[^\w.-]+/g, "_");
+      // Both are GenBank: NT keeps the region's features; peptide runs the region's
+      // CDSs through extract_peptides → protein GenBank.
+      if (items[0].kind === "contig") return `${id}${suffix}.gb`;
+      return `${id}_${selRange.lo + 1}_${selRange.hi}${suffix}.gb`;
+    }
+    if (items.every((it) => it.kind === "contig")) return `contigs_subset${suffix}.gb`;
+    const base = (path.split(/[\\/]/).pop() ?? "selection").replace(/\.[^.]+$/, "");
+    return `${base}_selection${suffix}.gb`;
   });
 
   function openSelExtract(kind: "nt" | "aa") {
     selExtractKind = kind;
     showSelExtract = true;
   }
-  // Throws on failure so the modal shows it inline; closes on success. Both the
-  // nucleotide slice and the peptide conversion happen server-side (the peptide
-  // path: extract region → extract_peptides → protein GenBank).
+  // Throws on failure so the modal shows it inline; closes on success. Slicing and
+  // the peptide conversion both happen server-side. A minus-strand feature is
+  // extracted reverse-complemented, so it reads forward in the new record.
   async function doSelExtract(name: string) {
-    const r = selRange;
     const dir = ws.currentDir;
-    if (!r || !data || !dir) return;
-    const p = await extractRegion(dir, name, path, r.ci, r.lo, r.hi, selExtractKind === "aa");
+    if (!data || !dir || !items.length) return;
+    const req: ExtractItem[] = [];
+    for (const it of items) {
+      if (it.kind === "contig") {
+        req.push({ contig: it.ci });
+        continue;
+      }
+      const r = itemRange(it);
+      if (!r || r.hi <= r.lo) continue;
+      const strand = it.kind === "feature" && featOf(it.ci, it.feat)?.strand === -1 ? -1 : 1;
+      req.push({ contig: it.ci, start: r.lo, end: r.hi, strand });
+    }
+    const p = await extractSelection(dir, name, path, req, selExtractKind === "aa");
     await ws.refreshAndOpen(p);
     showSelExtract = false;
   }
@@ -553,87 +624,115 @@
   const bpClamp = (clientX: number, len: number) =>
     Math.max(0, Math.min(len, Math.round(bpAt(clientX))));
 
-  function onPointerDown(e: PointerEvent) {
-    if (!scrollEl) return;
-    const rect0 = scrollEl.getBoundingClientRect();
-    // A click that lands on no annotation deselects the current one (closing its
-    // detail panel). Only the feature-hit branch below sets it again; the panel
-    // itself sits outside this element, so clicks inside it never reach here.
-    const hit = featureAt(e.clientX, e.clientY);
-    if (!hit && selected) {
-      selected = null;
-      scheduleDraw();
+  // Grow the range a drag is making to the bp under `clientX`. The range item is
+  // created on the first move off the caret, so a click without a drag only sets
+  // the caret.
+  function dragTo(clientX: number) {
+    if (!caret || !data) return;
+    const b = bpClamp(clientX, data.contigs[caret.ci]?.length ?? 0);
+    const range: SelItem = { kind: "range", ci: caret.ci, a: caret.a, b };
+    if (dragIdx < 0) {
+      if (b === caret.a) return;
+      dragIdx = items.length;
+      setItems([...items, range]);
+    } else {
+      const next = [...items];
+      next[dragIdx] = range;
+      setItems(next);
     }
+  }
+
+  function onPointerDown(e: PointerEvent) {
+    if (!scrollEl || e.button !== 0) return; // right-click is the detail panel
+    const rect0 = scrollEl.getBoundingClientRect();
+    const additive = e.ctrlKey || e.metaKey;
     // The pinned shared ruler floats over the top of the viewport; a click on it
     // would otherwise select whatever scrolled underneath.
     if (sharedRuler && e.clientY - rect0.top < rulerBandH) return;
-    // Click in the left margin (name gutter): select the whole sequence (copy) and
-    // manage the multi-contig set for Extract (Ctrl/Cmd toggles, Shift ranges).
+    // Click in the left margin (name gutter): select the whole contig. Ctrl/Cmd
+    // toggles it in the selection, Shift adds the contigs from the last one clicked.
     if (e.clientX - rect0.left < GUTTER) {
       const fr = frameAtY(viewTop + (e.clientY - rect0.top));
       if (fr) {
         const ci = fr.ci;
+        caret = null;
         if (e.shiftKey && contigAnchor >= 0) {
           const [lo, hi] = contigAnchor < ci ? [contigAnchor, ci] : [ci, contigAnchor];
-          const s = new Set(contigSel);
-          for (let i = lo; i <= hi; i++) s.add(i);
-          contigSel = s;
-        } else if (e.ctrlKey || e.metaKey) {
-          const s = new Set(contigSel);
-          s.has(ci) ? s.delete(ci) : s.add(ci);
-          contigSel = s;
-          contigAnchor = ci;
+          const have = new Set(items.map(itemKey));
+          const add: SelItem[] = [];
+          for (let i = lo; i <= hi; i++) {
+            const it: SelItem = { kind: "contig", ci: i };
+            if (!have.has(itemKey(it))) add.push(it);
+          }
+          setItems([...items, ...add]);
         } else {
-          contigSel = new Set([ci]);
+          const it: SelItem = { kind: "contig", ci };
+          setItems(additive ? toggleItem(items, it) : [it]);
           contigAnchor = ci;
         }
-        sel = { ci, a: 0, b: fr.c.length }; // whole-sequence copy selection
-        selFeat = null;
         ensureSeq(ci);
         scheduleDraw();
       }
       return;
     }
-    // Shift-click in the track extends the current selection's focus border to the
-    // clicked bp (on the same contig) — the way to select a span wider than the
-    // viewport: click one end, scroll, shift-click the other.
-    if (e.shiftKey && sel) {
+    // Shift-click in the track extends the primary item (or the caret) on the
+    // clicked contig into a range ending at the clicked bp — the way to select a
+    // span wider than the viewport: click one end, scroll, shift-click the other.
+    if (e.shiftKey) {
       const fr = frameAtY(viewTop + (e.clientY - rect0.top));
-      if (fr && fr.ci === sel.ci) {
-        sel = { ci: sel.ci, a: sel.a, b: bpClamp(e.clientX, fr.c.length) };
-        selFeat = null;
-        ensureSeq(sel.ci);
-        dragging = true;
-        dragClientX = e.clientX;
-        scrollEl.setPointerCapture?.(e.pointerId);
-        scheduleDraw();
-        return;
+      if (fr) {
+        let anchor: number | null = null;
+        let replace = false;
+        if (primary && primary.ci === fr.ci) {
+          const r = itemRange(primary);
+          anchor = primary.kind === "range" ? primary.a : (r?.lo ?? null);
+          replace = anchor !== null;
+        } else if (caret && caret.ci === fr.ci) {
+          anchor = caret.a;
+        }
+        if (anchor !== null) {
+          caret = { ci: fr.ci, a: anchor };
+          dragIdx = replace ? items.length - 1 : -1;
+          dragTo(e.clientX);
+          ensureSeq(fr.ci);
+          dragging = true;
+          dragClientX = e.clientX;
+          scrollEl.setPointerCapture?.(e.pointerId);
+          scheduleDraw();
+          return;
+        }
       }
     }
+    const hit = featureAt(e.clientX, e.clientY);
     if (hit) {
-      // Select the feature's underlying sequence span (so it highlights + can be
-      // copied), and — for editable files — open the edit panel.
-      sel = { ci: hit.ci, a: hit.f.start, b: hit.f.end };
-      selFeat = { ci: hit.ci, feat: hit.f };
+      // Select the feature (its span highlights and can be copied or extracted).
+      const it: SelItem = { kind: "feature", ci: hit.ci, feat: hit.f.feat_index };
+      setItems(additive ? toggleItem(items, it) : [it]);
+      caret = null;
       ensureSeq(hit.ci); // load sequence so Copy is ready
-      // The detail panel opens for every file type — it carries the same fields
-      // the hover tooltip shows, so a click pins them instead of replacing them
-      // with a bare color picker. The edit controls inside it stay GenBank-only.
-      selected = { contigIndex: hit.ci, feat: hit.f };
       scheduleDraw();
       return;
     }
-    // Plain click sets a caret (anchor) at this bp; a drag extends the focus. The
-    // caret persists (no clear on mouse-up) so a later shift-click can extend it.
+    // Plain click sets a caret (anchor) at this bp and clears the selection; a
+    // drag from it makes a range. With Ctrl/Cmd the range is added instead.
     const fr = frameAtY(viewTop + (e.clientY - rect0.top));
     if (!fr) return;
-    const bp = bpClamp(e.clientX, fr.c.length);
-    sel = { ci: fr.ci, a: bp, b: bp };
-    selFeat = null;
+    caret = { ci: fr.ci, a: bpClamp(e.clientX, fr.c.length) };
+    if (!additive && items.length) setItems([]);
+    dragIdx = -1;
     ensureSeq(fr.ci);
     dragging = true;
     dragClientX = e.clientX;
     scrollEl.setPointerCapture?.(e.pointerId);
+    scheduleDraw();
+  }
+
+  // Right-click on a feature pins its details (and, for GenBank, its edit
+  // controls) in the side panel; on anything else it closes the panel.
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    const hit = featureAt(e.clientX, e.clientY);
+    inspected = hit ? { contigIndex: hit.ci, feat: hit.f } : null;
     scheduleDraw();
   }
   // Track the bp under the cursor so the toolbar can show a live coordinate and
@@ -659,10 +758,9 @@
 
   function onPointerMove(e: PointerEvent) {
     updateCursorBp(e);
-    if (dragging && sel && scrollEl) {
+    if (dragging && caret && scrollEl) {
       dragClientX = e.clientX;
-      const c = data?.contigs[sel.ci];
-      sel = { ...sel, b: bpClamp(e.clientX, c?.length ?? 0) };
+      dragTo(e.clientX);
       maybeAutoScroll(); // slide the viewport if dragging past an edge
       scheduleDraw();
       return;
@@ -680,6 +778,10 @@
   }
   function onPointerUp() {
     dragging = false;
+    // A finished range anchors later shift-clicks itself; the caret is only for
+    // a click that made none.
+    if (dragIdx >= 0) caret = null;
+    dragIdx = -1;
     stopAutoScroll();
     scheduleDraw();
   }
@@ -725,13 +827,12 @@
   }
   function autoScrollTick() {
     const v = edgeVelocity();
-    if (v === 0 || !dragging || !sel) {
+    if (v === 0 || !dragging || !caret) {
       autoRaf = 0;
       return;
     }
     setViewLeft(viewLeft + v);
-    const c = data?.contigs[sel.ci];
-    sel = { ...sel, b: bpClamp(dragClientX, c?.length ?? 0) };
+    dragTo(dragClientX);
     scheduleDraw();
     autoRaf = requestAnimationFrame(autoScrollTick);
   }
@@ -966,18 +1067,20 @@
     for (const fr of frames) {
       const sYtop = fr.yTop - vTop;
       const selH = fr.height - contigGap;
-      // selection highlight (range) or caret (collapsed) for this contig
-      if (scene.interactive && selRange && selRange.ci === fr.ci && selRange.hi > selRange.lo) {
-        const x1 = sx(selRange.lo);
-        const x2 = sx(selRange.hi);
+      // selection highlights, and the caret, on this contig
+      if (scene.interactive) {
         ctx.fillStyle = "rgba(59,130,246,0.18)";
-        ctx.fillRect(x1, sYtop, Math.max(1, x2 - x1), selH);
-        // focus-border caret (the edge a shift-click / drag moves)
-        const fx = sx(sel!.b);
-        ctx.fillStyle = cAccent;
-        ctx.fillRect(fx - 0.75, sYtop, 1.5, selH);
-      } else if (scene.interactive && sel && sel.ci === fr.ci) {
-        const cx = sx(sel.a);
+        for (const r of spansByContig.get(fr.ci) ?? []) {
+          const x1 = sx(r.lo);
+          ctx.fillRect(x1, sYtop, Math.max(1, sx(r.hi) - x1), selH);
+        }
+        // focus border of the primary range (the edge a shift-click / drag moves)
+        // or a lone caret
+        const edge =
+          primary?.kind === "range" && primary.ci === fr.ci ? primary.b
+          : caret && caret.ci === fr.ci ? caret.a
+          : null;
+        const cx = edge === null ? NaN : sx(edge);
         if (cx >= GUTTER - 1 && cx <= vW) {
           ctx.fillStyle = cAccent;
           ctx.fillRect(cx - 0.75, sYtop, 1.5, selH);
@@ -1079,7 +1182,10 @@
             ctx.stroke();
           }
         }
-        const isSel = scene.interactive && selected?.contigIndex === fr.ci && selected?.feat.feat_index === f.feat_index;
+        const isSel =
+          scene.interactive &&
+          (selFeatKeys.has(`${fr.ci}:${f.feat_index}`) ||
+            (inspected?.contigIndex === fr.ci && inspected?.feat.feat_index === f.feat_index));
         for (let i = 0; i < sp.length; i++) {
           const x = sx(sp[i].start);
           const w = Math.max(1.5, (sp[i].end - sp[i].start) * pxPerBp);
@@ -1519,9 +1625,11 @@
   $effect(() => {
     const frames = frame; // depend on layout/scroll/zoom/filters
     void seqCache;
-    void selRange;
-    void selected;
+    void spansByContig;
+    void selFeatKeys;
     void contigSel;
+    void caret;
+    void inspected;
     // Appearance options that change only the painting, never the track heights,
     // do not reach us through `frame` — `renderScene` runs inside a rAF callback,
     // so its own reads are not tracked. Without these the ruler would keep
@@ -1567,22 +1675,25 @@
     }
   }
   async function applyColor(hex: string) {
-    if (!selected) return;
+    if (!inspected) return;
     editMsg = null;
     try {
-      await setFeatureColor(path, selected.contigIndex, selected.feat.feat_index, hex);
-      selected = null;
+      await setFeatureColor(path, inspected.contigIndex, inspected.feat.feat_index, hex);
+      inspected = null;
       await refetch();
     } catch (e) {
       editMsg = String(e);
     }
   }
-  async function removeSelected() {
-    if (!selected) return;
+  async function removeInspected() {
+    if (!inspected) return;
     editMsg = null;
     try {
-      await removeFeature(path, selected.contigIndex, selected.feat.feat_index);
-      selected = null;
+      await removeFeature(path, inspected.contigIndex, inspected.feat.feat_index);
+      inspected = null;
+      // Feature indices after the removed one shift; a selection holding them
+      // would now name other features.
+      setItems([]);
       await refetch();
     } catch (e) {
       editMsg = String(e);
@@ -1594,6 +1705,7 @@
       const q: [string, string][] = addForm.note ? [["note", addForm.note]] : [];
       await addFeature(path, addForm.contigIndex, addForm.kind, Number(addForm.start), Number(addForm.end), Number(addForm.strand), q);
       addOpen = false;
+      setItems([]); // as for a removal: indices may have moved
       await refetch();
     } catch (e) {
       editMsg = String(e);
@@ -1604,9 +1716,8 @@
     loading = true;
     error = null;
     fitted = false;
-    sel = null;
-    selFeat = null;
-    contigSel = new Set();
+    caret = null;
+    inspected = null;
     layoutCache = new Map();
     codingCache = new Map();
     seqCache = {};
@@ -1617,6 +1728,10 @@
       enabledDbs = Object.fromEntries(d.databases.map((k) => [k, true]));
       hasEvalue = d.evalue_range !== null;
       if (d.evalue_range) maxEvalueExp = Math.ceil(Math.log10(Math.max(d.evalue_range[1], 1e-300)));
+      // The selection outlives this view (it is shared with the Enum Report and
+      // may have been made before this load); drop anything the file lacks.
+      const kept = items.filter((it) => itemRange(it) !== null);
+      if (kept.length !== items.length) setItems(kept);
       fit();
     } catch (e) {
       error = String(e);
@@ -1641,6 +1756,22 @@
       focused = requested;
       delete ws.focusContig[path];
     }
+  });
+
+  // When the selection was changed by another view (the Enum Report's row
+  // checkboxes) while this one was hidden, show its primary item on the way in.
+  let seenRev = 0;
+  $effect(() => {
+    if (!active || !data || !scrollEl) return;
+    const cur = ws.viewSelection[path];
+    if (!cur || cur.rev === seenRev) return;
+    seenRev = cur.rev;
+    if (cur.from === "contig" || !cur.items.length) return;
+    caret = null;
+    ensureSeq(cur.items[cur.items.length - 1].ci);
+    // After the tab is shown (and any first-visit Fit), so the zoom uses the
+    // real viewport size.
+    requestAnimationFrame(() => fitSelection());
   });
 
   // Scroll a focused contig into view.
@@ -1679,7 +1810,7 @@
       // are enabled (debug builds); swallow it so the shortcut behaves the same
       // in dev as in release.
       e.preventDefault();
-      copyNucleotides();
+      copySelection(false);
     }
   }
 </script>
@@ -1697,30 +1828,27 @@
         <button onclick={() => zoomBtn(1 / 1.5)} aria-label="Zoom out">−</button>
         <button onclick={fit}>Fit</button>
         <button onclick={() => zoomBtn(1.5)} aria-label="Zoom in">+</button>
-        <button onclick={fitSelection} disabled={!hasSel} title="Zoom to the current selection">Fit selection</button>
+        <button onclick={fitSelection} disabled={!selRange || selRange.hi <= selRange.lo} title="Zoom to the last item selected">Fit selection</button>
         <span class="dim">{data.contigs.length} contig{data.contigs.length === 1 ? "" : "s"}</span>
-        {#if contigSel.size > 0}
-          <span class="sel-badge">{contigSel.size} selected</span>
-          <button class="extract" onclick={() => (showExtract = true)}>Extract →</button>
-          <button onclick={() => (contigSel = new Set())}>clear</button>
-        {/if}
-        {#if hasSel && selRange}
-          {#if cdsSelected}
-            <button class="copy" onclick={copyNucleotides} title="Copy CDS nucleotides ({COPY_HINT})">
-              ⧉ NT ({(selRange.hi - selRange.lo).toLocaleString()} bp)
+        {#if items.length > 0}
+          <span class="sel-badge" title="Ctrl/Cmd+click adds to the selection">{items.length} selected</span>
+          {#if hasSel}
+            {#if allNucCds}
+              <button class="copy" onclick={() => copySelection(false)} title="Copy CDS nucleotides ({COPY_HINT})">⧉ NT</button>
+              <button class="copy" onclick={() => copySelection(true)} title="Copy CDS translations">⧉ Protein</button>
+            {:else}
+              <button class="copy" onclick={() => copySelection(false)} title="Copy the selected sequence{items.length > 1 ? 's as FASTA' : ''} ({COPY_HINT})">
+                ⧉ Copy{#if items.length === 1 && selRange}&nbsp;{(selRange.hi - selRange.lo).toLocaleString()} {selUnit}{/if}
+              </button>
+            {/if}
+            <button class="extract" onclick={() => openSelExtract("nt")} title="Extract the selection to a new file, each item as its own contig">
+              ⤓ Extract
             </button>
-            <button class="copy" onclick={copyTranslation} title="Copy CDS translation">⧉ Protein</button>
-          {:else}
-            <button class="copy" onclick={copyNucleotides} title="Copy selected sequence ({COPY_HINT})">
-              ⧉ Copy {(selRange.hi - selRange.lo).toLocaleString()} {data.contigs[selRange.ci].is_protein ? "aa" : "bp"}
-            </button>
+            {#if anyNuc}
+              <button class="extract" onclick={() => openSelExtract("aa")} title="Extract the CDS peptides in the selection to a protein GenBank">⤓ Protein</button>
+            {/if}
           {/if}
-          <button class="extract" onclick={() => openSelExtract("nt")} title="Extract selection to a new GenBank">
-            ⤓ {selIsNuc ? "NT" : "File"}
-          </button>
-          {#if selIsNuc}
-            <button class="extract" onclick={() => openSelExtract("aa")} title="Extract the region's CDS peptides to a protein GenBank">⤓ Protein</button>
-          {/if}
+          <button onclick={() => setItems([])}>clear</button>
         {/if}
         {#if copyMsg}<span class="dim">{copyMsg}</span>{/if}
         {#if canEdit}
@@ -1841,7 +1969,7 @@
       </div>
 
       <div class="coords">
-        {#if selCoords && hasSel}
+        {#if selCoords && selRange && selRange.hi > selRange.lo}
           <span class="coord"><b>sel</b> {selCoords} <span class="dim">({(selRange!.hi - selRange!.lo).toLocaleString()} {selUnit})</span></span>
         {:else if caretLabel}
           <span class="coord"><b>caret</b> {caretLabel}</span>
@@ -1904,6 +2032,7 @@
       onscroll={onScroll}
       onwheel={onWheel}
       onpointerdown={onPointerDown}
+      oncontextmenu={onContextMenu}
       onpointermove={(e) => { const r = scrollEl?.getBoundingClientRect(); if (r) lastCursorX = e.clientX - r.left; onPointerMove(e); }}
       onpointerup={onPointerUp}
       onpointerleave={onPointerLeave}
@@ -1934,30 +2063,30 @@
     </div>
   {/if}
 
-  {#if selected}
+  {#if inspected}
     <div class="editpanel">
       <div class="ep-head">
-        <b>{selected.feat.kind}</b> · {selected.feat.label}
-        <button class="ep-x" onclick={() => (selected = null)} aria-label="Close">×</button>
+        <b>{inspected.feat.kind}</b> · {inspected.feat.label}
+        <button class="ep-x" onclick={() => (inspected = null)} aria-label="Close">×</button>
       </div>
       <!-- The same fields the hover tooltip shows, pinned: clicking a feature to
            recolor it must not cost you the annotation you were reading. -->
       <div class="ep-detail">
-        <div class="tt-row"><b>contig</b> {data?.contigs[selected.contigIndex].id || data?.contigs[selected.contigIndex].name}</div>
-        <div class="tt-row"><b>location</b> {(selected.feat.start + 1).toLocaleString()}:{selected.feat.end.toLocaleString()} ({(selected.feat.end - selected.feat.start).toLocaleString()} bp)</div>
-        <div class="tt-row"><b>strand</b> {selected.feat.strand === -1 ? "−" : selected.feat.strand === 1 ? "+" : "."}</div>
-        {#if selected.feat.parts.length > 1}
-          <div class="tt-row"><b>parts</b> {selected.feat.parts.map((p) => `${p.start + 1}:${p.end}`).join(", ")}</div>
+        <div class="tt-row"><b>contig</b> {data?.contigs[inspected.contigIndex].id || data?.contigs[inspected.contigIndex].name}</div>
+        <div class="tt-row"><b>location</b> {(inspected.feat.start + 1).toLocaleString()}:{inspected.feat.end.toLocaleString()} ({(inspected.feat.end - inspected.feat.start).toLocaleString()} bp)</div>
+        <div class="tt-row"><b>strand</b> {inspected.feat.strand === -1 ? "−" : inspected.feat.strand === 1 ? "+" : "."}</div>
+        {#if inspected.feat.parts.length > 1}
+          <div class="tt-row"><b>parts</b> {inspected.feat.parts.map((p) => `${p.start + 1}:${p.end}`).join(", ")}</div>
         {/if}
-        {#if selected.feat.database !== null}<div class="tt-row"><b>database</b> {selected.feat.database}</div>{/if}
-        {#each selected.feat.qualifiers as [k, v] (k)}
+        {#if inspected.feat.database !== null}<div class="tt-row"><b>database</b> {inspected.feat.database}</div>{/if}
+        {#each inspected.feat.qualifiers as [k, v] (k)}
           <div class="tt-row"><b>{k}</b> {v}</div>
         {/each}
       </div>
       <div class="ep-body">
         {#if canEdit}
-          <label>Color <input type="color" value={selected.feat.color} onchange={(e) => applyColor(e.currentTarget.value)} /></label>
-          <button class="ep-remove" onclick={removeSelected}>Remove</button>
+          <label>Color <input type="color" value={inspected.feat.color} onchange={(e) => applyColor(e.currentTarget.value)} /></label>
+          <button class="ep-remove" onclick={removeInspected}>Remove</button>
         {:else}
           <span class="dim">Read-only (GenBank files can be edited)</span>
         {/if}
@@ -1980,20 +2109,9 @@
     <div class="tooltip" style="left: {nameTooltip.x}px; top: {nameTooltip.y}px;">{nameTooltip.name}</div>
   {/if}
 
-  {#if showExtract}
-    <NameModal
-      title="Extract {contigSel.size} contig{contigSel.size === 1 ? '' : 's'} to a new file"
-      defaultName="contigs_subset.gb"
-      submitLabel="Extract"
-      validate={validateFilename}
-      onsubmit={(name) => doExtractContigs(name)}
-      oncancel={() => (showExtract = false)}
-    />
-  {/if}
-
   {#if showSelExtract}
     <NameModal
-      title="Extract selection ({selExtractKind === 'aa' ? 'CDS peptides → protein GenBank' : 'nucleotides → GenBank'})"
+      title="Extract {items.length === 1 ? 'selection' : `${items.length} items`} ({selExtractKind === 'aa' ? 'CDS peptides → protein GenBank' : 'one contig each → GenBank'})"
       defaultName={selExtractDefault}
       submitLabel="Extract"
       validate={validateFilename}

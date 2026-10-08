@@ -702,19 +702,24 @@ fn domain_search(rec: &SeqRecord) -> Vec<Value> {
 /// `fragment`/`partial_count` columns report: by contig, a protein record's own
 /// status, or `?` for a nucleotide contig with any partial CDS; by CDS, the CDS's
 /// (or protein's); by domain, that of the CDS (or protein) the domain is on.
-// The parity reference's parameter list, plus the output buffer.
+// The parity reference's parameter list, plus the output buffers and the
+// record's position (for `targets`).
 #[allow(clippy::too_many_arguments)]
 fn process_record(
     rec: &SeqRecord,
+    contig_index: usize,
     by: By,
     analyses: &[Analysis],
     ncbi_taxonomy: Option<&NCBITaxonomy>,
     filename: &str,
     partial: Partial,
     rows: &mut Vec<Vec<Value>>,
+    targets: &mut Vec<RowTarget>,
 ) {
     let contig_name = rec.id.clone();
     let mut sub_recs: Vec<SeqRecord> = Vec::new();
+    // The feature each sub-record came from, parallel to `sub_recs`.
+    let mut feature_indices: Vec<Option<usize>> = Vec::new();
     let mut locs: Vec<Location> = Vec::new();
     let mut cds_names: Vec<String> = Vec::new();
     let mut domain_names: Vec<String> = Vec::new();
@@ -723,6 +728,7 @@ fn process_record(
 
     if by == By::Contig {
         sub_recs.push(rec.clone());
+        feature_indices.push(None);
         locs.push(Location::range(0, rec.seq.len() as i64, 1));
         if rec.is_protein() {
             let status = record_fragment_status(rec);
@@ -758,15 +764,18 @@ fn process_record(
                     keep.extend(cds.domain_features.iter().cloned());
                     let slice = slice_loc_from(&cds.feature.location);
                     sub_recs.push(slice_record(rec, &slice, &keep));
+                    feature_indices.push(cds.feature_index);
                     locs.push(cds.feature.location.clone());
                     cds_names.push(cds.name.clone());
                     fragment_statuses.push(cds_fragment_status(rec, Some(&cds.feature)));
                 } else {
-                    for domain in &cds.domain_features {
+                    for (domain, &fi) in cds.domain_features.iter().zip(&cds.domain_feature_indices)
+                    {
                         let mut keep = sources.clone();
                         keep.push(domain.clone());
                         let slice = slice_loc_from(&domain.location);
                         sub_recs.push(slice_record(rec, &slice, &keep));
+                        feature_indices.push(Some(fi));
                         locs.push(domain.location.clone());
                         cds_names.push(cds.name.clone());
                         domain_names.push(domain.get_first("name").unwrap_or("").to_string());
@@ -778,16 +787,18 @@ fn process_record(
             // protein
             if by == By::Cds {
                 sub_recs.push(rec.clone());
+                feature_indices.push(None);
                 cds_names.push(" ".to_string());
                 locs.push(Location::range(0, rec.seq.len() as i64, 1));
                 fragment_statuses.push(record_fragment_status(rec));
             } else {
-                for f in &rec.features {
+                for (fi, f) in rec.features.iter().enumerate() {
                     if f.kind == DOMAIN_FEATURE_NAME {
                         let mut keep = sources.clone();
                         keep.push(f.clone());
                         let slice = slice_loc_from(&f.location);
                         sub_recs.push(slice_record(rec, &slice, &keep));
+                        feature_indices.push(Some(fi));
                         cds_names.push(" ".to_string());
                         domain_names.push(f.get_first("name").unwrap_or("").to_string());
                         locs.push(f.location.clone());
@@ -826,6 +837,10 @@ fn process_record(
             row.extend(analysis.compute(sub_rec, &ctx));
         }
         rows.push(row);
+        targets.push(RowTarget {
+            contig: contig_index,
+            feature: feature_indices[i],
+        });
     }
 }
 
@@ -883,7 +898,7 @@ fn json_value(v: &Value, ctype: ColType) -> serde_json::Value {
 // an options struct would put the port a rename away from its parity reference.
 #[allow(clippy::too_many_arguments)]
 pub fn enum_report<W: Write>(
-    mut records: Vec<(SeqRecord, String)>,
+    records: Vec<(SeqRecord, String)>,
     by: By,
     analyses: &[Analysis],
     column_names: Option<&[String]>,
@@ -893,6 +908,48 @@ pub fn enum_report<W: Write>(
     format: OutputFormat,
     out: &mut W,
 ) -> Result<(), String> {
+    enum_report_with_targets(
+        records,
+        by,
+        analyses,
+        column_names,
+        ncbi_taxonomy,
+        databases,
+        partial,
+        format,
+        out,
+    )
+    .map(|_| ())
+}
+
+/// Where a report row came from: the record's position in `records`, and the
+/// index in that record's `features` of the CDS or domain the row describes
+/// (`None` for a contig row, a protein record's CDS row, or a nucleic-acid
+/// pseudo-CDS). Not part of any output format -- the GUI uses it to jump from a
+/// row to the feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowTarget {
+    pub contig: usize,
+    pub feature: Option<usize>,
+}
+
+/// [`enum_report`], also returning one [`RowTarget`] per written row, in order.
+///
+/// Feature indices refer to each record's features *after* the `databases`
+/// filter, so they index the input file only when `databases` is `None`.
+// Same parameter list as `enum_report`.
+#[allow(clippy::too_many_arguments)]
+pub fn enum_report_with_targets<W: Write>(
+    mut records: Vec<(SeqRecord, String)>,
+    by: By,
+    analyses: &[Analysis],
+    column_names: Option<&[String]>,
+    ncbi_taxonomy: Option<&NCBITaxonomy>,
+    databases: Option<&HashSet<String>>,
+    partial: Partial,
+    format: OutputFormat,
+    out: &mut W,
+) -> Result<Vec<RowTarget>, String> {
     // Build headers + types.
     let mut headers: Vec<String> = vec!["contig".to_string()];
     let mut types: Vec<ColType> = vec![ColType::Str];
@@ -922,18 +979,21 @@ pub fn enum_report<W: Write>(
     }
 
     let mut rows: Vec<Vec<Value>> = Vec::new();
-    for (rec, filename) in &mut records {
+    let mut targets: Vec<RowTarget> = Vec::new();
+    for (contig_index, (rec, filename)) in records.iter_mut().enumerate() {
         if let Some(dbs) = databases {
             filter_domains_databases(rec, dbs);
         }
         process_record(
             rec,
+            contig_index,
             by,
             analyses,
             ncbi_taxonomy,
             filename,
             partial,
             &mut rows,
+            &mut targets,
         );
     }
 
@@ -966,7 +1026,7 @@ pub fn enum_report<W: Write>(
             }
         }
     }
-    Ok(())
+    Ok(targets)
 }
 
 /// Whether any requested analysis needs the NCBI taxonomy database.
@@ -1060,6 +1120,70 @@ mod tests {
             motif_count_analysis("[AG]-x-[DE]".into()).columns[0].0,
             "motif_count_AG_x_DE"
         );
+    }
+
+    fn cds(cds_id: &str, gene: &str, start: i64, end: i64) -> SeqFeature {
+        let mut f = SeqFeature::new("CDS", Location::range(start, end, 1));
+        f.set("cds_id", cds_id);
+        f.set("gene", gene);
+        f
+    }
+
+    fn dom_on(cds_id: &str, name: &str, start: i64) -> SeqFeature {
+        let mut f = dom(name, "", start);
+        f.set("cds_id", cds_id);
+        f
+    }
+
+    /// Rows only carry display names, which repeat; each row's target must still
+    /// be the exact feature it describes.
+    #[test]
+    fn row_targets_point_at_the_described_feature() {
+        let mut r = rec(&[b'A'; 300], Vec::new());
+        r.molecule_type = Some("DNA".into());
+        // Two CDSs sharing the display name `g`, listed out of start order, plus a
+        // feature that is neither, and two same-named domains on one CDS.
+        let mut second = cds("c2", "g", 150, 240);
+        second.set("partial", "");
+        r.features = vec![
+            SeqFeature::new("source", Location::range(0, 300, 1)),
+            second,
+            cds("c1", "g", 0, 90),
+            dom_on("c1", "D", 0),
+            dom_on("c1", "D", 30),
+            dom_on("c2", "D", 150),
+        ];
+        let records = vec![(rec(b"MK", Vec::new()), String::new()), (r, String::new())];
+        let run = |by, partial| {
+            enum_report_with_targets(
+                records.clone(),
+                by,
+                &[],
+                None,
+                None,
+                None,
+                partial,
+                OutputFormat::Tsv,
+                &mut Vec::new(),
+            )
+            .unwrap()
+        };
+        let t = |contig, feature| RowTarget { contig, feature };
+
+        assert_eq!(run(By::Contig, Partial::Include), [t(0, None), t(1, None)]);
+        // CDS rows come in stranded-start order; the protein record's CDS row is
+        // the record itself.
+        assert_eq!(
+            run(By::Cds, Partial::Include),
+            [t(0, None), t(1, Some(2)), t(1, Some(1))]
+        );
+        assert_eq!(
+            run(By::Domain, Partial::Include),
+            [t(1, Some(3)), t(1, Some(4)), t(1, Some(5))]
+        );
+        // Targets stay in step with the rows a fragment filter keeps.
+        assert_eq!(run(By::Cds, Partial::Exclude), [t(0, None), t(1, Some(2))]);
+        assert_eq!(run(By::Domain, Partial::Only), [t(1, Some(5))]);
     }
 
     #[test]

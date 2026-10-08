@@ -1,51 +1,75 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { listTools, runEnumReport, toolSchemaCached, type EnumRow } from "../api";
+  import {
+    getEnumReportView,
+    getPrefs,
+    loadContigView,
+    runEnumReport,
+    setEnumReportView,
+    type EnumRow,
+    type EnumRowTarget,
+  } from "../api";
   import { cached } from "../cache";
   import ColumnBuilder from "../ColumnBuilder.svelte";
-  import { columnTypes, toColumns, toRows, type ColumnRow, type ColumnType } from "../columns";
+  import { toColumns, toRows, type ColumnRow, type ColumnType } from "../columns";
+  import { defaultColumns, loadEnumColumnTypes, sessionViews, type Column } from "../enumColumns";
   import { ws } from "../state.svelte";
-  import type { JsonSchema, ToolField } from "../types";
+  import { ENUM_BYS, fittingBys, itemKey, targetItem, toggleItem, type EnumBy, type SelItem } from "../selection";
+  import type { ContigFileView, EnumReportView, Prefs } from "../types";
 
-  let { path }: { path: string } = $props();
-
-  type Column = Record<string, unknown>;
-  function defaultColumns(b: string): Column[] {
-    const names =
-      b === "contig" ? ["length", "cds_count", "domains"]
-      : b === "domain" ? ["start", "end", "strand", "score", "identity"]
-      : ["domains", "architecture", "length"];
-    return names.map((type) => ({ type }));
-  }
+  let { path, active = true }: { path: string; active?: boolean } = $props();
   // Only for the "loading" hint: the backend decides what needs a taxonomy.
   const TAXONOMY_TYPES = new Set(["taxid", "taxname", "taxid_lineage", "taxname_lineage", "rank_lineage"]);
 
-  let by = $state("cds");
+  let by = $state<EnumBy>("cds");
   /// The columns the grid shows. The builder edits `draft`, and Apply copies it
   /// here: every change reruns the whole report, so it isn't done per keystroke.
-  let applied = $state<Column[]>(defaultColumns("cds"));
+  let applied = $state<Column[]>(defaultColumns("cds", null));
   let draft = $state<ColumnRow[]>([]);
   let draftError = $state<string | null>(null);
   let colsOpen = $state(false);
 
-  // The column types come from the enum-report schema and its spec's
-  // `column_types` (`tools/enum-report.yml`), exactly as in the export dialog.
   let types = $state<ColumnType[]>([]);
   $effect(() => {
-    Promise.all([toolSchemaCached("enum-report"), cached("tools", listTools)])
-      .then(([schemaText, tools]) => {
-        const schema = JSON.parse(schemaText) as JsonSchema;
-        const field: ToolField | undefined = tools
-          .find((t) => t.id === "enum-report")
-          ?.fields.find((f) => f.role === "columns");
-        types = columnTypes(
-          field ?? ({ column_types: {} } as unknown as ToolField),
-          schema.properties?.columns,
-        );
+    loadEnumColumnTypes()
+      .then((t) => {
+        types = t;
         draft = toRows(untrack(() => applied), types);
       })
       .catch((e) => (error = String(e)));
   });
+
+  // ── remembered columns ─────────────────────────────────────────────────────
+  // Each file remembers the granularity last shown and, per granularity, the
+  // columns last applied (its workspace sidecar, `get/set_enum_report_view`).
+  // A granularity it has nothing for starts from the Preferences default, and
+  // failing that the built-in set. A file in no workspace has no sidecar, so it
+  // is remembered for this session only (`sessionViews`).
+  let saved: EnumReportView = { by: null, columns: {} };
+  let prefs: Prefs | null = null;
+  // Nothing runs until the file's remembered columns are in, so a file does not
+  // first compute (and cache) the default report it is about to replace.
+  let ready = $state(false);
+  $effect(() => {
+    const p = path;
+    ready = false;
+    Promise.all([getEnumReportView(p).catch(() => null), getPrefs().catch(() => null)]).then(([v, pr]) => {
+      if (p !== path) return;
+      saved = v ?? sessionViews.get(p) ?? { by: null, columns: {} };
+      prefs = pr;
+      by = ENUM_BYS.includes(saved.by as EnumBy) ? (saved.by as EnumBy) : "cds";
+      setColumns(columnsFor(by));
+      ready = true;
+    });
+  });
+  function columnsFor(b: EnumBy): Column[] {
+    return saved.columns[b] ?? defaultColumns(b, prefs);
+  }
+  function remember() {
+    saved = { by, columns: { ...saved.columns } };
+    sessionViews.set(path, saved);
+    setEnumReportView(path, saved).catch(() => {});
+  }
 
   // Registered taxonomy databases; the NCBI Taxonomy download first.
   const taxonomies = $derived(ws.databases.filter((d) => d.format === "taxonomy" && d.on_disk));
@@ -66,14 +90,20 @@
   }
   function apply() {
     try {
-      applied = toColumns(draft, types);
+      const cols = toColumns(draft, types);
+      applied = cols;
       draftError = null;
       colsOpen = false;
+      saved.columns[by] = cols;
+      remember();
     } catch (e) {
       draftError = e instanceof Error ? e.message : String(e);
     }
   }
   let rows = $state<EnumRow[]>([]);
+  // Each row's source record/feature, keyed by the row object itself so sorting
+  // and filtering keep the link (and no hidden column reaches the grid).
+  let targetOf = new Map<EnumRow, EnumRowTarget>();
   let error = $state<string | null>(null);
   let loading = $state(true);
   let sortCol = $state<string | null>(null);
@@ -81,7 +111,16 @@
   let filters = $state<Record<string, string>>({});
 
   function onByChange() {
-    setColumns(defaultColumns(by));
+    setColumns(columnsFor(by));
+    remember();
+  }
+  // The builder's Defaults: back to the Preferences default, and forget this
+  // file's own columns for the granularity so a later change of the default
+  // reaches it.
+  function resetColumns() {
+    delete saved.columns[by];
+    setColumns(defaultColumns(by, prefs));
+    remember();
   }
 
   // Virtualization: only rows in the scroll viewport are in the DOM; spacer rows
@@ -105,13 +144,8 @@
     });
   }
 
-  // Reset columns to the granularity defaults when the file changes.
   $effect(() => {
-    void path;
-    untrack(() => setColumns(defaultColumns(by)));
-  });
-
-  $effect(() => {
+    if (!ready) return;
     void path;
     void by;
     void applied;
@@ -123,7 +157,10 @@
     const cols = applied;
     const tax = runTax;
     cached(`enum:${by}:${JSON.stringify(cols)}:${tax ?? ""}:${path}`, () => runEnumReport(path, by, cols, tax))
-      .then((r) => (rows = r))
+      .then((r) => {
+        targetOf = new Map(r.rows.map((row, i) => [row, r.targets[i]]));
+        rows = r.rows;
+      })
       .catch((e) => (error = String(e)))
       .finally(() => (loading = false));
   });
@@ -202,7 +239,93 @@
       if (changed) colWidths = next;
     });
   });
-  const tableW = $derived(columns.reduce((sum, c) => sum + (colWidths[c] ?? 100), 0));
+  const CHECK_W = 26;
+  const tableW = $derived(columns.reduce((sum, c) => sum + (colWidths[c] ?? 100), CHECK_W));
+
+  // ── row checkboxes: the Contig View selection (`ws.viewSelection`) ──────────
+  // A row is checked when its contig/CDS/domain is selected, but only while every
+  // selected item is the kind of thing this granularity's rows are; a mixed
+  // selection checks nothing, and checking a row then starts a new selection.
+  // `from` records the granularity a selection made here was made at
+  // (`enum:<by>`); one made in Contig View is classified by its features' kinds,
+  // read from the Contig View data (`selection.ts`'s `fittingBys`).
+  const viewSel = $derived(ws.viewSelection[path]);
+  const selItems = $derived(viewSel?.items ?? []);
+  const selKeys = $derived(new Set(selItems.map(itemKey)));
+  let contigData = $state<ContigFileView | null>(null);
+  // The same cache entry Contig View loads into, so this is normally free.
+  function loadContigData(): Promise<ContigFileView> {
+    return cached(`contig:${path}`, () => loadContigView(path)).then((d) => (contigData = d));
+  }
+  $effect(() => {
+    if (viewSel?.from === "contig" && viewSel.items.length && !contigData) loadContigData().catch(() => {});
+  });
+  function fitsFor(items: SelItem[], from: string, d: ContigFileView | null): EnumBy[] {
+    if (from.startsWith("enum:")) return [from.slice(5) as EnumBy];
+    if (!d) return [];
+    const kinds = new Map<string, string>();
+    for (const c of d.contigs) for (const f of c.features) kinds.set(`${c.index}:${f.feat_index}`, f.kind);
+    return fittingBys(
+      items,
+      (ci, feat) => kinds.get(`${ci}:${feat}`),
+      (ci) => !!d.contigs[ci]?.is_protein,
+    );
+  }
+  const selFits = $derived(
+    selItems.length === 0 || !viewSel ? true : fitsFor(selItems, viewSel.from, contigData).includes(by),
+  );
+  function rowItem(row: EnumRow): SelItem | null {
+    const t = targetOf.get(row);
+    return t ? targetItem(t) : null;
+  }
+  function isChecked(row: EnumRow): boolean {
+    if (!selFits) return false;
+    const it = rowItem(row);
+    return !!it && selKeys.has(itemKey(it));
+  }
+  function toggleRow(row: EnumRow) {
+    const it = rowItem(row);
+    if (!it) return;
+    ws.setViewSelection(path, selFits ? toggleItem(selItems, it) : [it], `enum:${by}`);
+  }
+  // The header box checks or unchecks every row the filters leave.
+  const filteredItems = $derived(filtered.map(rowItem).filter((x): x is SelItem => x !== null));
+  const checkedCount = $derived(selFits ? rows.reduce((n, r) => n + (isChecked(r) ? 1 : 0), 0) : 0);
+  const allChecked = $derived(
+    selFits && filteredItems.length > 0 && filteredItems.every((it) => selKeys.has(itemKey(it))),
+  );
+  function toggleAll() {
+    if (allChecked) {
+      const drop = new Set(filteredItems.map(itemKey));
+      ws.setViewSelection(path, selItems.filter((it) => !drop.has(itemKey(it))), `enum:${by}`);
+    } else {
+      const base = selFits ? selItems : [];
+      const have = new Set(base.map(itemKey));
+      ws.setViewSelection(path, [...base, ...filteredItems.filter((it) => !have.has(itemKey(it)))], `enum:${by}`);
+    }
+  }
+
+  // When Contig View changed the selection while this tab was hidden, and every
+  // item in it is a contig, a CDS or a domain, switch to that granularity so the
+  // rows come up checked. A mixed selection leaves the granularity alone.
+  let seenRev = 0;
+  $effect(() => {
+    if (!active) return;
+    const cur = ws.viewSelection[path];
+    if (!cur || cur.rev === seenRev) return;
+    seenRev = cur.rev;
+    if (cur.from !== "contig" || !cur.items.length) return;
+    const items = cur.items;
+    loadContigData()
+      .then((d) => {
+        const fits = fitsFor(items, "contig", d);
+        if (fits.length && !fits.includes(untrack(() => by))) {
+          by = fits[0];
+          onByChange();
+        }
+      })
+      .catch(() => {});
+  });
 
   // Drag a header's right edge to resize that column. The click that ends the
   // drag lands on the header, so `resizing` stops it from also toggling the sort.
@@ -256,7 +379,7 @@
           {/if}
           {#if draftError}<div class="colerr">{draftError}</div>{/if}
           <div class="colactions">
-            <button onclick={() => setColumns(defaultColumns(by))}>Defaults</button>
+            <button onclick={resetColumns} title="The default for this granularity (Edit → Preferences)">Defaults</button>
             <span class="spacer"></span>
             <button onclick={() => { draft = toRows(applied, types); draftError = null; colsOpen = false; }}>Cancel</button>
             <button class="primary" onclick={apply} disabled={types.length === 0}>Apply</button>
@@ -274,7 +397,7 @@
     {/if}
     <span class="dim">
       {#if hasFilters}{total.toLocaleString()} of {rows.length.toLocaleString()}{:else}{rows.length.toLocaleString()}{/if}
-      row{total === 1 ? "" : "s"}
+      row{total === 1 ? "" : "s"}{#if checkedCount > 0}, {checkedCount.toLocaleString()} selected{/if}
     </span>
   </div>
 
@@ -290,12 +413,22 @@
     <div class="scroll" bind:this={scrollEl} onscroll={onScroll}>
       <table style="width: {tableW}px">
         <colgroup>
+          <col style="width: {CHECK_W}px" />
           {#each columns as c (c)}
             <col style="width: {colWidths[c] ?? 100}px" />
           {/each}
         </colgroup>
         <thead>
           <tr>
+            <th class="check-cell">
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onchange={toggleAll}
+                title={hasFilters ? "Select the rows the filters show" : "Select all rows"}
+                aria-label="Select all rows"
+              />
+            </th>
             {#each columns as c (c)}
               <th class:num={numericCols.has(c)} onclick={() => !resizing && toggleSort(c)} title={c}>
                 {c}{#if sortCol === c}<span class="arrow">{sortDir === 1 ? " ▲" : " ▼"}</span>{/if}
@@ -305,6 +438,7 @@
             {/each}
           </tr>
           <tr class="filterrow">
+            <th class="check-cell"></th>
             {#each columns as c (c)}
               <th>
                 <input
@@ -318,15 +452,24 @@
           </tr>
         </thead>
         <tbody>
-          {#if topPad > 0}<tr style="height: {topPad}px"><td colspan={columns.length}></td></tr>{/if}
+          {#if topPad > 0}<tr style="height: {topPad}px"><td colspan={columns.length + 1}></td></tr>{/if}
           {#each visibleRows as row, i (firstIdx + i)}
             <tr>
+              <td class="check-cell">
+                <input
+                  type="checkbox"
+                  checked={isChecked(row)}
+                  onchange={() => toggleRow(row)}
+                  title="Select in Contig View"
+                  aria-label="Select in Contig View"
+                />
+              </td>
               {#each columns as c (c)}
                 <td class:num={numericCols.has(c)} title={String(row[c] ?? "")}>{row[c] ?? ""}</td>
               {/each}
             </tr>
           {/each}
-          {#if bottomPad > 0}<tr style="height: {bottomPad}px"><td colspan={columns.length}></td></tr>{/if}
+          {#if bottomPad > 0}<tr style="height: {bottomPad}px"><td colspan={columns.length + 1}></td></tr>{/if}
         </tbody>
       </table>
     </div>
@@ -465,6 +608,17 @@
   }
   .arrow {
     color: var(--accent);
+  }
+  th.check-cell,
+  td.check-cell {
+    padding: 0;
+    text-align: center;
+    cursor: auto;
+  }
+  .check-cell input {
+    margin: 0;
+    vertical-align: middle;
+    cursor: pointer;
   }
   .msg {
     padding: 20px;

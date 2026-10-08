@@ -17,7 +17,9 @@ use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::partial::Partial;
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools::build_ssn_viewer::render_html;
-use domainator_core::tools::enum_report::{enum_report, needs_taxonomy, By, OutputFormat};
+use domainator_core::tools::enum_report::{
+    enum_report_with_targets, needs_taxonomy, By, OutputFormat,
+};
 use domainator_core::tools::matrix_report::{
     matrix_report, to_viewer_json, DEFAULT_MAX_MERGE, DEFAULT_MERGE_IMPACT_METRIC,
 };
@@ -121,8 +123,11 @@ pub async fn run_summary_stats(
     .map_err(|e| format!("summary failed: {e}"))?
 }
 
-/// Run `enum_report` on a sequence file and return a JSON array of typed row
-/// objects for the Enum Report tab's grid. `by` is `contig` | `cds` | `domain`
+/// Run `enum_report` on a sequence file and return `{rows, targets}` for the Enum
+/// Report tab's grid: `rows` is an array of typed row objects, and `targets[i]` is
+/// `[contig_index, feat_index | null]`, the record and feature row `i` describes
+/// (the indices `load_contig_view` reports), so a row can be tied to a Contig View
+/// selection. `by` is `contig` | `cds` | `domain`
 /// (default `cds`). `columns` are column objects, `{type, ...parameters}`, as the
 /// config's `ColumnSpec` reads them -- the same shape the export's column builder
 /// sends -- and a per-granularity default set when empty. `ncbi_taxonomy_path` is
@@ -205,7 +210,7 @@ fn run_enum_report_blocking(
     let recs: Vec<_> = records.into_iter().map(|r| (r, filename.clone())).collect();
 
     let mut buf: Vec<u8> = Vec::new();
-    enum_report(
+    let targets = enum_report_with_targets(
         recs,
         by,
         &analyses,
@@ -216,7 +221,11 @@ fn run_enum_report_blocking(
         OutputFormat::Json,
         &mut buf,
     )?;
-    ndjson_to_array(&buf)
+    let targets: Vec<Value> = targets
+        .iter()
+        .map(|t| serde_json::json!([t.contig, t.feature]))
+        .collect();
+    Ok(serde_json::json!({ "rows": ndjson_to_array(&buf)?, "targets": targets }))
 }
 
 /// Collect streaming NDJSON (one compact object per line) into a single JSON
@@ -866,35 +875,35 @@ fn notify_files_changed(app: &tauri::AppHandle, dir: &str) {
     let _ = app.emit("files-changed", dir.to_string());
 }
 
-/// Write the selected contigs (0-based `indices`, in order) from `source` into a new
-/// file `dir/name`. Output format follows `name`'s extension (FASTA vs GenBank).
+/// One item of a Contig View selection to extract: contig `contig` (0-based) whole,
+/// or its region [`start`, `end`) (0-based half-open) read on `strand` (`-1` gives
+/// the reverse complement, so a minus-strand feature comes out reading forward).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtractItem {
+    pub contig: usize,
+    pub start: Option<usize>,
+    pub end: Option<usize>,
+    pub strand: Option<i32>,
+}
+
+/// Write each selected item, in order, as its own record of a new file
+/// `dir/name`: a whole contig is copied as is, and a region is sliced the way
+/// `select-by-coord` slices it (overlapping features kept and truncated, the
+/// record named `<id>_<start>:<end>`). The format follows `name`'s extension
+/// (FASTA vs GenBank). When `translate` is set the records are then run through
+/// `extract_peptides`, so the output is a protein GenBank of the CDSs they hold.
 #[tauri::command]
-pub async fn extract_contigs(
+pub async fn extract_selection(
     app: tauri::AppHandle,
     dir: String,
     name: String,
     source: String,
-    indices: Vec<usize>,
+    items: Vec<ExtractItem>,
+    translate: bool,
 ) -> Result<String, String> {
     let dir_c = dir.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
-        let recs = load_sequence_any(&source)?;
-        let out: Vec<SeqRecord> = indices
-            .iter()
-            .filter_map(|&i| recs.get(i).cloned())
-            .collect();
-        if out.is_empty() {
-            return Err("no contigs selected".into());
-        }
-        let target = validated_target(&dir, &name)?;
-        let ts = target.to_string_lossy().into_owned();
-        if is_fasta_name(&name) {
-            domainator_core::io::fasta::write_fasta(&ts, &out)
-                .map_err(|e| format!("writing FASTA: {e}"))?;
-        } else {
-            write_genbank(&ts, &out).map_err(|e| format!("writing GenBank: {e}"))?;
-        }
-        Ok::<String, String>(ts)
+        extract_selection_blocking(&dir, &name, &source, &items, translate)
     })
     .await
     .map_err(|e| format!("extract failed: {e}"))??;
@@ -902,78 +911,70 @@ pub async fn extract_contigs(
     Ok(out)
 }
 
-/// Extract a coordinate region [start, end) (0-based half-open) from contig `index`
-/// of `source` into a new GenBank file `dir/name`, preserving the features that fall
-/// in the region (mirrors `select-by-coord`). When `translate` is set, the sliced
-/// region is then run through `extract_peptides` so the output is a protein GenBank
-/// of the CDSs in the region (the peptide equivalent of the nucleotide slice).
-// A Tauri command's parameter list is its IPC signature: the frontend calls these
-// by name, so grouping them into a struct would change the wire contract.
-#[allow(clippy::too_many_arguments)]
-#[tauri::command]
-pub async fn extract_region(
-    app: tauri::AppHandle,
-    dir: String,
-    name: String,
-    source: String,
-    index: usize,
-    start: usize,
-    end: usize,
+fn extract_selection_blocking(
+    dir: &str,
+    name: &str,
+    source: &str,
+    items: &[ExtractItem],
     translate: bool,
 ) -> Result<String, String> {
-    let dir_c = dir.clone();
-    let out = tauri::async_runtime::spawn_blocking(move || {
-        use domainator_core::tools::extract_peptides::{extract_peptides, ExtractPeptidesOptions};
-        use domainator_core::tools::select_by_coord::{
-            extract_coordinate_region, CoordinateSelection,
-        };
-        let recs = load_sequence_any(&source)?;
+    use domainator_core::tools::extract_peptides::{extract_peptides, ExtractPeptidesOptions};
+    use domainator_core::tools::select_by_coord::{extract_coordinate_region, CoordinateSelection};
+    if items.is_empty() {
+        return Err("nothing selected".into());
+    }
+    let recs = load_sequence_any(source)?;
+    let mut out: Vec<SeqRecord> = Vec::with_capacity(items.len());
+    for item in items {
         let contig = recs
-            .get(index)
-            .ok_or_else(|| format!("no contig at index {index}"))?;
-        if end <= start {
-            return Err("empty region".into());
-        }
-        let sel = CoordinateSelection {
-            contig: contig.id.clone(),
-            start: start as i64 + 1, // 1-based inclusive
-            end: end as i64,
-            strand: 1,
-            file: None,
-        };
-        let rec = extract_coordinate_region(contig, &sel)?;
-        let target = validated_target(&dir, &name)?;
-        let ts = target.to_string_lossy().into_owned();
-        if translate {
-            let opts = ExtractPeptidesOptions {
-                evalue: 100_000_000.0,
-                target_domains: None,
-                target_cdss: None,
-                search_hits: false,
-                strand: None,
-                unannotated: false,
-                invert: false,
-                databases: None,
-                keep_name: false,
-                name_field: None,
-                extract_all: true,
-                partial: Partial::Include,
-            };
-            let peps = extract_peptides(std::slice::from_ref(&rec), &opts);
-            if peps.is_empty() {
-                return Err("no CDS features in the selected region to translate".into());
+            .get(item.contig)
+            .ok_or_else(|| format!("no contig at index {}", item.contig))?;
+        match (item.start, item.end) {
+            (Some(start), Some(end)) => {
+                if end <= start {
+                    return Err("empty region".into());
+                }
+                let sel = CoordinateSelection {
+                    contig: contig.id.clone(),
+                    start: start as i64 + 1, // 1-based inclusive
+                    end: end as i64,
+                    strand: if item.strand == Some(-1) { -1 } else { 1 },
+                    file: None,
+                };
+                out.push(extract_coordinate_region(contig, &sel)?);
             }
-            write_genbank(&ts, &peps).map_err(|e| format!("writing GenBank: {e}"))?;
-        } else {
-            write_genbank(&ts, std::slice::from_ref(&rec))
-                .map_err(|e| format!("writing GenBank: {e}"))?;
+            _ => out.push(contig.clone()),
         }
-        Ok::<String, String>(ts)
-    })
-    .await
-    .map_err(|e| format!("extract failed: {e}"))??;
-    notify_files_changed(&app, &dir_c);
-    Ok(out)
+    }
+    let target = validated_target(dir, name)?;
+    let ts = target.to_string_lossy().into_owned();
+    if translate {
+        let opts = ExtractPeptidesOptions {
+            evalue: 100_000_000.0,
+            target_domains: None,
+            target_cdss: None,
+            search_hits: false,
+            strand: None,
+            unannotated: false,
+            invert: false,
+            databases: None,
+            keep_name: false,
+            name_field: None,
+            extract_all: true,
+            partial: Partial::Include,
+        };
+        let peps = extract_peptides(&out, &opts);
+        if peps.is_empty() {
+            return Err("no CDS features in the selection to translate".into());
+        }
+        write_genbank(&ts, &peps).map_err(|e| format!("writing GenBank: {e}"))?;
+    } else if is_fasta_name(name) {
+        domainator_core::io::fasta::write_fasta(&ts, &out)
+            .map_err(|e| format!("writing FASTA: {e}"))?;
+    } else {
+        write_genbank(&ts, &out).map_err(|e| format!("writing GenBank: {e}"))?;
+    }
+    Ok(ts)
 }
 
 /// Write the selected profiles (0-based `indices`, in order) from an `.hmm` `source`
@@ -1306,7 +1307,7 @@ mod tests {
             json!({"type": "taxname", "ranks": ["genus", "species"]}),
             json!({"type": "taxid_lineage"}),
         ];
-        let rows = run_enum_report_blocking(
+        let report = run_enum_report_blocking(
             gb.to_string_lossy().into_owned(),
             Some("contig".into()),
             columns.clone(),
@@ -1314,11 +1315,14 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            rows,
-            json!([{
-                "contig": "rec1", "length": 12, "taxname_genus": "Escherichia",
-                "taxname_species": "Escherichia coli", "taxid_lineage": "2; 561; 562"
-            }])
+            report,
+            json!({
+                "rows": [{
+                    "contig": "rec1", "length": 12, "taxname_genus": "Escherichia",
+                    "taxname_species": "Escherichia coli", "taxid_lineage": "2; 561; 562"
+                }],
+                "targets": [[0, null]]
+            })
         );
 
         // No taxonomy chosen: refused with what to do, before the file is read.
@@ -1327,15 +1331,85 @@ mod tests {
         assert!(err.contains("taxonomy database"), "{err}");
 
         // No columns: the per-granularity default set.
-        let rows = run_enum_report_blocking(
+        let report = run_enum_report_blocking(
             gb.to_string_lossy().into_owned(),
             Some("contig".into()),
             vec![],
             None,
         )
         .unwrap();
-        let keys: Vec<&String> = rows[0].as_object().unwrap().keys().collect();
+        let keys: Vec<&String> = report["rows"][0].as_object().unwrap().keys().collect();
         assert_eq!(keys, ["contig", "length", "cds_count", "domains"]);
+    }
+
+    /// A CDS row's target is the CDS's index among the record's features, the
+    /// same `feat_index` Contig View reports, so the row's "go to" button lands
+    /// on that feature.
+    #[test]
+    fn enum_report_targets_are_contig_view_feature_indices() {
+        let (gb, _) = crate::cmd_tools::tests::enum_report_fixture("enum-targets");
+        let path = gb.to_string_lossy().into_owned();
+        let report =
+            run_enum_report_blocking(path.clone(), Some("cds".into()), vec![], None).unwrap();
+        assert_eq!(report["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(report["targets"], json!([[0, 1]]));
+        let view = build_contig_file_view(&path, &read_genbank(&path).unwrap());
+        let feat = view.contigs[0]
+            .features
+            .iter()
+            .find(|f| f.feat_index == 1)
+            .unwrap();
+        assert_eq!(feat.kind, "CDS");
+    }
+
+    /// Each selected item becomes its own record, in order: a whole contig as is,
+    /// a region sliced and, on the minus strand, reverse-complemented.
+    #[test]
+    fn extract_selection_writes_one_record_per_item() {
+        let (gb, _) = crate::cmd_tools::tests::enum_report_fixture("extract-sel");
+        let dir = gb.parent().unwrap().to_string_lossy().into_owned();
+        let item = |start, end, strand| ExtractItem {
+            contig: 0,
+            start,
+            end,
+            strand,
+        };
+        let out = extract_selection_blocking(
+            &dir,
+            "sel.gb",
+            &gb.to_string_lossy(),
+            &[
+                item(None, None, None),
+                item(Some(3), Some(9), Some(-1)),
+                item(Some(0), Some(6), None),
+            ],
+            false,
+        )
+        .unwrap();
+        let recs = read_genbank(&out).unwrap();
+        let seqs: Vec<String> = recs
+            .iter()
+            .map(|r| String::from_utf8_lossy(&r.seq).to_lowercase())
+            .collect();
+        assert_eq!(seqs, ["atgaaacccggg", "gggttt", "atgaaa"]);
+        assert_eq!(recs[0].id, "rec1");
+
+        // The peptide path translates the CDSs the items hold.
+        let out = extract_selection_blocking(
+            &dir,
+            "sel_pep.gb",
+            &gb.to_string_lossy(),
+            &[item(None, None, None)],
+            true,
+        )
+        .unwrap();
+        let peps = read_genbank(&out).unwrap();
+        assert_eq!(peps.len(), 1);
+        assert!(peps[0].is_protein());
+
+        assert!(
+            extract_selection_blocking(&dir, "none.gb", &gb.to_string_lossy(), &[], false).is_err()
+        );
     }
 
     /// `enum_report`'s `OutputFormat::Json` writes NDJSON, so the grid must parse

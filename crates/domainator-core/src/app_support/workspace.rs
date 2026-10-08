@@ -178,6 +178,21 @@ pub struct FileMeta {
     /// Id of the job (`.domainator/jobs/<id>/job.json`) that produced this file.
     #[serde(default)]
     pub created_by_job: Option<String>,
+    /// The GUI's Enum Report tab as last left for this file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enum_report: Option<EnumReportView>,
+}
+
+/// What the Enum Report tab remembers for one file: the granularity last shown
+/// (`contig` | `cds` | `domain`) and, per granularity, the columns last applied.
+/// Columns are the column objects the config's `ColumnSpec` reads, kept as JSON
+/// so this module needs no knowledge of them.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct EnumReportView {
+    #[serde(default)]
+    pub by: Option<String>,
+    #[serde(default)]
+    pub columns: std::collections::BTreeMap<String, Vec<serde_json::Value>>,
 }
 
 impl FileMeta {
@@ -559,8 +574,17 @@ mod tests {
         let src = root.join("a").join("x.gb");
         fs::write(&src, b"LOCUS").unwrap();
         fs::write(crate::io::didx::index_path_for(&src), b"idx").unwrap();
+        let view = EnumReportView {
+            by: Some("domain".into()),
+            columns: [(
+                "domain".to_string(),
+                vec![serde_json::json!({"type": "score"})],
+            )]
+            .into(),
+        };
         FileMeta {
             description: "kept".into(),
+            enum_report: Some(view.clone()),
             ..Default::default()
         }
         .save(&root, &src)
@@ -579,6 +603,11 @@ mod tests {
         assert!(crate::io::didx::index_path_for(&dest).is_file());
         assert!(!crate::io::didx::index_path_for(&src).exists());
         assert_eq!(FileMeta::load(&root, &dest).description, "kept");
+        assert_eq!(
+            FileMeta::load(&root, &dest).enum_report,
+            Some(view),
+            "the Enum Report columns too"
+        );
         assert!(!FileMeta::sidecar_path(&root, &src).exists());
         let _ = fs::remove_dir_all(&root);
     }

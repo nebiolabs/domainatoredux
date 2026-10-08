@@ -386,6 +386,22 @@ export interface Prefs {
   check_updates_on_launch: boolean;
   last_update_check_ms: number | null;
   last_seen_release: string | null;
+  enum_report_columns: EnumReportColumns;
+}
+
+/// Mirrors `app_support::prefs::EnumReportColumns`: the Enum Report's default
+/// columns per granularity, `null` for the built-in set.
+export interface EnumReportColumns {
+  contig: Record<string, unknown>[] | null;
+  cds: Record<string, unknown>[] | null;
+  domain: Record<string, unknown>[] | null;
+}
+
+/// Mirrors `app_support::workspace::EnumReportView`: what the Enum Report tab
+/// remembers for one file.
+export interface EnumReportView {
+  by: string | null;
+  columns: Record<string, Record<string, unknown>[]>;
 }
 
 /// A partial settings update. Omitted fields are left alone.
@@ -395,6 +411,7 @@ export interface PrefsPatch {
   default_cpu?: number;
   max_concurrent_jobs?: number;
   check_updates_on_launch?: boolean;
+  enum_report_columns?: EnumReportColumns;
 }
 
 /// Mirrors `app_support::version_check::UpdateCheck`.

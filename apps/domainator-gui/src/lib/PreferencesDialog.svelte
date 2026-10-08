@@ -12,6 +12,10 @@
     revealInFileManager,
     setPrefs,
   } from "./api";
+  import ColumnBuilder from "./ColumnBuilder.svelte";
+  import { toColumns, toRows, type ColumnRow, type ColumnType } from "./columns";
+  import { defaultColumns, loadEnumColumnTypes } from "./enumColumns";
+  import { ENUM_BYS, type EnumBy } from "./selection";
   import { applyTheme } from "./theme";
   import { ws } from "./state.svelte";
   import { ui } from "./ui.svelte";
@@ -32,9 +36,50 @@
 
   const cores = typeof navigator !== "undefined" ? (navigator.hardwareConcurrency ?? 0) : 0;
 
+  // Enum Report default columns, edited one granularity at a time with the
+  // same builder the report uses. The draft is reloaded only on an explicit
+  // change (granularity, save, reset), so saving another field mid-edit does
+  // not throw the edit away.
+  let erBy = $state<EnumBy>("cds");
+  let erTypes = $state<ColumnType[]>([]);
+  let erDraft = $state<ColumnRow[]>([]);
+  let erError = $state<string | null>(null);
+  let erMsg = $state<string | null>(null);
+  function loadErDraft() {
+    if (!prefs || !erTypes.length) return;
+    erDraft = toRows(defaultColumns(erBy, prefs), erTypes);
+    erError = null;
+  }
+  async function saveEr(cols: Record<string, unknown>[] | null) {
+    if (!prefs) return;
+    if (!(await save({ enum_report_columns: { ...prefs.enum_report_columns, [erBy]: cols } }))) return;
+    loadErDraft();
+    erMsg = cols ? "Saved." : "Back to the built-in columns.";
+    setTimeout(() => (erMsg = null), 2500);
+  }
+  function saveErDraft() {
+    try {
+      void saveEr(toColumns(erDraft, erTypes));
+    } catch (e) {
+      erError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  $effect(() => {
+    loadEnumColumnTypes()
+      .then((t) => {
+        erTypes = t;
+        loadErDraft();
+      })
+      .catch((e) => (erError = String(e)));
+  });
+
   $effect(() => {
     getPrefs()
-      .then((p) => (prefs = p))
+      .then((p) => {
+        prefs = p;
+        loadErDraft();
+      })
       .catch((e) => (err = String(e)));
     appDiagnostics()
       .then((d) => (info = d))
@@ -54,12 +99,15 @@
   });
 
   /// Save one field. The patch shape means an unnamed field is never cleared.
-  async function save(patch: Partial<Prefs>) {
+  /// Returns whether it saved.
+  async function save(patch: Partial<Prefs>): Promise<boolean> {
     try {
       prefs = await setPrefs(patch);
       if (patch.theme) applyTheme(patch.theme);
+      return true;
     } catch (e) {
       err = String(e);
+      return false;
     }
   }
 
@@ -169,6 +217,31 @@
       <p class="hint">
         Each job runs in its own process and uses the thread count above, so two jobs at
         once already share the cores between them.
+      </p>
+
+      <div class="sec">Enum Report columns</div>
+      <div class="row">
+        <span class="lbl">Granularity</span>
+        <select bind:value={erBy} onchange={loadErDraft}>
+          {#each ENUM_BYS as b (b)}<option value={b}>{b}</option>{/each}
+        </select>
+        <span class="dim">{prefs.enum_report_columns[erBy] ? "custom default" : "built-in default"}</span>
+      </div>
+      {#if erTypes.length}
+        <ColumnBuilder types={erTypes} bind:rows={erDraft} />
+      {:else if !erError}
+        <p class="dim">Loading column types…</p>
+      {/if}
+      {#if erError}<div class="err">{erError}</div>{/if}
+      <div class="row">
+        <button onclick={saveErDraft} disabled={!erTypes.length}>Save as default</button>
+        <button onclick={() => saveEr(null)} disabled={!prefs.enum_report_columns[erBy]}>Use built-in</button>
+        {#if erMsg}<span class="dim">{erMsg}</span>{/if}
+      </div>
+      <p class="hint">
+        The columns an Enum Report starts with at this granularity. Each file remembers the
+        columns you last applied to it, and those win; the report's <b>Defaults</b> button
+        goes back to this setting.
       </p>
 
       <div class="sec">Updates</div>

@@ -3,9 +3,9 @@
 use std::path::Path;
 
 use domainator_core::app_support::workspace::{
-    accepted_types_hint, classify_file, is_in_dot_dir, is_reserved_name, list_files,
-    move_data_file, open_or_init_manifest, scan_folder_tree, FileEntry, FileMeta, FolderNode,
-    Settings, DOT_DIR,
+    accepted_types_hint, classify_file, find_workspace_root, is_in_dot_dir, is_reserved_name,
+    list_files, move_data_file, open_or_init_manifest, scan_folder_tree, EnumReportView, FileEntry,
+    FileMeta, FolderNode, Settings, DOT_DIR,
 };
 use serde::Serialize;
 
@@ -152,6 +152,30 @@ pub async fn list_folder(workspace_root: String, dir: String) -> Result<Vec<File
     .map_err(|e| format!("listing folder failed: {e}"))?
 }
 
+/// The Enum Report tab's remembered granularity and columns for `path`, from the
+/// file's sidecar in the workspace that holds it (`None` when nothing was saved,
+/// or the file is in no workspace).
+#[tauri::command(async)]
+pub fn get_enum_report_view(path: String) -> Option<EnumReportView> {
+    let p = Path::new(&path);
+    FileMeta::load(&find_workspace_root(p)?, p).enum_report
+}
+
+/// Remember the Enum Report tab's granularity and columns for `path` in its
+/// sidecar, which follows the file through renames and moves. A file in no
+/// workspace has no sidecar, so nothing is saved for it.
+#[tauri::command(async)]
+pub fn set_enum_report_view(path: String, view: EnumReportView) -> Result<(), String> {
+    let p = Path::new(&path);
+    let Some(root) = find_workspace_root(p) else {
+        return Ok(());
+    };
+    let mut meta = FileMeta::load(&root, p);
+    meta.enum_report = Some(view);
+    meta.save(&root, p)
+        .map_err(|e| format!("saving the report columns: {e}"))
+}
+
 /// Re-scan the folder tree (after creating/removing directories).
 #[tauri::command]
 pub async fn rescan_tree(root: String) -> Result<FolderNode, String> {
@@ -286,4 +310,38 @@ pub async fn move_files(
     })
     .await
     .map_err(|e| format!("move failed: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The columns are kept per file in the workspace that holds it; a file in no
+    /// workspace is simply not remembered, never an error.
+    #[test]
+    fn enum_report_view_round_trips_through_the_sidecar() {
+        let root =
+            std::env::temp_dir().join(format!("domainator-gui-{}-enum-view", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(DOT_DIR)).unwrap();
+        let file = root.join("a.gb").to_string_lossy().into_owned();
+        assert_eq!(get_enum_report_view(file.clone()), None);
+
+        let view = EnumReportView {
+            by: Some("contig".into()),
+            columns: [(
+                "contig".to_string(),
+                vec![serde_json::json!({"type": "length"})],
+            )]
+            .into(),
+        };
+        set_enum_report_view(file.clone(), view.clone()).unwrap();
+        assert_eq!(get_enum_report_view(file), Some(view.clone()));
+
+        let outside = std::env::temp_dir().join("no-workspace-here").join("b.gb");
+        let outside = outside.to_string_lossy().into_owned();
+        set_enum_report_view(outside.clone(), view).unwrap();
+        assert_eq!(get_enum_report_view(outside), None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

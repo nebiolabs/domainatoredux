@@ -22,6 +22,7 @@ import {
   unregisterDatabase,
 } from "./api";
 import { clearCache, invalidatePath } from "./cache";
+import type { SelItem } from "./selection";
 import type { DatabaseRow, FileEntry, FileType, FolderNode, JobInfo, OpenTab } from "./types";
 
 // Classify a path to a viewer file type by extension (for opening job outputs).
@@ -72,6 +73,12 @@ class WorkspaceStore {
   // Same channel for HMM files: the profile index the Logo view should show,
   // consumed and cleared by HmmLogo. Set by the profile table's "logo" button.
   focusHmmProfile = $state<Record<string, number>>({});
+  // The Contig View selection per sequence file (`selection.ts`), shared with
+  // the file's Enum Report tab. `from` names the view that last set it and `rev`
+  // counts changes, so a view shown later can tell the selection moved while it
+  // was hidden. Raw state, replaced whole by `setViewSelection`: a selection can hold
+  // every row of a large report, and deep proxies would make that slow.
+  viewSelection = $state.raw<Record<string, { items: SelItem[]; from: string; rev: number }>>({});
   // Selected sub-view per open file (e.g. "contig" | "enum" | "summary"). Lives
   // here rather than in ViewerDock so a viewer can switch the dock to a sibling
   // tab — HmmReport → Logo, for instance.
@@ -97,6 +104,21 @@ class WorkspaceStore {
   // tree's context menu), consumed by App -- which owns that inline form. Same
   // consume-and-clear channel as `requestedTool`.
   requestNewFolder = $state<string | null>(null);
+
+  /// Replace the selection of the file at `path`; `from` names the view.
+  setViewSelection(path: string, items: SelItem[], from: string): void {
+    const rev = (this.viewSelection[path]?.rev ?? 0) + 1;
+    this.viewSelection = { ...this.viewSelection, [path]: { items, from, rev } };
+  }
+
+  /// Drop the selections of `paths`: their indices mean nothing once a file is
+  /// rewritten or its views are gone.
+  clearViewSelections(paths: string[]): void {
+    if (!paths.some((p) => p in this.viewSelection)) return;
+    const next = { ...this.viewSelection };
+    for (const p of paths) delete next[p];
+    this.viewSelection = next;
+  }
 
   /// Switch the viewer dock to sibling view `viewId` for the file at `path`.
   showSubView(path: string, viewId: string): void {
@@ -251,6 +273,7 @@ class WorkspaceStore {
         // Remounting an editor with an unsaved buffer would silently drop it.
         if (!this.dirty[output]) this.fileRev[output] = (this.fileRev[output] ?? 0) + 1;
       }
+      this.clearViewSelections(job.outputs);
     }
     const i = this.jobs.findIndex((j) => j.job_id === job.job_id);
     if (i >= 0) {
@@ -377,6 +400,7 @@ class WorkspaceStore {
     this.guardDirty([id], () => {
       this.rememberClosed(this.tabs[idx]);
       delete this.subActive[id];
+      this.clearViewSelections([id]);
       this.tabs = this.tabs.filter((t) => t.id !== id);
       if (this.activeTabId === id) {
         const next = this.tabs[idx] ?? this.tabs[idx - 1] ?? null;
@@ -391,6 +415,7 @@ class WorkspaceStore {
     this.guardDirty(closing, () => {
       for (const t of this.tabs) if (t.id !== id) this.rememberClosed(t);
       for (const c of closing) delete this.subActive[c];
+      this.clearViewSelections(closing);
       this.tabs = this.tabs.filter((t) => t.id === id);
       this.activeTabId = this.tabs.length ? id : null;
     });
@@ -400,6 +425,7 @@ class WorkspaceStore {
     this.guardDirty(this.tabs.map((t) => t.id), () => {
       for (const t of this.tabs) this.rememberClosed(t);
       this.subActive = {};
+      this.viewSelection = {};
       this.tabs = [];
       this.activeTabId = null;
     });

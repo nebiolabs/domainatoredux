@@ -241,7 +241,12 @@ pub struct DomainatorCds {
     pub num: String,
     /// The CDS feature (or a synthesized pseudo-CDS for a nucleic-acid annotation).
     pub feature: SeqFeature,
+    /// Index of `feature` in the contig's `features`; `None` for a synthesized
+    /// nucleic-acid pseudo-CDS.
+    pub feature_index: Option<usize>,
     pub domain_features: Vec<SeqFeature>,
+    /// Index of each of `domain_features` in the contig's `features`.
+    pub domain_feature_indices: Vec<usize>,
     pub domain_names: HashSet<String>,
     pub domain_search_feature: Option<SeqFeature>,
     pub is_nucleic_acid: bool,
@@ -261,7 +266,7 @@ impl DomainatorCds {
         let mut name_to_idx: HashMap<String, usize> = HashMap::new();
         let mut nuc_idx = 0usize;
 
-        for feature in &contig.features {
+        for (fi, feature) in contig.features.iter().enumerate() {
             if feature.kind == "CDS" {
                 if skip_pseudo && (feature.has("pseudo") || feature.has("pseudogene")) {
                     continue;
@@ -274,7 +279,9 @@ impl DomainatorCds {
                         name,
                         num: cds_num,
                         feature: feature.clone(),
+                        feature_index: Some(fi),
                         domain_features: Vec::new(),
+                        domain_feature_indices: Vec::new(),
                         domain_names: HashSet::new(),
                         domain_search_feature: None,
                         is_nucleic_acid: false,
@@ -283,7 +290,7 @@ impl DomainatorCds {
             }
         }
 
-        for feature in &contig.features {
+        for (fi, feature) in contig.features.iter().enumerate() {
             if feature.kind != DOMAIN_FEATURE_NAME && feature.kind != DOMAIN_SEARCH_BEST_HIT_NAME {
                 continue;
             }
@@ -304,7 +311,9 @@ impl DomainatorCds {
                         name,
                         num: cds_num.clone(),
                         feature: pseudo,
+                        feature_index: None,
                         domain_features: Vec::new(),
+                        domain_feature_indices: Vec::new(),
                         domain_names: HashSet::new(),
                         domain_search_feature: None,
                         is_nucleic_acid: true,
@@ -323,6 +332,7 @@ impl DomainatorCds {
             let idx = name_to_idx[&cds_num];
             if feature.kind == DOMAIN_FEATURE_NAME {
                 cdss[idx].domain_features.push(feature.clone());
+                cdss[idx].domain_feature_indices.push(fi);
                 if let Some(n) = feature.get_first("name") {
                     cdss[idx].domain_names.insert(n.to_string());
                 }

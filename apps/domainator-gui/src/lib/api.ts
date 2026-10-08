@@ -17,6 +17,7 @@ import type {
   SummaryStats,
   ToolMeta,
   WorkspaceInfo,
+  EnumReportView,
   Prefs,
   PrefsPatch,
   UpdateCheck,
@@ -93,14 +94,8 @@ export const readTextFile = (path: string): Promise<TextFile> =>
 export const writeTextFile = (path: string, contents: string, eol?: string): Promise<void> =>
   invoke("write_text_file", { path, contents, eol });
 
-/// Extract selected contigs / HMM profiles (0-based indices) into a new file
+/// Extract selected HMM profiles (0-based indices) into a new file
 /// `dir/name`; returns the new path.
-export const extractContigs = (
-  dir: string,
-  name: string,
-  source: string,
-  indices: number[],
-): Promise<string> => invoke("extract_contigs", { dir, name, source, indices });
 export const extractHmms = (
   dir: string,
   name: string,
@@ -108,19 +103,23 @@ export const extractHmms = (
   indices: number[],
 ): Promise<string> => invoke("extract_hmms", { dir, name, source, indices });
 
-/// Extract a coordinate region [start, end) of contig `index` to a new GenBank
-/// file (preserves the features in the region, like select-by-coord). With
-/// `translate`, the region's CDSs are converted to a protein GenBank via
-/// extract_peptides.
-export const extractRegion = (
+/// One item for `extractSelection`: contig `contig` whole, or its region
+/// [start, end) read on `strand` (-1 = reverse complement).
+export interface ExtractItem {
+  contig: number;
+  start?: number;
+  end?: number;
+  strand?: number;
+}
+/// Write each item, in order, as its own record of a new file `dir/name` (FASTA or
+/// GenBank by extension); `translate` makes it a protein GenBank of their CDSs.
+export const extractSelection = (
   dir: string,
   name: string,
   source: string,
-  index: number,
-  start: number,
-  end: number,
+  items: ExtractItem[],
   translate: boolean,
-): Promise<string> => invoke("extract_region", { dir, name, source, index, start, end, translate });
+): Promise<string> => invoke("extract_selection", { dir, name, source, items, translate });
 
 /// Create a new text file `dir/name` with `contents`; returns the new path.
 export const createTextFile = (
@@ -168,12 +167,20 @@ export type EnumRow = Record<string, string | number | null>;
 
 /// `columns` are column objects, `{type, ...parameters}` (`columns.ts`'s
 /// `toColumns`); `ncbiTaxonomyPath` is needed only by the taxonomy columns.
+/// Row `i`'s source: `[contig index, feat_index | null]` (indices as in
+/// `ContigView`/`FeatureView`), `null` for a contig row or a protein's CDS row.
+export type EnumRowTarget = [number, number | null];
+export interface EnumReportResult {
+  rows: EnumRow[];
+  targets: EnumRowTarget[];
+}
+
 export const runEnumReport = (
   path: string,
   by: string,
   columns: Record<string, unknown>[],
   ncbiTaxonomyPath: string | null,
-): Promise<EnumRow[]> => invoke("run_enum_report", { path, by, columns, ncbiTaxonomyPath });
+): Promise<EnumReportResult> => invoke("run_enum_report", { path, by, columns, ncbiTaxonomyPath });
 
 export const runSummaryStats = (path: string, ncbiTaxonomyPath: string | null): Promise<SummaryStats> =>
   invoke("run_summary_stats", { path, ncbiTaxonomyPath });
@@ -339,6 +346,13 @@ export const forgetRecentWorkspace = (root: string): Promise<string[]> =>
 /// The full preferences. (There was no getter at all before the Preferences
 /// dialog existed.)
 export const getPrefs = (): Promise<Prefs> => invoke("get_prefs");
+
+/// The Enum Report tab's remembered granularity and columns for a file (`null`
+/// when none, or the file is in no workspace), and saving them.
+export const getEnumReportView = (path: string): Promise<EnumReportView | null> =>
+  invoke("get_enum_report_view", { path });
+export const setEnumReportView = (path: string, view: EnumReportView): Promise<void> =>
+  invoke("set_enum_report_view", { path, view });
 
 /// Apply a partial settings update; returns the saved preferences.
 export const setPrefs = (patch: PrefsPatch): Promise<Prefs> => invoke("set_prefs", { patch });

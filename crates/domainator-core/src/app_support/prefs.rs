@@ -77,6 +77,22 @@ pub struct Prefs {
     /// not announced twice.
     #[serde(default)]
     pub last_seen_release: Option<String>,
+    /// The columns the Enum Report tab starts with, per granularity, for a file
+    /// that has none of its own remembered.
+    #[serde(default)]
+    pub enum_report_columns: EnumReportColumns,
+}
+
+/// Default Enum Report columns per granularity: column objects as the config's
+/// `ColumnSpec` reads them. `None` means the GUI's built-in set.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct EnumReportColumns {
+    #[serde(default)]
+    pub contig: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub cds: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub domain: Option<Vec<serde_json::Value>>,
 }
 
 fn default_schema_version() -> u32 {
@@ -103,6 +119,7 @@ impl Default for Prefs {
             check_updates_on_launch: false,
             last_update_check_ms: None,
             last_seen_release: None,
+            enum_report_columns: EnumReportColumns::default(),
         }
     }
 }
@@ -160,6 +177,8 @@ pub struct PrefsPatch {
     pub default_cpu: Option<usize>,
     pub max_concurrent_jobs: Option<usize>,
     pub check_updates_on_launch: Option<bool>,
+    /// Replaces all three granularities' defaults at once.
+    pub enum_report_columns: Option<EnumReportColumns>,
 }
 
 /// Apply a patch in place.
@@ -178,6 +197,9 @@ pub fn apply_patch(p: &mut Prefs, patch: &PrefsPatch) {
     }
     if let Some(v) = patch.check_updates_on_launch {
         p.check_updates_on_launch = v;
+    }
+    if let Some(v) = &patch.enum_report_columns {
+        p.enum_report_columns = v.clone();
     }
 }
 
@@ -254,6 +276,7 @@ mod tests {
         assert_eq!(p.max_concurrent_jobs, DEFAULT_MAX_CONCURRENT_JOBS);
         assert!(!p.check_updates_on_launch);
         assert_eq!(p.last_update_check_ms, None);
+        assert_eq!(p.enum_report_columns, EnumReportColumns::default());
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -292,6 +315,33 @@ mod tests {
         );
     }
 
+    /// The Enum Report defaults are replaced together, and a patch that does not
+    /// name them leaves them alone.
+    #[test]
+    fn a_patch_replaces_the_enum_report_defaults_whole() {
+        let mut p = Prefs::default();
+        let cols = EnumReportColumns {
+            cds: Some(vec![serde_json::json!({"type": "length"})]),
+            ..Default::default()
+        };
+        apply_patch(
+            &mut p,
+            &PrefsPatch {
+                enum_report_columns: Some(cols.clone()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(p.enum_report_columns, cols);
+        apply_patch(
+            &mut p,
+            &PrefsPatch {
+                default_cpu: Some(4),
+                ..Default::default()
+            },
+        );
+        assert_eq!(p.enum_report_columns, cols);
+    }
+
     /// The patch has no field for it, but it is worth pinning: losing the recent
     /// list to a settings change would be a bad surprise.
     #[test]
@@ -307,6 +357,7 @@ mod tests {
                 default_cpu: Some(4),
                 max_concurrent_jobs: Some(3),
                 check_updates_on_launch: Some(true),
+                enum_report_columns: Some(EnumReportColumns::default()),
             },
         );
         assert_eq!(p.recent_workspaces.len(), 2);
