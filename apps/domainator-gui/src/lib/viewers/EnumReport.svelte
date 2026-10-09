@@ -14,7 +14,7 @@
   import { toColumns, toRows, type ColumnRow, type ColumnType } from "../columns";
   import { defaultColumns, loadEnumColumnTypes, sessionViews, type Column } from "../enumColumns";
   import { ws } from "../state.svelte";
-  import { ENUM_BYS, fittingBys, itemKey, targetItem, toggleItem, type EnumBy, type SelItem } from "../selection";
+  import { ENUM_BYS, fittingBys, itemKey, targetItem, type EnumBy, type SelItem } from "../selection";
   import type { ContigFileView, EnumReportView, Prefs } from "../types";
 
   let { path, active = true }: { path: string; active?: boolean } = $props();
@@ -100,7 +100,9 @@
       draftError = e instanceof Error ? e.message : String(e);
     }
   }
-  let rows = $state<EnumRow[]>([]);
+  // Raw, not deep state: rows are replaced whole, and a deep `$state` would hand
+  // out proxies of the row objects, which miss every `targetOf` lookup.
+  let rows = $state.raw<EnumRow[]>([]);
   // Each row's source record/feature, keyed by the row object itself so sorting
   // and filtering keep the link (and no hidden column reaches the grid).
   let targetOf = new Map<EnumRow, EnumRowTarget>();
@@ -154,6 +156,7 @@
     sortCol = null;
     filters = {};
     scrollTop = 0;
+    anchorRow = null;
     const cols = applied;
     const tax = runTax;
     cached(`enum:${by}:${JSON.stringify(cols)}:${tax ?? ""}:${path}`, () => runEnumReport(path, by, cols, tax))
@@ -283,10 +286,39 @@
     const it = rowItem(row);
     return !!it && selKeys.has(itemKey(it));
   }
-  function toggleRow(row: EnumRow) {
+  /// Check (`on`) or uncheck `its`. Checking while the selection does not fit
+  /// this granularity starts a new selection.
+  function setChecked(its: SelItem[], on: boolean) {
+    const base = selFits ? selItems : [];
+    if (on) {
+      const have = new Set(base.map(itemKey));
+      ws.setViewSelection(path, [...base, ...its.filter((it) => !have.has(itemKey(it)))], `enum:${by}`);
+    } else {
+      const drop = new Set(its.map(itemKey));
+      ws.setViewSelection(path, base.filter((it) => !drop.has(itemKey(it))), `enum:${by}`);
+    }
+  }
+  // The row last clicked, for Shift+click: that sets every row from it to the
+  // clicked one (in the current sort and filter) to the clicked row's new state.
+  let anchorRow: EnumRow | null = null;
+  // A click, not a change, handler: only the click carries `shiftKey`.
+  function onRowCheck(e: MouseEvent, row: EnumRow) {
+    const input = e.currentTarget as HTMLInputElement;
     const it = rowItem(row);
     if (!it) return;
-    ws.setViewSelection(path, selFits ? toggleItem(selItems, it) : [it], `enum:${by}`);
+    const on = !isChecked(row);
+    const a = e.shiftKey && anchorRow ? sorted.indexOf(anchorRow) : -1;
+    const b = a >= 0 ? sorted.indexOf(row) : -1;
+    if (a >= 0 && b >= 0) {
+      const span = sorted.slice(Math.min(a, b), Math.max(a, b) + 1);
+      setChecked(span.map(rowItem).filter((x): x is SelItem => x !== null), on);
+    } else {
+      setChecked([it], on);
+    }
+    anchorRow = row;
+    // The box toggled itself before this ran; keep it in step with the state
+    // even where Svelte sees no change to write.
+    input.checked = on;
   }
   // The header box checks or unchecks every row the filters leave.
   const filteredItems = $derived(filtered.map(rowItem).filter((x): x is SelItem => x !== null));
@@ -295,14 +327,7 @@
     selFits && filteredItems.length > 0 && filteredItems.every((it) => selKeys.has(itemKey(it))),
   );
   function toggleAll() {
-    if (allChecked) {
-      const drop = new Set(filteredItems.map(itemKey));
-      ws.setViewSelection(path, selItems.filter((it) => !drop.has(itemKey(it))), `enum:${by}`);
-    } else {
-      const base = selFits ? selItems : [];
-      const have = new Set(base.map(itemKey));
-      ws.setViewSelection(path, [...base, ...filteredItems.filter((it) => !have.has(itemKey(it)))], `enum:${by}`);
-    }
+    setChecked(filteredItems, !allChecked);
   }
 
   // When Contig View changed the selection while this tab was hidden, and every
@@ -459,8 +484,8 @@
                 <input
                   type="checkbox"
                   checked={isChecked(row)}
-                  onchange={() => toggleRow(row)}
-                  title="Select in Contig View"
+                  onclick={(e) => onRowCheck(e, row)}
+                  title="Select in Contig View (Shift+click selects a run of rows)"
                   aria-label="Select in Contig View"
                 />
               </td>
@@ -614,6 +639,7 @@
     padding: 0;
     text-align: center;
     cursor: auto;
+    user-select: none; /* Shift+click would otherwise extend a text selection */
   }
   .check-cell input {
     margin: 0;

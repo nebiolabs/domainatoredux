@@ -2,6 +2,10 @@ import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
 
+/// The `<input>` types that edit text (`HTMLInputElement.type` is lowercased and
+/// defaults to `text`).
+const TEXT_INPUT_TYPES = new Set(["text", "search", "url", "tel", "email", "password", "number"]);
+
 /// Whether the raw webview context menu should be allowed through.
 ///
 /// The browser menu is useless in a desktop app *except* for text editing, where
@@ -12,9 +16,11 @@ function allowsNativeMenu(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
 
   // Tool parameter fields, filename prompts, the editable TSV grid, the text
-  // editor: these need Cut/Copy/Paste/Undo.
-  if (target.closest("input, textarea, [contenteditable=''], [contenteditable='true']")) {
-    return true;
+  // editor: these need Cut/Copy/Paste/Undo. Only inputs that hold text, though:
+  // a checkbox, radio, slider or button has nothing to paste into.
+  const field = target.closest("input, textarea, [contenteditable=''], [contenteditable='true']");
+  if (field) {
+    return !(field instanceof HTMLInputElement) || TEXT_INPUT_TYPES.has(field.type);
   }
 
   // An explicit opt-out for anything added later.

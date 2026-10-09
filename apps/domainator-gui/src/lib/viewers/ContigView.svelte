@@ -22,6 +22,9 @@
   // and, for GenBank, the color/remove edit controls at the bottom of it. Apart
   // from the selection, which can hold many features at once.
   let inspected = $state<{ contigIndex: number; feat: FeatureView } | null>(null);
+  /// The dashed outline marking the feature the details panel shows (`.ep-mark`
+  /// repeats it in the panel header).
+  const INSPECT_COLOR = "#e5484d";
   let addOpen = $state(false);
   let addForm = $state({ contigIndex: 0, kind: "misc_feature", start: 0, end: 100, strand: 1, note: "" });
   let editMsg = $state<string | null>(null);
@@ -1194,10 +1197,12 @@
             ctx.stroke();
           }
         }
-        const isSel =
-          scene.interactive &&
-          (selFeatKeys.has(`${fr.ci}:${f.feat_index}`) ||
-            (inspected?.contigIndex === fr.ci && inspected?.feat.feat_index === f.feat_index));
+        // Selected (solid accent) and shown in the details panel (dashed red) are
+        // separate states. The dashes go over whatever outline is underneath, so
+        // a feature that is both reads as alternating red and accent.
+        const isSel = scene.interactive && selFeatKeys.has(`${fr.ci}:${f.feat_index}`);
+        const isInspected =
+          scene.interactive && inspected?.contigIndex === fr.ci && inspected?.feat.feat_index === f.feat_index;
         for (let i = 0; i < sp.length; i++) {
           const x = sx(sp[i].start);
           const w = Math.max(1.5, (sp[i].end - sp[i].start) * pxPerBp);
@@ -1208,6 +1213,13 @@
           ctx.lineWidth = isSel ? 2 : 0.5;
           ctx.strokeStyle = isSel ? cAccent : "rgba(0,0,0,0.35)";
           ctx.stroke();
+          if (isInspected) {
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = INSPECT_COLOR;
+            ctx.setLineDash([4, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
         }
         const fw = (f.end - f.start) * pxPerBp;
         // inside label: clipped to the feature box, only when it has room
@@ -2078,6 +2090,7 @@
   {#if inspected}
     <div class="editpanel">
       <div class="ep-head">
+        <span class="ep-mark" title="Outlined like this on the map"></span>
         <b>{inspected.feat.kind}</b> · {inspected.feat.label}
         <button class="ep-x" onclick={() => (inspected = null)} aria-label="Close">×</button>
       </div>
@@ -2389,6 +2402,13 @@
     gap: 6px;
     margin-bottom: 6px;
     font-size: 12.5px;
+  }
+  .ep-mark {
+    flex: none;
+    width: 14px;
+    height: 10px;
+    border: 2px dashed #e5484d; /* INSPECT_COLOR */
+    border-radius: 2px;
   }
   .ep-x {
     margin-left: auto;
