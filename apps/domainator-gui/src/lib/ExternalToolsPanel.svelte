@@ -112,8 +112,11 @@
     border: none;
     background: none;
     color: var(--text-dim);
-    padding: 0 2px;
-    font-size: 10px;
+    padding: 0;
+    width: 18px;
+    font-size: 14px;
+    line-height: 1;
+    text-align: center;
   }
   .twisty:hover {
     background: none;

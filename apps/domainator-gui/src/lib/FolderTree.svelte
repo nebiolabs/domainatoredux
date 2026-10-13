@@ -128,7 +128,7 @@
     border: none;
     background: none;
     color: var(--text-dim);
-    font-size: 10px;
+    font-size: 13px;
     line-height: 1;
   }
   .twisty:hover {
