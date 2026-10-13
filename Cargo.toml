@@ -10,7 +10,7 @@ license = "MIT"
 rust-version = "1.89"
 
 [workspace.dependencies]
-hmmer-pure-rs = "0.7"
+hmmer-pure-rs = "0.8"
 hdf5-pure = "0.20"
 rayon = "1"
 bgzf = "0.3"
@@ -55,21 +55,21 @@ codegen-units = 1
 [patch.crates-io]
 hdf5-pure = { path = "vendor/hdf5-pure" }
 
-# TEMPORARY: hmmer-pure-rs pinned to a commit on the official repo, pending a
-# crates.io release.
+# TEMPORARY: hmmer-pure-rs pinned to a commit on our fork, pending an upstream
+# merge and a crates.io release.
 #
-# Published 0.7.4 cannot build a nucleotide model from a single sequence -- its
-# `build_single_seq_hmm` hardcodes BLOSUM62 and panics on a 4-letter alphabet --
-# so `search/references.rs` built each nhmmer FASTA query from a one-row MSA
-# instead. That detour is not what pyhmmer does (C's `p7_SingleBuilder`: a DNA1
-# score-matrix conversion plus the nucleotide window length nhmmer's E-values
-# are computed against), and it is why eight nucleotide parity invocations
-# diverged. The fix (formerly seanrjohnson-neb/hmmer-pure-rs#1) merged upstream
-# as henriksson-lab/hmmer-pure-rs#2 on 2026-09-19; with it our nucleotide hits
-# match pyhmmer's coordinates, scores and E-values exactly.
+# The official repo's code does no SIMD on aarch64: the MSV/Viterbi/Forward
+# filters and domain definition fall back to generic DP, and nhmmer's long-target
+# filter does not exist there, so on Apple Silicon hmmsearch was ~25x slower,
+# about one domain in eight landed a few residues away from the x86/pyhmmer
+# envelope, and nucleotide searches found nothing. The fork commit runs the same
+# SSE kernels on aarch64 through a NEON implementation of the SSE2 intrinsics
+# (`hmmer_pure_rs::simd::sse`); ARM output is byte-identical to x86 under QEMU.
+# Branch seanrjohnson-neb/hmmer-pure-rs:aarch64-neon-pipeline, based on the
+# official `main` (0.8.0, which also carries henriksson-lab/hmmer-pure-rs#2, the
+# single-sequence nucleotide builder this pin previously existed for).
 #
-# Pinned to the merge commit, not `main`, so an unrelated later commit on the
-# official repo cannot silently change what CI builds. Move to a plain version
-# requirement once the fix ships in a published crates.io release -- see
-# UPSTREAM.md.
-hmmer-pure-rs = { git = "https://github.com/henriksson-lab/hmmer-pure-rs", rev = "7756ef5a00267e5c6d68de102f0fc22d0f55c425" }
+# Pinned to a commit, not a branch, so nothing moves under CI. Re-pin to the
+# upstream merge commit once the PR lands, then to a plain version requirement
+# once a release includes it -- see UPSTREAM.md, "Pinned dependency".
+hmmer-pure-rs = { git = "https://github.com/seanrjohnson-neb/hmmer-pure-rs", rev = "99daaca00025e1ee17331b6b359596a90f1e409d" }

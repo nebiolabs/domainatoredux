@@ -202,42 +202,51 @@ this long because protein hits attach to distinct CDS coordinates and rarely tie
 
 ## Pinned dependency: `hmmer-pure-rs`
 
-**`Cargo.toml` pins `hmmer-pure-rs` to a commit on the official repo, not a published
-crates.io release.** Published 0.7.4 hardcodes BLOSUM62 in `build_single_seq_hmm`, so it
-panics on a 4-letter alphabet ("score matrix BLOSUM62 is for alphabet size 20, but model
-alphabet has size 4") and cannot build a nucleotide model from a single sequence.
-`search/references.rs` worked around that by building each nhmmer FASTA query from a
-one-row MSA — which is not what pyhmmer does (C's `p7_SingleBuilder`: a DNA1 score-matrix
-conversion, plus the nucleotide-only window length that nhmmer's long-target E-values are
-computed against). Eight parity invocations diverged as a result.
+**`Cargo.toml` pins `hmmer-pure-rs` to a commit on our fork,
+[`seanrjohnson-neb/hmmer-pure-rs`](https://github.com/seanrjohnson-neb/hmmer-pure-rs/tree/aarch64-neon-pipeline)
+(`99daaca00025e1ee17331b6b359596a90f1e409d`), not a published crates.io release.** The
+commit is the official repo's `main` as of 2026-09-20 (`ef68ffe`, version 0.8.0) plus one
+change of ours that is waiting to go upstream. `deny.toml` allows the fork as a git source.
 
-The fix, originally
-[seanrjohnson-neb/hmmer-pure-rs#1](https://github.com/seanrjohnson-neb/hmmer-pure-rs/tree/issue-1-single-sequence-builder),
-merged upstream on 2026-09-19 as
-[henriksson-lab/hmmer-pure-rs#2](https://github.com/henriksson-lab/hmmer-pure-rs/pull/2) and
-ports `p7_builder.c` / `seqmodel.c` properly. With it our nucleotide hits match pyhmmer's
-coordinates, scores and E-values **exactly** — three of the eight invocations became
-byte-identical and the other five reduced to the ordering gap above.
+Two fixes are in this pin, and the published 0.7.4 has neither:
 
-Two things to know while the pin is in place:
+- **Single-sequence nucleotide models.** 0.7.4 hardcodes BLOSUM62 in
+  `build_single_seq_hmm`, so it panics on a 4-letter alphabet and cannot build a nucleotide
+  model from one sequence. `search/references.rs` used to work around that with a one-row
+  MSA, which is not what pyhmmer does (C's `p7_SingleBuilder`: a DNA1 score matrix plus the
+  nucleotide window length nhmmer's E-values are computed against), and eight parity
+  invocations diverged. Fixed in
+  [henriksson-lab/hmmer-pure-rs#2](https://github.com/henriksson-lab/hmmer-pure-rs/pull/2),
+  merged 2026-09-19 and part of `main`. With it our nucleotide hits match pyhmmer's
+  coordinates, scores and E-values exactly.
+- **aarch64 (Apple Silicon).** Every SIMD path in the crate was gated on `x86_64`. On ARM,
+  MSV/Viterbi/Forward and domain definition fell back to the generic DP (hmmsearch ~25x
+  slower), about one domain in eight landed a few residues away from the x86/pyhmmer
+  envelope, and nhmmer's long-target SSV filter did not exist, so nucleotide searches
+  found nothing (`search/nhmmer.rs` returned no hits there). The fork commit adds
+  `hmmer_pure_rs::simd::sse`: `std::arch::x86_64` on x86, and the same SSE2 intrinsics
+  implemented over NEON on aarch64, so ARM runs the same kernels in the same order.
+  Verified under QEMU: `domainate` output byte-identical to x86, and all 536 of the
+  crate's integration tests with the same outcome on both architectures. The PR branch is
+  `aarch64-neon-pipeline` on the fork (open the PR from there).
 
-- It is pinned to the merge commit (`7756ef5a00267e5c6d68de102f0fc22d0f55c425`), not to
-  `main`, so an unrelated later commit on the official repo cannot silently change what CI
-  builds. The repo is public, so anonymous HTTPS fetch works in CI.
-- **The fix itself is parity-neutral.** Sweeping with it but *without* the
-  `references.rs` rewiring reproduced the pre-fix baseline exactly, invocation for
-  invocation. Nothing in this port depends on the pinned commit beyond the nucleotide-FASTA
-  path.
+Moving to 0.8 also brought one API change: `builder::build_hmm_from_msa` now returns
+`Result`, failing as C's `hmmbuild` does when E-value calibration cannot fit
+(`tools/hmmer_build.rs` propagates it).
 
-**Migrating to a released version**, once one is published that includes the fix (the
-crate's `main` branch bumped to 0.8.0 on 2026-09-20, unpublished as of this pin — check
-`cargo info hmmer-pure-rs` before assuming otherwise):
+**Re-pinning once the PR merges:** point the `[patch.crates-io]` entry back at
+`https://github.com/henriksson-lab/hmmer-pure-rs` with `rev` = the merge commit (not
+`main`), swap the fork for the official repo in `deny.toml`'s `allow-git`, `cargo update -p hmmer-pure-rs`, and run the
+gates below.
 
-1. Delete the `hmmer-pure-rs` entry from `[patch.crates-io]` in `Cargo.toml`.
-2. Bump `hmmer-pure-rs` in `[workspace.dependencies]` to the published version if it differs
-   from the `"0.7"` requirement already there (the pinned commit and the published crate
-   agreed on `0.7.4`, so this may already be satisfied — check before assuming a bump is
-   needed).
-3. `cargo update -p hmmer-pure-rs`, then build, `cargo test`, and a full differential
-   sweep. The sweep is the real gate — it must still report 136 byte-identical.
+**Migrating to a released version**, once one is published that includes both fixes
+(0.7.4 was still the latest on crates.io when this was written; check `cargo info
+hmmer-pure-rs`):
+
+1. Delete the `hmmer-pure-rs` entry from `[patch.crates-io]` in `Cargo.toml` and its git
+   source from `deny.toml`.
+2. Make the `[workspace.dependencies]` requirement match the release (`"0.8"` now).
+3. `cargo update -p hmmer-pure-rs`, then build, `cargo test`, a full differential sweep
+   (the real gate: no new rows in `known_gaps.tsv`), and the aarch64 check
+   (`domainate` under QEMU must match x86 byte for byte).
 4. Delete this section.

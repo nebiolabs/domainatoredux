@@ -135,13 +135,14 @@ actual on-disk contract and is robust even when the `SYMMETRIC_LABELS` attribute
 
 ## `hmmer-pure-rs` pinned to a commit
 
-`hmmer-pure-rs` is pinned by `rev` to a commit on the official
-`henriksson-lab/hmmer-pure-rs` repo rather than a published crate. Published 0.7.4
-hardcodes BLOSUM62 in `build_single_seq_hmm` and panics on a four-letter alphabet, so it
-cannot build a nucleotide model from a single sequence; the fix (merged upstream as
-`henriksson-lab/hmmer-pure-rs#2`) ports C's `p7_SingleBuilder` properly, which is what made
-the nhmmer FASTA path match pyhmmer exactly.
+`hmmer-pure-rs` is pinned by `rev` to a commit on our fork,
+`seanrjohnson-neb/hmmer-pure-rs`, rather than a published crate. The pinned commit is the
+official repo's `main` (0.8.0, which includes `henriksson-lab/hmmer-pure-rs#2`, the
+single-sequence nucleotide builder the nhmmer FASTA path needs to match pyhmmer) plus a
+change, offered upstream, that runs the crate's SSE kernels on aarch64 through a NEON
+implementation of the SSE2 intrinsics. Without it an Apple Silicon build takes the generic
+DP everywhere: it is far slower, lands some domain envelopes a few residues away from the
+x86 and pyhmmer results, and cannot run nhmmer's long-target filter at all.
 
-**Don't "clean up" the pin and don't move it to `main`** — an unrelated later commit would
-silently change CI. `UPSTREAM.md` has the migration-back steps for once the fix ships in a
-release.
+**Don't "clean up" the pin and don't move it to a branch head** — a later commit would
+silently change CI. `UPSTREAM.md` has the re-pin and migration-back steps.

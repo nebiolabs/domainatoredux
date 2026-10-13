@@ -20,16 +20,12 @@ const PHMMER_PEXTEND: f32 = 0.4;
 ///
 /// The profiles are HMMs whether they came from an `.hmm` file (hmmsearch) or were
 /// built from single reference sequences (phmmer). `program` labels which — it is
-/// written verbatim into the output `program` qualifier and selects the phmmer
-/// background-filter setup used by [`hmmsearch_db`].
+/// written verbatim into the output `program` qualifier.
 pub struct HmmDb {
     pub name: String,
     pub hmms: Vec<Hmm>,
     /// `"hmmsearch"` or `"phmmer"`.
     pub program: String,
-    /// When `true` (phmmer), configure the background filter from each profile's
-    /// composition before scoring (mirrors pyhmmer.phmmer's single-seq builder).
-    pub phmmer_bg_filter: bool,
     /// Per-hmm reference length override for the output `rlen` qualifier. Empty =
     /// use each profile's `M`. phmmer sets this to the reference sequence length
     /// (which equals `M` for single-seq profiles, but is tracked explicitly to
@@ -50,7 +46,6 @@ pub fn load_hmm_dbs(files: &[String]) -> std::io::Result<Vec<HmmDb>> {
             name,
             hmms,
             program: "hmmsearch".to_string(),
-            phmmer_bg_filter: false,
             rlen: Vec::new(),
         });
     }
@@ -104,7 +99,6 @@ pub fn load_phmmer_db(file: &str) -> std::io::Result<HmmDb> {
         name: file_stem(file),
         hmms,
         program: "phmmer".to_string(),
-        phmmer_bg_filter: true,
         rlen,
     })
 }
@@ -143,8 +137,16 @@ pub struct NamedHit {
 /// Run every profile in `db` against `peptides` (`(name, residues)`), returning
 /// the domains with `min_evalue <= i_evalue < evalue`. `z` is the E-value search
 /// space (domainate's `-Z`). Handles both hmmsearch (`.hmm` profiles) and phmmer
-/// (single-seq profiles, `db.phmmer_bg_filter` sets the composition filter); the
-/// output `program` qualifier is `db.program`.
+/// (single-seq profiles); the output `program` qualifier is `db.program`.
+///
+/// The background is configured the way C's `hmmsearch` does it (and the crate's
+/// own `subcmd/hmmsearch.rs`): `set_filter` from each profile's composition, then
+/// `set_length` to each target's length before it is scored. Skipping either is
+/// silent and expensive. Without the filter the bias stage passes everything, the
+/// Viterbi stage is skipped and every MSV survivor runs Forward and domain
+/// definition (about 250x the C pipeline's work on Pfam). Without the length the
+/// null model assumes L = 350, which inflates scores on long CDSs into false
+/// positives.
 pub fn hmmsearch_db(
     db: &HmmDb,
     peptides: &[(String, Vec<u8>)],
@@ -154,15 +156,30 @@ pub fn hmmsearch_db(
     max_mode: bool,
     parallel_profiles: bool,
 ) -> Vec<NamedHit> {
+    // Digitize the targets once, not once per profile. Every profile in a database
+    // shares one alphabet, so the first one decides it.
+    let Some(first) = db.hmms.first() else {
+        return Vec::new();
+    };
+    let abc = Alphabet::new(first.abc_type);
+    let targets: Vec<Sequence> = peptides
+        .iter()
+        .filter(|(_, pep)| !pep.is_empty())
+        .map(|(name, pep)| Sequence {
+            name: name.clone(),
+            acc: String::new(),
+            desc: String::new(),
+            dsq: abc.digitize(pep),
+            n: pep.len(),
+            l: pep.len(),
+            taxid: -1,
+        })
+        .collect();
     let search_profile = |(hi, hmm): (usize, &Hmm)| {
         let mut out = Vec::new();
         let abc = Alphabet::new(hmm.abc_type);
         let mut bg = Bg::new(&abc);
-        // phmmer configures the background filter from the single-seq profile's
-        // composition (mirrors pyhmmer.phmmer / seq_compare::phmmer_scores).
-        if db.phmmer_bg_filter {
-            bg.set_filter(hmm.m, &hmm.compo);
-        }
+        bg.set_filter(hmm.m, &hmm.compo);
         let mut gm = Profile::new(hmm.m, &abc);
         profile_config(hmm, &bg, &mut gm, 400, P7_LOCAL);
         let mut om = OProfile::convert(&gm);
@@ -173,27 +190,21 @@ pub fn hmmsearch_db(
         pli.new_model(&gm);
         let mut th = TopHits::new();
 
-        for (name, pep) in peptides {
-            if pep.is_empty() {
-                continue;
-            }
-            let dsq = abc.digitize(pep);
-            let sq = Sequence {
-                name: name.clone(),
-                acc: String::new(),
-                desc: String::new(),
-                dsq,
-                n: pep.len(),
-                l: pep.len(),
-                taxid: -1,
-            };
-            pli.run(&mut gm, &mut om, &bg, hmm, &sq, &mut th);
+        for sq in &targets {
+            bg.set_length(sq.n);
+            pli.run(&mut gm, &mut om, &bg, hmm, sq, &mut th);
         }
 
         let desc = hmm.desc.clone().unwrap_or_default();
         let acc = hmm.acc.clone().unwrap_or_default();
         let rlen = db.rlen.get(hi).copied().unwrap_or(hmm.m as i64);
         for hit in &th.hits {
+            // pyhmmer's `E=evalue` is a per-sequence reporting threshold too: a
+            // target whose whole-sequence E-value misses it is never iterated, so
+            // none of its domains are emitted however strong one of them is.
+            if hit.lnp.exp() * z > evalue {
+                continue;
+            }
             for dom in &hit.dcl {
                 let i_evalue = dom.lnp.exp() * z;
                 if !(i_evalue < evalue && i_evalue >= min_evalue) {
@@ -284,5 +295,80 @@ mod tests {
         };
         assert!(!serial.is_empty());
         assert_eq!(signature(serial), signature(parallel));
+    }
+
+    /// `n` residues of a fixed pseudo-random filler (a glibc-style LCG), continuing
+    /// from state `x`. The values below came from pyhmmer on the same sequence.
+    fn filler(n: usize, mut x: u64) -> (Vec<u8>, u64) {
+        const AA: &[u8] = b"ACDEFGHIKLMNPQRSTVWY";
+        let out = (0..n)
+            .map(|_| {
+                x = (x * 1103515245 + 12345) % (1 << 31);
+                AA[((x >> 16) % 20) as usize]
+            })
+            .collect();
+        (out, x)
+    }
+
+    /// A FeSOD buried in 3,000 residues of filler must score as pyhmmer scores it.
+    ///
+    /// Every fixture protein is a few hundred residues long, close to the 350 the
+    /// background assumes until `set_length` is called, so leaving that call out
+    /// moved no fixture's score. Here it inflated both domains by ~8.5 bits
+    /// (91.8 / 135.5), which on Pfam turned into hundreds of false positives on
+    /// long CDSs.
+    #[test]
+    fn a_long_target_scores_as_pyhmmer_scores_it() {
+        let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../../test/data/");
+        let db = load_hmm_dbs(&[format!("{fixture}FeSOD_pfam.hmm")])
+            .unwrap()
+            .remove(0);
+        let fesod = crate::io::fasta::read_fasta_decompressed(
+            &format!("{fixture}FeSOD_20.fasta"),
+            Some("protein"),
+        )
+        .unwrap()
+        .remove(0)
+        .seq;
+        let (head, x) = filler(1500, 1);
+        let (tail, _) = filler(1500, x);
+        let long = [head.as_slice(), &fesod, &tail].concat();
+        let background = [head, tail].concat();
+
+        let hits = hmmsearch_db(
+            &db,
+            &[
+                ("long".to_string(), long),
+                ("filler".to_string(), background),
+            ],
+            1000.0,
+            0.001,
+            0.0,
+            false,
+            false,
+        );
+        let mut found: Vec<_> = hits
+            .iter()
+            .map(|hit| {
+                (
+                    hit.target.as_str(),
+                    hit.result.name.as_str(),
+                    format!("{:.1}", hit.result.score),
+                    crate::search::results::py_sci(hit.result.evalue),
+                    hit.result.start,
+                    hit.result.end,
+                )
+            })
+            .collect();
+        found.sort();
+        let fe_c = "Sod_Fe_C";
+        let fe_n = "Sod_Fe_N";
+        assert_eq!(
+            found,
+            [
+                ("long", fe_c, "127.0".into(), "1.5e-38".into(), 1591, 1692),
+                ("long", fe_n, "83.3".into(), "7.2e-25".into(), 1500, 1586),
+            ]
+        );
     }
 }

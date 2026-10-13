@@ -91,15 +91,22 @@ fn search_model(
 /// input sequences. `input_seqs` are `(name, residues)`.
 pub fn hmmsearch_scores(input_seqs: &[(String, Vec<u8>)], hmms: &[Hmm], lb: f64) -> Vec<CmpResult> {
     // Each profile is independent: build its own profile/pipeline and search the
-    // shared (read-only) input sequences. Parallelize over profiles.
+    // shared (read-only) input sequences, digitized once. Parallelize over profiles.
+    let Some(first) = hmms.first() else {
+        return Vec::new();
+    };
+    let abc = Alphabet::new(first.abc_type);
+    let targets: Vec<Sequence> = input_seqs
+        .iter()
+        .map(|(n, r)| make_sequence(n, &abc, r))
+        .collect();
     hmms.par_iter()
         .flat_map_iter(|hmm| {
             let abc = Alphabet::new(hmm.abc_type);
-            let bg = Bg::new(&abc);
-            let targets: Vec<Sequence> = input_seqs
-                .iter()
-                .map(|(n, r)| make_sequence(n, &abc, r))
-                .collect();
+            let mut bg = Bg::new(&abc);
+            // The bias filter is configured from each profile's composition, as C's
+            // hmmsearch does; without it the bias stage passes every target.
+            bg.set_filter(hmm.m, &hmm.compo);
             let mut gm = Profile::new(hmm.m, &abc);
             profile_config(hmm, &bg, &mut gm, 400, P7_LOCAL);
             let om = OProfile::convert(&gm);

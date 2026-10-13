@@ -115,7 +115,8 @@ pub fn hmmer_build(path: &std::path::Path, opts: &HmmerBuildOptions) -> Result<H
     let bg = Bg::new(&abc);
     // Fast model construction (symfrac 0.5), no hand architecture — pyhmmer's
     // Builder defaults.
-    let mut hmm = build_from(&msa, &abc, &bg);
+    let mut hmm = build_from(&msa, &abc, &bg)
+        .map_err(|e| format!("building the profile from {}: {e}", path.display()))?;
 
     // MAXL / nhmmer search window. Both options are nucleotide-only and mutually
     // exclusive, matching Python.
@@ -159,7 +160,9 @@ pub fn hmmer_build(path: &std::path::Path, opts: &HmmerBuildOptions) -> Result<H
     Ok(hmm)
 }
 
-fn build_from(msa: &Msa, abc: &Alphabet, bg: &Bg) -> Hmm {
+/// The builder fails, as C's `hmmbuild` does, when E-value calibration cannot
+/// fit its distributions.
+fn build_from(msa: &Msa, abc: &Alphabet, bg: &Bg) -> Result<Hmm, String> {
     hmmer_pure_rs::builder::build_hmm_from_msa(
         msa,
         abc,

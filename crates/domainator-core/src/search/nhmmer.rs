@@ -275,8 +275,12 @@ pub fn nhmmer_db(
 
 /// Search a long target sequence using the SSV longtarget filter (port of
 /// hmmer-pure-rs `subcmd/nhmmer.rs::search_longtarget`, sans text output).
+///
+/// The SSV/MSV/Viterbi long-target kernels are hmmer-pure-rs's SSE2 code, which
+/// runs over NEON on aarch64 (`hmmer_pure_rs::simd::sse`), so this is the path
+/// on Apple Silicon too.
 #[allow(clippy::too_many_arguments)]
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn search_longtarget(
     sq: &Sequence,
     hmm: &Hmm,
@@ -293,9 +297,12 @@ fn search_longtarget(
 ) -> Vec<Hit> {
     use hmmer_pure_rs::simd::ssv_longtarget;
 
-    if !is_x86_feature_detected!("sse2") {
-        return Vec::new();
-    }
+    // SSE2 is baseline on x86_64 and NEON on aarch64, so this never fires; it is
+    // here because the kernels below are only sound when it holds.
+    assert!(
+        hmmer_pure_rs::simd::sse::available(),
+        "nhmmer's long-target filters need SSE2 (x86_64) or NEON (aarch64)"
+    );
 
     let f3 = 3e-5_f64;
     let nobias = do_max;
@@ -305,9 +312,8 @@ fn search_longtarget(
     om_ssv.reconfig_msv_length(max_length);
     let om = &om_ssv;
 
-    // SAFETY: the callee's only contract is SSE2 (`#[target_feature(enable = "sse2")]`);
-    // this function is x86_64-only and returned above unless `is_x86_feature_detected!`
-    // confirmed it.
+    // SAFETY: the callee's only contract is SSE2 on x86_64 (NEON on aarch64), which
+    // the assertion above confirmed.
     let mut windows = unsafe {
         ssv_longtarget::p7_ssv_filter_longtarget(&sq.dsq, sq.n, om, bg, 0.02, max_length)
     };
@@ -349,7 +355,7 @@ fn search_longtarget(
         let mut bg_win = bg.clone();
         bg_win.set_length(win_len);
         let nullsc = bg_win.null_one(win_len);
-        // SAFETY: SSE2 is confirmed at the top of this function, as above.
+        // SAFETY: SSE2 / NEON is confirmed at the top of this function, as above.
         let usc = match unsafe {
             hmmer_pure_rs::simd::msv_filter::p7_msv_filter(&sub_dsq, win_len, &msv_om)
         } {
@@ -429,7 +435,7 @@ fn search_longtarget(
 
         let mut vit_om = om.clone();
         vit_om.reconfig_length(loc_window_len as i32);
-        // SAFETY: SSE2 is confirmed at the top of this function, as above.
+        // SAFETY: SSE2 / NEON is confirmed at the top of this function, as above.
         let mut sub_windows = unsafe {
             hmmer_pure_rs::simd::vit_filter::p7_viterbi_filter_longtarget(
                 &vit_sub_dsq,
@@ -612,7 +618,9 @@ fn search_longtarget(
     all_hits
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+/// No long-target kernels exist for this target. Searching anyway used to return
+/// no hits, which reads as "nothing found"; refusing says what is wrong.
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 #[allow(clippy::too_many_arguments)]
 fn search_longtarget(
     _sq: &Sequence,
@@ -628,5 +636,8 @@ fn search_longtarget(
     _vit_counter: &AtomicI64,
     _fwd_counter: &AtomicI64,
 ) -> Vec<Hit> {
-    Vec::new()
+    panic!(
+        "nucleotide (nhmmer) search is only available on x86_64 and aarch64 builds; \
+         hmmer-pure-rs has no long-target filters for this target"
+    )
 }

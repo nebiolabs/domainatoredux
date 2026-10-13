@@ -1801,8 +1801,8 @@ dependencies = [
 
 [[package]]
 name = "hmmer-pure-rs"
-version = "0.7.4"
-source = "git+https://github.com/henriksson-lab/hmmer-pure-rs?rev=7756ef5a00267e5c6d68de102f0fc22d0f55c425#7756ef5a00267e5c6d68de102f0fc22d0f55c425"
+version = "0.8.0"
+source = "git+https://github.com/seanrjohnson-neb/hmmer-pure-rs?rev=99daaca00025e1ee17331b6b359596a90f1e409d#99daaca00025e1ee17331b6b359596a90f1e409d"
 dependencies = [
  "anyhow",
  "clap",

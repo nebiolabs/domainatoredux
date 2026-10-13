@@ -54,6 +54,8 @@ wildcards = "allow"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# The one git dependency: hmmer-pure-rs pinned by `rev` on the official repo
-# (see Cargo.toml). A fork or any other git source must be added here on purpose.
-allow-git = ["https://github.com/henriksson-lab/hmmer-pure-rs"]
+# The one git dependency: hmmer-pure-rs pinned by `rev` (see Cargo.toml) --
+# temporarily on our fork while the aarch64 PR is open. Swap this back to
+# https://github.com/henriksson-lab/hmmer-pure-rs with the re-pin to the merge
+# commit. Any other git source must be added here on purpose.
+allow-git = ["https://github.com/seanrjohnson-neb/hmmer-pure-rs"]

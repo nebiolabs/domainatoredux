@@ -28,15 +28,22 @@
 
   // ── column model ────────────────────────────────────────────────────────────
   type ColKey = "name" | "type" | "description" | "size" | "created" | "modified" | "records";
-  const COLUMNS: { key: ColKey; label: string; width: string; align?: "right" }[] = [
-    { key: "name", label: "Name", width: "minmax(140px, 2fr)" },
-    { key: "type", label: "Type", width: "88px" },
-    { key: "description", label: "Description", width: "minmax(140px, 3fr)" },
-    { key: "size", label: "Size", width: "78px", align: "right" },
-    { key: "records", label: "Records", width: "76px", align: "right" },
-    { key: "created", label: "Created", width: "132px" },
-    { key: "modified", label: "Modified", width: "132px" },
+  // `width` is the default track; `min` is its floor in px, used both for the
+  // flexible tracks and to size the table so a widened column scrolls the pane
+  // instead of squeezing its neighbors.
+  const COLUMNS: { key: ColKey; label: string; width: string; min: number; align?: "right" }[] = [
+    { key: "name", label: "Name", width: "minmax(140px, 2fr)", min: 140 },
+    { key: "type", label: "Type", width: "88px", min: 88 },
+    { key: "description", label: "Description", width: "minmax(140px, 3fr)", min: 140 },
+    { key: "size", label: "Size", width: "78px", min: 78, align: "right" },
+    { key: "records", label: "Records", width: "76px", min: 76, align: "right" },
+    { key: "created", label: "Created", width: "132px", min: 132 },
+    { key: "modified", label: "Modified", width: "132px", min: 132 },
   ];
+  const MIN_COL_PX = 32;
+  const ACT_COL_PX = 52;
+  const COL_GAP_PX = 8;
+  const ROW_PAD_PX = 24;
   const TOGGLEABLE = COLUMNS.filter((c) => c.key !== "name"); // name is always shown
 
   function loadCols(): Set<ColKey> {
@@ -59,14 +66,67 @@
     } catch { /* ignore */ }
     return { key: "name", dir: 1 };
   }
+  /** Widths the user dragged a column to, in px; a column absent here uses its default track. */
+  function loadWidths(): Partial<Record<ColKey, number>> {
+    try {
+      const s = localStorage.getItem("ft.widths");
+      if (s) {
+        const o = JSON.parse(s);
+        if (o && typeof o === "object") {
+          const out: Partial<Record<ColKey, number>> = {};
+          for (const c of COLUMNS) {
+            const w = o[c.key];
+            if (typeof w === "number" && Number.isFinite(w)) out[c.key] = Math.max(MIN_COL_PX, w);
+          }
+          return out;
+        }
+      }
+    } catch { /* ignore */ }
+    return {};
+  }
 
   let visibleCols = $state<Set<ColKey>>(loadCols());
   let sortKey = $state<ColKey>(loadSort().key);
   let sortDir = $state<1 | -1>(loadSort().dir);
   let colMenuOpen = $state(false);
+  let colWidths = $state<Partial<Record<ColKey, number>>>(loadWidths());
 
   const visibleColDefs = $derived(COLUMNS.filter((c) => visibleCols.has(c.key)));
-  const gridTemplate = $derived(visibleColDefs.map((c) => c.width).join(" ") + " 52px");
+  const gridTemplate = $derived(
+    visibleColDefs.map((c) => (colWidths[c.key] != null ? `${colWidths[c.key]}px` : c.width)).join(" ") +
+      ` ${ACT_COL_PX}px`,
+  );
+  const tableMinWidth = $derived(
+    visibleColDefs.reduce((sum, c) => sum + (colWidths[c.key] ?? c.min), 0) +
+      ACT_COL_PX + COL_GAP_PX * visibleColDefs.length + ROW_PAD_PX,
+  );
+
+  /** Drag a header's right edge; the column becomes a fixed px track from then on. */
+  function startColResize(e: PointerEvent, k: ColKey) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const handle = e.currentTarget as HTMLElement;
+    const cell = handle.parentElement as HTMLElement;
+    const startX = e.clientX;
+    const startW = cell.getBoundingClientRect().width;
+    handle.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      colWidths = { ...colWidths, [k]: Math.max(MIN_COL_PX, Math.round(startW + ev.clientX - startX)) };
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+  }
+  function resetColWidth(k: ColKey) {
+    const { [k]: _, ...rest } = colWidths;
+    colWidths = rest;
+  }
 
   function toggleCol(k: ColKey) {
     const s = new Set(visibleCols);
@@ -83,6 +143,9 @@
 
   $effect(() => {
     try { localStorage.setItem("ft.cols", JSON.stringify([...visibleCols])); } catch { /* ignore */ }
+  });
+  $effect(() => {
+    try { localStorage.setItem("ft.widths", JSON.stringify(colWidths)); } catch { /* ignore */ }
   });
   $effect(() => {
     try { localStorage.setItem("ft.sort", JSON.stringify({ key: sortKey, dir: sortDir })); } catch { /* ignore */ }
@@ -469,7 +532,7 @@
   role="table"
   bind:this={rootEl}
   class:dragover={dragActive}
-  style="--grid: {gridTemplate};"
+  style="--grid: {gridTemplate}; min-width: {tableMinWidth}px;"
   oncontextmenu={blankMenu}
 >
   <div class="actionbar">
@@ -506,15 +569,26 @@
 
   <div class="head" role="row" style="grid-template-columns: var(--grid);">
     {#each visibleColDefs as c (c.key)}
-      <button
-        class="colhead"
-        class:right={c.align === "right"}
-        role="columnheader"
-        onclick={() => setSort(c.key)}
-        title="Sort by {c.label}"
-      >
-        {c.label}{#if sortKey === c.key}<span class="arrow">{sortDir === 1 ? " ▲" : " ▼"}</span>{/if}
-      </button>
+      <div class="hcell" role="columnheader">
+        <button
+          class="colhead"
+          class:right={c.align === "right"}
+          onclick={() => setSort(c.key)}
+          title="Sort by {c.label}"
+        >
+          {c.label}{#if sortKey === c.key}<span class="arrow">{sortDir === 1 ? " ▲" : " ▼"}</span>{/if}
+        </button>
+        <div
+          class="col-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize {c.label} column"
+          tabindex="-1"
+          title="Drag to resize; double-click to reset"
+          onpointerdown={(e) => startColResize(e, c.key)}
+          ondblclick={() => resetColWidth(c.key)}
+        ></div>
+      </div>
     {/each}
     <div class="colhead" role="columnheader"></div>
   </div>
@@ -715,7 +789,41 @@
     font-weight: 600;
     z-index: 2;
   }
+  .hcell {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    height: 100%;
+    align-items: center;
+  }
+  /* Sits in the grid gap to the right of its header. */
+  .col-resizer {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    right: -8px;
+    width: 8px;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 1;
+  }
+  .col-resizer::after {
+    content: "";
+    position: absolute;
+    left: 3.5px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+  }
+  .col-resizer:hover::after {
+    background: var(--accent);
+    width: 2px;
+    left: 3px;
+  }
   .colhead {
+    flex: 1;
+    min-width: 0;
     border: none;
     background: none;
     color: var(--text-dim);
@@ -771,10 +879,8 @@
     margin-left: 4px;
   }
   .cell {
+    min-width: 0;
     overflow: hidden;
-  }
-  .cname,
-  .cdesc {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
