@@ -1,7 +1,8 @@
 //! Workspace / filesystem commands (LEFT tree + MIDDLE file table).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use domainator_core::app_support::export::{self, ExportOptions, ExportOutcome, Packaging};
 use domainator_core::app_support::workspace::{
     accepted_types_hint, classify_file, find_workspace_root, is_in_dot_dir, is_reserved_name,
     list_files, move_data_file, open_or_init_manifest, scan_folder_tree, EnumReportView, FileEntry,
@@ -52,7 +53,7 @@ pub async fn pick_files(window: tauri::WebviewWindow) -> Result<Option<Vec<Strin
 
 /// Pick a collision-free destination path for `name` inside `dir`: if it already
 /// exists, insert " (2)", " (3)", … before the final extension.
-fn unique_dest(dir: &Path, name: &std::ffi::OsStr) -> std::path::PathBuf {
+fn unique_dest(dir: &Path, name: &std::ffi::OsStr) -> PathBuf {
     let first = dir.join(name);
     if !first.exists() {
         return first;
@@ -108,6 +109,59 @@ pub async fn import_files(
     })
     .await
     .map_err(|e| format!("import failed: {e}"))?
+}
+
+/// Native "Save As" picker that only chooses a path (`None` if the user cancels);
+/// the caller does the writing. Used to name an export's zip archive. Async for the
+/// reason given on [`pick_directory`].
+#[tauri::command]
+pub async fn pick_save_path(
+    window: tauri::WebviewWindow,
+    default_name: String,
+    filter_name: String,
+    extensions: Vec<String>,
+) -> Result<Option<String>, String> {
+    let exts: Vec<&str> = extensions.iter().map(String::as_str).collect();
+    Ok(rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .set_file_name(&default_name)
+        .add_filter(&filter_name, &exts)
+        .save_file()
+        .await
+        .map(|h| h.path().to_string_lossy().into_owned()))
+}
+
+/// Export `paths` to `dest` (a directory, or the zip archive to create); see
+/// [`export::export_files`]. Without `overwrite`, an export that would replace
+/// existing files writes nothing and returns their names for the user to confirm.
+/// Sources may live outside the workspace (registered databases do).
+#[tauri::command]
+pub async fn export_files(
+    app: tauri::AppHandle,
+    paths: Vec<String>,
+    options: ExportOptions,
+    dest: String,
+    overwrite: bool,
+) -> Result<ExportOutcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let sources: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+        let dest = Path::new(&dest);
+        let outcome = export::export_files(&sources, &options, dest, overwrite)?;
+        if matches!(outcome, ExportOutcome::Done { .. }) {
+            // Refreshes a file browser only if it is showing the destination.
+            let dir = if options.packaging == Packaging::Zip {
+                dest.parent()
+            } else {
+                Some(dest)
+            };
+            if let Some(dir) = dir {
+                crate::cmd_files::notify_files_changed(&app, &dir.to_string_lossy());
+            }
+        }
+        Ok(outcome)
+    })
+    .await
+    .map_err(|e| format!("export failed: {e}"))?
 }
 
 /// Open a directory as a workspace: load/create its `workspace.json` and scan the

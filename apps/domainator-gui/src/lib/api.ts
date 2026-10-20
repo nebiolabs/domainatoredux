@@ -18,6 +18,8 @@ import type {
   ToolMeta,
   WorkspaceInfo,
   EnumReportView,
+  ExportOptions,
+  ExportOutcome,
   Prefs,
   PrefsPatch,
   UpdateCheck,
@@ -35,6 +37,23 @@ export const importFiles = (
   dir: string,
   sources: string[],
 ): Promise<string[]> => invoke("import_files", { workspaceRoot, dir, sources });
+
+/// Native "Save As" picker that only chooses a path (null if canceled).
+export const pickSavePath = (
+  defaultName: string,
+  filterName: string,
+  extensions: string[],
+): Promise<string | null> => invoke("pick_save_path", { defaultName, filterName, extensions });
+
+/// Copy `paths` to `dest` (a directory, or the zip archive for `zip` packaging).
+/// Without `overwrite`, an export that would replace existing files writes
+/// nothing and returns `{kind: "conflicts"}` with their names.
+export const exportFiles = (
+  paths: string[],
+  options: ExportOptions,
+  dest: string,
+  overwrite: boolean,
+): Promise<ExportOutcome> => invoke("export_files", { paths, options, dest, overwrite });
 
 export const openWorkspace = (root: string): Promise<WorkspaceInfo> =>
   invoke("open_workspace", { root });

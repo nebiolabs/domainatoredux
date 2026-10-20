@@ -14,6 +14,9 @@ export const ui = $state({
   clearJobsRequest: 0,
   sidebarVisible: true,
   tableVisible: true,
+  /// Files the Export dialog is open for (`null` = closed). Set from the file
+  /// table, folder tree and Databases panel menus as well as File → Export….
+  exportFor: null as string[] | null,
   /// Which left-hand panel to expand and scroll to, consumed by that panel.
   focusPanel: null as "databases" | "refdbs" | "external" | null,
 });

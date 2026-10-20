@@ -28,6 +28,19 @@ export type FileType =
   | "text"
   | "svg";
 
+/// `app_support::export`: how exported files are packaged.
+export type ExportPackaging = "plain" | "gzip" | "zip";
+
+export interface ExportOptions {
+  packaging: ExportPackaging;
+  split_records: boolean;
+}
+
+/// `app_support::export::ExportOutcome`.
+export type ExportOutcome =
+  | { kind: "conflicts"; names: string[] }
+  | { kind: "done"; written: number; dest: string };
+
 export interface FileEntry {
   path: string;
   name: string;

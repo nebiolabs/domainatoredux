@@ -870,7 +870,7 @@ fn is_fasta_name(name: &str) -> bool {
 
 /// Notify every window that files under `dir` changed, so file browsers refresh
 /// (e.g. after an Extract from a popped-out window creates a file elsewhere).
-fn notify_files_changed(app: &tauri::AppHandle, dir: &str) {
+pub(crate) fn notify_files_changed(app: &tauri::AppHandle, dir: &str) {
     use tauri::Emitter;
     let _ = app.emit("files-changed", dir.to_string());
 }

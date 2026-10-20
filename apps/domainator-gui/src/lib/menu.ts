@@ -43,6 +43,10 @@ export const HANDLERS: Record<MenuId, Handler> = {
     const files = await pickFiles();
     if (files && files.length) await ws.importInto(files);
   },
+  "file.export": () => {
+    const paths = ws.selectedFiles.map((f) => f.path);
+    if (paths.length) ui.exportFor = paths;
+  },
   "file.save": () => {
     void ws.saveEditor();
   },
@@ -120,6 +124,7 @@ const SHELL_ONLY = new Set<string>([
   "file.new_folder",
   "file.open_workspace",
   "file.import",
+  "file.export",
   "file.close_tab",
   "file.reopen_tab",
   "view.refresh",

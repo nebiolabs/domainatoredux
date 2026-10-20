@@ -284,6 +284,7 @@ pub struct MenuState {
     pub has_tab: bool,
     pub can_save: bool,
     pub has_closed_tab: bool,
+    pub has_selection: bool,
 }
 
 impl MenuState {
@@ -296,6 +297,7 @@ impl MenuState {
             Tab => self.has_tab,
             Savable => self.can_save,
             ClosedTab => self.has_closed_tab,
+            Selection => self.has_selection,
         }
     }
 }

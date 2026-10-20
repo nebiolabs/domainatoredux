@@ -79,6 +79,14 @@
     deleteFor = { db: d, files: await listDatabaseFiles(d.path) };
   }
 
+  /// Every shard of the database; its `.didx` indexes stay behind, since
+  /// `format-db` rebuilds them and they are stale once the data is moved.
+  async function exportDb(d: DatabaseRow) {
+    const files = (await listDatabaseFiles(d.path)).filter((f) => !f.toLowerCase().endsWith(".didx"));
+    if (files.length) ui.exportFor = files;
+    else ws.error = `No files found for ${baseName(d.path)}.`;
+  }
+
   function rowMenu(e: MouseEvent, d: DatabaseRow) {
     // A taxdump is a tarball no viewer reads.
     const openable = d.on_disk && d.shards <= 1 && d.format !== "taxonomy";
@@ -98,6 +106,7 @@
           renameFor = d;
         },
       },
+      { label: "Export…", disabled: !d.on_disk, action: () => exportDb(d) },
       SEP,
       { label: "Copy Name", action: () => copy(baseName(d.path)) },
       { label: "Copy Full Path", action: () => copy(d.path) },

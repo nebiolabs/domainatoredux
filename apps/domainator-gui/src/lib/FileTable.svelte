@@ -316,6 +316,12 @@
           moveFor = targets.map((t) => t.path);
         },
       },
+      {
+        label: one ? "Export…" : `Export ${n} Files…`,
+        action: () => {
+          ui.exportFor = targets.map((t) => t.path);
+        },
+      },
       SEP,
       { label: "Copy Name", disabled: !one, action: () => copy(f.name) },
       { label: one ? "Copy Full Path" : `Copy ${n} Full Paths`, action: () => copy(targets.map((t) => t.path).join("\n")) },

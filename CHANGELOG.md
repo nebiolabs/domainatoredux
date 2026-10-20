@@ -18,6 +18,11 @@ Parity: Python domainator 0.12.0 @ `02a31c1`.
   **External tools** panel can download it, or you can set `$DOMAINATOR_ORPHOS`. It is
   also in the app's Tools menu as **Gene call**, and as a **Gene calling** option on
   Domainate and Domain search.
+- **Export.** The app can copy files out of a workspace: **File → Export…**, or the
+  right-click menus of the file table, the folder tree and the Databases panel. Files can be
+  exported as they are, gzipped one by one or bundled into a zip. GenBank, FASTA and HMM
+  files can also be split so that every record or profile becomes its own file. Existing
+  files at the destination are only replaced after you confirm.
 - The app runs each Tools-menu job in its own background process, running the same code as
   the `domainator` CLI. **Cancel now stops a running job** (and any diamond, cd-hit or
   usearch it started) and deletes the partial output files the job created or changed. A

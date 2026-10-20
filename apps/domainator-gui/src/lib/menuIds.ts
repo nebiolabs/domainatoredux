@@ -13,6 +13,7 @@ export const MENU_IDS = [
   "file.new_folder",
   "file.open_workspace",
   "file.import",
+  "file.export",
   "file.save",
   "file.close_tab",
   "file.reopen_tab",

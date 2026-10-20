@@ -38,6 +38,8 @@ pub enum Needs {
     Savable,
     /// Something has been closed this session.
     ClosedTab,
+    /// At least one file is selected in the file table.
+    Selection,
 }
 
 /// One menu command.
@@ -92,6 +94,7 @@ pub const COMMANDS: &[MenuCommandSpec] = &[
         Some("CmdOrCtrl+I"),
         Needs::Folder,
     ),
+    cmd("file.export", "Export…", None, Needs::Selection),
     cmd("file.save", "Save", Some("CmdOrCtrl+S"), Needs::Savable),
     cmd(
         "file.close_tab",
@@ -185,6 +188,7 @@ pub const LAYOUT: &[(&str, &[&str])] = &[
             SEPARATOR,
             "file.open_workspace",
             "file.import",
+            "file.export",
             SEPARATOR,
             "file.save",
             SEPARATOR,

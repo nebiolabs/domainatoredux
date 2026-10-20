@@ -64,6 +64,8 @@ pub fn run() {
             cmd_workspace::pick_directory,
             cmd_workspace::pick_files,
             cmd_workspace::import_files,
+            cmd_workspace::pick_save_path,
+            cmd_workspace::export_files,
             cmd_workspace::rename_file,
             cmd_workspace::open_workspace,
             cmd_workspace::list_folder,

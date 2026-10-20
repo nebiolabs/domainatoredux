@@ -20,6 +20,7 @@
   import FileWindow from "./lib/FileWindow.svelte";
   import AboutDialog from "./lib/AboutDialog.svelte";
   import PreferencesDialog from "./lib/PreferencesDialog.svelte";
+  import ExportDialog from "./lib/ExportDialog.svelte";
   import ConfirmDialog from "./lib/ConfirmDialog.svelte";
   import ContextMenu from "./lib/ContextMenu.svelte";
   import StatusBar from "./lib/StatusBar.svelte";
@@ -306,6 +307,8 @@
       // File → Save writes the active tab's editor only.
       can_save: !!ws.activeTabId && !!ws.dirty[ws.activeTabId],
       has_closed_tab: ws.closedTabs.length > 0,
+      // File → Export… acts on the file table's selection.
+      has_selection: ws.selectedFiles.length > 0,
     };
     const json = JSON.stringify(state);
     if (json === lastMenuState) return;
@@ -498,6 +501,10 @@
 
   {#if prefsOpen}
     <PreferencesDialog onclose={() => (prefsOpen = false)} />
+  {/if}
+
+  {#if ui.exportFor}
+    <ExportDialog paths={ui.exportFor} onclose={() => (ui.exportFor = null)} />
   {/if}
 
   {#if activeTool}

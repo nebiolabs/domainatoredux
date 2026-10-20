@@ -44,6 +44,8 @@ a folder name, and protected from deletion.
   A moved file keeps its description and job history, and its `.didx` index moves with
   it. Moving never overwrites a file of the same name. Such a file stays where it is and
   the others still move. A file with unsaved edits also stays where it is; save it first.
+  **Export…** copies the selection out of the workspace; see
+  [Exporting files](#exporting-files).
 - **Viewer dock** — a tab per open file. Each file type offers one or more **sub-views**,
   shown as a second row of tabs. The ⧉ button pops any tab into its own window, which is
   how you compare two contigs side by side. A view keeps its zoom, scroll position,
@@ -65,6 +67,32 @@ accelerators: Ctrl+O open workspace, Ctrl+S save, Ctrl+W close tab, Ctrl+Shift+T
 closed tab, Ctrl+, preferences, F5 refresh, Ctrl+1 / Ctrl+2 toggle the
 sidebar and file table, Ctrl+Q quit. **File → Quit** closes every window, and each one
 still asks about its unsaved edits first.
+
+## Exporting files
+
+**Export…** copies files to a folder outside the workspace. It is on the file table's
+right-click menu (for the whole selection), on **File → Export…**, on a folder's
+right-click menu in the tree (**Export Files…**, the folder's own data files but not its
+subfolders), and on a database's right-click menu in the Databases panel (every shard of
+it).
+
+- **Write each record as its own file** is offered when the export includes a GenBank,
+  FASTA or HMM file. Each sequence record or HMM profile becomes a file named after its
+  id (characters a file name cannot hold become `_`), copied byte for byte from the
+  original. All the record files go straight into the destination; two records with the
+  same id become `id.gb` and `id (2).gb`. Other file types are exported whole. A
+  compressed input is split too, and its records are written uncompressed unless you
+  choose gzip.
+- **Packaging** is offered when the export produces more than one file. **None** copies
+  the files as they are. **Gzip each file** compresses every file on its own (`foo.gb`
+  becomes `foo.gb.gz`) and leaves an already-gzipped file as it is. **Zip archive** asks
+  for an archive name and puts everything in it.
+
+If files with the same names already exist in the destination folder, the dialog lists
+them and asks before overwriting. An export never writes over one of the files it is
+exporting. Each file is written under a temporary name and renamed when complete, so a
+failed export leaves no half-written file behind. `.didx` indexes are not exported; add
+the copy as a database and use **Build Index** to make a new one.
 
 ## Viewers
 

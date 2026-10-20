@@ -5,7 +5,8 @@
   import Self from "./FolderTree.svelte";
   import { openContextMenu, SEP, type CtxItem } from "./ctxmenu.svelte";
   import { copyText } from "./clipboard";
-  import { revealInFileManager } from "./api";
+  import { listFolder, revealInFileManager } from "./api";
+  import { ui } from "./ui.svelte";
 
   let { node, depth }: { node: FolderNode; depth: number } = $props();
   // Auto-expand the top level once; `depth` is fixed per node instance.
@@ -86,6 +87,16 @@
         action: () => {
           ws.selectFolder(node.path);
           ws.requestNewFolder = node.path;
+        },
+      },
+      {
+        label: "Export Files…",
+        action: async () => {
+          // The folder's own data files, as the file table lists them -- not
+          // its subfolders.
+          const files = await listFolder(ws.root ?? node.path, node.path);
+          if (files.length) ui.exportFor = files.map((f) => f.path);
+          else ws.error = "No files to export in this folder.";
         },
       },
       SEP,
