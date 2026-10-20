@@ -17,7 +17,81 @@
   let loading = $state(true);
   let filter = $state("");
   let sortDir = $state<1 | -1>(1);
-  let sortCol = $state<"name" | "length">("name");
+  let sortCol = $state<ColKey>("name");
+
+  // Table columns. `value` is what sorts; `text` is what shows. Optional columns
+  // (header keys a profile may lack) are hidden when no profile in the file has one,
+  // so a hand-built library is not padded with empty Pfam-cutoff columns.
+  type ColKey = "name" | "acc" | "length" | "alphabet" | "nseq" | "effn" | "ga" | "tc" | "nc";
+  interface Col {
+    key: ColKey;
+    label: string;
+    title: string;
+    num?: boolean;
+    optional?: boolean;
+    value: (p: HmmSummary) => string | number | null;
+    text: (p: HmmSummary) => string;
+  }
+  const cutoff = (c: [number, number] | null) => (c ? `${c[0].toFixed(2)} / ${c[1].toFixed(2)}` : "");
+  const cutoffCol = (key: "ga" | "tc" | "nc", label: string, what: string): Col => ({
+    key,
+    label,
+    title: `${what} (per-sequence / per-domain bit score)`,
+    num: true,
+    optional: true,
+    value: (p) => p[key]?.[0] ?? null,
+    text: (p) => cutoff(p[key]),
+  });
+  const COLS: Col[] = [
+    { key: "name", label: "name", title: "NAME", value: (p) => p.name, text: (p) => p.name },
+    {
+      key: "acc",
+      label: "accession",
+      title: "ACC",
+      optional: true,
+      value: (p) => p.acc,
+      text: (p) => p.acc ?? "",
+    },
+    {
+      key: "length",
+      label: "length",
+      title: "LENG: number of match states",
+      num: true,
+      value: (p) => p.length,
+      text: (p) => String(p.length),
+    },
+    {
+      key: "alphabet",
+      label: "alphabet",
+      title: "ALPH",
+      value: (p) => p.alphabet,
+      text: (p) => p.alphabet,
+    },
+    {
+      key: "nseq",
+      label: "nseq",
+      title: "NSEQ: sequences in the training alignment",
+      num: true,
+      optional: true,
+      value: (p) => p.nseq,
+      text: (p) => p.nseq?.toLocaleString() ?? "",
+    },
+    {
+      key: "effn",
+      label: "effn",
+      title: "EFFN: effective number of sequences after relative weighting",
+      num: true,
+      optional: true,
+      value: (p) => p.effn,
+      text: (p) => (p.effn == null ? "" : p.effn.toFixed(2)),
+    },
+    cutoffCol("ga", "GA", "Gathering threshold"),
+    cutoffCol("tc", "TC", "Trusted cutoff"),
+    cutoffCol("nc", "NC", "Noise cutoff"),
+  ];
+  const cols = $derived(COLS.filter((c) => !c.optional || profiles.some((p) => c.value(p) != null)));
+  // select + columns + description + actions
+  const span = $derived(cols.length + 3);
 
   // Multi-select (by profile index) for Extract → new .hmm.
   let selected = $state(new Set<number>());
@@ -72,18 +146,25 @@
     const q = filter.trim().toLowerCase();
     let list = q
       ? profiles.filter(
-          (p) => p.name.toLowerCase().includes(q) || (p.desc ?? "").toLowerCase().includes(q),
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            (p.acc ?? "").toLowerCase().includes(q) ||
+            (p.desc ?? "").toLowerCase().includes(q),
         )
       : profiles;
     const dir = sortDir;
-    const col = sortCol;
-    list = [...list].sort((a, b) =>
-      col === "length" ? (a.length - b.length) * dir : a.name.localeCompare(b.name) * dir,
-    );
+    const value = (COLS.find((c) => c.key === sortCol) ?? COLS[0]).value;
+    // Missing values sort last in either direction.
+    list = [...list].sort((a, b) => {
+      const x = value(a);
+      const y = value(b);
+      if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
+      return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * dir;
+    });
     return list;
   });
 
-  function toggleSort(c: "name" | "length") {
+  function toggleSort(c: ColKey) {
     if (sortCol === c) sortDir = sortDir === 1 ? -1 : 1;
     else {
       sortCol = c;
@@ -171,23 +252,23 @@
         <thead>
           <tr>
             <th class="c-sel"></th>
-            <th class="c-name" onclick={() => toggleSort("name")}>
-              name{#if sortCol === "name"}<span class="arrow">{sortDir === 1 ? " ▲" : " ▼"}</span>{/if}
-            </th>
-            <th class="c-len num" onclick={() => toggleSort("length")}>
-              length{#if sortCol === "length"}<span class="arrow">{sortDir === 1 ? " ▲" : " ▼"}</span>{/if}
-            </th>
+            {#each cols as c (c.key)}
+              <th class:num={c.num} title={c.title} onclick={() => toggleSort(c.key)}>
+                {c.label}{#if sortCol === c.key}<span class="arrow">{sortDir === 1 ? " ▲" : " ▼"}</span>{/if}
+              </th>
+            {/each}
             <th class="c-desc">description</th>
             <th class="c-act"></th>
           </tr>
         </thead>
         <tbody>
-          {#if topPad > 0}<tr style="height:{topPad}px"><td colspan="5"></td></tr>{/if}
+          {#if topPad > 0}<tr style="height:{topPad}px"><td colspan={span}></td></tr>{/if}
           {#each visible as p (p.index)}
             <tr class:sel={selected.has(p.index)} onclick={(e) => rowClick(e, p)}>
               <td class="c-sel"><input type="checkbox" checked={selected.has(p.index)} tabindex="-1" /></td>
-              <td class="c-name" title={p.name}>{p.name}</td>
-              <td class="c-len num">{p.length}</td>
+              {#each cols as c (c.key)}
+                <td class:num={c.num} title={c.key === "name" ? p.name : undefined}>{c.text(p)}</td>
+              {/each}
               <td class="c-desc" title={p.desc ?? ""}>{p.desc ?? ""}</td>
               <td class="c-act">
                 <button class="logo" title="Show this profile's sequence logo" onclick={(e) => { e.stopPropagation(); showLogo(p); }}>logo</button>
@@ -195,7 +276,7 @@
               </td>
             </tr>
           {/each}
-          {#if bottomPad > 0}<tr style="height:{bottomPad}px"><td colspan="5"></td></tr>{/if}
+          {#if bottomPad > 0}<tr style="height:{bottomPad}px"><td colspan={span}></td></tr>{/if}
         </tbody>
       </table>
     </div>

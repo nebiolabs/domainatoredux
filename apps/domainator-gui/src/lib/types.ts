@@ -139,6 +139,14 @@ export interface HmmSummary {
   desc: string | null;
   length: number;
   alphabet: "amino" | "dna" | "rna";
+  /** `NSEQ`: sequences in the training alignment. */
+  nseq: number | null;
+  /** `EFFN`: effective number of sequences after relative weighting. */
+  effn: number | null;
+  /** Pfam cutoffs (`GA`/`TC`/`NC`) as `[per-sequence, per-domain]` bit scores. */
+  ga: [number, number] | null;
+  tc: [number, number] | null;
+  nc: [number, number] | null;
 }
 
 export interface HmmLogo {

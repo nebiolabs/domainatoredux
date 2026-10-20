@@ -99,23 +99,40 @@ pub struct HmmSummary {
     pub desc: Option<String>,
     pub length: usize,
     pub alphabet: String,
+    pub nseq: Option<u64>,
+    pub effn: Option<f64>,
+    pub ga: Option<[f64; 2]>,
+    pub tc: Option<[f64; 2]>,
+    pub nc: Option<[f64; 2]>,
 }
 
-/// List all profiles in an HMM file as summaries (name/length/alphabet).
+impl HmmSummary {
+    /// The summary of the `index`-th profile of a file, from its index entry.
+    pub fn from_entry(index: usize, e: &HmmEntry) -> Self {
+        HmmSummary {
+            index,
+            name: e.name.clone(),
+            acc: e.acc.clone(),
+            desc: e.desc.clone(),
+            length: e.length,
+            alphabet: e.alphabet.clone(),
+            nseq: e.nseq,
+            effn: e.effn,
+            ga: e.ga,
+            tc: e.tc,
+            nc: e.nc,
+        }
+    }
+}
+
+/// List all profiles in an HMM file as summaries (name/length/alphabet/...).
 pub fn list_hmms(path: &str) -> Result<Vec<HmmSummary>, String> {
     // Header-only index scan (no emission-matrix parsing) — orders of magnitude
     // cheaper on large libraries (Pfam ≈ 20k models) than read_hmm_file.
     Ok(index_hmm_file(path)?
         .iter()
         .enumerate()
-        .map(|(i, e)| HmmSummary {
-            index: i,
-            name: e.name.clone(),
-            acc: e.acc.clone(),
-            desc: e.desc.clone(),
-            length: e.length,
-            alphabet: e.alphabet.clone(),
-        })
+        .map(|(i, e)| HmmSummary::from_entry(i, e))
         .collect())
 }
 
@@ -136,6 +153,23 @@ pub struct HmmEntry {
     pub desc: Option<String>,
     pub length: usize,
     pub alphabet: String,
+    /// `NSEQ`: sequences in the training alignment.
+    pub nseq: Option<u64>,
+    /// `EFFN`: effective number of sequences after relative weighting.
+    pub effn: Option<f64>,
+    /// `GA` / `TC` / `NC` Pfam cutoffs, `[per-sequence, per-domain]` bit scores.
+    pub ga: Option<[f64; 2]>,
+    pub tc: Option<[f64; 2]>,
+    pub nc: Option<[f64; 2]>,
+}
+
+/// A `GA`/`TC`/`NC` header value: two bit scores, the second followed by an
+/// optional `;` (Pfam writes one, HMMER does not).
+fn parse_cutoff(val: &str) -> Option<[f64; 2]> {
+    let mut it = val.trim_end_matches(';').split_whitespace();
+    let seq = it.next()?.parse().ok()?;
+    let dom = it.next()?.trim_end_matches(';').parse().ok()?;
+    Some([seq, dom])
 }
 
 /// Scan an HMM file once and return each profile's byte range + header fields
@@ -176,6 +210,11 @@ pub fn index_hmm_file(path: &str) -> Result<Vec<HmmEntry>, String> {
                 desc: None,
                 length: 0,
                 alphabet: "amino".into(),
+                nseq: None,
+                effn: None,
+                ga: None,
+                tc: None,
+                nc: None,
             });
             continue;
         }
@@ -194,6 +233,13 @@ pub fn index_hmm_file(path: &str) -> Result<Vec<HmmEntry>, String> {
             "DESC" if !val.is_empty() => e.desc = Some(val.to_string()),
             "LENG" => e.length = val.parse().unwrap_or(0),
             "ALPH" => e.alphabet = val.to_ascii_lowercase(),
+            "NSEQ" => e.nseq = val.parse().ok(),
+            "EFFN" => e.effn = val.parse().ok(),
+            "GA" => e.ga = parse_cutoff(val),
+            "TC" => e.tc = parse_cutoff(val),
+            "NC" => e.nc = parse_cutoff(val),
+            // The model matrix follows the header; nothing below it is a header key
+            // (its `COMPO` / node lines never start with one of the keys above).
             _ => {}
         }
     }
@@ -451,6 +497,49 @@ mod tests {
             );
         }
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The Profiles table shows NSEQ/EFFN and the Pfam cutoffs straight from the
+    /// header scan. Pfam ends each cutoff with `;` and HMMER does not; a profile
+    /// with none of these keys must come back empty, not zero.
+    #[test]
+    fn the_index_reads_nseq_effn_and_cutoffs() {
+        let dir = std::env::temp_dir().join(format!("domainator_hmm_hdr_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("hdr.hmm");
+        std::fs::write(
+            &path,
+            "HMMER3/f [3.1b2 | February 2015]\nNAME  pfam\nACC   PF01845.19\nLENG  100\n\
+             ALPH  amino\nNSEQ  43\nEFFN  1.782043\nGA    28.60 28.50;\nTC    28.70 28.80;\n\
+             NC    28.40 28.30;\n//\n\
+             HMMER3/f [3.4 | Aug 2023]\nNAME  hmmer\nLENG  72\nALPH  DNA\nGA    20.90 20.80\n//\n\
+             HMMER3/f [3.4 | Aug 2023]\nNAME  bare\nLENG  5\n//\n",
+        )
+        .unwrap();
+        let ix = index_hmm_file(path.to_str().unwrap()).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(ix[0].acc.as_deref(), Some("PF01845.19"));
+        assert_eq!(ix[0].nseq, Some(43));
+        assert_eq!(ix[0].effn, Some(1.782043));
+        assert_eq!(ix[0].ga, Some([28.6, 28.5]));
+        assert_eq!(ix[0].tc, Some([28.7, 28.8]));
+        assert_eq!(ix[0].nc, Some([28.4, 28.3]));
+        assert_eq!(ix[1].alphabet, "dna");
+        assert_eq!(ix[1].ga, Some([20.9, 20.8]));
+        assert_eq!(ix[1].nseq, None);
+        let bare = &ix[2];
+        assert_eq!(
+            (
+                bare.acc.as_ref(),
+                bare.nseq,
+                bare.effn,
+                bare.ga,
+                bare.tc,
+                bare.nc
+            ),
+            (None, None, None, None, None, None)
+        );
     }
 
     /// Information content is `log2(K) - H`, so a uniform column carries none and

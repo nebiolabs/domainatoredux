@@ -628,14 +628,7 @@ pub async fn list_hmm_profiles(
         Ok(entries
             .iter()
             .enumerate()
-            .map(|(i, e)| HmmSummary {
-                index: i,
-                name: e.name.clone(),
-                acc: e.acc.clone(),
-                desc: e.desc.clone(),
-                length: e.length,
-                alphabet: e.alphabet.clone(),
-            })
+            .map(|(i, e)| HmmSummary::from_entry(i, e))
             .collect())
     })
     .await
