@@ -90,14 +90,26 @@ export interface FeatureView {
   qualifiers: [string, string][];
 }
 
+// One row of a record's header summary; `detail` rows (references, comments) are
+// shown only in the right-click inspector, not the hover.
+export interface InfoRow {
+  key: string;
+  value: string;
+  detail: boolean;
+}
+
 export interface ContigView {
   index: number;
   id: string;
-  name: string;
+  name: string; // VERSION (or ACCESSION) for GenBank; the id for FASTA
   description: string;
+  definition: string; // description without a leading copy of the id
+  accession: string | null;
+  source: string | null; // SOURCE, else ORGANISM
   length: number;
   topology: "linear" | "circular";
   is_protein: boolean;
+  info: InfoRow[];
   features: FeatureView[];
 }
 

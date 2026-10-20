@@ -10,8 +10,9 @@
 
 use serde::Serialize;
 
+use crate::seq::taxid::record_taxid;
 use crate::seq::{Location, SeqFeature, SeqRecord, Topology};
-use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
+use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME, UNIDENTIFIED_TAXID};
 
 /// One span of a feature location (0-based half-open), named for JSON clarity
 /// instead of the core tuple `Part = (i64,i64,i32,bool,bool)`.
@@ -51,18 +52,38 @@ pub struct FeatureView {
     pub qualifiers: Vec<(String, String)>,
 }
 
+/// One row of a record's header summary (gutter hover / contig inspector).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct InfoRow {
+    /// Flat-file section name (`LOCUS`, `DEFINITION`, `REFERENCE 1`, ...).
+    pub key: String,
+    pub value: String,
+    /// Too long for a hover: shown only in the right-click inspector.
+    pub detail: bool,
+}
+
 /// One contig (a `SeqRecord`) and its drawable features.
 #[derive(Debug, Clone, Serialize)]
 pub struct ContigView {
     /// Position of this record in the file (stable id for provenance handles).
     pub index: usize,
     pub id: String,
+    /// VERSION (or ACCESSION) for GenBank; the id for FASTA.
     pub name: String,
     pub description: String,
+    /// DEFINITION for a label: `description` without a leading copy of the id
+    /// (a FASTA title carries the id as its first word).
+    pub definition: String,
+    /// Primary ACCESSION.
+    pub accession: Option<String>,
+    /// SOURCE, else ORGANISM.
+    pub source: Option<String>,
     pub length: usize,
     /// `"linear"` or `"circular"`.
     pub topology: String,
     pub is_protein: bool,
+    /// Header annotations, in flat-file order.
+    pub info: Vec<InfoRow>,
     pub features: Vec<FeatureView>,
 }
 
@@ -175,12 +196,115 @@ fn feature_view(feat_index: usize, f: &SeqFeature) -> FeatureView {
     }
 }
 
+/// `description` minus a leading `id` (and the space after it).
+fn definition(rec: &SeqRecord) -> String {
+    let d = rec.description.trim();
+    if d == rec.id {
+        return String::new();
+    }
+    match d.strip_prefix(rec.id.as_str()) {
+        Some(rest) if !rec.id.is_empty() && rest.starts_with(char::is_whitespace) => {
+            rest.trim_start().to_string()
+        }
+        _ => d.to_string(),
+    }
+}
+
+/// The record's header annotations as display rows, in flat-file order. Empty
+/// sections are skipped; references and comments are marked `detail`.
+fn record_info(rec: &SeqRecord) -> Vec<InfoRow> {
+    let a = &rec.annotations;
+    let mut rows = Vec::new();
+    let mut push = |key: &str, value: String, detail: bool| {
+        if !value.trim().is_empty() {
+            rows.push(InfoRow {
+                key: key.to_string(),
+                value,
+                detail,
+            });
+        }
+    };
+    let unit = if rec.is_protein() { "aa" } else { "bp" };
+    let topology = a.topology.unwrap_or(rec.topology);
+    let locus: Vec<String> = [
+        Some(rec.id.clone()),
+        Some(format!("{} {unit}", rec.len())),
+        rec.molecule_type.clone(),
+        Some(topology.as_str().to_string()),
+        a.division.clone(),
+        a.date.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|s| !s.is_empty())
+    .collect();
+    push("LOCUS", locus.join("  "), false);
+    push("DEFINITION", definition(rec), false);
+    push("ACCESSION", a.accessions.join(" "), false);
+    if a.sequence_version.is_some() {
+        let gi =
+            a.gi.as_deref()
+                .map(|g| format!("  GI:{g}"))
+                .unwrap_or_default();
+        push("VERSION", format!("{}{gi}", rec.name), false);
+    }
+    push("DBLINK", a.dblink.join("\n"), false);
+    let keywords: Vec<&str> = a
+        .keywords
+        .iter()
+        .map(|k| k.trim())
+        .filter(|k| !k.is_empty() && *k != ".")
+        .collect();
+    push("KEYWORDS", keywords.join("; "), false);
+    push("DBSOURCE", a.db_source.clone().unwrap_or_default(), false);
+    push("SOURCE", a.source.clone().unwrap_or_default(), false);
+    push("ORGANISM", a.organism.clone().unwrap_or_default(), false);
+    push("Lineage", a.taxonomy.join("; "), false);
+    let taxid = record_taxid(rec);
+    if taxid != UNIDENTIFIED_TAXID {
+        push("Taxid", taxid.to_string(), false);
+    }
+    for (i, r) in a.references.iter().enumerate() {
+        let lines: Vec<String> = [
+            r.location_text.clone().unwrap_or_default(),
+            r.authors.clone(),
+            r.consrtm.clone(),
+            r.title.clone(),
+            r.journal.clone(),
+            if r.pubmed_id.is_empty() {
+                String::new()
+            } else {
+                format!("PUBMED {}", r.pubmed_id)
+            },
+            r.remark.clone(),
+        ]
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .collect();
+        push(&format!("REFERENCE {}", i + 1), lines.join("\n"), true);
+    }
+    push("COMMENT", a.comment.clone().unwrap_or_default(), true);
+    for (block, kvs) in &a.structured_comment {
+        let lines: Vec<String> = kvs.iter().map(|(k, v)| format!("{k} :: {v}")).collect();
+        push(block, lines.join("\n"), true);
+    }
+    rows
+}
+
 fn contig_view(index: usize, rec: &SeqRecord) -> ContigView {
     ContigView {
         index,
         id: rec.id.clone(),
-        name: rec.id.clone(),
+        name: rec.name.clone(),
         description: rec.description.clone(),
+        definition: definition(rec),
+        accession: rec.annotations.accessions.first().cloned(),
+        source: rec
+            .annotations
+            .source
+            .clone()
+            .or_else(|| rec.annotations.organism.clone())
+            .filter(|s| !s.trim().is_empty()),
         length: rec.len(),
         topology: match rec.topology {
             Topology::Linear => "linear",
@@ -188,6 +312,7 @@ fn contig_view(index: usize, rec: &SeqRecord) -> ContigView {
         }
         .to_string(),
         is_protein: rec.is_protein(),
+        info: record_info(rec),
         features: rec
             .features
             .iter()
@@ -247,7 +372,7 @@ pub fn build_contig_file_view(path: &str, records: &[SeqRecord]) -> ContigFileVi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::seq::Location;
+    use crate::seq::{Annotations, Location, Reference};
 
     fn feat(kind: &str, quals: &[(&str, &str)]) -> SeqFeature {
         let mut f = SeqFeature::new(kind, Location::range(0, 100, 1));
@@ -282,6 +407,99 @@ mod tests {
         );
         assert_eq!(fv.database.as_deref(), Some("Pfam"));
         assert_eq!(fv.evalue, Some(1e-20));
+    }
+
+    fn record(id: &str, name: &str, description: &str) -> SeqRecord {
+        SeqRecord {
+            id: id.to_string(),
+            name: name.to_string(),
+            description: description.to_string(),
+            seq: b"ACGTACGT".to_vec(),
+            molecule_type: Some("DNA".to_string()),
+            topology: Topology::Linear,
+            annotations: Annotations::default(),
+            features: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn genbank_header_reaches_the_view() {
+        let mut rec = record(
+            "BX548174_369054:361090rc",
+            "BX548174.1",
+            "Prochlorococcus marinus MED4 complete genome",
+        );
+        let a = &mut rec.annotations;
+        a.accessions = vec!["BX548174".into()];
+        a.sequence_version = Some(1);
+        a.division = Some("UNK".into());
+        a.date = Some("14-FEB-2024".into());
+        a.dblink = vec![
+            "BioProject: PRJNA213".into(),
+            "BioSample: SAMEA3138209".into(),
+        ];
+        a.keywords = vec![String::new()];
+        a.source = Some("Prochlorococcus marinus MED4".into());
+        a.organism = Some("Prochlorococcus marinus".into());
+        a.taxonomy = vec!["Bacteria".into(), "Cyanobacteriota".into()];
+        a.references = vec![Reference {
+            location_text: Some("(bases 1 to 8)".into()),
+            title: "A genome".into(),
+            pubmed_id: "123".into(),
+            ..Reference::default()
+        }];
+        a.comment = Some("Annotated by hand".into());
+        a.topology = Some(Topology::Circular);
+
+        let cv = contig_view(0, &rec);
+        assert_eq!(cv.name, "BX548174.1");
+        assert_eq!(cv.accession.as_deref(), Some("BX548174"));
+        assert_eq!(cv.source.as_deref(), Some("Prochlorococcus marinus MED4"));
+        assert_eq!(cv.definition, rec.description);
+        let keys: Vec<(&str, bool)> = cv.info.iter().map(|r| (r.key.as_str(), r.detail)).collect();
+        assert_eq!(
+            keys,
+            [
+                ("LOCUS", false),
+                ("DEFINITION", false),
+                ("ACCESSION", false),
+                ("VERSION", false),
+                ("DBLINK", false),
+                ("SOURCE", false),
+                ("ORGANISM", false),
+                ("Lineage", false),
+                ("REFERENCE 1", true),
+                ("COMMENT", true),
+            ]
+        );
+        // The declared LOCUS topology wins over the geometric default.
+        assert_eq!(
+            cv.info[0].value,
+            "BX548174_369054:361090rc  8 bp  DNA  circular  UNK  14-FEB-2024"
+        );
+        assert_eq!(
+            cv.info[4].value,
+            "BioProject: PRJNA213\nBioSample: SAMEA3138209"
+        );
+        assert_eq!(cv.info[8].value, "(bases 1 to 8)\nA genome\nPUBMED 123");
+    }
+
+    #[test]
+    fn fasta_definition_drops_the_id() {
+        let cv = contig_view(0, &record("seq1", "seq1", "seq1 some protein OS=E. coli"));
+        assert_eq!(cv.definition, "some protein OS=E. coli");
+        assert_eq!(cv.accession, None);
+        assert_eq!(cv.source, None);
+        let keys: Vec<&str> = cv.info.iter().map(|r| r.key.as_str()).collect();
+        assert_eq!(keys, ["LOCUS", "DEFINITION"]);
+        assert_eq!(
+            contig_view(0, &record("seq1", "seq1", "seq1")).definition,
+            ""
+        );
+        assert_eq!(
+            contig_view(0, &record("seq1", "seq1", "seq10 x")).definition,
+            "seq10 x"
+        );
     }
 
     #[test]

@@ -459,27 +459,28 @@ fn parse_all_seqs(path: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// Uppercased sequences for contigs `[start, end)` (clamped). Parses the file once
-/// and caches all sequences; subsequent calls (e.g. while scrolling) are served
-/// from memory. The viewer batches its visible window into a single call.
+/// The sequences at file `indices`, in that order; `""` for an index past the end.
+fn pick_seqs(seqs: &[String], indices: &[usize]) -> Vec<String> {
+    indices
+        .iter()
+        .map(|&i| seqs.get(i).cloned().unwrap_or_default())
+        .collect()
+}
+
+/// Uppercased sequences for the contigs at file `indices` (any order, since the
+/// viewer may display a sorted permutation). Parses the file once and caches all
+/// sequences; subsequent calls (e.g. while scrolling) are served from memory. The
+/// viewer batches its visible window into a single call.
 #[tauri::command]
 pub async fn get_contig_sequences(
     state: tauri::State<'_, SeqCacheState>,
     path: String,
-    start: usize,
-    end: usize,
+    indices: Vec<usize>,
 ) -> Result<Vec<String>, String> {
     let cache = state.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mtime = file_mtime_ns(&path)?;
-        let slice = |seqs: &[String]| -> Vec<String> {
-            let e = end.min(seqs.len());
-            if start >= e {
-                Vec::new()
-            } else {
-                seqs[start..e].to_vec()
-            }
-        };
+        let slice = |seqs: &[String]| pick_seqs(seqs, &indices);
         {
             let guard = lock_poison_tolerant(&cache);
             if let Some(entry) = guard.as_ref() {
@@ -1333,6 +1334,16 @@ mod tests {
         .unwrap();
         let keys: Vec<&String> = report["rows"][0].as_object().unwrap().keys().collect();
         assert_eq!(keys, ["contig", "length", "cds_count", "domains"]);
+    }
+
+    /// A sorted Contig View asks for scattered file indices; each comes back in
+    /// the order asked, and one past the end is an empty string, not an error.
+    #[test]
+    fn contig_sequences_are_picked_by_file_index() {
+        let seqs: Vec<String> = ["AAA", "CCC", "GGG", "TTT"].map(String::from).to_vec();
+        assert_eq!(pick_seqs(&seqs, &[3, 0, 2]), ["TTT", "AAA", "GGG"]);
+        assert_eq!(pick_seqs(&seqs, &[1, 9]), ["CCC", ""]);
+        assert!(pick_seqs(&seqs, &[]).is_empty());
     }
 
     /// A CDS row's target is the CDS's index among the record's features, the

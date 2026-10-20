@@ -6,6 +6,8 @@
   import NameModal from "../NameModal.svelte";
   import type { ContigFileView, ContigView as Contig, FeatureView } from "../types";
   import { itemKey, toggleItem, type SelItem } from "../selection";
+  import { domainNames, hasDomainSearch, missingCount, sortOrder, type SortKey } from "../contigSort";
+  import { DEFAULT_GUTTER_FIELDS, GUTTER_FIELDS, gutterLines, type GutterNumber } from "../contigLabel";
 
   let { path, active = true }: { path: string; active?: boolean } = $props();
 
@@ -18,10 +20,14 @@
 
   // ── editing (GenBank only) ─────────────────────────────────────────────────
   const canEdit = $derived(/\.(gb|gbk|genbank|gbff)$/i.test(path));
-  // The right-clicked feature: drives the pinned detail panel (all file types)
-  // and, for GenBank, the color/remove edit controls at the bottom of it. Apart
-  // from the selection, which can hold many features at once.
-  let inspected = $state<{ contigIndex: number; feat: FeatureView } | null>(null);
+  // The right-clicked feature or contig (gutter): drives the pinned detail panel
+  // (all file types) and, for a GenBank feature, the color/remove edit controls at
+  // the bottom of it. Apart from the selection, which can hold many items at once.
+  type Inspected =
+    | { kind: "feature"; contigIndex: number; feat: FeatureView }
+    | { kind: "contig"; contigIndex: number };
+  let inspected = $state<Inspected | null>(null);
+  const inspectedFeat = $derived(inspected?.kind === "feature" ? inspected : null);
   /// The dashed outline marking the feature the details panel shows (`.ep-mark`
   /// repeats it in the panel header).
   const INSPECT_COLOR = "#e5484d";
@@ -39,7 +45,8 @@
   // Hover tooltips, anchored at the pointer (client coordinates); `placeTip`
   // decides which side of it they go.
   let tooltip = $state<{ x: number; y: number; feature: FeatureView } | null>(null);
-  let nameTooltip = $state<{ x: number; y: number; name: string } | null>(null);
+  // Gutter hover: the contig's header summary (file index `ci`).
+  let nameTooltip = $state<{ x: number; y: number; ci: number } | null>(null);
   let tipEl = $state<HTMLDivElement>();
   let nameTipEl = $state<HTMLDivElement>();
 
@@ -73,6 +80,37 @@
   let labelQualifier = $state<Record<string, string>>({});
   const LABEL_NONE = "<none>"; // not a possible qualifier key
   const labelSig = $derived(JSON.stringify(labelQualifier));
+  // What the gutter shows for each contig (one field per line) and how rows are
+  // numbered: by file position or by rank in the current sort.
+  let gutterFields = $state({ ...DEFAULT_GUTTER_FIELDS });
+  let gutterNumber = $state<GutterNumber>("file");
+  const GUTTER_LINE_H = 13;
+
+  // ── view-only sort ─────────────────────────────────────────────────────────
+  // Permutes the drawing order; the file is never touched. `ci` stays the file
+  // index everywhere (selection, sequences, edits); only the vertical layout runs
+  // over display positions.
+  let sortBy = $state<"file" | "length" | "domain_search" | "domain">("file");
+  let sortDomain = $state("");
+  let sortDesc = $state(true);
+  const sortKey = $derived<SortKey>(
+    sortBy === "domain" ? { by: "domain", name: sortDomain } : { by: sortBy },
+  );
+  const domainChoices = $derived(data ? domainNames(data.contigs) : []);
+  const canSortDomainSearch = $derived(data ? hasDomainSearch(data.contigs) : false);
+  // Display position → file index, and its inverse.
+  const order = $derived(data ? sortOrder(data.contigs, sortKey, sortBy === "file" ? false : sortDesc) : []);
+  const posOf = $derived.by(() => {
+    const p = new Int32Array(order.length);
+    order.forEach((ci, pos) => (p[ci] = pos));
+    return p;
+  });
+  const sortMissing = $derived(data ? missingCount(data.contigs, sortKey) : 0);
+  function setSort(by: typeof sortBy) {
+    sortBy = by;
+    if (by === "domain" && !domainChoices.includes(sortDomain)) sortDomain = domainChoices[0] ?? "";
+    if (scrollEl) scrollEl.scrollTop = 0;
+  }
 
   // Drawn bar height: never shorter than the label text it has to hold.
   const featH = $derived(Math.max(labelFontSize, annotH));
@@ -102,6 +140,8 @@
     annotH = 14;
     stackAnnotations = false;
     labelQualifier = {};
+    gutterFields = { ...DEFAULT_GUTTER_FIELDS };
+    gutterNumber = "file";
   }
 
   function featLabel(f: FeatureView): string {
@@ -215,10 +255,11 @@
     );
   }
 
-  // Cumulative content-y offset per contig + total height. Every contig is sized
-  // to its real lane count (no clipping, even at tens of thousands of contigs —
-  // the layout is O(n·depth) and cached). Depends on data, filters, and zoom
-  // (letters change track heights) — NOT on scroll.
+  // Cumulative content-y offset per display position + total height. Every
+  // contig is sized to its real lane count (no clipping, even at tens of
+  // thousands of contigs — the layout is O(n·depth) and cached). Depends on data,
+  // sort, filters, and zoom (letters change track heights) — NOT on scroll.
+  // Indexed by display position: a file index goes through `posOf` first.
   const vlayout = $derived.by(() => {
     if (!data) return { offsets: [] as number[], total: 0 };
     void filterSig;
@@ -228,15 +269,23 @@
     void stackShift;
     void stackAnnotations;
     const contigs = data.contigs;
+    const ord = order;
     const offsets: number[] = new Array(contigs.length + 1);
     // A pinned shared ruler occupies the top of the viewport, so the content
     // starts below it (it then scrolls underneath, sticky-header style).
     offsets[0] = sharedRuler ? rulerBandH : 0;
-    for (let i = 0; i < contigs.length; i++) {
-      offsets[i + 1] = offsets[i] + contigHeight(contigs[i], contigLayout(contigs[i]));
+    for (let p = 0; p < contigs.length; p++) {
+      const c = contigs[ord[p]];
+      offsets[p + 1] = offsets[p] + contigHeight(c, contigLayout(c));
     }
     return { offsets, total: offsets[contigs.length] };
   });
+  // The y span of the contig at file index `ci`, or null before layout.
+  function contigSpan(ci: number): { top: number; bottom: number } | null {
+    const p = posOf[ci];
+    const top = vlayout.offsets[p];
+    return p === undefined || top === undefined ? null : { top, bottom: vlayout.offsets[p + 1] };
+  }
 
   // The qualifier keys each feature kind carries anywhere in the file, sorted:
   // the choices in View options' "Label by". Only read while that is open.
@@ -259,36 +308,41 @@
   const seqPending = new Set<number>();
   const SEQ_OVERSCAN = 8; // prefetch this many contigs above/below the viewport
 
-  // Fetch the missing contiguous sub-range within [a, b] (± overscan) in ONE call.
-  function ensureSeqRange(a: number, b: number) {
+  // Fetch the sequences of the contigs at these file indices that are neither
+  // cached nor in flight, in ONE call. Indices need not be contiguous: under a
+  // sort, neighbors on screen are scattered through the file.
+  function ensureSeqs(indices: Iterable<number>) {
     if (!data) return;
-    const lo = Math.max(0, a - SEQ_OVERSCAN);
-    const hi = Math.min(data.contigs.length - 1, b + SEQ_OVERSCAN);
-    let need0 = -1;
-    let need1 = -1;
-    for (let i = lo; i <= hi; i++) {
+    const need: number[] = [];
+    for (const i of indices) {
       if (seqCache[i] === undefined && !seqPending.has(i)) {
-        if (need0 < 0) need0 = i;
-        need1 = i;
+        seqPending.add(i);
+        need.push(i);
       }
     }
-    if (need0 < 0) return;
-    for (let i = need0; i <= need1; i++) seqPending.add(i);
-    const s0 = need0;
-    getContigSequences(path, need0, need1 + 1)
+    if (!need.length) return;
+    getContigSequences(path, need)
       .then((seqs) => {
         const next = { ...seqCache };
-        seqs.forEach((s, k) => (next[s0 + k] = s));
+        seqs.forEach((s, k) => (next[need[k]] = s));
         seqCache = next;
       })
       .catch(() => {})
       .finally(() => {
-        for (let i = s0; i <= need1; i++) seqPending.delete(i);
+        for (const i of need) seqPending.delete(i);
       });
+  }
+  // The contigs at display positions [a, b] (± overscan).
+  function ensureSeqWindow(a: number, b: number) {
+    const lo = Math.max(0, a - SEQ_OVERSCAN);
+    const hi = Math.min(order.length - 1, b + SEQ_OVERSCAN);
+    const want: number[] = [];
+    for (let p = lo; p <= hi; p++) want.push(order[p]);
+    ensureSeqs(want);
   }
   // A single contig (e.g. for copy of a clicked feature not yet loaded).
   function ensureSeq(ci: number) {
-    ensureSeqRange(ci, ci);
+    ensureSeqs([ci]);
   }
 
   // ── viewport state ──────────────────────────────────────────────────────────
@@ -323,7 +377,8 @@
 
   // Which contigs intersect the vertical viewport, with resolved track offsets.
   type Frame = {
-    ci: number;
+    ci: number; // file index
+    pos: number; // display position
     c: Contig;
     lay: Layout;
     yTop: number;
@@ -342,7 +397,7 @@
     if (!data) return [];
     const { offsets } = vlayout;
     const contigs = data.contigs;
-    // binary search first contig whose bottom > vTop
+    // binary search first display position whose bottom > vTop
     let lo = 0,
       hi = contigs.length;
     while (lo < hi) {
@@ -351,10 +406,11 @@
       else hi = mid;
     }
     const out: Frame[] = [];
-    for (let ci = lo; ci < contigs.length && offsets[ci] < vTop + vH; ci++) {
+    for (let pos = lo; pos < contigs.length && offsets[pos] < vTop + vH; pos++) {
+      const ci = order[pos];
       const c = contigs[ci];
       const lay = contigLayout(c);
-      const yTop = offsets[ci] + CONTIG_PAD_TOP;
+      const yTop = offsets[pos] + CONTIG_PAD_TOP;
       const rulerY = perContigRulerH > 0 ? yTop : -1;
       const seqY = yTop + perContigRulerH;
       const th = transTrackH(c);
@@ -363,8 +419,8 @@
       const winL = Math.max(0, vLeft / pxPerBp);
       const winR = Math.min(c.length, (vLeft + vW - GUTTER) / pxPerBp);
       out.push({
-        ci, c, lay, yTop, rulerY, seqY, transY, laneBaseY,
-        height: offsets[ci + 1] - offsets[ci],
+        ci, pos, c, lay, yTop, rulerY, seqY, transY, laneBaseY,
+        height: offsets[pos + 1] - offsets[pos],
         winL, winR,
       });
     }
@@ -531,7 +587,7 @@
     if (!data) return null;
     const missing = [...new Set(items.map((it) => it.ci))].filter((ci) => seqCache[ci] === undefined);
     if (missing.length) {
-      ensureSeqRange(Math.min(...missing), Math.max(...missing));
+      ensureSeqs(missing);
       return null;
     }
     const out: { name: string; seq: string }[] = [];
@@ -691,12 +747,14 @@
       if (fr) {
         const ci = fr.ci;
         caret = null;
-        if (e.shiftKey && contigAnchor >= 0) {
-          const [lo, hi] = contigAnchor < ci ? [contigAnchor, ci] : [ci, contigAnchor];
+        if (e.shiftKey && contigAnchor >= 0 && contigAnchor < posOf.length) {
+          // The rows visibly between the two clicks, so in display order.
+          const a = posOf[contigAnchor];
+          const [lo, hi] = a < fr.pos ? [a, fr.pos] : [fr.pos, a];
           const have = new Set(items.map(itemKey));
           const add: SelItem[] = [];
-          for (let i = lo; i <= hi; i++) {
-            const it: SelItem = { kind: "contig", ci: i };
+          for (let p = lo; p <= hi; p++) {
+            const it: SelItem = { kind: "contig", ci: order[p] };
             if (!have.has(itemKey(it))) add.push(it);
           }
           setItems([...items, ...add]);
@@ -764,12 +822,27 @@
     scheduleDraw();
   }
 
+  // The contig whose gutter row is under the pointer, if the pointer is in the gutter.
+  function gutterFrameAt(clientX: number, clientY: number): Frame | null {
+    if (!scrollEl) return null;
+    const rect = scrollEl.getBoundingClientRect();
+    if (clientX - rect.left >= GUTTER) return null;
+    if (sharedRuler && clientY - rect.top < rulerBandH) return null;
+    return frameAtY(viewTop + (clientY - rect.top));
+  }
+
   // Right-click on a feature pins its details (and, for GenBank, its edit
-  // controls) in the side panel; on anything else it closes the panel.
+  // controls) in the side panel; on a contig's gutter row it pins the record's
+  // header; on anything else it closes the panel.
   function onContextMenu(e: MouseEvent) {
     e.preventDefault();
-    const hit = featureAt(e.clientX, e.clientY);
-    inspected = hit ? { contigIndex: hit.ci, feat: hit.f } : null;
+    const row = gutterFrameAt(e.clientX, e.clientY);
+    const hit = row ? null : featureAt(e.clientX, e.clientY);
+    inspected = row
+      ? { kind: "contig", contigIndex: row.ci }
+      : hit
+        ? { kind: "feature", contigIndex: hit.ci, feat: hit.f }
+        : null;
     scheduleDraw();
   }
   // Track the bp under the cursor so the toolbar can show a live coordinate and
@@ -802,13 +875,8 @@
       scheduleDraw();
       return;
     }
-    const rect = scrollEl?.getBoundingClientRect();
-    const fr = rect && e.clientX - rect.left < GUTTER
-      ? frameAtY(viewTop + e.clientY - rect.top) : null;
-    nameTooltip = fr ? {
-      x: e.clientX, y: e.clientY,
-      name: fr.c.name && fr.c.name !== fr.c.id ? `${fr.c.id} (${fr.c.name})` : fr.c.id || fr.c.name,
-    } : null;
+    const fr = gutterFrameAt(e.clientX, e.clientY);
+    nameTooltip = fr ? { x: e.clientX, y: e.clientY, ci: fr.ci } : null;
     const hit = featureAt(e.clientX, e.clientY);
     tooltip = hit ? { x: e.clientX, y: e.clientY, feature: hit.f } : null;
     scheduleDraw(); // the hover guide follows the cursor
@@ -953,9 +1021,9 @@
     if (!selRange || !scrollEl) return;
     const mid = (selRange.lo + selRange.hi) / 2;
     setViewLeft(mid * pxPerBp - trackViewW / 2);
-    const off = vlayout.offsets[selRange.ci];
-    if (off !== undefined) {
-      const target = off + (vlayout.offsets[selRange.ci + 1] - off) / 2 - viewH / 2;
+    const span = contigSpan(selRange.ci);
+    if (span) {
+      const target = span.top + (span.bottom - span.top) / 2 - viewH / 2;
       scrollEl.scrollTop = Math.max(0, target);
     }
     scheduleDraw();
@@ -1263,7 +1331,7 @@
         // a feature that is both reads as alternating red and accent.
         const isSel = scene.interactive && selFeatKeys.has(`${fr.ci}:${f.feat_index}`);
         const isInspected =
-          scene.interactive && inspected?.contigIndex === fr.ci && inspected?.feat.feat_index === f.feat_index;
+          scene.interactive && inspectedFeat?.contigIndex === fr.ci && inspectedFeat.feat.feat_index === f.feat_index;
         for (let i = 0; i < sp.length; i++) {
           const x = sx(sp[i].start);
           const w = Math.max(1.5, (sp[i].end - sp[i].start) * pxPerBp);
@@ -1348,15 +1416,39 @@
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     for (const fr of frames) {
+      const rowTop = fr.yTop - CONTIG_PAD_TOP - vTop;
+      const rowBottom = rowTop + fr.height - contigGap;
       // Multi-select highlight for the whole contig row in the gutter.
       if (scene.interactive && contigSel.has(fr.ci)) {
         ctx.fillStyle = "rgba(59,130,246,0.18)";
-        ctx.fillRect(0, fr.yTop - CONTIG_PAD_TOP - vTop, GUTTER, fr.height - contigGap);
+        ctx.fillRect(0, rowTop, GUTTER, rowBottom - rowTop);
       }
-      const yid = fr.seqY - vTop + seqTrackH() / 2 + 3;
+      // The contig shown in the details panel (right-clicked in the gutter).
+      if (scene.interactive && inspected?.kind === "contig" && inspected.contigIndex === fr.ci) {
+        ctx.save();
+        ctx.strokeStyle = INSPECT_COLOR;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(1.5, rowTop + 0.5, GUTTER - 3, rowBottom - rowTop - 1);
+        ctx.restore();
+      }
+      // The label: one record field per line, the first in bold, stopping at the
+      // row's bottom (the hover still shows them all) and stepping over the
+      // "Translation" track label.
+      const lines = gutterLines(fr.c, gutterFields, gutterNumber, fr.ci, fr.pos);
+      const transTop = fr.transY >= 0 ? fr.transY - vTop : Infinity;
+      const transBottom = transTop + TRANS_H;
+      let y = fr.seqY - vTop + seqTrackH() / 2 + 3;
       ctx.fillStyle = cText;
-      ctx.font = "600 11px ui-monospace, monospace";
-      ctx.fillText(clip(`${fr.ci + 1}. ${fr.c.id || fr.c.name}`, GUTTER - 8, ctx), 6, yid);
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0) {
+          y += GUTTER_LINE_H;
+          if (y + 3 > transTop && y - 10 < transBottom) y = transBottom + 10;
+          if (y + 3 > rowBottom) break;
+        }
+        ctx.font = i === 0 ? "600 11px ui-monospace, monospace" : "11px system-ui, sans-serif";
+        ctx.fillText(clip(lines[i], GUTTER - 8, ctx), 6, y);
+      }
       if (fr.transY >= 0) {
         ctx.fillStyle = cDim;
         ctx.font = "10px system-ui, sans-serif";
@@ -1412,9 +1504,16 @@
 
   function clip(s: string, maxW: number, ctx: CanvasRenderingContext2D): string {
     if (ctx.measureText(s).width <= maxW) return s;
-    let t = s;
-    while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
-    return t + "…";
+    // Longest prefix that fits with the ellipsis; binary search, since a gutter
+    // DEFINITION line can run to hundreds of characters on every redraw.
+    let lo = 1;
+    let hi = s.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (ctx.measureText(s.slice(0, mid) + "…").width <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return s.slice(0, lo) + "…";
   }
   function labelColor(bg: string): string {
     const m = /^#([0-9a-f]{6})$/i.exec(bg);
@@ -1728,9 +1827,11 @@
     void featH;
     void stackAnnotations;
     void labelSig;
+    void gutterNumber;
+    void JSON.stringify(gutterFields);
     // Batch-fetch the visible window's sequences in one call (with overscan) so
     // scrolling doesn't fire one backend round-trip per contig.
-    if (showLetters && frames.length) ensureSeqRange(frames[0].ci, frames[frames.length - 1].ci);
+    if (showLetters && frames.length) ensureSeqWindow(frames[0].pos, frames[frames.length - 1].pos);
     scheduleDraw();
   });
 
@@ -1762,7 +1863,7 @@
     }
   }
   async function applyColor(hex: string) {
-    if (!inspected) return;
+    if (inspected?.kind !== "feature") return;
     editMsg = null;
     try {
       await setFeatureColor(path, inspected.contigIndex, inspected.feat.feat_index, hex);
@@ -1773,7 +1874,7 @@
     }
   }
   async function removeInspected() {
-    if (!inspected) return;
+    if (inspected?.kind !== "feature") return;
     editMsg = null;
     try {
       await removeFeature(path, inspected.contigIndex, inspected.feat.feat_index);
@@ -1864,10 +1965,9 @@
   // Scroll a focused contig into view.
   $effect(() => {
     if (focused === null || !data || !scrollEl) return;
-    const idx = focused;
-    const off = vlayout.offsets[idx];
-    if (off !== undefined) {
-      requestAnimationFrame(() => scrollEl && (scrollEl.scrollTop = Math.max(0, off - 40)));
+    const span = contigSpan(focused);
+    if (span) {
+      requestAnimationFrame(() => scrollEl && (scrollEl.scrollTop = Math.max(0, span.top - 40)));
     }
     const timer = setTimeout(() => (focused = null), 2200);
     return () => clearTimeout(timer);
@@ -1917,6 +2017,34 @@
         <button onclick={() => zoomBtn(1.5)} aria-label="Zoom in">+</button>
         <button onclick={fitSelection} disabled={!selRange || selRange.hi <= selRange.lo} title="Zoom to the last item selected">Fit selection</button>
         <span class="dim">{data.contigs.length} contig{data.contigs.length === 1 ? "" : "s"}</span>
+        <label class="sortctl" title="Display order only; the file is not changed (the Sort Contigs tool writes a sorted copy)">
+          Sort
+          <select value={sortBy} onchange={(e) => setSort(e.currentTarget.value as typeof sortBy)}>
+            <option value="file">File order</option>
+            <option value="length">Length</option>
+            <option value="domain_search" disabled={!canSortDomainSearch}>Domain_Search score</option>
+            <option value="domain" disabled={!domainChoices.length}>Domain score</option>
+          </select>
+          {#if sortBy === "domain"}
+            <select
+              value={sortDomain}
+              onchange={(e) => { sortDomain = e.currentTarget.value; if (scrollEl) scrollEl.scrollTop = 0; }}
+              aria-label="Domain to sort by"
+            >
+              {#each domainChoices as n (n)}<option value={n}>{n}</option>{/each}
+            </select>
+          {/if}
+        </label>
+        {#if sortBy !== "file"}
+          <button
+            onclick={() => { sortDesc = !sortDesc; if (scrollEl) scrollEl.scrollTop = 0; }}
+            title={sortDesc ? "Highest first (click for lowest first)" : "Lowest first (click for highest first)"}
+            aria-label="Sort direction"
+          >{sortDesc ? "↓" : "↑"}</button>
+          {#if sortMissing > 0}
+            <span class="dim" title="Contigs without a value for this sort are drawn after the rest">{sortMissing} without a value (last)</span>
+          {/if}
+        {/if}
         {#if items.length > 0}
           <span class="sel-badge" title="Ctrl/Cmd+click adds to the selection">{items.length} selected</span>
           {#if hasSel}
@@ -1994,6 +2122,21 @@
               <label class="orow check">
                 <input type="checkbox" bind:checked={stackAnnotations} />
                 Stack annotations
+              </label>
+              <div class="osec" title="What the left-hand column shows for each contig, one field per line. Lines that do not fit a short row are left out; hover the row to see them all.">Contig label</div>
+              {#each GUTTER_FIELDS as g (g.field)}
+                <label class="orow check" title={g.title}>
+                  <input type="checkbox" bind:checked={gutterFields[g.field]} />
+                  {g.label}
+                </label>
+              {/each}
+              <label class="orow">
+                Number
+                <select bind:value={gutterNumber}>
+                  <option value="file">file position</option>
+                  <option value="rank">rank in sort</option>
+                  <option value="none">none</option>
+                </select>
               </label>
               <div class="osec" title="Which qualifier each kind of feature is labeled with. A feature without it keeps the default label.">Label by</div>
               {#each data.feature_kinds as kind (kind)}
@@ -2166,7 +2309,23 @@
     </div>
   {/if}
 
-  {#if inspected}
+  {#if inspected?.kind === "contig" && data?.contigs[inspected.contigIndex]}
+    {@const c = data.contigs[inspected.contigIndex]}
+    <div class="editpanel">
+      <div class="ep-head">
+        <span class="ep-mark" title="Outlined like this in the contig names"></span>
+        <b>Contig</b> · {c.id || c.name}
+        <button class="ep-x" onclick={() => (inspected = null)} aria-label="Close">×</button>
+      </div>
+      <!-- The record's header (what the gutter hover shows, plus references and
+           comments), pinned so it can be read and copied at leisure. -->
+      <div class="ep-detail">
+        {#each c.info as row, i (i)}
+          <div class="tt-row info-row"><b>{row.key}</b> {row.value}</div>
+        {/each}
+      </div>
+    </div>
+  {:else if inspected?.kind === "feature"}
     <div class="editpanel">
       <div class="ep-head">
         <span class="ep-mark" title="Outlined like this on the map"></span>
@@ -2209,8 +2368,17 @@
       {/each}
     </div>
   {/if}
-  {#if nameTooltip}
-    <div class="tooltip" bind:this={nameTipEl}>{nameTooltip.name}</div>
+  {#if nameTooltip && data?.contigs[nameTooltip.ci]}
+    {@const c = data.contigs[nameTooltip.ci]}
+    <div class="tooltip" bind:this={nameTipEl}>
+      <div class="tt-title">{c.id || c.name}</div>
+      {#each c.info.filter((r) => !r.detail) as row, i (i)}
+        <div class="tt-row info-row"><b>{row.key}</b> {row.value}</div>
+      {/each}
+      {#if c.info.some((r) => r.detail)}
+        <div class="tt-row dim">Right-click for references and comments</div>
+      {/if}
+    </div>
   {/if}
 
   {#if showSelExtract}
@@ -2338,6 +2506,13 @@
     background: transparent;
   }
   .gutter-resize:hover { background: var(--accent); opacity: 0.5; }
+  /* Header values carry their own line breaks (DBLINK, a reference's lines). */
+  .info-row { white-space: pre-wrap; }
+  .sortctl {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
   .spacer {
     position: relative;
     width: 100%;

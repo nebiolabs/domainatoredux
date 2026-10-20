@@ -92,13 +92,11 @@ export const loadHmmLogo = (path: string, index?: number): Promise<HmmLogo> =>
 export const listHmmProfiles = (path: string): Promise<HmmSummary[]> =>
   invoke("list_hmm_profiles", { path });
 
-/// Uppercased sequences for contigs [start, end) (server-cached; batched by the
-/// viewer's visible window so scrolling doesn't re-parse the file per contig).
-export const getContigSequences = (
-  path: string,
-  start: number,
-  end: number,
-): Promise<string[]> => invoke("get_contig_sequences", { path, start, end });
+/// Uppercased sequences for the contigs at these file indices, in that order ("" for
+/// one past the end). Server-cached, and batched by the viewer's visible window so
+/// scrolling doesn't re-parse the file per contig.
+export const getContigSequences = (path: string, indices: number[]): Promise<string[]> =>
+  invoke("get_contig_sequences", { path, indices });
 
 /// Read a text file (TSV/CSV) and write it back in place (the Text / Table editors).
 /// A text file's contents, normalized to LF, plus the line terminator it used.
