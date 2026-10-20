@@ -4,7 +4,7 @@
 domainator <tool> [options]
 ```
 
-`domainator --help` lists all 34 tools; `domainator <tool> --help` is the exhaustive,
+`domainator --help` lists all 35 tools; `domainator <tool> --help` is the exhaustive,
 always-current list of that tool's flags. This page gives each tool's purpose, the flags
 that matter in practice, and a worked example. Filenames in the examples are
 placeholders.
@@ -35,8 +35,8 @@ because it might legitimately have come from `--config`. See
 [Concepts](concepts.md#the--i---r-convention).
 
 **`--cpu 0` means all cores**, and 0 is the default. Only `domainate`, `domain-search`,
-`deduplicate`, `seq-dist`, `compare-contigs`, `hmmer-compare` and `hmmer-search` are
-threaded; output is deterministic regardless of thread count.
+`gene-call`, `deduplicate`, `seq-dist`, `compare-contigs`, `hmmer-compare` and
+`hmmer-search` are threaded; output is deterministic regardless of thread count.
 
 **stdin and stdout.** Tools that accept multiple inputs read GenBank from stdin when `-i`
 is omitted, and most tools write to stdout when `-o` is omitted, so they pipe:
@@ -73,7 +73,7 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 | Role | Tools |
 | --- | --- |
 | [I/O and diagnostics](#io-and-diagnostics) | `inspect`, `convert`, `genbank-to-fasta`, `schema` |
-| [Annotation and search](#annotation-and-search) | `domainate`, `domain-search`, `filter-domains` |
+| [Annotation and search](#annotation-and-search) | `domainate`, `domain-search`, `gene-call`, `filter-domains` |
 | [Selection and extraction](#selection-and-extraction) | `select-by-cds`, `select-by-contig`, `select-by-coord`, `extract-domains`, `extract-peptides`, `extract-unannotated`, `trim-contigs`, `sort-contigs`, `clean-sequences`, `deduplicate` |
 | [Color](#color) | `color-genbank`, `color-table-to-legend` |
 | [Matrices and networks](#matrices-and-networks) | `seq-dist`, `compare-contigs`, `transform-matrix`, `build-ssn`, `build-ssn-viewer` |
@@ -142,7 +142,9 @@ annotations overlapping a better hit, with `--overlap_by_db` to apply that per d
 records that hit something; `--no_annotations` to score without writing features;
 `--fasta_type` (default `protein`) to say how to read FASTA input; `--cpu` to
 parallelize independent reference profiles, including profiles in one HMM file;
-taxonomy filters.
+taxonomy filters. `--gene_call all|unannotated` calls genes first, exactly as
+[`gene-call`](#gene-call) does in its default meta mode, so a bare genome can be annotated
+in one step; give `-Z` with it, since the database size is fixed before genes are called.
 
 ```bash
 domainator domainate -i contigs.gb -r pfam-A.hmm -r rebase_gold.fasta \
@@ -166,12 +168,42 @@ nucleotide, and `--max_region_overlap` deduplicates overlapping windows.
 Other key flags: `--add_annotations` to also write `Domainator` features (not just the
 `Domain_Search` best hit); `--max_hits` and `--max_hits_per_contig` to cap results
 (ranked by the focus CDS's own hit score); `--decoys`/`--decoys_file` to reject hits that
-score better against a decoy; `--batch_size` (default 10000); taxonomy filters.
+score better against a decoy; `--batch_size` (default 10000); taxonomy filters;
+`--gene_call all|unannotated`, as on `domainate`.
 
 ```bash
 # every gene within 10 kb of a Cas9 hit, across a formatted database
 domainator domain-search -i genomes_db/ -r cas9.hmm -o neighborhoods.gb \
   --kb_range 10 --add_annotations -e 1e-10
+```
+
+### `gene-call`
+
+**Predict genes on nucleotide contigs, adding a `CDS` feature for each.** Domainator works
+on CDSs, so a genome or contig with no gene annotation has to be gene-called first. This
+is Prodigal's algorithm, run through [Orphos](https://github.com/FullHuman/orphos), an
+external program you install once (see [Installation](installation.md#optional-external-programs)).
+Each CDS gets a `/translation`, a `/gene_id` (`<contig>_<n>`) and a `/cds_id`. A gene
+running off the end of a linear contig is kept as a partial CDS, extended to the edge and
+marked `<`/`>`, with a `/codon_start` when its 5' end is cut. On a circular contig, genes
+crossing the origin are called as joins across it.
+
+Key flags: `--mode meta` (the default: pre-trained models chosen per contig, right for
+metagenomes, plasmids, phages and short contigs) or `--mode single` (train on all input
+records together, which suits one complete genome); `--scope unannotated` (the default:
+only contigs with no CDS) or `--scope all` (delete every CDS, and the `Domainator`
+annotations on them, then re-call); `--translation_table` (default 11; in meta mode each
+contig uses its best model's table, 11 or 4); `--closed` to forbid genes running off the
+ends; `--mask` to forbid genes across runs of `N`; `--fasta_type` (default `nucleotide`);
+`--bin_path` to name the `orphos` binary.
+
+This tool has no counterpart in the Python suite, which calls genes only inside
+`domainate`/`domain_search --gene_call`. Those flags drive the same code here, and their
+output matches the Python tool's byte for byte.
+
+```bash
+domainator gene-call -i assembly.fasta -o genes.gb
+domainator gene-call -i genome.fasta -o genes.gb --mode single
 ```
 
 ### `filter-domains`

@@ -16,9 +16,9 @@ Three counts appear in this project and they measure different things:
 
 | Count | What it is |
 | --- | --- |
-| **34** | subcommands of the `domainator` executable (`domainator --help`), including the `inspect`, `convert` and `schema` dev/meta commands |
-| **30** | tools with a `--config` schema (`domainator schema <tool>`) — all but those three |
-| **28** | tools wired into the GUI's Tools menu |
+| **35** | subcommands of the `domainator` executable (`domainator --help`), including the `inspect`, `convert` and `schema` dev/meta commands |
+| **32** | tools with a `--config` schema (`domainator schema <tool>`) — all but those three |
+| **29** | tools wired into the GUI's Tools menu |
 | **41 rows below** | upstream Python scripts, ported *and* deliberately unported |
 
 Related: [deliberate deferrals and the upstream pin](https://github.com/nebiolabs/domainatoredux/blob/main/UPSTREAM.md),
@@ -30,6 +30,15 @@ handling, `--partial` on the eight tools that take it, and `enum_report --fragme
 `--partial_count`. They are checked by the parity sweep's `extra:` invocations; see
 [File formats](file-formats.md#partial-features-and-fragments). `find_features.py` and
 `domainator_db_download.py` gained `--partial` upstream, but neither tool is ported.
+
+Gene calling (`--gene_call all|unannotated` on `domainate` and `domain_search`) is ported
+by driving the external, GPL [Orphos](https://github.com/FullHuman/orphos) binary (a Rust
+Prodigal) where upstream uses pyrodigal in-process; see `docs/architecture.md`, "External
+binaries". Its 13 `extra:` parity invocations are byte-identical, and a stress comparison
+of `prodigal_CDS_annotate` on random genomes (circular and linear, N runs, contigs down to
+45 bp) matched all 889 genes. The same code is also exposed as **`gene-call`**, a tool
+with no upstream counterpart (so it has no row below) that adds Orphos's single mode, a
+translation table, `--closed` and `--mask`; it is in the GUI's Tools menu as "Gene call".
 
 ## Legend
 
@@ -50,9 +59,9 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | color_table_to_legend.py | finished (byte-identical SVG) | Tools menu ("Color table → legend") — reads a `table` file (`.tsv`/`.csv`), writes SVG |
 | compare_contigs.py | done (`-o` ward report and `--progress` intentionally not ported) | Tools menu ("Compare contigs") |
 | deduplicate_genbank.py | finished: hash/cd-hit/diamond/usearch backends, byte-identical incl. the `--cluster_table` row order, which follows the clustering tool's own order rather than the record order | Tools menu ("Deduplicate") — hash backend needs nothing; cd-hit/usearch/diamond need their binary, all three **auto-downloadable** from the External tools panel |
-| domain_search.py | protein (hmmsearch) + protein-FASTA (phmmer) + nucleotide-FASTA/HMM (nhmmer) references supported; whole-contig nhmmer hits flow through neighborhood extraction (default range, --add_annotations, and --whole_contig incl. circular rotation naming all at parity). Minor known gaps: protein input + --whole_contig/neighborhood emits whole proteins rather than erroring as Python does; and where two features share a start coordinate the slice path emits `Domainator` before `Domain_Search` where Python emits the reverse (`gap:feature-order`, 5 parity rows — the features themselves, coordinates and qualifiers included, all match). --pad at parity (verified against the committed domain_search_test_out2.gb fixture). Still deferred: CM/foldseek references, --gene_call (prodigal, GPL-deferred), --deduplicate | Tools menu ("Domain search") — incl. neighborhood extraction, taxonomy filters, and decoys; HMM references come from the folder or the Databases panel |
-| domainate.py | protein (hmmsearch) + protein-FASTA (phmmer) + nucleotide-FASTA/HMM (nhmmer, whole-contig both-strand + circular origin-wrap) references supported; nucleotide-HMM & circular nhmmer are exact parity, phmmer is exact structural parity (evalue/score within HMMER-impl tolerance), and nucleotide-FASTA nhmmer is now exact parity too — byte-identical output, with coordinates, scores and E-values equal to pyhmmer's — via hmmer-pure-rs's single-sequence builder (see UPSTREAM.md, "Pinned dependency"). Still deferred: CM/foldseek references, --gene_call (prodigal, GPL-deferred), --batch_size/--offset/--recs_to_read | Tools menu ("Domainate") — incl. taxonomy filters |
-| domainator_db_download.py | deferred (network fetch + prodigal --gene_call, which is GPL-deferred) | — |
+| domain_search.py | protein (hmmsearch) + protein-FASTA (phmmer) + nucleotide-FASTA/HMM (nhmmer) references supported; whole-contig nhmmer hits flow through neighborhood extraction (default range, --add_annotations, and --whole_contig incl. circular rotation naming all at parity). Minor known gaps: protein input + --whole_contig/neighborhood emits whole proteins rather than erroring as Python does; and where two features share a start coordinate the slice path emits `Domainator` before `Domain_Search` where Python emits the reverse (`gap:feature-order`, 5 parity rows — the features themselves, coordinates and qualifiers included, all match). --pad at parity (verified against the committed domain_search_test_out2.gb fixture). --gene_call ported (external Orphos binary; byte-identical). Still deferred: CM/foldseek references, --deduplicate | Tools menu ("Domain search") — incl. neighborhood extraction, taxonomy filters, and decoys; HMM references come from the folder or the Databases panel |
+| domainate.py | protein (hmmsearch) + protein-FASTA (phmmer) + nucleotide-FASTA/HMM (nhmmer, whole-contig both-strand + circular origin-wrap) references supported; nucleotide-HMM & circular nhmmer are exact parity, phmmer is exact structural parity (evalue/score within HMMER-impl tolerance), and nucleotide-FASTA nhmmer is now exact parity too — byte-identical output, with coordinates, scores and E-values equal to pyhmmer's — via hmmer-pure-rs's single-sequence builder (see UPSTREAM.md, "Pinned dependency"). --gene_call ported (external Orphos binary; byte-identical). Still deferred: CM/foldseek references, --batch_size/--offset/--recs_to_read | Tools menu ("Domainate") — incl. taxonomy filters |
+| domainator_db_download.py | deferred (network fetch; its `--gene_call` could now reuse `tools/gene_call.rs`) | — |
 | domainator_format_db.py | finished (shard/BGZF-compress/.didx-index; .didx byte-identical to Python; domain_search round-trip verified both ways. Supports plain + BGZF inputs; plain non-BGZF gzip rejected, matching the rest of the seekable-I/O layer) | not runnable as a tool; the **Databases panel** registers/classifies already-formatted DBs for use as references |
 | enum_report.py | finished (`--json` is streaming NDJSON to its own path; html output deferred) | **Enum Report viewer** tab (row-virtualized sortable grid, per-column filters, the export's column builder, taxonomy database picker) + Tools menu export ("Enum report (export)", TSV): a column builder over every column type, parameterized and taxonomy ones included, with taxonomy from the managed NCBI Taxonomy download |
 | extract_domains.py | finished (separate tool; parity-verified) | Tools menu ("Extract domains") |

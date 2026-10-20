@@ -15,6 +15,7 @@ use crate::search::references::References;
 use crate::seq::partial::Partial;
 use crate::seq::SeqRecord;
 use crate::tools::domainate::{domainate, DomainateOptions};
+use crate::tools::gene_call::GeneCall;
 use crate::tools::neighborhood::{select_by_cds_hits, Range, Region};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
@@ -58,6 +59,9 @@ pub struct DomainSearchOptions {
     pub pad: bool,
     /// `--partial`: which proteins/CDSs are searched, by fragment status.
     pub partial: Partial,
+    /// `--gene_call`: call genes (with Orphos) on each partition's nucleotide
+    /// contigs before searching them (see [`DomainateOptions::gene_call`]).
+    pub gene_call: Option<GeneCall>,
 }
 
 impl Default for DomainSearchOptions {
@@ -83,6 +87,7 @@ impl Default for DomainSearchOptions {
             max_hits_per_contig: None,
             pad: false,
             partial: Partial::Include,
+            gene_call: None,
         }
     }
 }
@@ -209,6 +214,14 @@ pub fn domain_search(
         max_hits_per_contig: opts.max_hits_per_contig,
         parallel_profiles: false,
         partial: opts.partial,
+        // Partitions already run in parallel, so each Orphos run gets one thread unless
+        // there is only the one partition.
+        gene_call: opts.gene_call.clone().map(|mut gene_call| {
+            if parts.len() > 1 {
+                gene_call.options.cpu = 1;
+            }
+            gene_call
+        }),
         ..Default::default()
     };
 
@@ -228,7 +241,7 @@ pub fn domain_search(
                         &opts.fasta_type,
                     )?;
                     let mut emitted = Vec::new();
-                    for rec in domainate(records, refs, &dopts) {
+                    for rec in domainate(records, refs, &dopts)? {
                         // Protein hits pass through whole; nucleotide hits go through
                         // neighborhood extraction.
                         if rec.molecule_type.as_deref() == Some("protein") {

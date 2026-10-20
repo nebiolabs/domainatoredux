@@ -996,6 +996,7 @@ pub(crate) mod tests {
         ("domain-search", "references", "reference"),
         ("domainate", "input", "sequence"),
         ("domainate", "references", "reference"),
+        ("gene-call", "input", "sequence"),
         ("enum-report", "input", "sequence"),
         ("extract-domains", "input", "sequence"),
         ("extract-peptides", "input", "sequence"),

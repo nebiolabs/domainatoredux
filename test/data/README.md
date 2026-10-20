@@ -7,7 +7,8 @@ GenBank/HMM/matrix file) works without the gitignored `external/domainator/`
 clone, and the inputs cannot shift underfoot between runs.
 
 Which files live here is derived, not curated: `scripts/parity/sync_fixtures.py`
-takes the set of fixtures that upstream's harvested test invocations reference.
+takes the set of fixtures that upstream's harvested test invocations, and the
+hand-written ones in `scripts/parity/extra_invocations.tsv`, reference.
 Do not add or edit files here by hand.
 
 ```bash

@@ -55,6 +55,7 @@
           const dir = p[0].replace(/[\\/][^\\/]*$/, "");
           if (dir && dir !== p[0]) {
             ws.root = dir;
+            ws.selectedFolders = [dir];
             ws.selectedFolder = dir;
           }
           standalonePath = p[0];
@@ -315,13 +316,13 @@
   });
 
   // Cross-window refresh: when any window creates a file (e.g. Extract from a
-  // popped-out window), refresh the browser if the changed dir is the open folder.
+  // popped-out window), refresh the browser if the changed dir is a listed folder.
   $effect(() => {
     if (isStandalone) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
     listen<string>("files-changed", (e) => {
-      if (e.payload === ws.selectedFolder) ws.refreshFolder();
+      if (ws.selectedFolders.includes(e.payload)) ws.refreshFolder();
     }).then((u) => {
       unlisten = u;
       if (disposed) u();

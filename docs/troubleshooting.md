@@ -29,6 +29,26 @@ The search order is `--bin_path` → `$DOMAINATOR_DIAMOND` / `$DOMAINATOR_CDHIT`
 **On Windows you need a Windows binary.** A `diamond` built for Linux under WSL2 will not
 run from a native Windows build.
 
+## "orphos not found", or orphos is too old
+
+`gene-call`, and `--gene_call` on `domainate` and `domain-search`, run
+[Orphos](https://github.com/FullHuman/orphos) (a Rust reimplementation of Prodigal) to
+predict genes. Install it from the **External tools** panel, or download a release and set
+`$DOMAINATOR_ORPHOS` (or pass `gene-call --bin_path`). It must be version 0.4.0 or newer:
+older releases ignored the genetic-code flag, so Domainator refuses them rather than
+calling genes with the wrong table.
+
+Orphos publishes no Intel-macOS build, so the panel shows it as `n/a` there. Build it
+yourself instead:
+
+```bash
+cargo install orphos-cli
+export DOMAINATOR_ORPHOS=~/.cargo/bin/orphos
+```
+
+You don't need Orphos if your contigs already carry CDS annotations, for example
+GenBank files downloaded from NCBI.
+
 ## `deduplicate` with cd-hit complains about the molecule type
 
 cd-hit ships as two programs: `cd-hit` for protein and `cd-hit-est` for nucleotide.

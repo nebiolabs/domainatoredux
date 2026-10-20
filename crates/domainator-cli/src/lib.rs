@@ -32,6 +32,7 @@ use domainator_core::tools::clean_sequences;
 use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
 use domainator_core::tools::deduplicate_genbank;
 use domainator_core::tools::enum_report::{self, needs_taxonomy, Analysis, OutputFormat};
+use domainator_core::tools::gene_call;
 use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
 use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
 use domainator_core::tools::select_by_cds::{pad_records, select_by_cds, SelectByCdsOptions};
@@ -129,6 +130,12 @@ enum Command {
         /// only (only fragments). Default: include.
         #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
         partial: Option<String>,
+        /// Call genes with Orphos (Prodigal's metagenomic mode) before searching: 'all'
+        /// deletes every CDS and re-calls every nucleotide contig; 'unannotated' calls
+        /// only contigs with no CDS. Needs the orphos binary. Supply -Z too: the
+        /// database size is fixed before genes are called.
+        #[arg(long = "gene_call", value_parser = ["all", "unannotated"])]
+        gene_call: Option<String>,
     },
     /// Search references against a (possibly sharded/BGZF/indexed) database.
     DomainSearch {
@@ -241,6 +248,12 @@ enum Command {
         /// only (only fragments). Default: include.
         #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
         partial: Option<String>,
+        /// Call genes with Orphos (Prodigal's metagenomic mode) before searching: 'all'
+        /// deletes every CDS and re-calls every nucleotide contig; 'unannotated' calls
+        /// only contigs with no CDS. Needs the orphos binary. Supply -Z too: the
+        /// database size is fixed before genes are called.
+        #[arg(long = "gene_call", value_parser = ["all", "unannotated"])]
+        gene_call: Option<String>,
     },
     /// Remove redundant sequences (hash exact-dedup, or cd-hit/diamond/usearch clustering).
     Deduplicate {
@@ -340,6 +353,48 @@ enum Command {
         /// Drop sequences containing non-canonical residues (after strip).
         #[arg(long = "filter_by_aa")]
         filter_by_aa: bool,
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long = "print_config")]
+        print_config: bool,
+    },
+    /// Call genes (Prodigal-style CDS features) on nucleotide contigs with the
+    /// external Orphos binary.
+    GeneCall {
+        /// Input GenBank/FASTA file(s) (GenBank on stdin if omitted).
+        #[arg(short, long, num_args = 1..)]
+        input: Vec<PathBuf>,
+        /// Output GenBank file (stdout if omitted).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Molecule type for FASTA input (default: nucleotide).
+        #[arg(long = "fasta_type", value_parser = ["protein", "nucleotide"])]
+        fasta_type: Option<String>,
+        /// meta: pre-trained models chosen per contig (metagenomes, plasmids, phages,
+        /// short contigs). single: train on all input records together (one complete
+        /// genome). Default: meta.
+        #[arg(long, value_parser = ["meta", "single"])]
+        mode: Option<String>,
+        /// unannotated: call only contigs with no CDS. all: delete every CDS (and its
+        /// Domainator annotations) and re-call every contig. Default: unannotated.
+        #[arg(long, value_parser = ["unannotated", "all"])]
+        scope: Option<String>,
+        /// Genetic code (1-6, 9-16, 21-25). Default: 11, or in meta mode the table of
+        /// each contig's best model.
+        #[arg(long = "translation_table")]
+        translation_table: Option<u8>,
+        /// Closed ends: no genes running off the ends of a contig.
+        #[arg(long)]
+        closed: bool,
+        /// No genes across runs of N.
+        #[arg(long)]
+        mask: bool,
+        /// Orphos threads (0 = all cores).
+        #[arg(long)]
+        cpu: Option<usize>,
+        /// Path to the orphos binary (else $DOMAINATOR_ORPHOS, then PATH).
+        #[arg(long = "bin_path")]
+        bin_path: Option<String>,
         #[arg(long)]
         config: Option<String>,
         #[arg(long = "print_config")]
@@ -1692,6 +1747,27 @@ fn load_typed(input: &Path, fasta_type: &str) -> Result<Vec<SeqRecord>> {
 /// Parse `deduplicate`'s `--params` (an inner JSON dict like `"-s":0.9`) into an
 /// ordered list of `(flag, value)` args. Numbers/bools are stringified; a null
 /// value means a bare flag.
+/// Parse a `FromStr` choice (`--mode`, `--scope`), keeping its own error message.
+fn parse_choice<T: std::str::FromStr<Err = String>>(s: &str) -> Result<T> {
+    s.parse().map_err(|e: String| anyhow::anyhow!(e))
+}
+
+/// The `--gene_call` request for `domainate`/`domain_search`: Orphos in meta mode
+/// (upstream's only mode) with its default genetic code, or `None` when unset.
+fn gene_call_request(scope: Option<&str>, cpu: usize) -> Result<Option<gene_call::GeneCall>> {
+    scope
+        .map(|scope| {
+            Ok(gene_call::GeneCall {
+                scope: parse_choice(scope)?,
+                options: gene_call::GeneCallOptions {
+                    cpu,
+                    ..Default::default()
+                },
+            })
+        })
+        .transpose()
+}
+
 fn parse_dedup_params(s: Option<&str>) -> Result<Vec<(String, Option<String>)>> {
     let Some(s) = s.filter(|s| !s.trim().is_empty()) else {
         return Ok(Vec::new());
@@ -2006,6 +2082,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             taxonomy_expr,
             ncbi_taxonomy_path,
             partial,
+            gene_call,
             config: config_path,
             print_config: do_print,
         } => {
@@ -2029,6 +2106,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 taxonomy_expr,
                 ncbi_taxonomy_path,
                 partial,
+                gene_call,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::DomainateConfig>(p)?,
@@ -2079,9 +2157,11 @@ fn dispatch(cli: Cli) -> Result<()> {
                 allowed_taxids,
                 cpu: cfg.cpu.unwrap_or(0),
                 partial: config::parse_partial(cfg.partial.as_deref())?,
+                gene_call: gene_call_request(cfg.gene_call.as_deref(), cfg.cpu.unwrap_or(0))?,
                 ..Default::default()
             };
-            let annotated = domainate::domainate(records, &dbs, &opts);
+            let annotated =
+                domainate::domainate(records, &dbs, &opts).context("running domainate")?;
             write_genbank(&output, &annotated).context("writing GenBank")?;
             println!("wrote {} records to {}", annotated.len(), output);
         }
@@ -2120,6 +2200,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             ncbi_taxonomy_path,
             max_output_gb,
             partial,
+            gene_call,
             config: config_path,
             print_config: do_print,
         } => {
@@ -2158,6 +2239,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 ncbi_taxonomy_path,
                 max_output_gb,
                 partial,
+                gene_call,
             };
             let mut cfg = match &config_path {
                 Some(p) => load_config::<config::DomainSearchConfig>(p)?,
@@ -2230,6 +2312,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 allowed_taxids,
                 decoys,
                 partial: config::parse_partial(cfg.partial.as_deref())?,
+                gene_call: gene_call_request(cfg.gene_call.as_deref(), cfg.cpu.unwrap_or(0))?,
             };
             let hits = domain_search::domain_search(&[input], &dbs, &opts)
                 .context("running domain_search")?;
@@ -2462,6 +2545,67 @@ fn dispatch(cli: Cli) -> Result<()> {
                 Some(p) => std::fs::write(p, msg).context("writing log")?,
                 None => eprint!("{msg}"),
             }
+        }
+        Command::GeneCall {
+            input,
+            output,
+            fasta_type,
+            mode,
+            scope,
+            translation_table,
+            closed,
+            mask,
+            cpu,
+            bin_path,
+            config: config_path,
+            print_config: do_print,
+        } => {
+            let cli = config::GeneCallConfig {
+                input: paths_to_strings(&input)?,
+                output: opt_path(&output)?,
+                fasta_type,
+                mode,
+                scope,
+                translation_table,
+                closed,
+                mask,
+                cpu,
+                bin_path,
+            };
+            let mut cfg = match &config_path {
+                Some(p) => load_config::<config::GeneCallConfig>(p)?,
+                None => config::GeneCallConfig::default(),
+            };
+            cfg.merge_cli(cli);
+            config::reject_non_finite(&cfg)?;
+            if do_print {
+                print!("{}", print_config(&cfg)?);
+                return Ok(());
+            }
+            let fasta_type = cfg.fasta_type.as_deref().unwrap_or("nucleotide");
+            let mut records: Vec<SeqRecord> = if cfg.input.is_empty() {
+                load_inputs(&[])?
+            } else {
+                let mut records = Vec::new();
+                for p in &cfg.input {
+                    records.extend(load_typed(&PathBuf::from(p), fasta_type)?);
+                }
+                records
+            };
+            let request = gene_call::GeneCall {
+                scope: parse_choice(cfg.scope.as_deref().unwrap_or("unannotated"))?,
+                options: gene_call::GeneCallOptions {
+                    mode: parse_choice(cfg.mode.as_deref().unwrap_or("meta"))?,
+                    translation_table: cfg.translation_table,
+                    closed: cfg.closed,
+                    mask: cfg.mask,
+                    cpu: cfg.cpu.unwrap_or(0),
+                    bin_path: cfg.bin_path.clone(),
+                },
+            };
+            let added = gene_call::gene_call(&mut records, &request).context("calling genes")?;
+            write_genbank_out(&records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
+            eprintln!("called {added} genes on {} records", records.len());
         }
         Command::SortContigs {
             input,

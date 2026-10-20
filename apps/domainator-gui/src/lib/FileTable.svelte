@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import { ws } from "./state.svelte";
+  import { parentDir, ws } from "./state.svelte";
   import { countRecords, createTextFile, pickFiles } from "./api";
   import { validateFilename } from "./filetypes";
   import NameModal from "./NameModal.svelte";
@@ -27,12 +27,13 @@
   };
 
   // ── column model ────────────────────────────────────────────────────────────
-  type ColKey = "name" | "type" | "description" | "size" | "created" | "modified" | "records";
+  type ColKey = "name" | "folder" | "type" | "description" | "size" | "created" | "modified" | "records";
   // `width` is the default track; `min` is its floor in px, used both for the
   // flexible tracks and to size the table so a widened column scrolls the pane
   // instead of squeezing its neighbors.
   const COLUMNS: { key: ColKey; label: string; width: string; min: number; align?: "right" }[] = [
     { key: "name", label: "Name", width: "minmax(140px, 2fr)", min: 140 },
+    { key: "folder", label: "Folder", width: "minmax(90px, 1fr)", min: 90 },
     { key: "type", label: "Type", width: "88px", min: 88 },
     { key: "description", label: "Description", width: "minmax(140px, 3fr)", min: 140 },
     { key: "size", label: "Size", width: "78px", min: 78, align: "right" },
@@ -44,7 +45,8 @@
   const ACT_COL_PX = 52;
   const COL_GAP_PX = 8;
   const ROW_PAD_PX = 24;
-  const TOGGLEABLE = COLUMNS.filter((c) => c.key !== "name"); // name is always shown
+  // Name is always shown; Folder exactly when several folders are listed.
+  const TOGGLEABLE = COLUMNS.filter((c) => c.key !== "name" && c.key !== "folder");
 
   function loadCols(): Set<ColKey> {
     try {
@@ -91,7 +93,11 @@
   let colMenuOpen = $state(false);
   let colWidths = $state<Partial<Record<ColKey, number>>>(loadWidths());
 
-  const visibleColDefs = $derived(COLUMNS.filter((c) => visibleCols.has(c.key)));
+  const multiFolder = $derived(ws.selectedFolders.length > 1);
+  const visibleColDefs = $derived(
+    COLUMNS.filter((c) => (c.key === "folder" ? multiFolder : visibleCols.has(c.key))),
+  );
+  const folderOf = (f: FileEntry) => ws.folderLabel(parentDir(f.path));
   const gridTemplate = $derived(
     visibleColDefs.map((c) => (colWidths[c.key] != null ? `${colWidths[c.key]}px` : c.width)).join(" ") +
       ` ${ACT_COL_PX}px`,
@@ -176,6 +182,7 @@
   function cmp(a: FileEntry, b: FileEntry, k: ColKey): number {
     switch (k) {
       case "name": return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+      case "folder": return folderOf(a).localeCompare(folderOf(b)) || a.name.localeCompare(b.name);
       case "type": return a.file_type.localeCompare(b.file_type) || a.name.localeCompare(b.name);
       case "description": return a.description.localeCompare(b.description);
       case "size": return a.size - b.size;
@@ -187,7 +194,8 @@
   }
   const sortedFiles = $derived.by(() => {
     const files = [...ws.files];
-    const k = sortKey;
+    // Sorted by Folder and back to one folder: the column is gone, so sort by name.
+    const k = sortKey === "folder" && !multiFolder ? "name" : sortKey;
     const dir = sortDir;
     files.sort((a, b) => cmp(a, b, k) * dir || a.name.localeCompare(b.name));
     return files;
@@ -356,7 +364,7 @@
       },
       {
         label: "Sort By",
-        submenu: COLUMNS.map((c) => ({
+        submenu: COLUMNS.filter((c) => c.key !== "folder" || multiFolder).map((c) => ({
           label: c.label,
           checked: sortKey === c.key,
           action: () => setSort(c.key),
@@ -366,7 +374,15 @@
     openContextMenu(e, items);
   }
 
+  // Where new and imported files go: the primary folder.
   const folderName = $derived(ws.selectedFolder?.split(/[\\/]/).pop() ?? "workspace");
+  // What the table lists.
+  const listedLabel = $derived(multiFolder ? `${ws.selectedFolders.length} folders` : folderName);
+  const listedTitle = $derived(
+    multiFolder
+      ? `${ws.selectedFolders.map((d) => ws.folderLabel(d)).join("\n")}\n\nNew files go to ${folderName}`
+      : (ws.selectedFolder ?? ""),
+  );
 
   async function importViaDialog() {
     if (!ws.selectedFolder) return;
@@ -466,7 +482,9 @@
   function folderUnder(x: number, y: number): string | null {
     const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-folder-path]");
     const path = el?.dataset.folderPath ?? null;
-    return path && path !== ws.selectedFolder ? path : null; // the files are already there
+    // A folder every dragged file is already in is no target.
+    const paths = ws.dragging?.paths ?? (press ? [press.f.path] : []);
+    return path && paths.some((p) => parentDir(p) !== path) ? path : null;
   }
   function dragMove(e: PointerEvent) {
     if (!press) return;
@@ -536,7 +554,7 @@
   oncontextmenu={blankMenu}
 >
   <div class="actionbar">
-    <span class="ab-folder" title={ws.selectedFolder ?? ""}>{folderName}</span>
+    <span class="ab-folder" title={listedTitle}>{listedLabel}</span>
     <div class="colmenu">
       <button class="import" onclick={() => (colMenuOpen = !colMenuOpen)} title="Show/hide columns">Columns ▾</button>
       {#if colMenuOpen}
@@ -557,7 +575,7 @@
       class="import"
       onclick={importViaDialog}
       disabled={!ws.selectedFolder || ws.importing > 0}
-      title="Copy files into this folder"
+      title="Copy files into {folderName}"
     >
       {#if ws.importing > 0}
         Importing {ws.importing} file{ws.importing === 1 ? "" : "s"}…
@@ -598,7 +616,7 @@
   {:else if !ws.selectedFolder}
     <div class="note">Select a folder.</div>
   {:else if ws.files.length === 0}
-    <div class="note">No recognized files in this folder.</div>
+    <div class="note">No recognized files in {multiFolder ? "these folders" : "this folder"}.</div>
   {:else}
     {#each sortedFiles as f (f.path)}
       <div
@@ -622,6 +640,8 @@
                 <span class="new-badge" title="New job output">New</span>
               {/if}
             </div>
+          {:else if c.key === "folder"}
+            <div class="cell dim" role="cell" title={parentDir(f.path)}>{folderOf(f)}</div>
           {:else if c.key === "type"}
             <div class="cell" role="cell"><span class="badge badge-{f.file_type}">{TYPE_LABEL[f.file_type] ?? f.file_type}</span></div>
           {:else if c.key === "description"}

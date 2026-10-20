@@ -24,12 +24,15 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 
 
 def referenced_fixtures(test_dir):
-    """Fixture paths (relative to the data dir) that harvested invocations use."""
+    """Fixture paths (relative to the data dir) that harvested invocations use, and
+    the hand-written ones in `extra_invocations.tsv`."""
     with tempfile.NamedTemporaryFile(suffix=".tsv") as tmp:
         subprocess.run([sys.executable, str(REPO / "scripts/parity/harvest_invocations.py"),
                         "--test_dir", str(test_dir), "-o", tmp.name],
                        check=True, stderr=subprocess.DEVNULL)
         rows = pathlib.Path(tmp.name).read_text().splitlines()
+    extra = REPO / "scripts/parity/extra_invocations.tsv"
+    rows += [r for r in extra.read_text().splitlines() if r and not r.startswith("#")]
     needed = set()
     for row in rows:
         for arg in row.split("\t")[3:]:
@@ -101,7 +104,7 @@ def main(argv=None):
         if unreferenced:
             # Not a failure: a fixture may be used by a hand-written Rust test.
             print(f"  note: {len(unreferenced)} committed fixture(s) no longer referenced "
-                  f"by any harvested invocation (--update --prune to drop them)")
+                  f"by any harvested or extra invocation (--update --prune to drop them)")
         if problems:
             print("\nFAILED: run scripts/parity/sync_fixtures.py --update")
             return 1

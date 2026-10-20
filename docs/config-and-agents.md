@@ -94,7 +94,7 @@ domainator schema domain-search
 domainator schema seq_dist | jq -r '.properties | keys[]'
 ```
 
-Tool names are accepted with hyphens or underscores. The 30 config-backed tools are
+Tool names are accepted with hyphens or underscores. The 32 config-backed tools are
 covered; `inspect`, `convert` and `schema` have no config and no schema.
 
 This is the interface to use when generating invocations programmatically: it is the same

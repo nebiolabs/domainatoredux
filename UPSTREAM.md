@@ -29,10 +29,11 @@ file records how far the port is caught up and how to advance it.
   `--partial_count`. `summary-report` reports `partial_cdss`/`fragment_proteins`. Fragment
   status also reads `NON_TER` features and `Flags: Fragment`. The `find_features` and
   `domainator_db_download` halves have no counterpart, since both tools are unported.
-- **Gene calling keeps partial genes** (`f39ec15`): prodigal genes running off a linear
-  contig become `<`/`>` partial CDSs, and origin-crossing genes on circular contigs are
-  called from a window across the origin. Not ported, because `--gene_call` is deferred
-  (see below). When it is ported, it must follow these rules.
+- **Gene calling keeps partial genes** (`f39ec15`), ported along with `--gene_call`
+  itself. Prodigal genes running off a linear contig become `<`/`>` partial CDSs, and
+  origin-crossing genes on circular contigs are called from a window across the origin.
+  The port runs the external Orphos binary in place of pyrodigal and rebuilds every one of
+  these rules from its GFF (`tools/gene_call.rs`).
 - **Gene-caller `/partial` codes** (`0a8ba4c`), ported. On every GenBank read, a
   prodigal/GeneMark `/partial="10"` code becomes `<`/`>` markers and is removed. An end
   within 2 bases of the contig edge is extended to the edge, with `/codon_start` moved if
@@ -94,6 +95,7 @@ Use this to triage which module a changed upstream file lands in:
 | `seq_dist.py` | `.../tools/seq_dist.rs` |
 | `compare_contigs.py` | `.../tools/compare_contigs.rs` |
 | `domainate.py` | `.../tools/domainate.rs`, `.../search/hmmer.rs` |
+| `domainate.py` gene calling (`prodigal_CDS_annotate`, `_prodigal_linear_location`, `_prodigal_origin_genes`) | `.../tools/gene_call.rs` (drives the external Orphos binary; also the port-only `gene-call` tool) |
 | `domain_search.py`, `select_by_cds.py` | `.../tools/{domain_search,select_by_cds,neighborhood}.rs` |
 | `select_by_contig.py`, `enum_report.py` | `.../tools/{select_by_contig,enum_report,select_common}.rs` |
 | `matrix_report.py` | `.../tools/matrix_report.rs` |

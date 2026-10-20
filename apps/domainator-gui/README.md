@@ -271,17 +271,20 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   checks (`DOMAINATOR_DIAMOND` → `tools::external::find_binary`). The **External
   tools** panel (left sidebar, collapsed) lists each tool with installed/available
   status and a Download button; `ensure_env` at startup wires up already-downloaded
-  binaries. Handles `.tar.gz`, `.zip`, and bare (`Raw`) executables. Three entries:
+  binaries. Handles `.tar.gz`, `.zip`, and bare (`Raw`) executables. Four entries:
   **diamond v2.2.5** (all platforms), **cdhit v0.1.0** — the Rust cd-hit port, one
   multiplexer binary, no Intel-macOS build so the panel shows `n/a` there — and
   **usearch v12.0-beta1**, whose assets are bare per-platform executables and are the
-  one `Archive::Raw` user. cd-hit and usearch are GPL, so they are downloaded at
-  runtime and never bundled with the app. Two tests guard the registry:
-  diamond must stay at or above `deduplicate_genbank::MIN_DIAMOND_VERSION` (an older
-  binary fails on a single-cluster `deduplicate`), and `managed_tools_match_the_core_locator`
+  one `Archive::Raw` user — and **orphos v0.4.0**, the Rust Prodigal behind `gene-call`
+  and `--gene_call`, whose archive members are named per platform and installed as
+  `orphos` (no Intel-macOS build either). cd-hit, usearch and Orphos are GPL, so they are
+  downloaded at runtime and never bundled with the app. Three tests guard the registry:
+  diamond and orphos must stay at or above `deduplicate_genbank::MIN_DIAMOND_VERSION` /
+  `gene_call::MIN_ORPHOS_VERSION` (an older diamond fails on a single-cluster
+  `deduplicate`; before 0.4.0 Orphos ignored `-g`), and `managed_tools_match_the_core_locator`
   pins every spec's `bin_name`/`env_var` to the core's `*_BIN_NAME`/`*_ENV_VAR`
   constants — a rename on either side would install a binary where nothing looks for
-  it. Adding a future dependency (mmseqs2, foldseek, prodigal, …) is just another
+  it. Adding a future dependency (mmseqs2, foldseek, …) is just another
   `ToolSpec` in `specs()`.
 - **Reference databases (auto-download).** `reference_dbs.rs` is the data
   counterpart of `external_tools.rs`: each `DbSpec` names a public database, its

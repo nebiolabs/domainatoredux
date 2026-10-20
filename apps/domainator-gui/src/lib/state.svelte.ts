@@ -40,11 +40,19 @@ function classifyPath(path: string): FileType | null {
   return null;
 }
 
+/// The folder holding `path` (its path up to the last separator).
+export function parentDir(path: string): string {
+  return path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")));
+}
+
 // Central reactive shell state (Svelte 5 runes). One instance is shared across
 // all panels via the `ws` export.
 class WorkspaceStore {
   root = $state<string | null>(null);
   tree = $state<FolderNode | null>(null);
+  // The folders the file table lists, in the order they were picked. The last one
+  // is `selectedFolder`, the primary: where new files, imports and tool outputs go.
+  selectedFolders = $state<string[]>([]);
   selectedFolder = $state<string | null>(null);
   files = $state<FileEntry[]>([]);
   viewedJobFiles = $state<Record<string, string>>({});
@@ -201,15 +209,57 @@ class WorkspaceStore {
     }
   }
 
+  /// Folder `dir` as the file table and tool dialog name it: relative to the
+  /// workspace root, or the root's own name for the root.
+  folderLabel(dir: string): string {
+    const root = this.root;
+    if (root && dir.length > root.length && dir.startsWith(root) && "/\\".includes(dir[root.length])) {
+      return dir.slice(root.length + 1);
+    }
+    return dir.split(/[\\/]/).pop() || dir;
+  }
+
+  /// Show folder `path` alone (a plain click in the tree).
   async selectFolder(path: string): Promise<void> {
-    // Another folder starts with nothing selected; re-listing the same one (a
-    // refresh after a job, delete or move) keeps the selection.
-    if (path !== this.selectedFolder) this.clearSelection();
-    this.selectedFolder = path;
+    await this.selectFolders([path]);
+  }
+
+  /// Where a Shift+click range of folders starts: the last folder plainly or
+  /// Ctrl/Cmd+clicked. Not rendered, so not `$state`.
+  folderAnchor: string | null = null;
+
+  /// Ctrl/Cmd+click in the tree: add `path` to the listed folders (it becomes the
+  /// primary), or take it out. The last folder cannot be taken out.
+  async toggleFolder(path: string): Promise<void> {
+    const cur = this.selectedFolders;
+    if (!cur.includes(path)) await this.selectFolders([...cur, path]);
+    else if (cur.length > 1) await this.selectFolders(cur.filter((p) => p !== path));
+  }
+
+  /// List the files of every folder in `paths` together; the last is the primary.
+  async selectFolders(paths: string[]): Promise<void> {
+    const next = [...new Set(paths)];
+    if (!next.length) return;
+    // A changed folder set starts with nothing selected, unless folders were only
+    // added; re-listing the same ones (a refresh after a job, delete or move)
+    // keeps the selection too.
+    if (!this.selectedFolders.every((p) => next.includes(p))) this.clearSelection();
+    this.selectedFolders = next;
+    this.selectedFolder = next[next.length - 1];
+    await this.listSelectedFolders();
+  }
+
+  /// Folder listings can finish out of order after quick clicks; only the newest lands.
+  private listSeq = 0;
+  private async listSelectedFolders(): Promise<void> {
+    const seq = ++this.listSeq;
+    const dirs = this.selectedFolders;
     this.loadingFiles = true;
     this.error = null;
     try {
-      this.files = await listFolder(this.root ?? path, path);
+      const lists = await Promise.all(dirs.map((d) => listFolder(this.root ?? d, d)));
+      if (seq !== this.listSeq) return;
+      this.files = lists.flat();
       // A refresh keeps what is still listed selected; a file that went away drops out.
       const present = new Set(this.files.map((f) => f.path));
       const kept = Object.keys(this.selectedPaths).filter((p) => present.has(p));
@@ -217,10 +267,11 @@ class WorkspaceStore {
         this.setSelection(kept, kept.includes(this.selectionAnchor ?? "") ? this.selectionAnchor : (kept[0] ?? null));
       }
     } catch (e) {
+      if (seq !== this.listSeq) return;
       this.error = String(e);
       this.files = [];
     } finally {
-      this.loadingFiles = false;
+      if (seq === this.listSeq) this.loadingFiles = false;
     }
   }
 
@@ -485,7 +536,7 @@ class WorkspaceStore {
         this.closeTab(path);
         invalidatePath(path);
       }
-      if (this.selectedFolder) await this.selectFolder(this.selectedFolder);
+      await this.refreshFolder();
     } finally {
       this.busy = false;
     }
@@ -531,9 +582,9 @@ class WorkspaceStore {
     return this.selectedFolder ?? this.root;
   }
 
-  /// Reload the currently-selected folder's file list.
+  /// Reload the selected folders' file lists, keeping the file selection.
   async refreshFolder(): Promise<void> {
-    if (this.selectedFolder) await this.selectFolder(this.selectedFolder);
+    if (this.selectedFolders.length) await this.listSelectedFolders();
   }
 
   /// After creating a new file (extract / new-from-paste): refresh the folder and
@@ -566,7 +617,7 @@ class WorkspaceStore {
     this.importing = sources.length;
     try {
       const imported = await importFiles(this.root, dir, sources);
-      if (this.selectedFolder) await this.selectFolder(this.selectedFolder);
+      await this.refreshFolder();
       return imported.length;
     } catch (e) {
       this.error = String(e);

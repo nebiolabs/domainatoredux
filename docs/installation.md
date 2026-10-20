@@ -77,36 +77,40 @@ sudo apt install libwebkit2gtk-4.1-dev libsoup-3.0-dev \
 
 ## Optional external programs
 
-Most of Domainator is self-contained. Three tools can call out to an external clustering
-or alignment program, and **only** if you ask for that algorithm:
+Most of Domainator is self-contained. A few tools call out to an external clustering,
+alignment or gene-calling program, and **only** if you ask for that algorithm:
 
 | Program | Needed by | Not needed if |
 | --- | --- | --- |
 | `diamond` | `seq-dist --algorithm diamond_*` (the default), `deduplicate --algorithm diamond` | you use `seq-dist --algorithm hmmer` |
 | `cdhit` | `deduplicate --algorithm cd-hit` (the default) | you use `deduplicate --algorithm hash` |
 | `usearch` | `deduplicate --algorithm usearch` | as above |
+| `orphos` (0.4.0 or newer) | `gene-call`, and `domainate`/`domain-search --gene_call` | your contigs already have CDS annotations |
 
 Each is found by the first of these that works:
 
 1. the tool's own `--bin_path` flag;
-2. the environment variable `$DOMAINATOR_DIAMOND`, `$DOMAINATOR_CDHIT` or
-   `$DOMAINATOR_USEARCH`;
+2. the environment variable `$DOMAINATOR_DIAMOND`, `$DOMAINATOR_CDHIT`,
+   `$DOMAINATOR_USEARCH` or `$DOMAINATOR_ORPHOS`;
 3. a bundled copy at `external/<program>/` next to the executable;
 4. the bare program name on your `PATH`.
 
-**The desktop app can download all three for you** — open the *External tools* panel in
+**The desktop app can download all of them for you** — open the *External tools* panel in
 the left sidebar and click Download. It installs them into the app's data directory and
 sets the environment variables, so the command-line tool finds them too if you launch it
 from the same session. See [the desktop app](gui.md#external-tools).
 
-cd-hit and usearch are GPL-licensed. Domainator never bundles or links them; it downloads
-them at your request and runs them as separate processes.
+cd-hit, usearch and Orphos are GPL-licensed. Domainator never bundles or links them; it
+downloads them at your request and runs them as separate processes.
+
+Orphos publishes no build for Intel Macs. There, install it with `cargo install
+orphos-cli` and point `$DOMAINATOR_ORPHOS` at the result (usually `~/.cargo/bin/orphos`).
 
 ## Verify the installation
 
 ```bash
 domainator --version
-domainator --help          # lists all 34 tools
+domainator --help          # lists all 35 tools
 domainator domainate --help
 ```
 

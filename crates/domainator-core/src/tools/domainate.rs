@@ -8,6 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::gene_call::{call_genes, clear_cds_annotations, GeneCall, GeneCallScope};
 use crate::search::hmmer::hmmsearch_db;
 use crate::search::nhmmer::nhmmer_db;
 use crate::search::references::{read_references, References};
@@ -483,6 +484,9 @@ pub struct DomainateOptions {
     /// `--partial`: which proteins/CDSs are searched, by fragment status. Records
     /// are written either way; a filtered protein/CDS is just never searched.
     pub partial: Partial,
+    /// `--gene_call`: call genes (with Orphos) on nucleotide contigs before
+    /// searching. `None` keeps the existing CDS annotations as they are.
+    pub gene_call: Option<GeneCall>,
 }
 
 impl Default for DomainateOptions {
@@ -503,6 +507,7 @@ impl Default for DomainateOptions {
             parallel_profiles: true,
             max_hits_per_contig: None,
             partial: Partial::Include,
+            gene_call: None,
         }
     }
 }
@@ -510,12 +515,13 @@ impl Default for DomainateOptions {
 /// Annotate `records` with hits from `refs`. Protein references (hmmsearch /
 /// phmmer) search the input peptides (whole protein records or translated CDSs);
 /// nucleotide references (nhmmer) search whole nucleotide contigs on both strands.
-/// Returns the annotated records (all, or hit-only when `hits_only`).
+/// Returns the annotated records (all, or hit-only when `hits_only`); fails only
+/// when gene calling does (`opts.gene_call`).
 pub fn domainate(
     mut records: Vec<SeqRecord>,
     refs: &References,
     opts: &DomainateOptions,
-) -> Vec<SeqRecord> {
+) -> std::io::Result<Vec<SeqRecord>> {
     let empty_dropped = HashSet::new();
 
     // Taxonomy pre-filter: drop records whose lineage is not in the allowed set
@@ -524,11 +530,23 @@ pub fn domainate(
         records.retain(|rec| allowed.contains(&record_taxid(rec)));
     }
 
-    // clean_rec: nucleotide records get cds_id + /translation on every CDS.
-    for rec in records.iter_mut() {
-        if !rec.is_protein() {
-            clean_rec_nucleotide(rec);
+    // clean_rec: nucleotide records get cds_id + /translation on every CDS. With
+    // `--gene_call all` every CDS (and the domains anchored on them) goes first; then
+    // the nucleotide records left with no CDS get genes called, as in Python, where
+    // `prodigal_CDS_annotate` runs right after `clean_rec` when it counts no CDS.
+    if let Some(gene_call) = &opts.gene_call {
+        if gene_call.scope == GeneCallScope::All {
+            clear_cds_annotations(&mut records);
         }
+    }
+    let mut unannotated = Vec::new();
+    for (i, rec) in records.iter_mut().enumerate() {
+        if !rec.is_protein() && clean_rec_nucleotide(rec) == 0 {
+            unannotated.push(i);
+        }
+    }
+    if let Some(gene_call) = &opts.gene_call {
+        call_genes(&mut records, &unannotated, &gene_call.options)?;
     }
 
     // Protein search (hmmsearch + phmmer). Collect peptides across contigs.
@@ -715,7 +733,7 @@ pub fn domainate(
             keep
         });
     }
-    records
+    Ok(records)
 }
 
 /// Load and classify reference files (protein hmmsearch/phmmer + nucleotide

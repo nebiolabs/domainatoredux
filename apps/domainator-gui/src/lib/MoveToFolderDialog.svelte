@@ -3,7 +3,7 @@
   // new one first. The tree is drawn fully expanded as an indented list -- a
   // picker, not a browser, so there is nothing to collapse.
   import { createFolder } from "./api";
-  import { ws } from "./state.svelte";
+  import { parentDir, ws } from "./state.svelte";
   import type { FolderNode } from "./types";
 
   let {
@@ -21,8 +21,12 @@
     return out;
   }
   const rows = $derived(ws.tree ? flatten(ws.tree, 0, []) : []);
-  // The files all come from the table, i.e. the selected folder: moving there is a no-op.
-  const here = $derived(ws.selectedFolder);
+  // The folder all the files are already in, if they share one: moving there is a
+  // no-op. (With several folders listed in the table, they may not.)
+  const here = $derived.by(() => {
+    const dirs = new Set(paths.map(parentDir));
+    return dirs.size === 1 ? [...dirs][0] : null;
+  });
 
   let target = $state<string | null>(null);
   let busy = $state(false);

@@ -3,8 +3,8 @@
 //! Each [`ToolSpec`] describes a binary the app can fetch on demand for the
 //! current OS/arch, extract, store under the app data dir (`<app_data>/bin/`),
 //! and wire up by setting the env var the core locator (`tools::external::
-//! find_binary`) checks. Adding a future dependency (mmseqs2, foldseek, prodigal,
-//! …) is just another entry in [`specs`].
+//! find_binary`) checks. Adding a future dependency (mmseqs2, foldseek, …) is just
+//! another entry in [`specs`].
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -15,6 +15,7 @@ use domainator_core::tools::deduplicate_genbank::{
     CDHIT_BIN_NAME, CDHIT_ENV_VAR, DIAMOND_BIN_NAME, DIAMOND_ENV_VAR, USEARCH_BIN_NAME,
     USEARCH_ENV_VAR,
 };
+use domainator_core::tools::gene_call::{ORPHOS_BIN_NAME, ORPHOS_ENV_VAR};
 
 /// How a downloaded asset is packaged.
 pub enum Archive {
@@ -130,6 +131,30 @@ pub fn specs() -> Vec<ToolSpec> {
         member: "",
     });
 
+    // Orphos, the Rust Prodigal: gene calling for the gene-call tool and
+    // `--gene_call`. GPL, so downloaded at runtime and never bundled. Each archive
+    // holds one binary named for its platform, installed as `orphos`. No Intel-macOS
+    // build has been published since v0.1.0, which predates the flags gene calling
+    // relies on.
+    let orphos_asset = match platform_key() {
+        "linux-x64" => Some(Asset {
+            url: "https://github.com/FullHuman/orphos/releases/download/v0.4.0/orphos-cli-x86_64-linux.tar.gz",
+            archive: Archive::TarGz,
+            member: "orphos-cli-x86_64-linux",
+        }),
+        "macos-arm64" => Some(Asset {
+            url: "https://github.com/FullHuman/orphos/releases/download/v0.4.0/orphos-cli-aarch64-darwin.tar.gz",
+            archive: Archive::TarGz,
+            member: "orphos-cli-aarch64-darwin",
+        }),
+        "windows-x64" => Some(Asset {
+            url: "https://github.com/FullHuman/orphos/releases/download/v0.4.0/orphos-cli-x86_64-windows.zip",
+            archive: Archive::Zip,
+            member: "orphos-cli-x86_64-windows.exe",
+        }),
+        _ => None,
+    };
+
     vec![
         ToolSpec {
             id: "diamond",
@@ -155,6 +180,14 @@ pub fn specs() -> Vec<ToolSpec> {
             version: "12.0-beta1",
             description: "USEARCH v12 — sequence clustering, for deduplicate --algorithm usearch.",
             asset: usearch_asset,
+        },
+        ToolSpec {
+            id: "orphos",
+            bin_name: exe(ORPHOS_BIN_NAME),
+            env_var: ORPHOS_ENV_VAR,
+            version: "0.4.0",
+            description: "Orphos (Rust Prodigal) — gene calling, for gene-call and --gene_call.",
+            asset: orphos_asset,
         },
     ]
 }
@@ -297,6 +330,21 @@ mod tests {
     /// two lists are hand-maintained in different crates, so a rename on either side
     /// leaves a download that lands where nothing looks for it -- the tool still
     /// reports "not found" right after the app says it installed it.
+    /// Same for Orphos: before 0.4.0 its `-g` was ignored and its flags took values.
+    #[test]
+    fn the_managed_orphos_is_new_enough_for_gene_calling() {
+        let min = domainator_core::tools::gene_call::MIN_ORPHOS_VERSION;
+        let spec = specs()
+            .into_iter()
+            .find(|s| s.id == "orphos")
+            .expect("orphos spec");
+        assert!(
+            parts(spec.version) >= parts(min),
+            "the managed orphos is {} but gene calling needs >= {min}",
+            spec.version
+        );
+    }
+
     #[test]
     fn managed_tools_match_the_core_locator() {
         let exe = |n: &str| {
@@ -310,6 +358,7 @@ mod tests {
             ("diamond", DIAMOND_BIN_NAME, DIAMOND_ENV_VAR),
             ("cdhit", CDHIT_BIN_NAME, CDHIT_ENV_VAR),
             ("usearch", USEARCH_BIN_NAME, USEARCH_ENV_VAR),
+            ("orphos", ORPHOS_BIN_NAME, ORPHOS_ENV_VAR),
         ];
         let specs = specs();
         for (id, bin, env) in want {

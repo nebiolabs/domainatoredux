@@ -152,8 +152,8 @@ pub fn build_main(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         match *title {
             "Tools" => {
                 // Built straight from the GUI tool registry, so the menu can never
-                // drift from what `run_tool` can actually dispatch. 34 flat entries
-                // is unusable, so they are grouped by the registry's category.
+                // drift from what `run_tool` can actually dispatch. Some thirty flat
+                // entries is unusable, so they are grouped by the registry's category.
                 let tools = tauri::async_runtime::block_on(crate::cmd_tools::list_tools());
                 sub = sub.separator();
                 // Grouped in TOOL_CATEGORIES order, not first-appearance order, so

@@ -27,6 +27,6 @@ Third-party code
 `vendor/hdf5-pure/` is a vendored copy of the `hdf5-pure` crate, carrying local
 patches; it is MIT licensed and ships its own LICENSE file.
 
-The optional external programs `cd-hit` and `usearch` are GPL licensed. They are
-neither bundled nor linked: Domainator downloads them only at the user's request
+The optional external programs `cd-hit`, `usearch` and `orphos` are GPL licensed.
+They are neither bundled nor linked: Domainator downloads them only at the user's request
 and runs them as separate processes.

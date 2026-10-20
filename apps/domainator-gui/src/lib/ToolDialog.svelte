@@ -1,6 +1,6 @@
 <script lang="ts">
   import { runTool, toolSchemaCached } from "./api";
-  import { ws } from "./state.svelte";
+  import { parentDir, ws } from "./state.svelte";
   import { fieldAccepts, isInputRole, placeFiles, type TypedPath } from "./toolInputs";
   import ColumnBuilder from "./ColumnBuilder.svelte";
   import { columnTypes, toColumns, toRows } from "./columns";
@@ -34,7 +34,8 @@
   // Selected files that fit no free input, named under the directory line.
   let leftOut = $state<string[]>([]);
 
-  // The current directory: outputs land here, and input dropdowns list its files.
+  // The current directory: outputs land here. Input dropdowns list the files of
+  // every folder selected in the tree, of which this is the last picked.
   const folder = $derived(ws.selectedFolder ?? ws.root ?? "");
   const folderName = $derived(folder.split(/[\\/]/).pop() ?? folder);
 
@@ -46,9 +47,14 @@
   // (`tools/<id>.yml`, `sources`) puts them. Empty groups are dropped.
   function fileGroups(field: ToolField): ChoiceGroup[] {
     if (field.file_types.length === 0) return [];
+    // Several listed folders can hold files of the same name, so then each entry
+    // names its folder.
+    const multi = ws.selectedFolders.length > 1;
     const workspace: ChoiceGroup = {
-      label: `Workspace: ${folderName}`,
-      items: ws.files.filter((f) => fieldAccepts(field, f.file_type)).map((f) => ({ value: f.path, label: f.name })),
+      label: multi ? `Workspace: ${ws.selectedFolders.length} folders` : `Workspace: ${folderName}`,
+      items: ws.files
+        .filter((f) => fieldAccepts(field, f.file_type))
+        .map((f) => ({ value: f.path, label: multi ? `${ws.folderLabel(parentDir(f.path))}/${f.name}` : f.name })),
     };
     const databases: ChoiceGroup = {
       label: "Databases",
@@ -239,7 +245,7 @@
       const params = collectParams();
       running = true;
       void runTool(tool, params, ws.root).then(() => {
-        if (ws.selectedFolder) return ws.selectFolder(ws.selectedFolder);
+        return ws.refreshFolder();
       }).catch((e) => { ws.error = `Could not run job: ${e}`; });
       onclose();
     } catch (e) {

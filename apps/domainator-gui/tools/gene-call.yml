@@ -1,0 +1,43 @@
+# GUI dialog for `domainator gene-call`. Format: see README.md in this directory.
+id: gene-call
+label: "Gene call"
+category: "Annotation & search"
+description: "Add Prodigal-style CDS features to nucleotide contigs with Orphos (an external binary: Tools → External tools)."
+fields:
+  - name: input
+    label: "Input sequences"
+    role: input_files
+    file_type: sequence
+    required: true
+    sources: workspace_first
+    select: first
+  - name: output
+    label: "Output"
+    role: output_file
+    required: true
+    output_name: "{stem}.genes.gb"
+  - name: mode
+    label: "Mode"
+    help: "meta: pre-trained models chosen per contig (metagenomes, plasmids, phages, short contigs). single: train on all input records together (one complete genome)."
+    cli_default: "meta"
+  - name: scope
+    label: "Contigs"
+    help: "unannotated: call only contigs with no CDS. all: delete every CDS (and its Domainator annotations) and re-call every contig."
+    cli_default: "unannotated"
+  - name: translation_table
+    label: "Translation table"
+  - name: closed
+    label: "Closed ends"
+    cli_default: false
+  - name: mask
+    label: "Mask N runs"
+    cli_default: false
+  - name: fasta_type
+    label: "FASTA type"
+    cli_default: "nucleotide"
+  - name: cpu
+    show: false
+    label: "Cpu"
+  - name: bin_path
+    show: false
+    label: "Binary path"

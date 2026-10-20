@@ -7,7 +7,7 @@ around them, and turns collections of sequences into **sequence similarity netwo
 This is a from-scratch Rust implementation of the
 [Python Domainator suite](https://github.com/nebiolabs/domainator). It ships as:
 
-- **one command-line executable** — `domainator <tool> [options]`, 34 tools, no
+- **one command-line executable** — `domainator <tool> [options]`, 35 tools, no
   interpreter or conda environment required;
 - **one desktop app** — a workspace browser with a contig viewer, an interactive SSN
   viewer, HMM logos and dialogs for running the tools;
@@ -92,12 +92,12 @@ the command line just appear, and vice versa.
   layouts, chart and edit metadata, and jump from selected nodes back to their sequences.
 - **Enum Report, Summary, Matrix Report, HMM Profiles and Logo** tabs for the other file
   types, plus table, text and SVG viewers.
-- **Tools menu** — 28 of the tools, with dialogs generated from the same JSON Schema the
+- **Tools menu** — 29 of the tools, with dialogs generated from the same JSON Schema the
   CLI publishes, so the two cannot drift. Outputs land next to your inputs and chain by
   file type.
 - **Jobs, Databases and External tools panels** — run history with provenance, a reusable
-  registry of reference databases, and one-click download of `diamond`, `cdhit` and
-  `usearch`.
+  registry of reference databases, and one-click download of `diamond`, `cdhit`,
+  `usearch` and `orphos`.
 
 See **[the desktop app](docs/gui.md)**, including its current limitations.
 
@@ -136,7 +136,8 @@ upstream's test suite through both implementations and diffs the results — see
 [the parity harness](docs/parity.md) — and per-tool coverage, including what is
 deliberately not ported, is tracked in [Porting status](docs/porting-status.md).
 
-Not ported: anything depending on torch, Infernal, or gene calling with prodigal. The
+Not ported: anything depending on torch or Infernal. Gene calling runs Prodigal's
+algorithm through the external [Orphos](https://github.com/FullHuman/orphos) binary. The
 `structure_*` subsystem and HTML report output are out of scope for now; report tools offer
 `--json` instead.
 
@@ -145,8 +146,8 @@ Not ported: anything depending on torch, Infernal, or gene calling with prodigal
 A Rust port of [Domainator](https://github.com/nebiolabs/domainator) by New England
 Biolabs — please cite the original if you use this.
 
-Released under the [MIT License](LICENSE). The optional external programs `cd-hit` and
-`usearch` are GPL licensed and are neither bundled nor linked — Domainator downloads them
+Released under the [MIT License](LICENSE). The optional external programs `cd-hit`,
+`usearch` and `orphos` are GPL licensed and are neither bundled nor linked — Domainator downloads them
 only at your request and runs them as separate processes.
 
 Questions and bug reports: <https://github.com/nebiolabs/domainatoredux/issues>.

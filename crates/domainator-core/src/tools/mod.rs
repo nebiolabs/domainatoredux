@@ -17,6 +17,7 @@ pub mod extract_peptides;
 pub mod extract_unannotated;
 pub mod filter_domains;
 pub mod format_db;
+pub mod gene_call;
 pub mod hmmer_build;
 pub mod hmmer_compare;
 pub mod hmmer_report;

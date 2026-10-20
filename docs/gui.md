@@ -27,9 +27,13 @@ a folder name, and protected from deletion.
 ## The layout
 
 - **Left sidebar** — the folder tree, plus the Jobs, Databases, Reference databases and
-  External tools panels.
-- **File table** — the recognized data files in the selected folder, with type, size and
-  record count. Click a row to open it. Ctrl/Cmd+click adds a row to the selection or
+  External tools panels. Ctrl/Cmd+click a folder to list its files alongside the ones
+  already shown (or to take it back out), and Shift+click to list every visible folder
+  between the last one clicked and this one. The folder clicked last, shown in bold, is
+  where new files, imports and tool outputs go; tool input lists offer the files of every
+  listed folder.
+- **File table** — the recognized data files in the selected folders, with type, size and
+  record count (and a Folder column when more than one folder is listed). Click a row to open it. Ctrl/Cmd+click adds a row to the selection or
   takes it out, Shift+click selects a range, Ctrl/Cmd+A selects every file and Escape
   clears the selection. Neither Ctrl/Cmd+click nor Shift+click opens the file.
   Right-click works on the whole selection:
@@ -66,7 +70,7 @@ still asks about its unsaved edits first.
 
 | File | Sub-views | What you do there |
 | --- | --- | --- |
-| `.gb` `.gbk` `.genbank` `.gbff`, `.fasta` `.fa` `.fna` `.faa` `.pep` | **Contig View** | Scroll and zoom a gene map. Joined features and circular origin-wrapping are drawn correctly. Filter by feature kind, by database, or with an E-value slider. The toolbar shows the cursor's coordinate and the selection's `start:end` and length as you drag. Click a feature, drag a range, or click a contig's name to select it; Ctrl/Cmd+click (or Ctrl/Cmd+drag) adds to the selection, so features, ranges and whole contigs can be selected together. Copy the selection as nucleotides or as CDS translations (Ctrl/Cmd+Shift+C; several items copy as FASTA), or **Extract** it to a new file with each item as its own contig (a minus-strand feature comes out reverse-complemented). The selection is shared with the **Enum Report** tab: each report row has a checkbox, and a selection that is all contigs, all CDSs or all domains comes up checked there. Right-click a feature to pin its full annotation — the same fields the hover tooltip shows; the pinned feature gets a dashed red outline, apart from the selection's solid one — and, for GenBank, recolor or delete it from the bottom of that panel, or add an annotation. **View** adjusts lane and contig spacing, ruler and label font sizes, bp-vs-kb tick numbering, feature labels inside / outside / both, and whether each contig gets its own ruler or one shared ruler is pinned across them all. **Export** saves the current view or the whole file as SVG or PNG. Very dense contigs collapse to a density strip until you zoom in. |
+| `.gb` `.gbk` `.genbank` `.gbff`, `.fasta` `.fa` `.fna` `.faa` `.pep` | **Contig View** | Scroll and zoom a gene map. Joined features and circular origin-wrapping are drawn correctly. Filter by feature kind, by database, or with an E-value slider. The toolbar shows the cursor's coordinate and the selection's `start:end` and length as you drag. Click a feature, drag a range, or click a contig's name to select it; Ctrl/Cmd+click (or Ctrl/Cmd+drag) adds to the selection, so features, ranges and whole contigs can be selected together. Copy the selection as nucleotides or as CDS translations (Ctrl/Cmd+Shift+C; several items copy as FASTA), or **Extract** it to a new file with each item as its own contig (a minus-strand feature comes out reverse-complemented). The selection is shared with the **Enum Report** tab: each report row has a checkbox, and a selection that is all contigs, all CDSs or all domains comes up checked there. Right-click a feature to pin its full annotation — the same fields the hover tooltip shows; the pinned feature gets a dashed red outline, apart from the selection's solid one — and, for GenBank, recolor or delete it from the bottom of that panel, or add an annotation. **View** adjusts lane and contig spacing, ruler and label font sizes, bp-vs-kb tick numbering, feature labels inside / outside / both, which qualifier labels each kind of feature (**Label by**: a feature without that qualifier keeps its default label), and whether each contig gets its own ruler or one shared ruler is pinned across them all. **Export** saves the current view or the whole file as SVG or PNG. Very dense contigs collapse to a density strip until you zoom in. |
 | | **Enum Report** | The [`enum-report`](cli-reference.md#enum-report) table, live: per contig, CDS or domain, sortable, with per-column filters. **Columns** opens the same column builder as the export (every column type, parameters included), and **Taxonomy** picks the database the taxonomy columns use. Each file remembers its granularity and the columns last applied at each one (kept with the file's workspace metadata, so they follow a rename or move); a granularity it has none for starts from the default set in **Preferences**, which **Defaults** returns to. Each row's checkbox selects its contig, CDS or domain in Contig View; Shift+click a second checkbox to set every row between the two (in the current sort and filter) the same way, and the header checkbox selects every row the filters leave. |
 | | **Summary** | A dashboard of the dataset: counts, a contig-length histogram, top domains / databases / organisms, and a taxonomy icicle plot built from the records' own lineage — no taxdump needed. This one has no CLI equivalent. |
 | `.hdf5` `.hdf` `.h5` | **Matrix Report** | The score histogram and suggested clustering cutoffs. Click a threshold to select it. |
@@ -81,7 +85,7 @@ chart and legend exports open a Save dialog. Select nodes and click **Open seque
 
 ## Running tools
 
-The **Tools** menu runs 28 of the command-line tools, grouped as Annotation & search,
+The **Tools** menu runs 29 of the command-line tools, grouped as Annotation & search,
 Selection & extraction, Matrices & networks, Reports, HMM profiles, Color and
 Conversion. The **Tools** button in the middle of the toolbar offers the same groups cut
 down to the tools that can take the selected files as inputs, and the dialog it opens
@@ -248,7 +252,7 @@ shared list.
 
 ## External tools
 
-Three optional programs can be installed for you — click **Download** in the **External
+Four optional programs can be installed for you — click **Download** in the **External
 tools** panel and the app fetches the binary, installs it into its own data directory, and
 sets the environment variable the tools look for.
 
@@ -257,9 +261,11 @@ sets the environment variable the tools look for.
 | `diamond` | 2.2.5 | `seq-dist --algorithm diamond_*`, `deduplicate --algorithm diamond` | Linux x64, macOS (arm64 and Intel), Windows x64 |
 | `cdhit` | 0.1.0 | `deduplicate --algorithm cd-hit` | Linux x64, macOS arm64, Windows x64 — shown as `n/a` on Intel macOS |
 | `usearch` | 12.0-beta1 | `deduplicate --algorithm usearch` | Linux x64, macOS (arm64 and Intel), Windows x64 |
+| `orphos` | 0.4.0 | **Gene call**, and **Gene calling** in Domainate and Domain search | Linux x64, macOS arm64, Windows x64 — shown as `n/a` on Intel macOS |
 
 Nothing else in Domainator needs an external program; the HMMER3 implementation is built
-in. cd-hit and usearch are GPL-licensed and are downloaded at your request, never bundled.
+in. cd-hit, usearch and Orphos are GPL-licensed and are downloaded at your request, never
+bundled. A tool run without its program fails with a message saying which one to install.
 
 ## Preferences and diagnostics
 

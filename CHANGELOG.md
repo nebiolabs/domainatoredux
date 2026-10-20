@@ -9,6 +9,15 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 Parity: Python domainator 0.12.0 @ `02a31c1`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
+- **Gene calling.** A new **`gene-call`** tool adds Prodigal-style CDS features to
+  nucleotide contigs, in meta mode (the default) or single mode, with a choice of genetic
+  code, `--closed` and `--mask`. **`domainate`** and **`domain-search`** now accept
+  upstream's `--gene_call all|unannotated`, and its output is byte-identical to the Python
+  tool's. Gene calling runs the external GPL program
+  [Orphos](https://github.com/FullHuman/orphos), version 0.4.0 or newer. The app's
+  **External tools** panel can download it, or you can set `$DOMAINATOR_ORPHOS`. It is
+  also in the app's Tools menu as **Gene call**, and as a **Gene calling** option on
+  Domainate and Domain search.
 - The app runs each Tools-menu job in its own background process, running the same code as
   the `domainator` CLI. **Cancel now stops a running job** (and any diamond, cd-hit or
   usearch it started) and deletes the partial output files the job created or changed. A

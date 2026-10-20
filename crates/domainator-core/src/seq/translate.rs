@@ -9,6 +9,100 @@ use super::SeqFeature;
 
 /// Translate one codon (NCBI table 1). Ambiguous/unknown base -> `X`; `*` is stop.
 pub fn translate_codon(c0: u8, c1: u8, c2: u8) -> u8 {
+    translate_codon_with(STANDARD_CODE, c0, c1, c2)
+}
+
+/// The TCAG-ordered standard genetic code (NCBI table 1, and table 11's amino acids).
+const STANDARD_CODE: &[u8; 64] =
+    b"FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG";
+
+/// The NCBI genetic codes Prodigal (and so Orphos) accepts: 1-6, 9-16 and 21-25.
+/// Each is the 64 amino acids in TCAG codon order, `*` for stop -- NCBI's `ncbieaa`
+/// string, generated from Biopython's `CodonTable.unambiguous_dna_by_id`.
+const GENETIC_CODES: [(u8, &[u8; 64]); 19] = [
+    (1, STANDARD_CODE),
+    (
+        2,
+        b"FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIMMTTTTNNKKSS**VVVVAAAADDEEGGGG",
+    ),
+    (
+        3,
+        b"FFLLSSSSYY**CCWWTTTTPPPPHHQQRRRRIIMMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+    ),
+    (
+        4,
+        b"FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+    ),
+    (
+        5,
+        b"FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIMMTTTTNNKKSSSSVVVVAAAADDEEGGGG",
+    ),
+    (
+        6,
+        b"FFLLSSSSYYQQCC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+    ),
+    (
+        9,
+        b"FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIIMTTTTNNNKSSSSVVVVAAAADDEEGGGG",
+    ),
+    (
+        10,
+        b"FFLLSSSSYY**CCCWLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+    ),
+    (11, STANDARD_CODE),
+    (
+        12,
+        b"FFLLSSSSYY**CC*WLLLSPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+    ),
+    (
+        13,
+        b"FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIMMTTTTNNKKSSGGVVVVAAAADDEEGGGG",
+    ),
+    (
+        14,
+        b"FFLLSSSSYYY*CCWWLLLLPPPPHHQQRRRRIIIMTTTTNNNKSSSSVVVVAAAADDEEGGGG",
+    ),
+    (
+        15,
+        b"FFLLSSSSYY*QCC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+    ),
+    (
+        16,
+        b"FFLLSSSSYY*LCC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+    ),
+    (
+        21,
+        b"FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIMMTTTTNNNKSSSSVVVVAAAADDEEGGGG",
+    ),
+    (
+        22,
+        b"FFLLSS*SYY*LCC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+    ),
+    (
+        23,
+        b"FF*LSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+    ),
+    (
+        24,
+        b"FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSSKVVVVAAAADDEEGGGG",
+    ),
+    (
+        25,
+        b"FFLLSSSSYY**CCGWLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+    ),
+];
+
+/// NCBI genetic code `table`, or `None` for an id Prodigal does not support.
+pub fn genetic_code(table: u8) -> Option<&'static [u8; 64]> {
+    GENETIC_CODES
+        .iter()
+        .find(|(id, _)| *id == table)
+        .map(|(_, code)| *code)
+}
+
+/// Translate one codon with `code` (from [`genetic_code`]). Ambiguous/unknown base
+/// -> `X`; `*` is stop.
+pub fn translate_codon_with(code: &[u8; 64], c0: u8, c1: u8, c2: u8) -> u8 {
     fn idx(b: u8) -> Option<usize> {
         match b.to_ascii_uppercase() {
             b'T' | b'U' => Some(0),
@@ -18,10 +112,8 @@ pub fn translate_codon(c0: u8, c1: u8, c2: u8) -> u8 {
             _ => None,
         }
     }
-    // TCAG-ordered standard genetic code.
-    const TABLE: &[u8; 64] = b"FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG";
     match (idx(c0), idx(c1), idx(c2)) {
-        (Some(a), Some(b), Some(c)) => TABLE[a * 16 + b * 4 + c],
+        (Some(a), Some(b), Some(c)) => code[a * 16 + b * 4 + c],
         _ => b'X',
     }
 }
@@ -170,6 +262,22 @@ mod tests {
         assert_eq!(translate_dna(b"ATGGGGTAA"), "MG*");
         // Trailing partial codon is dropped.
         assert_eq!(translate_dna(b"ATGG"), "M");
+    }
+
+    #[test]
+    fn genetic_codes_differ_where_ncbi_says() {
+        let tga = |t: u8| translate_codon_with(genetic_code(t).unwrap(), b'T', b'G', b'A');
+        assert_eq!(tga(11), b'*');
+        assert_eq!(tga(4), b'W'); // Mycoplasma: the table prodigal's meta mode can pick
+        assert_eq!(tga(25), b'G');
+        // Prodigal rejects the ids NCBI never assigned.
+        for missing in [0, 7, 8, 17, 18, 19, 20, 26] {
+            assert!(genetic_code(missing).is_none(), "table {missing}");
+        }
+        assert_eq!(
+            translate_codon_with(genetic_code(11).unwrap(), b'A', b'N', b'G'),
+            b'X'
+        );
     }
 
     #[test]

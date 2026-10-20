@@ -504,6 +504,8 @@ pub struct DomainateConfig {
     pub ncbi_taxonomy_path: Option<String>,
     /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
     pub partial: Option<String>,
+    /// `--gene_call`: `all` | `unannotated` (Orphos, meta mode); unset = no calling.
+    pub gene_call: Option<String>,
 }
 
 impl DomainateConfig {
@@ -527,6 +529,7 @@ impl DomainateConfig {
         merge_scalar!(self, cli, taxonomy_expr);
         merge_scalar!(self, cli, ncbi_taxonomy_path);
         merge_scalar!(self, cli, partial);
+        merge_scalar!(self, cli, gene_call);
     }
 }
 
@@ -569,6 +572,8 @@ pub struct DomainSearchConfig {
     pub max_output_gb: Option<f64>,
     /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
     pub partial: Option<String>,
+    /// `--gene_call`: `all` | `unannotated` (Orphos, meta mode); unset = no calling.
+    pub gene_call: Option<String>,
 }
 
 impl DomainSearchConfig {
@@ -607,6 +612,7 @@ impl DomainSearchConfig {
         merge_scalar!(self, cli, ncbi_taxonomy_path);
         merge_scalar!(self, cli, max_output_gb);
         merge_scalar!(self, cli, partial);
+        merge_scalar!(self, cli, gene_call);
     }
 }
 
@@ -692,6 +698,40 @@ impl CleanSequencesConfig {
         self.deduplicate_names |= cli.deduplicate_names;
         self.strip |= cli.strip;
         self.filter_by_aa |= cli.filter_by_aa;
+    }
+}
+
+/// `gene_call` parameters (a port-only tool: Prodigal-style gene calling through the
+/// external Orphos binary).
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct GeneCallConfig {
+    pub input: Vec<String>,
+    pub output: Option<String>,
+    pub fasta_type: Option<String>,
+    /// `meta` (default) | `single`.
+    pub mode: Option<String>,
+    /// `unannotated` (default) | `all`.
+    pub scope: Option<String>,
+    pub translation_table: Option<u8>,
+    pub closed: bool,
+    pub mask: bool,
+    pub cpu: Option<usize>,
+    pub bin_path: Option<String>,
+}
+
+impl GeneCallConfig {
+    pub fn merge_cli(&mut self, cli: GeneCallConfig) {
+        merge_vec!(self, cli, input);
+        merge_scalar!(self, cli, output);
+        merge_scalar!(self, cli, fasta_type);
+        merge_scalar!(self, cli, mode);
+        merge_scalar!(self, cli, scope);
+        merge_scalar!(self, cli, translation_table);
+        self.closed |= cli.closed;
+        self.mask |= cli.mask;
+        merge_scalar!(self, cli, cpu);
+        merge_scalar!(self, cli, bin_path);
     }
 }
 
@@ -1500,6 +1540,7 @@ pub fn schema(tool: &str) -> Result<String> {
         "deduplicate" | "deduplicate-genbank" | "deduplicate_genbank" => deduplicate_schema(),
         "genbank-to-fasta" | "genbank_to_fasta" => genbank_to_fasta_schema(),
         "clean-sequences" | "clean_sequences" => clean_sequences_schema(),
+        "gene-call" | "gene_call" => gene_call_schema(),
         "sort-contigs" | "sort_contigs" => sort_contigs_schema(),
         "select-by-coord" | "select_by_coord" => select_by_coord_schema(),
         "filter-domains" | "filter_domains" => filter_domains_schema(),
@@ -1880,10 +1921,14 @@ fn domainate_schema() -> serde_json::Value {
             "include_taxids": {"type": "array", "items": {"type": "integer"}},
             "exclude_taxids": {"type": "array", "items": {"type": "integer"}},
             "taxonomy_expr": {"type": ["string", "null"]},
-            "ncbi_taxonomy_path": {"type": ["string", "null"]}
+            "ncbi_taxonomy_path": {"type": ["string", "null"]},
+            "gene_call": {"enum": ["all", "unannotated", null], "description": GENE_CALL_HELP}
         }
     })
 }
+
+/// `--gene_call` help, shared by `domainate` and `domain_search`.
+const GENE_CALL_HELP: &str = "Call genes with Orphos (Prodigal's metagenomic mode) before searching: 'all' deletes every existing CDS (and its Domainator annotations) and re-calls every nucleotide contig; 'unannotated' calls only contigs with no CDS. Needs the orphos binary. Give -Z too: the database size is fixed before genes are called.";
 
 fn domain_search_schema() -> serde_json::Value {
     use serde_json::json;
@@ -1926,7 +1971,8 @@ fn domain_search_schema() -> serde_json::Value {
             "exclude_taxids": {"type": "array", "items": {"type": "integer"}},
             "taxonomy_expr": {"type": ["string", "null"]},
             "ncbi_taxonomy_path": {"type": ["string", "null"]},
-            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if projected uncompressed GenBank output exceeds this many GB (0 disables)"}
+            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if projected uncompressed GenBank output exceeds this many GB (0 disables)"},
+            "gene_call": {"enum": ["all", "unannotated", null], "description": GENE_CALL_HELP}
         }
     })
 }
@@ -1989,6 +2035,28 @@ fn clean_sequences_schema() -> serde_json::Value {
             "deduplicate_names": {"type": "boolean", "default": false},
             "strip": {"type": "boolean", "default": false, "description": "Trim non-canonical residues from ends"},
             "filter_by_aa": {"type": "boolean", "default": false, "description": "Drop sequences with non-canonical residues"}
+        }
+    })
+}
+
+fn gene_call_schema() -> serde_json::Value {
+    use serde_json::json;
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "gene_call config",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "input": {"type": "array", "items": {"type": "string"}, "description": "GenBank/FASTA nucleotide inputs"},
+            "output": {"type": ["string", "null"], "description": "Output GenBank (stdout if omitted)"},
+            "fasta_type": {"enum": ["protein", "nucleotide", null], "default": "nucleotide", "description": "Molecule type of FASTA inputs (protein records are passed through)"},
+            "mode": {"enum": ["meta", "single", null], "default": "meta", "description": "meta: pre-trained models chosen per contig (metagenomes, plasmids, phages, short contigs). single: train on all input records together (one complete genome)."},
+            "scope": {"enum": ["unannotated", "all", null], "default": "unannotated", "description": "unannotated: call only contigs with no CDS. all: delete every CDS (and its Domainator annotations) and re-call every contig."},
+            "translation_table": {"type": ["integer", "null"], "description": "Genetic code (1-6, 9-16, 21-25). Default: 11, or in meta mode the table of each contig's best model (11 or 4)."},
+            "closed": {"type": "boolean", "default": false, "description": "Closed ends: no genes running off the ends of a contig"},
+            "mask": {"type": "boolean", "default": false, "description": "No genes across runs of N"},
+            "cpu": {"type": ["integer", "null"], "description": "Orphos threads (0 = all cores)"},
+            "bin_path": {"type": ["string", "null"], "description": "Path to the orphos binary (else $DOMAINATOR_ORPHOS, then PATH)"}
         }
     })
 }
@@ -2639,6 +2707,7 @@ mod tests {
             "deduplicate" => DeduplicateConfig,
             "genbank-to-fasta" => GenbankToFastaConfig,
             "clean-sequences" => CleanSequencesConfig,
+            "gene-call" => GeneCallConfig,
             "sort-contigs" => SortContigsConfig,
             "select-by-coord" => SelectByCoordConfig,
             "filter-domains" => FilterDomainsConfig,
@@ -2742,9 +2811,58 @@ mod tests {
         );
         assert_eq!(
             listed.len(),
-            31,
+            32,
             "a tool was added or removed without updating this list"
         );
+    }
+
+    /// A field `merge_cli` forgets is a CLI flag that silently does nothing: every
+    /// flag set on the command line must survive a merge into an empty config.
+    #[test]
+    fn gene_call_merge_keeps_every_flag() {
+        let cli = GeneCallConfig {
+            input: vec!["a.fasta".into()],
+            output: Some("out.gb".into()),
+            fasta_type: Some("protein".into()),
+            mode: Some("single".into()),
+            scope: Some("all".into()),
+            translation_table: Some(4),
+            closed: true,
+            mask: true,
+            cpu: Some(2),
+            bin_path: Some("/opt/orphos".into()),
+        };
+        let mut merged = GeneCallConfig::default();
+        merged.merge_cli(cli.clone());
+        assert_eq!(
+            serde_json::to_value(&merged).unwrap(),
+            serde_json::to_value(&cli).unwrap()
+        );
+        for (tool, mut cfg) in [
+            (
+                "domainate",
+                serde_json::to_value(DomainateConfig::default()).unwrap(),
+            ),
+            (
+                "domain-search",
+                serde_json::to_value(DomainSearchConfig::default()).unwrap(),
+            ),
+        ] {
+            cfg["gene_call"] = "all".into();
+            let merged = match tool {
+                "domainate" => {
+                    let mut m = DomainateConfig::default();
+                    m.merge_cli(serde_json::from_value(cfg).unwrap());
+                    m.gene_call
+                }
+                _ => {
+                    let mut m = DomainSearchConfig::default();
+                    m.merge_cli(serde_json::from_value(cfg).unwrap());
+                    m.gene_call
+                }
+            };
+            assert_eq!(merged.as_deref(), Some("all"), "{tool}");
+        }
     }
 
     /// Underscore and kebab spellings must resolve to the same schema: config files

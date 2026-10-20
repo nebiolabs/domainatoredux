@@ -54,6 +54,16 @@ PATH=/path/to/conda/envs/domainator/bin:$PATH DOMAINATOR_CDHIT=/path/to/cdhit \
 `deduplicate_genbank` should report 8 identical and 1 skipped. If it reports more
 skips, a binary is missing rather than anything being fine.
 
+`--gene_call` is the reverse case. Python calls genes in-process with pyrodigal, so it
+never fails for want of a binary, while the Rust side needs Orphos. Without it, the 13
+`extra:` gene-call rows of `domainate` and `domain_search` fail on the Rust side, and the
+sweep reports them as new gaps. Point `$DOMAINATOR_ORPHOS` at an `orphos` (0.4.0 or
+newer) when you run those modules:
+
+```bash
+DOMAINATOR_ORPHOS=/path/to/orphos scripts/parity/differential.py --only domainate --only domain_search
+```
+
 ## The pieces
 
 | path | role |

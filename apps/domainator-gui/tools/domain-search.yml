@@ -82,6 +82,9 @@ fields:
     file_type: taxonomy
     sources: databases_first
     select: "database:ncbi_taxonomy"
+  - name: gene_call
+    label: "Gene calling"
+    help: "Call genes with Orphos (Tools → External tools) before searching: all re-calls every nucleotide contig, unannotated only those with no CDS. Set Z too."
   - name: partial
     label: "Fragments"
     help: "Which CDSs/proteins to search, by fragment status: include (all), exclude (skip fragments), only (only fragments)."

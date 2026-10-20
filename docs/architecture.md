@@ -50,13 +50,25 @@ convention, which is what makes the GUI able to reuse them directly.
 
 The only non-pure-Rust runtime dependencies, all optional, all driven as subprocesses
 through `tools/external.rs::find_binary` (env var → bundled `external/<dir>/<name>` →
-`PATH`): **`diamond`** for `seq_dist` and `deduplicate`, plus **`cdhit`** and **`usearch`**
-for `deduplicate`. Their locator identity lives in `deduplicate_genbank`'s `*_BIN_NAME` /
-`*_ENV_VAR` constants, to which the GUI's External tools registry is pinned by a test.
+`PATH`): **`diamond`** for `seq_dist` and `deduplicate`, **`cdhit`** and **`usearch`**
+for `deduplicate`, and **`orphos`** for gene calling (`tools/gene_call.rs`: the `gene-call`
+tool and `domainate`/`domain_search --gene_call`). Their locator identity lives in
+`deduplicate_genbank`'s and `gene_call`'s `*_BIN_NAME` / `*_ENV_VAR` constants, to which
+the GUI's External tools registry is pinned by a test.
 
-cd-hit and usearch are GPL. Driving them across a process boundary, downloaded at runtime
-and never bundled, is what keeps this project's licensing unaffected — **do not link or
-vendor either.**
+cd-hit, usearch and Orphos are GPL. Driving them across a process boundary, downloaded at
+runtime and never bundled, is what keeps this project's licensing unaffected — **do not
+link or vendor any of them.** That rules out the `orphos-core` library crate, and every
+other Prodigal implementation (`prodigal-rs`, pyrodigal), for the same reason.
+
+Orphos is run only for its GFF output (`-f gff`): its GenBank output has no strand or
+partial markers, it has no protein output, and its `-t` training file is a no-op.
+Everything upstream's `prodigal_CDS_annotate` derives from a pyrodigal gene is rebuilt
+from the GFF instead: the edge-extended partial location and its `/codon_start`, the
+translation (in the table each sequence's model reports, so meta mode's table-4 models
+come out right), and the genes crossing a circular contig's origin, found by a second
+sequence in the same run (the origin window). Sequences go to Orphos named by index, never
+by their own ids.
 
 ## Cross-cutting invariants
 

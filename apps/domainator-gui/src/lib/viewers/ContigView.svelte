@@ -36,8 +36,12 @@
   let maxEvalueExp = $state(0);
   let hasEvalue = $state(false);
 
+  // Hover tooltips, anchored at the pointer (client coordinates); `placeTip`
+  // decides which side of it they go.
   let tooltip = $state<{ x: number; y: number; feature: FeatureView } | null>(null);
   let nameTooltip = $state<{ x: number; y: number; name: string } | null>(null);
+  let tipEl = $state<HTMLDivElement>();
+  let nameTipEl = $state<HTMLDivElement>();
 
   // ── geometry constants ─────────────────────────────────────────────────────
   let GUTTER = $state(134);
@@ -63,6 +67,12 @@
   // Overlapping lanes are offset by part of a bar instead of a full lane pitch,
   // so later lanes partly cover earlier ones (CDS on top, its domains below).
   let stackAnnotations = $state(false);
+  // The qualifier each feature kind is labeled with. A kind not in here uses the
+  // built-in choice (`FeatureView.label`, e.g. locus_tag for a CDS), as does a
+  // feature lacking the chosen qualifier; `LABEL_NONE` leaves the kind unlabeled.
+  let labelQualifier = $state<Record<string, string>>({});
+  const LABEL_NONE = "<none>"; // not a possible qualifier key
+  const labelSig = $derived(JSON.stringify(labelQualifier));
 
   // Drawn bar height: never shorter than the label text it has to hold.
   const featH = $derived(Math.max(labelFontSize, annotH));
@@ -91,6 +101,14 @@
     labelPlacement = "inside";
     annotH = 14;
     stackAnnotations = false;
+    labelQualifier = {};
+  }
+
+  function featLabel(f: FeatureView): string {
+    const q = labelQualifier[f.kind];
+    if (!q) return f.label;
+    if (q === LABEL_NONE) return "";
+    return f.qualifiers.find(([k]) => k === q)?.[1] ?? f.label;
   }
 
   // ── lane-stacking (port of plot_contigs.py add_z_order) ─────────────────────
@@ -218,6 +236,20 @@
       offsets[i + 1] = offsets[i] + contigHeight(contigs[i], contigLayout(contigs[i]));
     }
     return { offsets, total: offsets[contigs.length] };
+  });
+
+  // The qualifier keys each feature kind carries anywhere in the file, sorted:
+  // the choices in View options' "Label by". Only read while that is open.
+  const qualifierKeysByKind = $derived.by(() => {
+    const m = new Map<string, Set<string>>();
+    for (const c of data?.contigs ?? []) {
+      for (const f of c.features) {
+        let keys = m.get(f.kind);
+        if (!keys) m.set(f.kind, (keys = new Set()));
+        for (const [k] of f.qualifiers) keys.add(k);
+      }
+    }
+    return new Map([...m].map(([kind, keys]) => [kind, [...keys].sort()]));
   });
 
   const maxContigLen = $derived(data ? data.contigs.reduce((m, c) => Math.max(m, c.length), 1) : 1);
@@ -774,11 +806,11 @@
     const fr = rect && e.clientX - rect.left < GUTTER
       ? frameAtY(viewTop + e.clientY - rect.top) : null;
     nameTooltip = fr ? {
-      x: e.clientX + 12, y: e.clientY + 12,
+      x: e.clientX, y: e.clientY,
       name: fr.c.name && fr.c.name !== fr.c.id ? `${fr.c.id} (${fr.c.name})` : fr.c.id || fr.c.name,
     } : null;
     const hit = featureAt(e.clientX, e.clientY);
-    tooltip = hit ? { x: e.clientX + 12, y: e.clientY + 12, feature: hit.f } : null;
+    tooltip = hit ? { x: e.clientX, y: e.clientY, feature: hit.f } : null;
     scheduleDraw(); // the hover guide follows the cursor
   }
   function onPointerUp() {
@@ -797,6 +829,35 @@
     cursorContig = null;
     scheduleDraw();
   }
+
+  // Put a tooltip below and right of the pointer at (x, y), flipping to the other
+  // side on an axis where it would run off the window, then clamping it inside.
+  // Without the flip, hovering a feature near the bottom of the view pushed its
+  // qualifier list off the screen. Runs after the tooltip has rendered (an
+  // effect), since its size depends on the feature's qualifiers.
+  function placeTip(el: HTMLElement, x: number, y: number) {
+    const GAP = 12;
+    const MARGIN = 4;
+    // Measure at the origin, so the width is not shrunk by where it last was.
+    el.style.left = "0px";
+    el.style.top = "0px";
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = x + GAP;
+    if (left + w > vw - MARGIN) left = x - GAP - w;
+    let top = y + GAP;
+    if (top + h > vh - MARGIN) top = y - GAP - h;
+    el.style.left = `${Math.max(MARGIN, Math.min(left, vw - MARGIN - w))}px`;
+    el.style.top = `${Math.max(MARGIN, Math.min(top, vh - MARGIN - h))}px`;
+  }
+  $effect(() => {
+    if (tipEl && tooltip) placeTip(tipEl, tooltip.x, tooltip.y);
+  });
+  $effect(() => {
+    if (nameTipEl && nameTooltip) placeTip(nameTipEl, nameTooltip.x, nameTooltip.y);
+  });
 
   function resizeGutter(e: PointerEvent) {
     e.preventDefault();
@@ -1222,8 +1283,9 @@
           }
         }
         const fw = (f.end - f.start) * pxPerBp;
+        const label = featLabel(f);
         // inside label: clipped to the feature box, only when it has room
-        if ((labelPlacement !== "outside" || stackAnnotations) && fw > 34) {
+        if (label && (labelPlacement !== "outside" || stackAnnotations) && fw > 34) {
           const lx = Math.max(GUTTER + 2, sx(f.start) + 4);
           ctx.fillStyle = labelColor(f.color);
           ctx.textAlign = "left";
@@ -1231,13 +1293,13 @@
           ctx.beginPath();
           ctx.rect(sx(f.start), laneTop, fw, featH);
           ctx.clip();
-          ctx.fillText(f.label, lx, laneTop + featH / 2 + 0.5);
+          ctx.fillText(label, lx, laneTop + featH / 2 + 0.5);
           ctx.restore();
         }
         // outside label: centered over the feature in its own strip, unclipped.
         // Neighbors in the same lane would otherwise overprint each other, so a
         // label is skipped when it would collide with the last one drawn there.
-        if (labelPlacement !== "inside" && !stackAnnotations && fw > 2) {
+        if (label && labelPlacement !== "inside" && !stackAnnotations && fw > 2) {
           // Center on the visible part of the feature, so a feature running off
           // the edge still labels the part you can see.
           const l = Math.max(sx(f.start), GUTTER);
@@ -1245,11 +1307,11 @@
           const mid = (l + r) / 2;
           ctx.textAlign = "center";
           ctx.textBaseline = "alphabetic";
-          const halfW = ctx.measureText(f.label).width / 2;
+          const halfW = ctx.measureText(label).width / 2;
           const taken = labelRight.get(p.lane) ?? -Infinity;
           if (mid - halfW >= taken) {
             ctx.fillStyle = cText;
-            ctx.fillText(f.label, mid, laneTop - 2);
+            ctx.fillText(label, mid, laneTop - 2);
             labelRight.set(p.lane, mid + halfW + 4);
           }
           ctx.textBaseline = "middle";
@@ -1665,6 +1727,7 @@
     void sharedRuler;
     void featH;
     void stackAnnotations;
+    void labelSig;
     // Batch-fetch the visible window's sequences in one call (with overscan) so
     // scrolling doesn't fire one backend round-trip per contig.
     if (showLetters && frames.length) ensureSeqRange(frames[0].ci, frames[frames.length - 1].ci);
@@ -1932,6 +1995,22 @@
                 <input type="checkbox" bind:checked={stackAnnotations} />
                 Stack annotations
               </label>
+              <div class="osec" title="Which qualifier each kind of feature is labeled with. A feature without it keeps the default label.">Label by</div>
+              {#each data.feature_kinds as kind (kind)}
+                <label class="orow">
+                  <span class="okind" title={kind}>{kind}</span>
+                  <select
+                    value={labelQualifier[kind] ?? ""}
+                    onchange={(e) => (labelQualifier[kind] = e.currentTarget.value)}
+                  >
+                    <option value="">default</option>
+                    <option value={LABEL_NONE}>(no label)</option>
+                    {#each qualifierKeysByKind.get(kind) ?? [] as q (q)}
+                      <option value={q}>{q}</option>
+                    {/each}
+                  </select>
+                </label>
+              {/each}
               <div class="pop-foot"><button onclick={resetViewOptions}>Reset</button></div>
             </div>
           {/if}
@@ -2120,7 +2199,7 @@
   {/if}
 
   {#if tooltip}
-    <div class="tooltip" style="left: {tooltip.x}px; top: {tooltip.y}px;">
+    <div class="tooltip" bind:this={tipEl}>
       <div class="tt-title">{tooltip.feature.kind}</div>
       <div class="tt-row"><b>start</b> {tooltip.feature.start + 1}</div>
       <div class="tt-row"><b>end</b> {tooltip.feature.end}</div>
@@ -2131,7 +2210,7 @@
     </div>
   {/if}
   {#if nameTooltip}
-    <div class="tooltip" style="left: {nameTooltip.x}px; top: {nameTooltip.y}px;">{nameTooltip.name}</div>
+    <div class="tooltip" bind:this={nameTipEl}>{nameTooltip.name}</div>
   {/if}
 
   {#if showSelExtract}
@@ -2338,6 +2417,8 @@
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
     padding: 8px 10px;
     min-width: 250px;
+    max-height: 70vh;
+    overflow-y: auto;
   }
   .pop-head {
     display: flex;
@@ -2376,6 +2457,22 @@
   }
   .orow.check {
     gap: 6px;
+  }
+  .osec {
+    font-size: 12px;
+    font-weight: 600;
+    margin: 8px 0 2px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+  }
+  .okind {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+  }
+  .orow select {
+    max-width: 150px;
   }
   .onum {
     width: 40px;
@@ -2437,7 +2534,9 @@
     position: fixed;
     z-index: 50;
     max-width: 420px;
-    max-height: 60vh;
+    /* `placeTip` keeps it inside the window, overlapping the pointer if it must,
+       so it may use the full height rather than cut a long qualifier list short. */
+    max-height: calc(100vh - 8px);
     overflow: auto;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
