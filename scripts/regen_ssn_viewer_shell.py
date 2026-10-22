@@ -9,7 +9,9 @@ at runtime (see ``crates/domainator-core/src/tools/build_ssn_viewer.rs``):
 
   * ``@@SSN_VIEWER_TITLE@@``            -> the HTML-escaped title (the <title> tag)
   * ``@@SSN_VIEWER_HEADING@@``          -> the HTML-escaped <h1> heading
-  * ``const EMBEDDED_BUNDLE_BASE64 = null;``  -> swapped for the base64 bundle on embed
+  * ``"embeddedBundleBase64": null``    -> swapped for the base64 bundle on embed. It is a
+    key of the page's ``<script type="application/json" id="dsnv-config">`` block, which
+    ``json.dumps`` writes with its default ``": "`` separator.
 
 On top of that render, the Rust asset carries local-only patches that do not exist in
 the Python source (the "local patch inventory" below). This script reproduces the
@@ -41,7 +43,7 @@ from pathlib import Path
 # --- frozen token contract (must match build_ssn_viewer.rs) ---
 TITLE_TOKEN = "@@SSN_VIEWER_TITLE@@"
 HEADING_TOKEN = "@@SSN_VIEWER_HEADING@@"
-EMBED_NULL_LINE = "const EMBEDDED_BUNDLE_BASE64 = null;"
+EMBED_NULL_LINE = '"embeddedBundleBase64": null'
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SRC = REPO_ROOT / "external" / "domainator" / "src"

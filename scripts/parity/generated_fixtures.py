@@ -38,7 +38,7 @@ def generate(data_dir, test_dir, out_dir):
     """Write every generated fixture into `out_dir`."""
     sys.path.insert(0, str(test_dir))
     import helpers
-    from domainator.Bio import SeqIO
+    from Bio import SeqIO
 
     data = pathlib.Path(data_dir)
     out = pathlib.Path(out_dir)

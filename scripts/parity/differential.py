@@ -242,7 +242,9 @@ def run_one(row, cfg, helpers, SeqIO):
         rs_argv = expand_abbreviations([substitute(a, rs_dir) for a in argv],
                                        cfg.rust, subcommand)
         try:
-            py = subprocess.run([cfg.python, "-m", f"domainator.{module}"] + py_argv,
+            # Upstream 1.0 runs every tool through its dispatcher; the per-module
+            # `python -m domainator.<module>` form exits 0 having done nothing.
+            py = subprocess.run([cfg.python, "-m", "domainator", module] + py_argv,
                                 capture_output=True, timeout=cfg.timeout, cwd=py_dir)
             rs = subprocess.run([cfg.rust, subcommand] + rs_argv,
                                 capture_output=True, timeout=cfg.timeout, cwd=rs_dir)
@@ -310,6 +312,9 @@ BASELINE_HEADER = """\
 #   gap        a real missing feature -- the tracked to-do list
 #   upstream   the divergence is in a dependency, not in this port
 #   harness    an artifact of how the invocation is replayed, not a divergence
+#   pending    transient, during the upstream 1.0 migration: `pending:1.0-cli` rows fail on
+#              an option this port has not renamed yet, `pending:1.0-behavior` rows on a
+#              1.0 behavior change not ported yet. None may remain once the migration ends.
 #
 # Columns: <python module> <test_fn#n> <outcome> <class> <note>
 """
@@ -362,7 +367,7 @@ def main(argv=None):
     sys.path.insert(0, os.path.join(REPO, "external", "domainator", "src"))
     sys.path.insert(0, cfg.test_dir)
     import helpers
-    from domainator.Bio import SeqIO
+    from Bio import SeqIO
 
     if cfg.invocations:
         rows = [l.split("\t") for l in
@@ -421,6 +426,14 @@ def main(argv=None):
                        ("harness errors", "error"),
                        ("skipped", "skipped")):
         print(f"  {label:30}: {tally[key]}")
+
+    # A broken Python side does not fail loudly: an entry point that exits 0 having
+    # written nothing turns every row into `skipped`, and a sweep that compared
+    # nothing would otherwise pass.
+    if rows and tally["skipped"] == len(rows):
+        print("\nFAILED: every invocation was skipped -- the Python side ran nothing. "
+              f"Check that `{cfg.python} -m domainator <tool>` works.")
+        return 2
 
     baseline = load_baseline(cfg.baseline)
 

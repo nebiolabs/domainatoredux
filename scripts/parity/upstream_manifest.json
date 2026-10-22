@@ -1,0 +1,9643 @@
+{
+ "categories": [
+  {
+   "name": "annotate",
+   "title": "Annotate and search sequences and structures"
+  },
+  {
+   "name": "edit",
+   "title": "Select, filter, and edit annotated records"
+  },
+  {
+   "name": "convert",
+   "title": "Convert between formats"
+  },
+  {
+   "name": "profile",
+   "title": "Build, select, and compare HMM and CM profiles"
+  },
+  {
+   "name": "compare",
+   "title": "Compute similarity and distance matrices"
+  },
+  {
+   "name": "network",
+   "title": "Build, explore, and split similarity networks, trees, and projections"
+  },
+  {
+   "name": "report",
+   "title": "Tables and summaries"
+  },
+  {
+   "name": "plot",
+   "title": "Figures"
+  },
+  {
+   "name": "database",
+   "title": "Download and prepare databases"
+  }
+ ],
+ "invocation": {
+  "command": [
+   "domainator",
+   "{tool}"
+  ],
+  "config_keys": "parameter name",
+  "config_option": "--config",
+  "stdio_path": "-"
+ },
+ "manifest_version": 1,
+ "tools": [
+  {
+   "category": "annotate",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "domainate",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "nucleotide",
+      "protein"
+     ],
+     "default": "protein",
+     "flags": [
+      "--alphabet"
+     ],
+     "kind": "value",
+     "name": "alphabet",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-r",
+      "--reference"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "reference",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--foldseek"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "foldseek",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--esm2_3di_weights"
+     ],
+     "kind": "path",
+     "name": "esm2_3di_weights",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": "cuda:0",
+     "flags": [
+      "--esm2_3di_device"
+     ],
+     "kind": "value",
+     "name": "esm2_3di_device",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": "cpu",
+     "flags": [
+      "--foldseek_device"
+     ],
+     "kind": "value",
+     "name": "foldseek_device",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--foldseek_path"
+     ],
+     "kind": "path",
+     "name": "foldseek_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 1000,
+     "flags": [
+      "-Z"
+     ],
+     "kind": "value",
+     "name": "Z",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 0.001,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": 0.0,
+     "flags": [
+      "--min_evalue"
+     ],
+     "kind": "value",
+     "min": 0,
+     "name": "min_evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits_per_cds"
+     ],
+     "kind": "value",
+     "name": "max_hits_per_cds",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--max_mode"
+     ],
+     "kind": "flag",
+     "name": "max_mode",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--include_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "include_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exclude_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "exclude_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--taxonomy_expr"
+     ],
+     "kind": "value",
+     "name": "taxonomy_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "include",
+      "exclude",
+      "only"
+     ],
+     "default": "include",
+     "flags": [
+      "--partial"
+     ],
+     "kind": "value",
+     "name": "partial",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default_dynamic": true,
+     "flags": [
+      "--ncbi_taxonomy_path"
+     ],
+     "kind": "path",
+     "name": "ncbi_taxonomy_path",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--taxonomy_update"
+     ],
+     "kind": "flag",
+     "name": "taxonomy_update",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 1,
+     "flags": [
+      "--max_overlap"
+     ],
+     "kind": "value",
+     "name": "max_overlap",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--overlap_by_db"
+     ],
+     "kind": "flag",
+     "name": "overlap_by_db",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--hits_only"
+     ],
+     "kind": "flag",
+     "name": "hits_only",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--no_annotations"
+     ],
+     "kind": "flag",
+     "name": "no_annotations",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 10000,
+     "flags": [
+      "--batch_size"
+     ],
+     "kind": "value",
+     "name": "batch_size",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "all",
+      "unannotated"
+     ],
+     "default": null,
+     "flags": [
+      "--gene_call"
+     ],
+     "kind": "value",
+     "name": "gene_call",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "annotate",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "domain_search",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "nucleotide",
+      "protein"
+     ],
+     "default": "protein",
+     "flags": [
+      "--alphabet"
+     ],
+     "kind": "value",
+     "name": "alphabet",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-r",
+      "--reference"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "reference",
+     "required": true,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 1000,
+     "flags": [
+      "-Z"
+     ],
+     "kind": "value",
+     "name": "Z",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 0.001,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": 0.0,
+     "flags": [
+      "--min_evalue"
+     ],
+     "kind": "value",
+     "min": 0,
+     "name": "min_evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--max_mode"
+     ],
+     "kind": "flag",
+     "name": "max_mode",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits"
+     ],
+     "kind": "value",
+     "name": "max_hits",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits_per_contig"
+     ],
+     "kind": "value",
+     "name": "max_hits_per_contig",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--include_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "include_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exclude_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "exclude_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--taxonomy_expr"
+     ],
+     "kind": "value",
+     "name": "taxonomy_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default_dynamic": true,
+     "flags": [
+      "--ncbi_taxonomy_path"
+     ],
+     "kind": "path",
+     "name": "ncbi_taxonomy_path",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--taxonomy_update"
+     ],
+     "kind": "flag",
+     "name": "taxonomy_update",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "include",
+      "exclude",
+      "only"
+     ],
+     "default": "include",
+     "flags": [
+      "--partial"
+     ],
+     "kind": "value",
+     "name": "partial",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--decoys"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "decoys",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--decoys_file"
+     ],
+     "kind": "path",
+     "name": "decoys_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 1,
+     "flags": [
+      "--max_overlap"
+     ],
+     "kind": "value",
+     "name": "max_overlap",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--add_annotations"
+     ],
+     "kind": "flag",
+     "name": "add_annotations",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--deduplicate"
+     ],
+     "kind": "flag",
+     "name": "deduplicate",
+     "negative_flags": [
+      "--no_deduplicate"
+     ],
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--deduplicate_by_sequence"
+     ],
+     "kind": "flag",
+     "name": "deduplicate_by_sequence",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--both_strands"
+     ],
+     "kind": "flag",
+     "name": "both_strands",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 1.0,
+     "flags": [
+      "--max_region_overlap"
+     ],
+     "kind": "value",
+     "name": "max_region_overlap",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--translate"
+     ],
+     "kind": "flag",
+     "name": "translate",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--kb_range"
+     ],
+     "kind": "value",
+     "name": "kb_range",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--kb_up"
+     ],
+     "kind": "value",
+     "name": "kb_up",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--kb_down"
+     ],
+     "kind": "value",
+     "name": "kb_down",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_range"
+     ],
+     "kind": "value",
+     "name": "cds_range",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_up"
+     ],
+     "kind": "value",
+     "name": "cds_up",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_down"
+     ],
+     "kind": "value",
+     "name": "cds_down",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--whole_contig"
+     ],
+     "kind": "flag",
+     "name": "whole_contig",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "f",
+      "r"
+     ],
+     "default": null,
+     "flags": [
+      "--strand"
+     ],
+     "kind": "value",
+     "name": "strand",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--pad"
+     ],
+     "kind": "flag",
+     "name": "pad",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "start",
+      "end",
+      "center"
+     ],
+     "default": "start",
+     "flags": [
+      "--anchor"
+     ],
+     "kind": "value",
+     "name": "anchor",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--keep_direction"
+     ],
+     "kind": "flag",
+     "name": "keep_direction",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 10000,
+     "flags": [
+      "--batch_size"
+     ],
+     "kind": "value",
+     "name": "batch_size",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "all",
+      "unannotated"
+     ],
+     "default": null,
+     "flags": [
+      "--gene_call"
+     ],
+     "kind": "value",
+     "name": "gene_call",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "annotate",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "find_features",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "nucleotide",
+      "protein"
+     ],
+     "default": "protein",
+     "flags": [
+      "--alphabet"
+     ],
+     "kind": "value",
+     "name": "alphabet",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "all",
+      "unannotated"
+     ],
+     "default": null,
+     "flags": [
+      "--gene_call"
+     ],
+     "kind": "value",
+     "name": "gene_call",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--tmbed"
+     ],
+     "kind": "flag",
+     "name": "tmbed",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--motif"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "motif",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 4000,
+     "flags": [
+      "--batch_size"
+     ],
+     "kind": "value",
+     "name": "batch_size",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": "cuda:0",
+     "flags": [
+      "--device"
+     ],
+     "kind": "value",
+     "name": "device",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--model_dir"
+     ],
+     "kind": "path",
+     "name": "model_dir",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--tmbed_model_dir"
+     ],
+     "kind": "path",
+     "name": "tmbed_model_dir",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "choices": [
+      "include",
+      "exclude",
+      "only"
+     ],
+     "default": "include",
+     "flags": [
+      "--partial"
+     ],
+     "kind": "value",
+     "name": "partial",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "annotate",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "structure_domainate",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-r",
+      "--reference"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "reference",
+     "required": true,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 0.001,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": 0.0,
+     "flags": [
+      "--min_evalue"
+     ],
+     "kind": "value",
+     "min": 0,
+     "name": "min_evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits_per_cds"
+     ],
+     "kind": "value",
+     "name": "max_hits_per_cds",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 1,
+     "flags": [
+      "--max_overlap"
+     ],
+     "kind": "value",
+     "name": "max_overlap",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--overlap_by_db"
+     ],
+     "kind": "flag",
+     "name": "overlap_by_db",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--hits_only"
+     ],
+     "kind": "flag",
+     "name": "hits_only",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--no_annotations"
+     ],
+     "kind": "flag",
+     "name": "no_annotations",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--database_name"
+     ],
+     "kind": "value",
+     "name": "database_name",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--db_out"
+     ],
+     "kind": "path",
+     "name": "db_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--hits_tsv_out"
+     ],
+     "kind": "path",
+     "name": "hits_tsv_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "foldseek",
+      "reseek"
+     ],
+     "default": "foldseek",
+     "flags": [
+      "--algorithm"
+     ],
+     "kind": "value",
+     "name": "algorithm",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--foldseek_path"
+     ],
+     "kind": "path",
+     "name": "foldseek_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--reseek_path"
+     ],
+     "kind": "path",
+     "name": "reseek_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--foldseek_args"
+     ],
+     "kind": "value",
+     "name": "foldseek_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--reseek_args"
+     ],
+     "kind": "value",
+     "name": "reseek_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--tmp_dir"
+     ],
+     "kind": "path",
+     "name": "tmp_dir",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "choices": [
+      "family",
+      "superfamily",
+      "fold"
+     ],
+     "default": "superfamily",
+     "flags": [
+      "--reseek_stats"
+     ],
+     "kind": "value",
+     "name": "reseek_stats",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "fast",
+      "sensitive"
+     ],
+     "default": "sensitive",
+     "flags": [
+      "--reseek_sensitivity"
+     ],
+     "kind": "value",
+     "name": "reseek_sensitivity",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      0,
+      1,
+      2
+     ],
+     "default": null,
+     "flags": [
+      "--alignment_type"
+     ],
+     "kind": "value",
+     "name": "alignment_type",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "tmscore",
+      "lddt",
+      "rmsd",
+      "prob"
+     ],
+     "default": null,
+     "flags": [
+      "--metrics"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "metrics",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_seqs"
+     ],
+     "kind": "value",
+     "name": "max_seqs",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": "cpu",
+     "flags": [
+      "--device"
+     ],
+     "kind": "value",
+     "name": "device",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "annotate",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "structure_search",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-r",
+      "--reference"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "reference",
+     "required": true,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 0.001,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": 0.0,
+     "flags": [
+      "--min_evalue"
+     ],
+     "kind": "value",
+     "min": 0,
+     "name": "min_evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits"
+     ],
+     "kind": "value",
+     "name": "max_hits",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 1,
+     "flags": [
+      "--max_overlap"
+     ],
+     "kind": "value",
+     "name": "max_overlap",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--overlap_by_db"
+     ],
+     "kind": "flag",
+     "name": "overlap_by_db",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--add_annotations"
+     ],
+     "kind": "flag",
+     "name": "add_annotations",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--database_name"
+     ],
+     "kind": "value",
+     "name": "database_name",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--db_out"
+     ],
+     "kind": "path",
+     "name": "db_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--hits_tsv_out"
+     ],
+     "kind": "path",
+     "name": "hits_tsv_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "foldseek",
+      "reseek"
+     ],
+     "default": "foldseek",
+     "flags": [
+      "--algorithm"
+     ],
+     "kind": "value",
+     "name": "algorithm",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--foldseek_path"
+     ],
+     "kind": "path",
+     "name": "foldseek_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--reseek_path"
+     ],
+     "kind": "path",
+     "name": "reseek_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--foldseek_args"
+     ],
+     "kind": "value",
+     "name": "foldseek_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--reseek_args"
+     ],
+     "kind": "value",
+     "name": "reseek_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--tmp_dir"
+     ],
+     "kind": "path",
+     "name": "tmp_dir",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "choices": [
+      "family",
+      "superfamily",
+      "fold"
+     ],
+     "default": "superfamily",
+     "flags": [
+      "--reseek_stats"
+     ],
+     "kind": "value",
+     "name": "reseek_stats",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "fast",
+      "sensitive"
+     ],
+     "default": "sensitive",
+     "flags": [
+      "--reseek_sensitivity"
+     ],
+     "kind": "value",
+     "name": "reseek_sensitivity",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      0,
+      1,
+      2
+     ],
+     "default": null,
+     "flags": [
+      "--alignment_type"
+     ],
+     "kind": "value",
+     "name": "alignment_type",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "tmscore",
+      "lddt",
+      "rmsd",
+      "prob"
+     ],
+     "default": null,
+     "flags": [
+      "--metrics"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "metrics",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_seqs"
+     ],
+     "kind": "value",
+     "name": "max_seqs",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": "cpu",
+     "flags": [
+      "--device"
+     ],
+     "kind": "value",
+     "name": "device",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "clean_sequences",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "nucleotide",
+      "protein"
+     ],
+     "default": "protein",
+     "flags": [
+      "--alphabet"
+     ],
+     "kind": "value",
+     "name": "alphabet",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--clean_name"
+     ],
+     "kind": "flag",
+     "name": "clean_name",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--deduplicate_names"
+     ],
+     "kind": "flag",
+     "name": "deduplicate_names",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--strip"
+     ],
+     "kind": "flag",
+     "name": "strip",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--filter_by_aa"
+     ],
+     "kind": "flag",
+     "name": "filter_by_aa",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--log_out"
+     ],
+     "kind": "path",
+     "name": "log_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "color_genbank",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": [],
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_table"
+     ],
+     "kind": "path",
+     "name": "color_table",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_table_out"
+     ],
+     "kind": "path",
+     "name": "color_table_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--search_hit_color"
+     ],
+     "kind": "value",
+     "name": "search_hit_color",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--clear"
+     ],
+     "kind": "flag",
+     "name": "clear",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "domains",
+      "cdss",
+      "domains_and_cdss"
+     ],
+     "default": "cdss",
+     "flags": [
+      "--target"
+     ],
+     "kind": "value",
+     "name": "target",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--domain_database"
+     ],
+     "kind": "flag",
+     "name": "domain_database",
+     "sets": true,
+     "type": "boolean"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ],
+    [
+     "prefix_count",
+     "suffix_count"
+    ]
+   ],
+   "name": "deduplicate_genbank",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--log_out"
+     ],
+     "kind": "path",
+     "name": "log_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "nucleotide",
+      "protein"
+     ],
+     "default": "protein",
+     "flags": [
+      "--alphabet"
+     ],
+     "kind": "value",
+     "name": "alphabet",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "cd-hit",
+      "usearch",
+      "hash",
+      "diamond"
+     ],
+     "default": "cd-hit",
+     "flags": [
+      "--algorithm"
+     ],
+     "kind": "value",
+     "name": "algorithm",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cdhit_path"
+     ],
+     "kind": "path",
+     "name": "cdhit_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cdhit_est_path"
+     ],
+     "kind": "path",
+     "name": "cdhit_est_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--usearch_path"
+     ],
+     "kind": "path",
+     "name": "usearch_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--diamond_path"
+     ],
+     "kind": "path",
+     "name": "diamond_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--identity"
+     ],
+     "kind": "value",
+     "name": "identity",
+     "required": true,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--prefix_count"
+     ],
+     "kind": "flag",
+     "name": "prefix_count",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--suffix_count"
+     ],
+     "kind": "flag",
+     "name": "suffix_count",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cdhit_args"
+     ],
+     "kind": "value",
+     "name": "cdhit_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--usearch_args"
+     ],
+     "kind": "value",
+     "name": "usearch_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--diamond_args"
+     ],
+     "kind": "value",
+     "name": "diamond_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--both_strands"
+     ],
+     "kind": "flag",
+     "name": "both_strands",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cluster_tsv_out"
+     ],
+     "kind": "path",
+     "name": "cluster_tsv_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": " ; ",
+     "flags": [
+      "--cluster_sep"
+     ],
+     "kind": "value",
+     "name": "cluster_sep",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "extract_domains",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": [],
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--min_score"
+     ],
+     "kind": "value",
+     "name": "min_score",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "domains",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains_file"
+     ],
+     "kind": "path",
+     "name": "domains_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "domainator",
+      "domain_search"
+     ],
+     "default": "domainator",
+     "flags": [
+      "--annotation_type"
+     ],
+     "kind": "value",
+     "name": "annotation_type",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "include",
+      "exclude",
+      "only"
+     ],
+     "default": "include",
+     "flags": [
+      "--partial"
+     ],
+     "kind": "value",
+     "name": "partial",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--extend_range"
+     ],
+     "kind": "value",
+     "name": "extend_range",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--extend_up"
+     ],
+     "kind": "value",
+     "name": "extend_up",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--extend_down"
+     ],
+     "kind": "value",
+     "name": "extend_down",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--combine"
+     ],
+     "kind": "flag",
+     "name": "combine",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--splice"
+     ],
+     "kind": "flag",
+     "name": "splice",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--keep_direction"
+     ],
+     "kind": "flag",
+     "name": "keep_direction",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--keep_name"
+     ],
+     "kind": "flag",
+     "name": "keep_name",
+     "sets": true,
+     "type": "boolean"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "extract_peptides",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": [],
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "domains",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains_file"
+     ],
+     "kind": "path",
+     "name": "domains_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--unannotated"
+     ],
+     "kind": "flag",
+     "name": "unannotated",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "domainator",
+      "domain_search"
+     ],
+     "default": "domainator",
+     "flags": [
+      "--annotation_type"
+     ],
+     "kind": "value",
+     "name": "annotation_type",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "f",
+      "r"
+     ],
+     "default": null,
+     "flags": [
+      "--strand"
+     ],
+     "kind": "value",
+     "name": "strand",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "include",
+      "exclude",
+      "only"
+     ],
+     "default": "include",
+     "flags": [
+      "--partial"
+     ],
+     "kind": "value",
+     "name": "partial",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--invert"
+     ],
+     "kind": "flag",
+     "name": "invert",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "cds",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_file"
+     ],
+     "kind": "path",
+     "name": "cds_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--keep_name"
+     ],
+     "kind": "flag",
+     "name": "keep_name",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--name_field"
+     ],
+     "kind": "value",
+     "name": "name_field",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "extract_unannotated",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": [],
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--min_score"
+     ],
+     "kind": "value",
+     "name": "min_score",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "domainator",
+      "domain_search"
+     ],
+     "default": "domainator",
+     "flags": [
+      "--annotation_type"
+     ],
+     "kind": "value",
+     "name": "annotation_type",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--keep_direction"
+     ],
+     "kind": "flag",
+     "name": "keep_direction",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--keep_name"
+     ],
+     "kind": "flag",
+     "name": "keep_name",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--largest"
+     ],
+     "kind": "flag",
+     "name": "largest",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--min_length"
+     ],
+     "kind": "value",
+     "name": "min_length",
+     "required": false,
+     "type": "integer"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "filter_domains",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": 1.0,
+     "flags": [
+      "--max_overlap"
+     ],
+     "kind": "value",
+     "name": "max_overlap",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": [],
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "domains",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains_file"
+     ],
+     "kind": "path",
+     "name": "domains_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--keep_databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "keep_databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "domainator",
+      "domain_search",
+      "all"
+     ],
+     "default": "all",
+     "flags": [
+      "--annotation_type"
+     ],
+     "kind": "value",
+     "name": "annotation_type",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "rotate_contigs",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-r",
+      "--reference"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "reference",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": 1000,
+     "flags": [
+      "-Z"
+     ],
+     "kind": "value",
+     "name": "Z",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 0.001,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "domains",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains_file"
+     ],
+     "kind": "path",
+     "name": "domains_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "domainator",
+      "domain_search"
+     ],
+     "default": "domainator",
+     "flags": [
+      "--annotation_type"
+     ],
+     "kind": "value",
+     "name": "annotation_type",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "start",
+      "end",
+      "center"
+     ],
+     "default": "start",
+     "flags": [
+      "--anchor"
+     ],
+     "kind": "value",
+     "name": "anchor",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--keep_direction"
+     ],
+     "kind": "flag",
+     "name": "keep_direction",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--circularize"
+     ],
+     "kind": "flag",
+     "name": "circularize",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--keep_name"
+     ],
+     "kind": "flag",
+     "name": "keep_name",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--keep_annotation"
+     ],
+     "kind": "flag",
+     "name": "keep_annotation",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "all",
+      "unannotated"
+     ],
+     "default": null,
+     "flags": [
+      "--gene_call"
+     ],
+     "kind": "value",
+     "name": "gene_call",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--max_mode"
+     ],
+     "kind": "flag",
+     "name": "max_mode",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 1000,
+     "flags": [
+      "--batch_size"
+     ],
+     "kind": "value",
+     "name": "batch_size",
+     "required": false,
+     "type": "integer"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "select_by_cds",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--kb_range"
+     ],
+     "kind": "value",
+     "name": "kb_range",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--kb_up"
+     ],
+     "kind": "value",
+     "name": "kb_up",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--kb_down"
+     ],
+     "kind": "value",
+     "name": "kb_down",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_range"
+     ],
+     "kind": "value",
+     "name": "cds_range",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_up"
+     ],
+     "kind": "value",
+     "name": "cds_up",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_down"
+     ],
+     "kind": "value",
+     "name": "cds_down",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--whole_contig"
+     ],
+     "kind": "flag",
+     "name": "whole_contig",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "cds",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_file"
+     ],
+     "kind": "path",
+     "name": "cds_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "domains",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains_file"
+     ],
+     "kind": "path",
+     "name": "domains_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domain_expr"
+     ],
+     "kind": "value",
+     "name": "domain_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "f",
+      "r"
+     ],
+     "default": null,
+     "flags": [
+      "--strand"
+     ],
+     "kind": "value",
+     "name": "strand",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "include",
+      "exclude",
+      "only"
+     ],
+     "default": "include",
+     "flags": [
+      "--partial"
+     ],
+     "kind": "value",
+     "name": "partial",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--unannotated"
+     ],
+     "kind": "flag",
+     "name": "unannotated",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "domainator",
+      "domain_search"
+     ],
+     "default": "domainator",
+     "flags": [
+      "--annotation_type"
+     ],
+     "kind": "value",
+     "name": "annotation_type",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--pad"
+     ],
+     "kind": "flag",
+     "name": "pad",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "start",
+      "end",
+      "center"
+     ],
+     "default": "start",
+     "flags": [
+      "--anchor"
+     ],
+     "kind": "value",
+     "name": "anchor",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--keep_direction"
+     ],
+     "kind": "flag",
+     "name": "keep_direction",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": true,
+     "flags": [
+      "--deduplicate"
+     ],
+     "kind": "flag",
+     "name": "deduplicate",
+     "negative_flags": [
+      "--no_deduplicate"
+     ],
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 1.0,
+     "flags": [
+      "--max_region_overlap"
+     ],
+     "kind": "value",
+     "name": "max_region_overlap",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--invert"
+     ],
+     "kind": "flag",
+     "name": "invert",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--include_nucleic_acids"
+     ],
+     "kind": "flag",
+     "name": "include_nucleic_acids",
+     "sets": true,
+     "type": "boolean"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "select_by_contig",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_regex"
+     ],
+     "kind": "value",
+     "name": "contigs_regex",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--definition_regex"
+     ],
+     "kind": "value",
+     "name": "definition_regex",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--sequence_regex"
+     ],
+     "kind": "value",
+     "name": "sequence_regex",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "domains",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains_file"
+     ],
+     "kind": "path",
+     "name": "domains_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domain_expr"
+     ],
+     "kind": "value",
+     "name": "domain_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "include",
+      "exclude",
+      "only"
+     ],
+     "default": "include",
+     "flags": [
+      "--partial"
+     ],
+     "kind": "value",
+     "name": "partial",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "domainator",
+      "domain_search",
+      "all"
+     ],
+     "default": "domainator",
+     "flags": [
+      "--annotation_type"
+     ],
+     "kind": "value",
+     "name": "annotation_type",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--unannotated"
+     ],
+     "kind": "flag",
+     "name": "unannotated",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--include_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "include_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exclude_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "exclude_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--taxonomy_expr"
+     ],
+     "kind": "value",
+     "name": "taxonomy_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default_dynamic": true,
+     "flags": [
+      "--ncbi_taxonomy_path"
+     ],
+     "kind": "path",
+     "name": "ncbi_taxonomy_path",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--taxonomy_update"
+     ],
+     "kind": "flag",
+     "name": "taxonomy_update",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_records"
+     ],
+     "kind": "value",
+     "name": "max_records",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--min_length"
+     ],
+     "kind": "value",
+     "name": "min_length",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_length"
+     ],
+     "kind": "value",
+     "name": "max_length",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--min_cds"
+     ],
+     "kind": "value",
+     "name": "min_cds",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_cds"
+     ],
+     "kind": "value",
+     "name": "max_cds",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--min_search_score"
+     ],
+     "kind": "value",
+     "name": "min_search_score",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_search_score"
+     ],
+     "kind": "value",
+     "name": "max_search_score",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--invert"
+     ],
+     "kind": "flag",
+     "name": "invert",
+     "sets": true,
+     "type": "boolean"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "select_by_coord",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--coords"
+     ],
+     "kind": "path",
+     "name": "coords",
+     "required": true,
+     "role": "input",
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "sort_contigs",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits"
+     ],
+     "kind": "value",
+     "name": "max_hits",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "domains",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains_file"
+     ],
+     "kind": "path",
+     "name": "domains_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "edit",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "trim_contigs",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--kb_range"
+     ],
+     "kind": "value",
+     "name": "kb_range",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--kb_left"
+     ],
+     "kind": "value",
+     "name": "kb_left",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--kb_right"
+     ],
+     "kind": "value",
+     "name": "kb_right",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_range"
+     ],
+     "kind": "value",
+     "name": "cds_range",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_left"
+     ],
+     "kind": "value",
+     "name": "cds_left",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cds_right"
+     ],
+     "kind": "value",
+     "name": "cds_right",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "domains",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--unannotated"
+     ],
+     "kind": "flag",
+     "name": "unannotated",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains_file"
+     ],
+     "kind": "path",
+     "name": "domains_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domain_expr"
+     ],
+     "kind": "value",
+     "name": "domain_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "convert",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "genbank_to_fasta",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "convert",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "structure_to_genbank",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--db_out"
+     ],
+     "kind": "path",
+     "name": "db_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--store_3di"
+     ],
+     "kind": "flag",
+     "name": "store_3di",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "foldseek",
+      "reseek"
+     ],
+     "default": "foldseek",
+     "flags": [
+      "--algorithm"
+     ],
+     "kind": "value",
+     "name": "algorithm",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--foldseek_path"
+     ],
+     "kind": "path",
+     "name": "foldseek_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--reseek_path"
+     ],
+     "kind": "path",
+     "name": "reseek_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--foldseek_args"
+     ],
+     "kind": "value",
+     "name": "foldseek_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--reseek_args"
+     ],
+     "kind": "value",
+     "name": "reseek_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--tmp_dir"
+     ],
+     "kind": "path",
+     "name": "tmp_dir",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "choices": [
+      "family",
+      "superfamily",
+      "fold"
+     ],
+     "default": "superfamily",
+     "flags": [
+      "--reseek_stats"
+     ],
+     "kind": "value",
+     "name": "reseek_stats",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "fast",
+      "sensitive"
+     ],
+     "default": "sensitive",
+     "flags": [
+      "--reseek_sensitivity"
+     ],
+     "kind": "value",
+     "name": "reseek_sensitivity",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out",
+    "db_out"
+   ]
+  },
+  {
+   "category": "profile",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "hmmer_build",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--hmm_out"
+     ],
+     "kind": "path",
+     "name": "hmm_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--name"
+     ],
+     "kind": "value",
+     "name": "name",
+     "required": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--acc"
+     ],
+     "kind": "value",
+     "name": "acc",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--desc"
+     ],
+     "kind": "value",
+     "name": "desc",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "amino",
+      "dna",
+      "rna"
+     ],
+     "default": null,
+     "flags": [
+      "--alphabet"
+     ],
+     "kind": "value",
+     "name": "alphabet",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--window_length"
+     ],
+     "kind": "value",
+     "name": "window_length",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--window_beta"
+     ],
+     "kind": "value",
+     "name": "window_beta",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "hmm_out"
+   ]
+  },
+  {
+   "category": "profile",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "infernal_build",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--cm_out"
+     ],
+     "kind": "path",
+     "name": "cm_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--name"
+     ],
+     "kind": "value",
+     "name": "name",
+     "required": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--acc"
+     ],
+     "kind": "value",
+     "name": "acc",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--desc"
+     ],
+     "kind": "value",
+     "name": "desc",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--input_format"
+     ],
+     "kind": "value",
+     "name": "input_format",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cmbuild_path"
+     ],
+     "kind": "path",
+     "name": "cmbuild_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--noss"
+     ],
+     "kind": "flag",
+     "name": "noss",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--hand"
+     ],
+     "kind": "flag",
+     "name": "hand",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--symfrac"
+     ],
+     "kind": "value",
+     "name": "symfrac",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "cm_out"
+   ]
+  },
+  {
+   "category": "profile",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "hmmer_select",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--hmm_out"
+     ],
+     "kind": "path",
+     "name": "hmm_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--regex"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "regex",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exact"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "exact",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contains"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contains",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "name",
+      "desc",
+      "acc",
+      "all"
+     ],
+     "default": "all",
+     "flags": [
+      "--field"
+     ],
+     "kind": "value",
+     "name": "field",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--case_sensitive"
+     ],
+     "kind": "flag",
+     "name": "case_sensitive",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "amino",
+      "dna",
+      "rna"
+     ],
+     "default": null,
+     "flags": [
+      "--alphabet"
+     ],
+     "kind": "value",
+     "name": "alphabet",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "hmm_out"
+   ]
+  },
+  {
+   "category": "profile",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "hmmer_search",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-r",
+      "--reference"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "reference",
+     "required": true,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--hmm_out"
+     ],
+     "kind": "path",
+     "name": "hmm_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--min_score"
+     ],
+     "kind": "value",
+     "name": "min_score",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits"
+     ],
+     "kind": "value",
+     "name": "max_hits",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "hmm_out"
+   ]
+  },
+  {
+   "category": "profile",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "hmmer_compare",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-r",
+      "--reference"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "reference",
+     "required": true,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--min_score"
+     ],
+     "kind": "value",
+     "name": "min_score",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits_per_query"
+     ],
+     "kind": "value",
+     "name": "max_hits_per_query",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--tsv_out"
+     ],
+     "kind": "path",
+     "name": "tsv_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--alignments_out"
+     ],
+     "kind": "path",
+     "name": "alignments_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "tsv_out",
+    "alignments_out"
+   ]
+  },
+  {
+   "category": "compare",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "seq_dist",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "fasta",
+      "genbank",
+      "hmm"
+     ],
+     "default": null,
+     "flags": [
+      "--input_format"
+     ],
+     "kind": "value",
+     "name": "input_format",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-r",
+      "--reference"
+     ],
+     "kind": "path",
+     "name": "reference",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "choices": [
+      "fasta",
+      "genbank",
+      "hmm"
+     ],
+     "default": null,
+     "flags": [
+      "--reference_format"
+     ],
+     "kind": "value",
+     "name": "reference_format",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--hdf_out"
+     ],
+     "kind": "path",
+     "name": "hdf_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--dense_text_out"
+     ],
+     "kind": "path",
+     "name": "dense_text_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--threshold"
+     ],
+     "kind": "value",
+     "name": "threshold",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits_per_query"
+     ],
+     "kind": "value",
+     "name": "max_hits_per_query",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "diamond_f",
+      "diamond_d",
+      "diamond_mids",
+      "diamond_s",
+      "diamond_mors",
+      "diamond_vs",
+      "diamond_us",
+      "hmmer",
+      "hmmer_compare"
+     ],
+     "default": "diamond_us",
+     "flags": [
+      "--algorithm"
+     ],
+     "kind": "value",
+     "name": "algorithm",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--diamond_args"
+     ],
+     "kind": "value",
+     "name": "diamond_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--diamond_path"
+     ],
+     "kind": "path",
+     "name": "diamond_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--mst"
+     ],
+     "kind": "flag",
+     "name": "mst",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--knn"
+     ],
+     "kind": "value",
+     "min": 1,
+     "name": "knn",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "none",
+      "min",
+      "max",
+      "mean"
+     ],
+     "default": "none",
+     "flags": [
+      "--symmetrize"
+     ],
+     "kind": "value",
+     "name": "symmetrize",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "score",
+      "bool",
+      "norm_score",
+      "row_norm_score",
+      "score_dist",
+      "efi_score",
+      "efi_score_dist"
+     ],
+     "default": "score",
+     "flags": [
+      "--mode"
+     ],
+     "kind": "value",
+     "name": "mode",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--progress"
+     ],
+     "kind": "flag",
+     "name": "progress",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "hdf_out",
+    "dense_text_out"
+   ]
+  },
+  {
+   "category": "compare",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "kmer_dist",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "fasta",
+      "genbank"
+     ],
+     "default": null,
+     "flags": [
+      "--input_format"
+     ],
+     "kind": "value",
+     "name": "input_format",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-r",
+      "--reference"
+     ],
+     "kind": "path",
+     "name": "reference",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "choices": [
+      "fasta",
+      "genbank"
+     ],
+     "default": null,
+     "flags": [
+      "--reference_format"
+     ],
+     "kind": "value",
+     "name": "reference_format",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "nucleotide",
+      "protein"
+     ],
+     "default": "protein",
+     "flags": [
+      "--alphabet"
+     ],
+     "kind": "value",
+     "name": "alphabet",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "all",
+      "unannotated"
+     ],
+     "default": null,
+     "flags": [
+      "--gene_call"
+     ],
+     "kind": "value",
+     "name": "gene_call",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--nucleotide_kmers"
+     ],
+     "kind": "flag",
+     "name": "nucleotide_kmers",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--ksize"
+     ],
+     "kind": "value",
+     "name": "ksize",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "max_containment",
+      "min_containment",
+      "jaccard"
+     ],
+     "default": "max_containment",
+     "flags": [
+      "--metric"
+     ],
+     "kind": "value",
+     "name": "metric",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "score",
+      "bool",
+      "score_dist"
+     ],
+     "default": "score",
+     "flags": [
+      "--mode"
+     ],
+     "kind": "value",
+     "name": "mode",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--hdf_out"
+     ],
+     "kind": "path",
+     "name": "hdf_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--dense_text_out"
+     ],
+     "kind": "path",
+     "name": "dense_text_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--threshold"
+     ],
+     "kind": "value",
+     "name": "threshold",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits_per_query"
+     ],
+     "kind": "value",
+     "name": "max_hits_per_query",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--mst"
+     ],
+     "kind": "flag",
+     "name": "mst",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--knn"
+     ],
+     "kind": "value",
+     "min": 1,
+     "name": "knn",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--progress"
+     ],
+     "kind": "flag",
+     "name": "progress",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "hdf_out",
+    "dense_text_out"
+   ]
+  },
+  {
+   "category": "compare",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "structure_dist",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-r",
+      "--reference"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "reference",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--hdf_out"
+     ],
+     "kind": "path",
+     "name": "hdf_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--dense_text_out"
+     ],
+     "kind": "path",
+     "name": "dense_text_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 0.001,
+     "exclusive_min": 0,
+     "flags": [
+      "-e",
+      "--evalue"
+     ],
+     "kind": "value",
+     "name": "evalue",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "choices": [
+      "bool",
+      "efi_score",
+      "efi_score_dist",
+      "fident",
+      "fident_dist",
+      "lddt",
+      "lddt_dist",
+      "norm_score",
+      "row_norm_score",
+      "score",
+      "score_dist",
+      "tmscore",
+      "tmscore_dist"
+     ],
+     "default": "score",
+     "flags": [
+      "--mode"
+     ],
+     "kind": "value",
+     "name": "mode",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "none",
+      "min",
+      "max",
+      "mean"
+     ],
+     "default": "none",
+     "flags": [
+      "--symmetrize"
+     ],
+     "kind": "value",
+     "name": "symmetrize",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--threshold"
+     ],
+     "kind": "value",
+     "name": "threshold",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits_per_query"
+     ],
+     "kind": "value",
+     "name": "max_hits_per_query",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--mst"
+     ],
+     "kind": "flag",
+     "name": "mst",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--knn"
+     ],
+     "kind": "value",
+     "min": 1,
+     "name": "knn",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--db_out"
+     ],
+     "kind": "path",
+     "name": "db_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--hits_tsv_out"
+     ],
+     "kind": "path",
+     "name": "hits_tsv_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--progress"
+     ],
+     "kind": "flag",
+     "name": "progress",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "foldseek",
+      "reseek"
+     ],
+     "default": "foldseek",
+     "flags": [
+      "--algorithm"
+     ],
+     "kind": "value",
+     "name": "algorithm",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--foldseek_path"
+     ],
+     "kind": "path",
+     "name": "foldseek_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--reseek_path"
+     ],
+     "kind": "path",
+     "name": "reseek_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--foldseek_args"
+     ],
+     "kind": "value",
+     "name": "foldseek_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--reseek_args"
+     ],
+     "kind": "value",
+     "name": "reseek_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--tmp_dir"
+     ],
+     "kind": "path",
+     "name": "tmp_dir",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "choices": [
+      "family",
+      "superfamily",
+      "fold"
+     ],
+     "default": "superfamily",
+     "flags": [
+      "--reseek_stats"
+     ],
+     "kind": "value",
+     "name": "reseek_stats",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "fast",
+      "sensitive"
+     ],
+     "default": "sensitive",
+     "flags": [
+      "--reseek_sensitivity"
+     ],
+     "kind": "value",
+     "name": "reseek_sensitivity",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      0,
+      1,
+      2
+     ],
+     "default": null,
+     "flags": [
+      "--alignment_type"
+     ],
+     "kind": "value",
+     "name": "alignment_type",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "tmscore",
+      "lddt",
+      "rmsd",
+      "prob"
+     ],
+     "default": null,
+     "flags": [
+      "--metrics"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "metrics",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_seqs"
+     ],
+     "kind": "value",
+     "name": "max_seqs",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": "cpu",
+     "flags": [
+      "--device"
+     ],
+     "kind": "value",
+     "name": "device",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "hdf_out",
+    "dense_text_out"
+   ]
+  },
+  {
+   "category": "compare",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "compare_contigs",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--name_by_order"
+     ],
+     "kind": "flag",
+     "name": "name_by_order",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "average",
+      "ward",
+      "complete",
+      "single",
+      "weighted"
+     ],
+     "default": "average",
+     "flags": [
+      "--linkage"
+     ],
+     "kind": "value",
+     "name": "linkage",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "greedy",
+      "optimal",
+      "none"
+     ],
+     "default": "greedy",
+     "flags": [
+      "--leaf_ordering"
+     ],
+     "kind": "value",
+     "name": "leaf_ordering",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--skip_sort_memory_check"
+     ],
+     "kind": "flag",
+     "name": "skip_sort_memory_check",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": [],
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_hits_per_query"
+     ],
+     "kind": "value",
+     "name": "max_hits_per_query",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--threshold"
+     ],
+     "kind": "value",
+     "name": "threshold",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--mst"
+     ],
+     "kind": "flag",
+     "name": "mst",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--knn"
+     ],
+     "kind": "value",
+     "min": 1,
+     "name": "knn",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 0.5,
+     "flags": [
+      "--ji"
+     ],
+     "kind": "value",
+     "name": "ji",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": 0.5,
+     "flags": [
+      "--ai"
+     ],
+     "kind": "value",
+     "name": "ai",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--hdf_out"
+     ],
+     "kind": "path",
+     "name": "hdf_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--dense_text_out"
+     ],
+     "kind": "path",
+     "name": "dense_text_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--progress"
+     ],
+     "kind": "flag",
+     "name": "progress",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "hdf_out",
+    "dense_text_out",
+    "genbank_out"
+   ]
+  },
+  {
+   "category": "compare",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "transform_matrix",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "bool",
+      "efi_score",
+      "efi_score_dist",
+      "norm_score",
+      "row_norm_score",
+      "score",
+      "score_dist"
+     ],
+     "default": null,
+     "flags": [
+      "--value_type"
+     ],
+     "kind": "value",
+     "name": "value_type",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--hdf_out"
+     ],
+     "kind": "path",
+     "name": "hdf_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--dense_text_out"
+     ],
+     "kind": "path",
+     "name": "dense_text_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "none",
+      "score",
+      "bool",
+      "norm_score",
+      "row_norm_score",
+      "score_dist",
+      "efi_score",
+      "efi_score_dist"
+     ],
+     "default": "none",
+     "flags": [
+      "--mode"
+     ],
+     "kind": "value",
+     "name": "mode",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--threshold"
+     ],
+     "kind": "value",
+     "name": "threshold",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--mst"
+     ],
+     "kind": "flag",
+     "name": "mst",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--knn"
+     ],
+     "kind": "value",
+     "min": 1,
+     "name": "knn",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "none",
+      "min",
+      "max",
+      "mean"
+     ],
+     "default": "none",
+     "flags": [
+      "--symmetrize"
+     ],
+     "kind": "value",
+     "name": "symmetrize",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "hdf_out",
+    "dense_text_out"
+   ]
+  },
+  {
+   "category": "network",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "build_ssn",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--threshold"
+     ],
+     "kind": "value",
+     "name": "threshold",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--metadata"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "metadata",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--subset"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "subset",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--subset_file"
+     ],
+     "kind": "path",
+     "name": "subset_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_by"
+     ],
+     "kind": "value",
+     "name": "color_by",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_table"
+     ],
+     "kind": "path",
+     "name": "color_table",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_color_groups"
+     ],
+     "kind": "value",
+     "name": "max_color_groups",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--mark_mst"
+     ],
+     "kind": "flag",
+     "name": "mark_mst",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_table_out"
+     ],
+     "kind": "path",
+     "name": "color_table_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--xgmml_out"
+     ],
+     "kind": "path",
+     "name": "xgmml_out",
+     "required": true,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--cluster"
+     ],
+     "kind": "flag",
+     "name": "cluster",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cluster_tsv_out"
+     ],
+     "kind": "path",
+     "name": "cluster_tsv_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--no_cluster_header"
+     ],
+     "kind": "flag",
+     "name": "no_cluster_header",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--mst"
+     ],
+     "kind": "flag",
+     "name": "mst",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--knn"
+     ],
+     "kind": "value",
+     "min": 1,
+     "name": "knn",
+     "required": false,
+     "type": "integer"
+    }
+   ],
+   "required_outputs": [
+    "xgmml_out"
+   ]
+  },
+  {
+   "category": "network",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "build_ssn_viewer",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": false,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--dsnv_out"
+     ],
+     "kind": "path",
+     "name": "dsnv_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--html_out"
+     ],
+     "kind": "path",
+     "name": "html_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--embed_data"
+     ],
+     "kind": "flag",
+     "name": "embed_data",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--name"
+     ],
+     "kind": "value",
+     "name": "name",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--metadata"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "metadata",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--subset"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "subset",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--subset_file"
+     ],
+     "kind": "path",
+     "name": "subset_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_by"
+     ],
+     "kind": "value",
+     "name": "color_by",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--label_by"
+     ],
+     "kind": "value",
+     "name": "label_by",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--categorical"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "categorical",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "product",
+      "min_child"
+     ],
+     "default": "min_child",
+     "flags": [
+      "--merge_impact_metric"
+     ],
+     "kind": "value",
+     "name": "merge_impact_metric",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
+    }
+   ],
+   "required_outputs": [
+    "dsnv_out",
+    "html_out"
+   ]
+  },
+  {
+   "category": "network",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "ssn_navigator",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--json_out"
+     ],
+     "kind": "path",
+     "name": "json_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "overview",
+      "thresholds",
+      "clusters",
+      "cluster",
+      "node"
+     ],
+     "default": "overview",
+     "flags": [
+      "--query"
+     ],
+     "kind": "value",
+     "name": "query",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--threshold"
+     ],
+     "kind": "value",
+     "name": "threshold",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--cluster"
+     ],
+     "kind": "value",
+     "name": "cluster",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--node"
+     ],
+     "kind": "value",
+     "name": "node",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 1,
+     "flags": [
+      "--min_size"
+     ],
+     "kind": "value",
+     "name": "min_size",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 50,
+     "flags": [
+      "--top_n"
+     ],
+     "kind": "value",
+     "name": "top_n",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--members"
+     ],
+     "kind": "flag",
+     "name": "members",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": 500,
+     "flags": [
+      "--max_merge_events"
+     ],
+     "kind": "value",
+     "name": "max_merge_events",
+     "required": false,
+     "type": "integer"
+    }
+   ],
+   "required_outputs": [
+    "json_out"
+   ]
+  },
+  {
+   "category": "network",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "split_by_cluster",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--matrix"
+     ],
+     "kind": "path",
+     "name": "matrix",
+     "required": true,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--output_dir"
+     ],
+     "kind": "path",
+     "name": "output_dir",
+     "required": true,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--threshold"
+     ],
+     "kind": "value",
+     "name": "threshold",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": 1,
+     "flags": [
+      "--min_cluster_size"
+     ],
+     "kind": "value",
+     "min": 1,
+     "name": "min_cluster_size",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--write_small_clusters"
+     ],
+     "kind": "flag",
+     "name": "write_small_clusters",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--pad_on_search_hits"
+     ],
+     "kind": "flag",
+     "name": "pad_on_search_hits",
+     "sets": true,
+     "type": "boolean"
+    }
+   ],
+   "required_outputs": null
+  },
+  {
+   "category": "network",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "build_tree",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "auto",
+      "precomputed",
+      "score_dist"
+     ],
+     "default": "auto",
+     "flags": [
+      "--distance"
+     ],
+     "kind": "value",
+     "name": "distance",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "upgma"
+     ],
+     "default": "upgma",
+     "flags": [
+      "--algorithm"
+     ],
+     "kind": "value",
+     "name": "algorithm",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--metadata"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "metadata",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--newick_out"
+     ],
+     "kind": "path",
+     "name": "newick_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--xgmml_out"
+     ],
+     "kind": "path",
+     "name": "xgmml_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "newick_out",
+    "xgmml_out"
+   ]
+  },
+  {
+   "category": "network",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "build_projection",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "pca",
+      "tsne",
+      "umap",
+      "coords"
+     ],
+     "default": "pca",
+     "flags": [
+      "--algorithm"
+     ],
+     "kind": "value",
+     "name": "algorithm",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--metadata"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "metadata",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_by"
+     ],
+     "kind": "value",
+     "name": "color_by",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_table"
+     ],
+     "kind": "path",
+     "name": "color_table",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_table_out"
+     ],
+     "kind": "path",
+     "name": "color_table_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--xgmml_out"
+     ],
+     "kind": "path",
+     "name": "xgmml_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--png_out"
+     ],
+     "kind": "path",
+     "name": "png_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--coords_out"
+     ],
+     "kind": "path",
+     "name": "coords_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--pca_args"
+     ],
+     "kind": "value",
+     "name": "pca_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--tsne_args"
+     ],
+     "kind": "value",
+     "name": "tsne_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--umap_args"
+     ],
+     "kind": "value",
+     "name": "umap_args",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 1000,
+     "flags": [
+      "--scale"
+     ],
+     "kind": "value",
+     "name": "scale",
+     "required": false,
+     "type": "number"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--three_d"
+     ],
+     "kind": "flag",
+     "name": "three_d",
+     "sets": true,
+     "type": "boolean"
+    }
+   ],
+   "required_outputs": [
+    "xgmml_out",
+    "png_out",
+    "coords_out"
+   ]
+  },
+  {
+   "category": "report",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "enum_report",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--tsv_out"
+     ],
+     "kind": "path",
+     "name": "tsv_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--html_out"
+     ],
+     "kind": "path",
+     "name": "html_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--json_out"
+     ],
+     "kind": "path",
+     "name": "json_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--html_max_height"
+     ],
+     "kind": "value",
+     "name": "html_max_height",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": [],
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "choices": [
+      "contig",
+      "cds",
+      "domain"
+     ],
+     "default": "contig",
+     "flags": [
+      "--by"
+     ],
+     "kind": "value",
+     "name": "by",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "include",
+      "exclude",
+      "only"
+     ],
+     "default": "include",
+     "flags": [
+      "--partial"
+     ],
+     "kind": "value",
+     "name": "partial",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "columns": [
+      {
+       "args": [],
+       "name": "domains",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "domain_descriptions",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "score",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "identity",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "architecture",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "architecture_detailed",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "start",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "end",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "strand",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "length",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "topology",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "sequence",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "cds_count",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "domain_count",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "definition",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "filename",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "domain_search",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "taxid_lineage",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "taxname_lineage",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "rank_lineage",
+       "repeat_last": false
+      },
+      {
+       "args": [
+        "rank"
+       ],
+       "name": "taxid",
+       "repeat_last": true
+      },
+      {
+       "args": [
+        "rank"
+       ],
+       "name": "taxname",
+       "repeat_last": true
+      },
+      {
+       "args": [
+        "feature",
+        "qualifier"
+       ],
+       "name": "qualifier",
+       "repeat_last": false
+      },
+      {
+       "args": [
+        "feature"
+       ],
+       "name": "feature_count",
+       "repeat_last": false
+      },
+      {
+       "args": [
+        "motif"
+       ],
+       "name": "motif_count",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "isoelectric_point",
+       "repeat_last": false
+      },
+      {
+       "args": [
+        "pH"
+       ],
+       "name": "net_charge",
+       "repeat_last": false
+      },
+      {
+       "args": [
+        "length"
+       ],
+       "name": "repeat_count",
+       "repeat_last": false
+      },
+      {
+       "args": [
+        "domain"
+       ],
+       "name": "named_domain_count",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "starts_with",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "molecular_weight",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "partial_count",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "fragment",
+       "repeat_last": false
+      },
+      {
+       "args": [
+        "name",
+        "type",
+        "value"
+       ],
+       "name": "append",
+       "repeat_last": false
+      }
+     ],
+     "default": null,
+     "flags": [
+      "--columns"
+     ],
+     "kind": "columns",
+     "multiple": true,
+     "name": "columns",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--taxonomy_update"
+     ],
+     "kind": "flag",
+     "name": "taxonomy_update",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default_dynamic": true,
+     "flags": [
+      "--ncbi_taxonomy_path"
+     ],
+     "kind": "path",
+     "name": "ncbi_taxonomy_path",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--column_names"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "column_names",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "tsv_out",
+    "html_out",
+    "json_out"
+   ]
+  },
+  {
+   "category": "report",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "hmmer_report",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--tsv_out"
+     ],
+     "kind": "path",
+     "name": "tsv_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--html_out"
+     ],
+     "kind": "path",
+     "name": "html_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--json_out"
+     ],
+     "kind": "path",
+     "name": "json_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--html_max_height"
+     ],
+     "kind": "value",
+     "name": "html_max_height",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--column_names"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "column_names",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "columns": [
+      {
+       "args": [],
+       "name": "source",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "acc",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "desc",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "length",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "consensus",
+       "repeat_last": false
+      },
+      {
+       "args": [],
+       "name": "alphabet",
+       "repeat_last": false
+      },
+      {
+       "args": [
+        "name",
+        "type",
+        "value"
+       ],
+       "name": "append",
+       "repeat_last": false
+      }
+     ],
+     "default": null,
+     "flags": [
+      "--columns"
+     ],
+     "kind": "columns",
+     "multiple": true,
+     "name": "columns",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "tsv_out",
+    "html_out",
+    "json_out"
+   ]
+  },
+  {
+   "category": "report",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "summary_report",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--text_out"
+     ],
+     "kind": "path",
+     "name": "text_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--html_out"
+     ],
+     "kind": "path",
+     "name": "html_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--json_out"
+     ],
+     "kind": "path",
+     "name": "json_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains_tsv_out"
+     ],
+     "kind": "path",
+     "name": "domains_tsv_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--co_occurrence_fraction_out"
+     ],
+     "kind": "path",
+     "name": "co_occurrence_fraction_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--co_occurrence_count_out"
+     ],
+     "kind": "path",
+     "name": "co_occurrence_count_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--taxonomy"
+     ],
+     "kind": "flag",
+     "name": "taxonomy",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--taxonomy_update"
+     ],
+     "kind": "flag",
+     "name": "taxonomy_update",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default_dynamic": true,
+     "flags": [
+      "--ncbi_taxonomy_path"
+     ],
+     "kind": "path",
+     "name": "ncbi_taxonomy_path",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "contigs",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--contigs_file"
+     ],
+     "kind": "path",
+     "name": "contigs_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "domains",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--domains_file"
+     ],
+     "kind": "path",
+     "name": "domains_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--databases"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "databases",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "include",
+      "exclude",
+      "only"
+     ],
+     "default": "include",
+     "flags": [
+      "--partial"
+     ],
+     "kind": "value",
+     "name": "partial",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "text_out",
+    "html_out",
+    "json_out",
+    "domains_tsv_out",
+    "co_occurrence_fraction_out",
+    "co_occurrence_count_out"
+   ]
+  },
+  {
+   "category": "report",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "matrix_report",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--text_out"
+     ],
+     "kind": "path",
+     "name": "text_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--html_out"
+     ],
+     "kind": "path",
+     "name": "html_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--json_out"
+     ],
+     "kind": "path",
+     "name": "json_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--knn_projection"
+     ],
+     "kind": "flag",
+     "name": "knn_projection",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "product",
+      "min_child"
+     ],
+     "default": "min_child",
+     "flags": [
+      "--merge_impact_metric"
+     ],
+     "kind": "value",
+     "name": "merge_impact_metric",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 500,
+     "flags": [
+      "--max_merge_events"
+     ],
+     "kind": "value",
+     "name": "max_merge_events",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--progress"
+     ],
+     "kind": "flag",
+     "name": "progress",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--profile_stages"
+     ],
+     "kind": "flag",
+     "name": "profile_stages",
+     "sets": true,
+     "type": "boolean"
+    }
+   ],
+   "required_outputs": [
+    "text_out",
+    "html_out",
+    "json_out"
+   ]
+  },
+  {
+   "category": "plot",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "plot_contigs",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--html_out"
+     ],
+     "kind": "path",
+     "name": "html_out",
+     "required": true,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": 2400,
+     "flags": [
+      "--height"
+     ],
+     "kind": "value",
+     "name": "height",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 1200,
+     "flags": [
+      "--width"
+     ],
+     "kind": "value",
+     "name": "width",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--types"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "types",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 50,
+     "flags": [
+      "--feature_height"
+     ],
+     "kind": "value",
+     "name": "feature_height",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 26,
+     "flags": [
+      "--feature_font_size"
+     ],
+     "kind": "value",
+     "name": "feature_font_size",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--metadata"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "metadata",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_by"
+     ],
+     "kind": "value",
+     "name": "color_by",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_table"
+     ],
+     "kind": "path",
+     "name": "color_table",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "html_out"
+   ]
+  },
+  {
+   "category": "plot",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "color_table_to_legend",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--svg_out"
+     ],
+     "kind": "path",
+     "name": "svg_out",
+     "required": true,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": "Legend",
+     "flags": [
+      "--title"
+     ],
+     "kind": "value",
+     "name": "title",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "svg_out"
+   ]
+  },
+  {
+   "category": "database",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "db_download",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "choices": [
+      "ncbi_all",
+      "ncbi_complete_genome_nonredundant_proks",
+      "ncbi_complete_genome_proks",
+      "ncbi_nonredundant_all",
+      "ncbi_nonredundant_proks",
+      "ncbi_representative_all",
+      "ncbi_representative_proks",
+      "swissprot",
+      "swissprot_gb",
+      "trembl",
+      "trembl_gb",
+      "uniprot",
+      "uniprot_gb"
+     ],
+     "default": null,
+     "flags": [
+      "--db"
+     ],
+     "kind": "value",
+     "name": "db",
+     "required": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--genbank_out"
+     ],
+     "kind": "path",
+     "name": "genbank_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--fasta_out"
+     ],
+     "kind": "path",
+     "name": "fasta_out",
+     "required": false,
+     "role": "output",
+     "stdout": true,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "include",
+      "exclude",
+      "only"
+     ],
+     "default": "include",
+     "flags": [
+      "--partial"
+     ],
+     "kind": "value",
+     "name": "partial",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--include_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "include_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exclude_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "exclude_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--taxonomy_expr"
+     ],
+     "kind": "value",
+     "name": "taxonomy_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default_dynamic": true,
+     "flags": [
+      "--ncbi_taxonomy_path"
+     ],
+     "kind": "path",
+     "name": "ncbi_taxonomy_path",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": true,
+     "flags": [
+      "--taxonomy_update"
+     ],
+     "kind": "flag",
+     "name": "taxonomy_update",
+     "negative_flags": [
+      "--no_taxonomy_update"
+     ],
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--success_log_out"
+     ],
+     "kind": "path",
+     "name": "success_log_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exclude_accessions"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "exclude_accessions",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exclude_accessions_file"
+     ],
+     "kind": "path",
+     "name": "exclude_accessions_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--ncbi_summary"
+     ],
+     "kind": "path",
+     "name": "ncbi_summary",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "choices": [
+      "all",
+      "unannotated"
+     ],
+     "default": null,
+     "flags": [
+      "--gene_call"
+     ],
+     "kind": "value",
+     "name": "gene_call",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_records"
+     ],
+     "kind": "value",
+     "name": "max_records",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--append"
+     ],
+     "kind": "flag",
+     "name": "append",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--before"
+     ],
+     "kind": "value",
+     "name": "before",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--after"
+     ],
+     "kind": "value",
+     "name": "after",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "choices": [
+      "direct",
+      "datasets"
+     ],
+     "default": "datasets",
+     "flags": [
+      "--download_backend"
+     ],
+     "kind": "value",
+     "name": "download_backend",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 3,
+     "flags": [
+      "--download_workers"
+     ],
+     "kind": "value",
+     "name": "download_workers",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--email"
+     ],
+     "kind": "value",
+     "name": "email",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--ncbi_api_key"
+     ],
+     "kind": "value",
+     "name": "ncbi_api_key",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--datasets_workdir"
+     ],
+     "kind": "path",
+     "name": "datasets_workdir",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": "gbff",
+     "flags": [
+      "--datasets_include"
+     ],
+     "kind": "value",
+     "name": "datasets_include",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 10,
+     "flags": [
+      "--datasets_max_workers"
+     ],
+     "kind": "value",
+     "name": "datasets_max_workers",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--datasets_path"
+     ],
+     "kind": "path",
+     "name": "datasets_path",
+     "required": false,
+     "role": "program",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--datasets_gzip"
+     ],
+     "kind": "flag",
+     "name": "datasets_gzip",
+     "sets": true,
+     "type": "boolean"
+    }
+   ],
+   "required_outputs": [
+    "genbank_out",
+    "fasta_out"
+   ]
+  },
+  {
+   "category": "database",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "format_db",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "multiple": true,
+     "name": "input",
+     "required": true,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--shards"
+     ],
+     "kind": "value",
+     "name": "shards",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--compress"
+     ],
+     "kind": "flag",
+     "name": "compress",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--index"
+     ],
+     "kind": "flag",
+     "name": "index",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--output_dir"
+     ],
+     "kind": "path",
+     "name": "output_dir",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--name"
+     ],
+     "kind": "value",
+     "name": "name",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--cpu"
+     ],
+     "kind": "value",
+     "name": "cpu",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": 6,
+     "flags": [
+      "--level"
+     ],
+     "kind": "value",
+     "name": "level",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--force"
+     ],
+     "kind": "flag",
+     "name": "force",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--log_out"
+     ],
+     "kind": "path",
+     "name": "log_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": null
+  }
+ ]
+}

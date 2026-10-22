@@ -73,6 +73,13 @@ echo "== guard: regen_ssn_viewer_shell.py --check =="
 "$PY" "$REPO_ROOT/scripts/regen_ssn_viewer_shell.py" --check \
   || { echo "  -> viewer shell is STALE; run scripts/regen_ssn_viewer_shell.py"; FAILED=1; }
 
+# Upstream's `domainator describe` is its complete interface; the committed snapshot is
+# what the `upstream_manifest` cargo test diffs this port's `describe` against.
+echo
+echo "== guard: refresh_manifest.py --check =="
+"$PY" "$REPO_ROOT/scripts/parity/refresh_manifest.py" --python "$PY" --check \
+  || { echo "  -> upstream's interface changed; run scripts/parity/refresh_manifest.py"; FAILED=1; }
+
 echo
 echo "== guard: UPSTREAM_VERSION vs upstream __version__ =="
 # The release this port reports parity with (`--version`, About, provenance, the
