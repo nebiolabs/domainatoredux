@@ -3,7 +3,7 @@
 **Status:** implemented 2026-09-24 (phases 1–7). Where the code differs from the
 text below:
 
-- **Escape hatch.** `DOMAINATOR_INPROCESS_JOBS=1` runs `domainator_cli::run` on the
+- **Escape hatch.** `DOMAINATOREDUX_INPROCESS_JOBS=1` runs `domainator_cli::run` on the
   job's thread. It does not restore the `run_*` functions, which are deleted.
 - **Output roles** in provenance come from the output file's type (`job_io::output_role`),
   not from each old runner's string. Nothing reads output roles. The **input** roles,
@@ -22,7 +22,7 @@ text below:
   instead.
 - **Database indexing** (§3.6, phase 7) runs `format-db --index` in a worker and has its
   own Cancel in the Databases panel. It is not a Jobs-panel job, because a database
-  can live outside any workspace and so has no `.domainator/jobs/` to record into.
+  can live outside any workspace and so has no `.domainatoredux/jobs/` to record into.
 
 **Goal:** run each Tools-menu job in a child process that is a copy of the GUI
 executable itself, started in a hidden "worker" mode. That makes Cancel real, keeps a
@@ -135,14 +135,14 @@ Replace the `spawn_blocking(run_one(...))` in `run_tool` with a launched worker.
 
 1. **Config file.** Use the params after `apply_default_cpu`, which already follow the
    tool's `*Config` shape. Write them to
-   `<root>/.domainator/jobs/<job_id>/worker-config.json`. The job directory already
+   `<root>/.domainatoredux/jobs/<job_id>/worker-config.json`. The job directory already
    exists for provenance (`provenance::write_job`), and keeping the file there leaves a
    record of exactly what ran. A file is used rather than command-line arguments
    because Windows limits a command line to about 32K characters, and a multi-file
    input list can exceed that.
 2. **Launch** `current_exe() --domainator-worker <tool> --config <that file>`:
    - stdin piped, as the lifeline from §3.2.
-   - stdout and stderr piped and copied to `.domainator/jobs/<job_id>/worker.log`. Also
+   - stdout and stderr piped and copied to `.domainatoredux/jobs/<job_id>/worker.log`. Also
      keep the last few KB in memory for the job's message.
    - **On Linux:** launch `/proc/self/exe` instead of `current_exe()`. That still works
      if the installed binary was replaced by an update while the app was running.
@@ -155,7 +155,7 @@ Replace the `spawn_blocking(run_one(...))` in `run_tool` with a launched worker.
      This needs a direct `windows-sys` dependency with the `Win32_System_JobObjects`,
      `Win32_System_Threading` and `Win32_Foundation` features. The crate is already in
      the dependency tree through Tauri, so it adds nothing to the build.
-   - **Environment:** inherited. `external_tools::ensure_env` sets `DOMAINATOR_DIAMOND`
+   - **Environment:** inherited. `external_tools::ensure_env` sets `DOMAINATOREDUX_DIAMOND`
      and the other tool locations with `std::env::set_var`, including after a download
      finishes mid-session. A worker launched afterwards picks those up automatically.
 3. **Wait** on a blocking thread for the process to exit, then read its exit status.
@@ -237,7 +237,7 @@ too.
   becomes "the CLI accepts `<tool> --config`": the test can call `domainator_cli::run`
   in-process with `--print_config` on an empty config and check that parsing succeeds.
   Keep the schema half as it is.
-- For one release, keep a `DOMAINATOR_INPROCESS_JOBS=1` environment variable that
+- For one release, keep a `DOMAINATOREDUX_INPROCESS_JOBS=1` environment variable that
   restores the in-process path, as an escape hatch if a worker problem appears on one
   platform. Remove it in the release after.
 

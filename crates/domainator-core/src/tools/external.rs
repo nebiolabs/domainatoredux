@@ -1,5 +1,5 @@
 //! Shared helpers for tools that shell out to external binaries (DIAMOND for
-//! `seq_dist`/`deduplicate`, USEARCH for `deduplicate`): a self-cleaning temp
+//! `seq_dist`/`deduplicate_genbank`, USEARCH for `deduplicate_genbank`): a self-cleaning temp
 //! directory, a binary locator (env var → bundled → PATH), a FASTA writer for
 //! `(id, residues)` records, and a friendly "not found" error.
 

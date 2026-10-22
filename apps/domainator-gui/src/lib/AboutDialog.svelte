@@ -1,5 +1,5 @@
 <script lang="ts">
-  // About Domainator: what version this is, what it is built on, where its files
+  // About Domainatoredux: what version this is, what it is built on, where its files
   // live, and a copyable blob for bug reports.
   //
   // All of it comes from one `app_diagnostics` call rather than being assembled
@@ -68,7 +68,7 @@
     class="modal"
     role="dialog"
     aria-modal="true"
-    aria-label="About Domainator"
+    aria-label="About Domainatoredux"
     tabindex="-1"
     bind:this={dialogEl}
     onclick={(e) => e.stopPropagation()}

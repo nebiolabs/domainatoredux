@@ -2,8 +2,8 @@
 //! hierarchy, and merge-event analysis. Mirrors `domainator.ssn_edges::MaxTree`
 //! and `domainator.ssn_hierarchy`.
 //!
-//! These are the pure algorithms behind `build-ssn`, `build-ssn-viewer`, and
-//! `matrix-report`: the viewer ships only the MST (n-1 edges) plus this hierarchy,
+//! These are the pure algorithms behind `build_ssn`, `build_ssn_viewer`, and
+//! `matrix_report`: the viewer ships only the MST (n-1 edges) plus this hierarchy,
 //! and reconstructs clusters client-side by cutting the tree at a threshold.
 //!
 //! Edge ordering matches the Python `DenseDataMatrix.sorted_undirected_edges`

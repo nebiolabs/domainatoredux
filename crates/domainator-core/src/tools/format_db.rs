@@ -472,8 +472,8 @@ pub fn format_db(
         }
     }
 
-    let tmp =
-        crate::tools::external::TempDir::new("domainator_format_db").map_err(|e| e.to_string())?;
+    let tmp = crate::tools::external::TempDir::new("domainatoredux_format_db")
+        .map_err(|e| e.to_string())?;
 
     let mut out_paths = Vec::new();
     for input in inputs {

@@ -18,7 +18,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR="$REPO_ROOT/external/domainator"
-PY="${DOMAINATOR_PYTHON:-/home/sean/miniforge3/envs/domainator/bin/python}"
+PY="${DOMAINATOREDUX_PYTHON:-/home/sean/miniforge3/envs/domainator/bin/python}"
 
 TARGET_REF=""
 LIVE_FROM=""
@@ -143,8 +143,8 @@ echo "== guard: committed fixtures vs upstream test/data =="
 # a new divergence, or a stale entry claiming work that is already done.
 echo
 echo "== guard: differential parity sweep (see docs/parity.md) =="
-if [[ ! -x "$REPO_ROOT/target/debug/domainator" ]]; then
-  echo "  -> SKIPPED: no target/debug/domainator (run cargo build)"
+if [[ ! -x "$REPO_ROOT/target/debug/domainatoredux" ]]; then
+  echo "  -> SKIPPED: no target/debug/domainatoredux (run cargo build)"
 elif ! "$PY" -c 'import domainator' 2>/dev/null; then
   echo "  -> SKIPPED: $PY cannot import domainator"
 else

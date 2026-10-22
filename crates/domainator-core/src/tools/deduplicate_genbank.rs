@@ -160,13 +160,13 @@ pub const MIN_DIAMOND_VERSION: &str = "2.2.5";
 // or the download lands somewhere the core never looks; a test in that crate
 // checks the managed specs against them.
 pub const DIAMOND_BIN_NAME: &str = "diamond";
-pub const DIAMOND_ENV_VAR: &str = "DOMAINATOR_DIAMOND";
+pub const DIAMOND_ENV_VAR: &str = "DOMAINATOREDUX_DIAMOND";
 pub const USEARCH_BIN_NAME: &str = "usearch";
-pub const USEARCH_ENV_VAR: &str = "DOMAINATOR_USEARCH";
+pub const USEARCH_ENV_VAR: &str = "DOMAINATOREDUX_USEARCH";
 /// cd-hit is driven through the `cdhit` Rust port, a single multiplexer binary
 /// whose first argument is the program name (`cd-hit`, `cd-hit-est`, ...).
 pub const CDHIT_BIN_NAME: &str = "cdhit";
-pub const CDHIT_ENV_VAR: &str = "DOMAINATOR_CDHIT";
+pub const CDHIT_ENV_VAR: &str = "DOMAINATOREDUX_CDHIT";
 
 enum ExternalTool {
     Diamond,
@@ -193,7 +193,7 @@ fn external_dedup(
         return Err("diamond deduplication is only supported for protein input.".into());
     }
 
-    let tmp = TempDir::new("domainator_dedup").map_err(|e| e.to_string())?;
+    let tmp = TempDir::new("domainatoredux_dedup").map_err(|e| e.to_string())?;
     let input_fasta = tmp.path().join("input.fasta");
     // id=str(i), sequence upper-cased with `*` -> `f` (matches Python's fasta write).
     let cleaned: Vec<(String, Vec<u8>)> = records
@@ -291,7 +291,7 @@ fn run_diamond(
         .arg(cpus.to_string());
     append_params(&mut cmd, &opts.params);
     let out = cmd.output().map_err(|e| {
-        spawn_error(e, &bin, "Install diamond or set $DOMAINATOR_DIAMOND.").to_string()
+        spawn_error(e, &bin, "Install diamond or set $DOMAINATOREDUX_DIAMOND.").to_string()
     })?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -307,7 +307,7 @@ fn run_diamond(
             return Err(format!(
                 "diamond cluster failed on an input that collapses into a single cluster. \
                  This is a bug in diamond before {MIN_DIAMOND_VERSION}; upgrade diamond \
-                 (or set $DOMAINATOR_DIAMOND to a newer binary).\n{stderr}"
+                 (or set $DOMAINATOREDUX_DIAMOND to a newer binary).\n{stderr}"
             ));
         }
         return Err(format!("diamond cluster failed:\n{stderr}"));
@@ -396,7 +396,7 @@ fn cdhit_word_size(id: f64, est: bool) -> Result<u32, String> {
 /// argument, and anything else is treated as the multiplexer.
 ///
 /// The trap is a **name that does not match the program we need**: pointing
-/// `$DOMAINATOR_CDHIT` at `cd-hit` and then feeding nucleotide input would run the
+/// `$DOMAINATOREDUX_CDHIT` at `cd-hit` and then feeding nucleotide input would run the
 /// protein program over DNA and return a plausible-looking wrong answer. Since the
 /// C++ suite installs both executables together, look for the sibling first; only if
 /// it is genuinely absent is this an error, and it is an error rather than a silent
@@ -421,7 +421,7 @@ fn cdhit_command(bin: &Path, est: bool) -> Result<(PathBuf, Option<&'static str>
     }
     Err(format!(
         "{} is the {stem} program, but this input needs {want}, and no {want}{ext} sits \
-         beside it. Point $DOMAINATOR_CDHIT (or --bin_path) at the `cdhit` multiplexer \
+         beside it. Point $DOMAINATOREDUX_CDHIT (or --bin_path) at the `cdhit` multiplexer \
          or at {want}{ext}.",
         bin.display()
     ))
@@ -479,7 +479,7 @@ fn run_cdhit(
             e,
             &exe,
             "Install cdhit (https://github.com/seanrjohnson-neb/cdhit-rust/releases) \
-             or set $DOMAINATOR_CDHIT.",
+             or set $DOMAINATOREDUX_CDHIT.",
         )
         .to_string()
     })?;
@@ -589,7 +589,7 @@ fn run_usearch(
     }
     append_params(&mut cmd, &params);
     let out = cmd.output().map_err(|e| {
-        spawn_error(e, &bin, "Install usearch or set $DOMAINATOR_USEARCH.").to_string()
+        spawn_error(e, &bin, "Install usearch or set $DOMAINATOREDUX_USEARCH.").to_string()
     })?;
     if !out.status.success() {
         return Err(format!(

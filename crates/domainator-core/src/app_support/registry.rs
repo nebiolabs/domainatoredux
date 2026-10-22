@@ -8,7 +8,7 @@
 //! (fasta | genbank | hmm) and `molecule` (protein | nucleic), so the UI can show
 //! the six categories from the spec, plus the resolved shard count.
 //!
-//! Workspaces used to keep their own list in `.domainator/databases.json`;
+//! Workspaces used to keep their own list in `.domainatoredux/databases.json`;
 //! [`migrate_workspace_registry`] folds one of those into the central list the
 //! first time the workspace is opened, then retires it.
 
@@ -203,7 +203,7 @@ pub enum IndexStatus {
     /// No index at all.
     Missing,
     /// Plain (non-BGZF) gzip: not seekable, so it cannot carry an index until it
-    /// is recompressed as BGZF (`format-db --compress`).
+    /// is recompressed as BGZF (`format_db --compress`).
     Unindexable,
     /// HMM libraries are read front to back; there is nothing to index.
     NotApplicable,
@@ -257,7 +257,7 @@ pub fn index_status(path: &Path, format: &str) -> IndexStatus {
 }
 
 /// Write a fresh `.didx` beside each data file of the database at `path`,
-/// through `format-db`'s index-only path, which indexes a file in place rather
+/// through `format_db`'s index-only path, which indexes a file in place rather
 /// than copying it (a 40 GB FASTA stays one file). Returns how many were written.
 pub fn build_database_index(path: &Path) -> Result<usize, String> {
     let shards = index_targets(path)?;
@@ -278,7 +278,7 @@ pub fn build_database_index(path: &Path) -> Result<usize, String> {
 
 /// The data files [`build_database_index`] would index, after the checks it makes
 /// first: the database is on disk, and none of it is plain gzip. The GUI runs the
-/// indexing itself as `format-db --index` over these, in a worker process it can
+/// indexing itself as `format_db --index` over these, in a worker process it can
 /// kill.
 pub fn index_targets(path: &Path) -> Result<Vec<String>, String> {
     let shards: Vec<String> = resolve_database_shards(path)?
@@ -294,7 +294,7 @@ pub fn index_targets(path: &Path) -> Result<Vec<String>, String> {
         .any(|s| detect_compression(Path::new(s)) == Compression::Gzip)
     {
         return Err(
-            "plain gzip cannot be indexed; recompress it as BGZF with format-db --compress".into(),
+            "plain gzip cannot be indexed; recompress it as BGZF with format_db --compress".into(),
         );
     }
     Ok(shards)

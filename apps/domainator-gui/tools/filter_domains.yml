@@ -1,5 +1,5 @@
-# GUI dialog for `domainator filter-domains`. Format: see README.md in this directory.
-id: filter-domains
+# GUI dialog for `domainatoredux filter_domains`. Format: see README.md in this directory.
+id: filter_domains
 label: "Filter domains"
 category: "Annotation & search"
 description: "Remove domain annotations from records by e-value, overlap, name, or database (keeps the sequences)."

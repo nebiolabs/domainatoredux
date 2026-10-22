@@ -1,5 +1,5 @@
-# GUI dialog for `domainator hmmer-search`. Format: see README.md in this directory.
-id: hmmer-search
+# GUI dialog for `domainatoredux hmmer_search`. Format: see README.md in this directory.
+id: hmmer_search
 label: "HMM search"
 category: "HMM profiles"
 description: "Keep query profiles that score against a reference HMM set (writes an HMM file)."

@@ -1,5 +1,5 @@
-# GUI dialog for `domainator hmmer-report`. Format: see README.md in this directory.
-id: hmmer-report
+# GUI dialog for `domainatoredux hmmer_report`. Format: see README.md in this directory.
+id: hmmer_report
 label: "HMM report (export)"
 category: "HMM profiles"
 description: "Export a per-profile TSV/JSON report from HMM file(s) with a custom column set."

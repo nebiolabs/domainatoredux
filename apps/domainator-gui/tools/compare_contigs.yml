@@ -1,5 +1,5 @@
-# GUI dialog for `domainator compare-contigs`. Format: see README.md in this directory.
-id: compare-contigs
+# GUI dialog for `domainatoredux compare_contigs`. Format: see README.md in this directory.
+id: compare_contigs
 label: "Compare contigs"
 category: "Matrices & networks"
 description: "Neighborhood-similarity matrix from domain content (step 3 alternative; pure-Rust)."

@@ -1,5 +1,5 @@
-# GUI dialog for `domainator hmmer-build`. Format: see README.md in this directory.
-id: hmmer-build
+# GUI dialog for `domainatoredux hmmer_build`. Format: see README.md in this directory.
+id: hmmer_build
 label: "HMM build"
 category: "HMM profiles"
 description: "Build an HMM profile from a Stockholm multiple-sequence alignment."

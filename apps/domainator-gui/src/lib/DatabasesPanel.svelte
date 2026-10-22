@@ -54,7 +54,7 @@
       "an index lets them seek, and gives -Z 0 its target count instantly.",
     stale: "The .didx index no longer matches the data (it changed since indexing). Rebuild it.",
     unindexable:
-      "Plain gzip cannot be indexed. Recompress it as BGZF with the format-db tool to index it.",
+      "Plain gzip cannot be indexed. Recompress it as BGZF with the format_db tool to index it.",
   };
 
   // ── context menu: the file table's row menu, for a database ─────────────────
@@ -80,7 +80,7 @@
   }
 
   /// Every shard of the database; its `.didx` indexes stay behind, since
-  /// `format-db` rebuilds them and they are stale once the data is moved.
+  /// `format_db` rebuilds them and they are stale once the data is moved.
   async function exportDb(d: DatabaseRow) {
     const files = (await listDatabaseFiles(d.path)).filter((f) => !f.toLowerCase().endsWith(".didx"));
     if (files.length) ui.exportFor = files;

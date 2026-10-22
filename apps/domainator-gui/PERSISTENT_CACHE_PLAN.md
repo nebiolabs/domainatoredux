@@ -9,7 +9,7 @@ workspace is instant.
 
 ## Where
 
-Under the reserved hidden dir: `<root>/.domainator/cache/<namespace>/`. One file per
+Under the reserved hidden dir: `<root>/.domainatoredux/cache/<namespace>/`. One file per
 cached payload. `<namespace>` = the command (e.g. `enum`, `summary`, `contig`,
 `matrix`).
 
@@ -38,7 +38,7 @@ where F: FnOnce() -> Result<Vec<u8>, String>
 ```
 
 - Build `key = blake3/seahash(ns + source-abs + params_key)`; path
-  `<root>/.domainator/cache/<ns>/<key>.json`.
+  `<root>/.domainatoredux/cache/<ns>/<key>.json`.
 - `stat(source)` → `(size, mtime_ns)`. If the entry exists and its stamp matches,
   return `payload` bytes. Else `compute()`, wrap with the current stamp, write
   atomically (temp+rename, like `workspace::write_atomic`), return payload.
@@ -46,7 +46,7 @@ where F: FnOnce() -> Result<Vec<u8>, String>
 
 ## Wiring the commands
 
-The expensive report commands need `workspace_root` (to locate `.domainator`) and
+The expensive report commands need `workspace_root` (to locate `.domainatoredux`) and
 should return the payload as `serde_json::Value` (identical wire shape, so the
 frontend TS types are unchanged):
 
@@ -76,7 +76,7 @@ the new HMM table view), so they can be left uncached initially.
 
 - **Staleness is the main risk** — the `(size, mtime_ns)` stamp is the guard; verify
   it triggers on both CLI edits and in-app `set_feature_color` write-backs.
-- Add a "Clear cache" affordance (delete `.domainator/cache/`) and consider an
+- Add a "Clear cache" affordance (delete `.domainatoredux/cache/`) and consider an
   eviction cap (e.g. by total size / age) so it doesn't grow unbounded.
 - The cache is per-payload JSON; a params change (different columns) just creates a
   new entry — acceptable.

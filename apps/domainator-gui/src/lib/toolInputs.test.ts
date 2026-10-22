@@ -29,20 +29,20 @@ function tool(id: string, fields: ToolField[]): ToolMeta {
   return { id, label: id, description: "", category: "", fields };
 }
 
-const domainSearch = tool("domain-search", [
+const domainSearch = tool("domain_search", [
   input("input", "input_file", ["sequence"]),
   input("references", "input_files", ["reference"], 1),
 ]);
-const seqDist = tool("seq-dist", [
+const seqDist = tool("seq_dist", [
   input("input", "input_file", ["sequence", "hmm"]),
   input("reference", "input_file", ["sequence", "hmm"]),
 ]);
-const buildSsn = tool("build-ssn", [
+const buildSsn = tool("build_ssn", [
   input("input", "input_file", ["hdf5"]),
   input("metadata", "input_files", ["table"]),
   input("color_table", "input_file", ["table"]),
 ]);
-const hmmerBuild = tool("hmmer-build", [input("input", "input_file", ["stockholm"])]);
+const hmmerBuild = tool("hmmer_build", [input("input", "input_file", ["stockholm"])]);
 
 const file = (path: string, file_type: string): TypedPath => ({ path, file_type });
 const fa = file("a.fasta", "fasta");
@@ -57,24 +57,24 @@ const sto2 = file("y.sto", "stockholm");
 
 describe("placeFiles", () => {
   it.each([
-    // domain-search's references outrank its input, so FASTAs are references;
+    // domain_search's references outrank its input, so FASTAs are references;
     // `input` is left for its `select` (the first database).
-    ["domain-search: lone FASTA", domainSearch, [fa], { references: ["a.fasta"] }, []],
-    ["domain-search: HMM + FASTA", domainSearch, [hmm, fa], { references: ["p.hmm", "a.fasta"] }, []],
+    ["domain_search: lone FASTA", domainSearch, [fa], { references: ["a.fasta"] }, []],
+    ["domain_search: HMM + FASTA", domainSearch, [hmm, fa], { references: ["p.hmm", "a.fasta"] }, []],
     // GenBank fits only `input`, whatever the priority says.
-    ["domain-search: HMM + FASTA + GenBank", domainSearch, [hmm, fa, gb], { input: "c.gb", references: ["p.hmm", "a.fasta"] }, []],
-    ["domain-search: lone GenBank", domainSearch, [gb], { input: "c.gb" }, []],
+    ["domain_search: HMM + FASTA + GenBank", domainSearch, [hmm, fa, gb], { input: "c.gb", references: ["p.hmm", "a.fasta"] }, []],
+    ["domain_search: lone GenBank", domainSearch, [gb], { input: "c.gb" }, []],
     // Two single fields of the same types fill in selection order.
-    ["seq-dist: two FASTAs", seqDist, [fa, fa2], { input: "a.fasta", reference: "b.fasta" }, []],
-    ["seq-dist: FASTA + HMM", seqDist, [fa, hmm], { input: "a.fasta", reference: "p.hmm" }, []],
+    ["seq_dist: two FASTAs", seqDist, [fa, fa2], { input: "a.fasta", reference: "b.fasta" }, []],
+    ["seq_dist: FASTA + HMM", seqDist, [fa, hmm], { input: "a.fasta", reference: "p.hmm" }, []],
     // A lone table takes the list field that comes before the single one.
-    ["build-ssn: hdf5 + tsv", buildSsn, [hdf5, tsv], { input: "m.hdf5", metadata: ["meta.tsv"] }, []],
-    ["build-ssn: two tables", buildSsn, [tsv, tsv2], { metadata: ["meta.tsv", "colors.tsv"] }, []],
+    ["build_ssn: hdf5 + tsv", buildSsn, [hdf5, tsv], { input: "m.hdf5", metadata: ["meta.tsv"] }, []],
+    ["build_ssn: two tables", buildSsn, [tsv, tsv2], { metadata: ["meta.tsv", "colors.tsv"] }, []],
     // Best effort: what fits is placed, the rest is left out in selection order.
-    ["hmmer-build: two Stockholm files", hmmerBuild, [sto, sto2], { input: "x.sto" }, ["y.sto"]],
-    ["seq-dist: three FASTAs", seqDist, [fa, fa2, file("z.fasta", "fasta")], { input: "a.fasta", reference: "b.fasta" }, ["z.fasta"]],
-    ["domain-search: a stray table", domainSearch, [tsv, fa, gb], { input: "c.gb", references: ["a.fasta"] }, ["meta.tsv"]],
-    ["hmmer-build: nothing fits", hmmerBuild, [fa, gb], {}, ["a.fasta", "c.gb"]],
+    ["hmmer_build: two Stockholm files", hmmerBuild, [sto, sto2], { input: "x.sto" }, ["y.sto"]],
+    ["seq_dist: three FASTAs", seqDist, [fa, fa2, file("z.fasta", "fasta")], { input: "a.fasta", reference: "b.fasta" }, ["z.fasta"]],
+    ["domain_search: a stray table", domainSearch, [tsv, fa, gb], { input: "c.gb", references: ["a.fasta"] }, ["meta.tsv"]],
+    ["hmmer_build: nothing fits", hmmerBuild, [fa, gb], {}, ["a.fasta", "c.gb"]],
   ])("%s", (_name, t, files, assigned, left) => {
     const got = placeFiles(t, files);
     expect(got.assigned).toEqual(assigned);
@@ -82,7 +82,7 @@ describe("placeFiles", () => {
   });
 
   it("without priorities, a lone file prefers the earlier single field", () => {
-    const noPriority = tool("domain-search", [
+    const noPriority = tool("domain_search", [
       input("input", "input_file", ["sequence"]),
       input("references", "input_files", ["reference"]),
     ]);

@@ -11,7 +11,7 @@ A virtual Cargo workspace: three library/binary crates, two Tauri apps, one WASM
 | --- | --- |
 | `crates/domainator-core/` | the data model, all I/O, and every tool's logic as library functions. Also `app_support/`, the GUI-facing seam. |
 | `crates/domainator-config/` | per-tool serde config structs, `merge_cli`, `--print_config`, the draft-07 schema emitter, and `resolve.rs` (config → `*Options`), shared by the CLI **and** the GUI so the two cannot drift. |
-| `crates/domainator-cli/` | thin clap front end — arg parsing and I/O wiring only. Binary name `domainator`. |
+| `crates/domainator-cli/` | thin clap front end — arg parsing and I/O wiring only. Binary name `domainatoredux`. |
 | `apps/domainator-gui/` | the Tauri v2 + Svelte 5 desktop app. Its Rust side is a thin `#[tauri::command]` layer over `app_support`. |
 | `apps/genbank-summary/`, `wasm_apps/genbank-summary/` | a small standalone Tauri app and its browser/WASM twin. |
 | `vendor/hdf5-pure/` | a patched dependency (below). |
@@ -50,8 +50,8 @@ convention, which is what makes the GUI able to reuse them directly.
 
 The only non-pure-Rust runtime dependencies, all optional, all driven as subprocesses
 through `tools/external.rs::find_binary` (env var → bundled `external/<dir>/<name>` →
-`PATH`): **`diamond`** for `seq_dist` and `deduplicate`, **`cdhit`** and **`usearch`**
-for `deduplicate`, and **`orphos`** for gene calling (`tools/gene_call.rs`: the `gene-call`
+`PATH`): **`diamond`** for `seq_dist` and `deduplicate_genbank`, **`cdhit`** and **`usearch`**
+for `deduplicate_genbank`, and **`orphos`** for gene calling (`tools/gene_call.rs`: the `gene_call`
 tool and `domainate`/`domain_search --gene_call`). Their locator identity lives in
 `deduplicate_genbank`'s and `gene_call`'s `*_BIN_NAME` / `*_ENV_VAR` constants, to which
 the GUI's External tools registry is pinned by a test.

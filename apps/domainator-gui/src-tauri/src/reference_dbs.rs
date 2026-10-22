@@ -223,7 +223,7 @@ pub fn specs() -> Vec<DbSpec> {
         DbSpec {
             id: "pfam",
             name: "Pfam-A",
-            description: "The Pfam-A profile HMM library, for domainate / hmmer-search. Stored gzipped, as EBI serves it.",
+            description: "The Pfam-A profile HMM library, for domainate / hmmer_search. Stored gzipped, as EBI serves it.",
             url: "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz",
             version_url: "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam.version.gz",
             version_gzipped: true,
@@ -237,7 +237,7 @@ pub fn specs() -> Vec<DbSpec> {
         DbSpec {
             id: "ncbi_taxonomy",
             name: "NCBI Taxonomy",
-            description: "The NCBI taxonomy tree (taxdump), for taxonomy filters and enum-report's taxid / taxon-name / lineage columns.",
+            description: "The NCBI taxonomy tree (taxdump), for taxonomy filters and enum_report's taxid / taxon-name / lineage columns.",
             url: "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz",
             version_url: "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz.md5",
             version_gzipped: false,

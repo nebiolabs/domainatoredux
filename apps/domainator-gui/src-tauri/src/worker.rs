@@ -3,8 +3,8 @@
 //!
 //! `main.rs` calls [`maybe_run_worker`] before anything else. When the first
 //! argument is [`WORKER_FLAG`], the rest of the command line is exactly a
-//! `domainator` CLI command line (`domain-search --config <file>`), which is handed
-//! to [`domainator_cli::run`] -- the same code the `domainator` binary runs -- and
+//! `domainatoredux` CLI command line (`domain_search --config <file>`), which is handed
+//! to [`domainator_cli::run`] -- the same code the `domainatoredux` binary runs -- and
 //! the process exits without ever starting Tauri, GTK or a webview. There is still
 //! only one binary to build, bundle and sign.
 //!
@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 /// `argv[1]` of a worker. Everything after it is a CLI command line.
-pub const WORKER_FLAG: &str = "--domainator-worker";
+pub const WORKER_FLAG: &str = "--domainatoredux-worker";
 
 /// Exit code of a worker that stopped because its stdin closed (the GUI went
 /// away) and that could not take its process group with it (it is not the group
@@ -67,7 +67,7 @@ fn run_worker(args: Vec<OsString>) -> i32 {
         return code;
     }
     watch_lifeline();
-    let argv = std::iter::once(OsString::from("domainator"))
+    let argv = std::iter::once(OsString::from("domainatoredux"))
         .chain(args)
         .collect();
     match run_cli(argv) {
@@ -77,7 +77,7 @@ fn run_worker(args: Vec<OsString>) -> i32 {
                 let _ = clap_err.print();
                 clap_err.exit_code()
             }
-            // What the `domainator` binary prints for an error (`main` returning
+            // What the `domainatoredux` binary prints for an error (`main` returning
             // `Err`), so a job's message is the one the CLI would show.
             None => {
                 eprintln!("Error: {e:?}");
@@ -218,7 +218,7 @@ pub fn spawn(args: &[OsString], cwd: Option<&Path>, log: Option<&Path>) -> std::
     spawn_exe(&worker_exe()?, args, cwd, log)
 }
 
-/// Start `exe --domainator-worker <args>` in its own process tree, with stdin
+/// Start `exe --domainatoredux-worker <args>` in its own process tree, with stdin
 /// piped as the lifeline and stdout/stderr copied to `log` (when given) and kept
 /// in memory, last `TAIL_BYTES` of each.
 pub fn spawn_exe(

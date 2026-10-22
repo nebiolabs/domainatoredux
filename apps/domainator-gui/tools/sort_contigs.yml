@@ -1,5 +1,5 @@
-# GUI dialog for `domainator sort-contigs`. Format: see README.md in this directory.
-id: sort-contigs
+# GUI dialog for `domainatoredux sort_contigs`. Format: see README.md in this directory.
+id: sort_contigs
 label: "Sort contigs"
 category: "Selection & extraction"
 description: "Sort contigs by best search/domain score; optionally keep only the top N."

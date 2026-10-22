@@ -1,5 +1,5 @@
-# GUI dialog for `domainator color-genbank`. Format: see README.md in this directory.
-id: color-genbank
+# GUI dialog for `domainatoredux color_genbank`. Format: see README.md in this directory.
+id: color_genbank
 label: "Color GenBank"
 category: "Color"
 description: "Batch-assign feature colors by name/database (color table or auto palette)."

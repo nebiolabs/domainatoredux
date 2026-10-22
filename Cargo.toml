@@ -30,7 +30,7 @@ serde_yaml = "0.9"
 # rules CI does. Every member opts in with `[lints] workspace = true`.
 #
 # `cast_sign_loss` is on because a negative coordinate cast to `usize` becomes an index
-# near usize::MAX (it once crashed `trim-contigs`). Use `seq::location::to_index` for a
+# near usize::MAX (it once crashed `trim_contigs`). Use `seq::location::to_index` for a
 # coordinate already known non-negative, `stats::floor_index` for a float, and
 # `usize::try_from` otherwise. `cast_possible_wrap` and `cast_possible_truncation` stay
 # off: every target is 64-bit, where those casts (mostly usize <-> i64, u64 -> usize)

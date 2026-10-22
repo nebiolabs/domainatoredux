@@ -1,5 +1,5 @@
-# GUI dialog for `domainator extract-unannotated`. Format: see README.md in this directory.
-id: extract-unannotated
+# GUI dialog for `domainatoredux extract_unannotated`. Format: see README.md in this directory.
+id: extract_unannotated
 label: "Extract unannotated"
 category: "Selection & extraction"
 description: "Extract the regions of each CDS/contig with no domain annotation."

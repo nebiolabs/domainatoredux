@@ -1532,41 +1532,41 @@ impl FormatDbConfig {
 /// A pragmatic JSON Schema (draft-07) describing a tool's config file.
 pub fn schema(tool: &str) -> Result<String> {
     let s = match tool {
-        "enum-report" | "enum_report" => enum_schema(),
-        "select-by-contig" | "select_by_contig" => select_by_contig_schema(),
-        "select-by-cds" | "select_by_cds" => select_by_cds_schema(),
+        "enum_report" => enum_schema(),
+        "select_by_contig" => select_by_contig_schema(),
+        "select_by_cds" => select_by_cds_schema(),
         "domainate" => domainate_schema(),
-        "domain-search" | "domain_search" => domain_search_schema(),
-        "deduplicate" | "deduplicate-genbank" | "deduplicate_genbank" => deduplicate_schema(),
-        "genbank-to-fasta" | "genbank_to_fasta" => genbank_to_fasta_schema(),
-        "clean-sequences" | "clean_sequences" => clean_sequences_schema(),
-        "gene-call" | "gene_call" => gene_call_schema(),
-        "sort-contigs" | "sort_contigs" => sort_contigs_schema(),
-        "select-by-coord" | "select_by_coord" => select_by_coord_schema(),
-        "filter-domains" | "filter_domains" => filter_domains_schema(),
-        "color-genbank" | "color_genbank" => color_genbank_schema(),
-        "color-table-to-legend" | "color_table_to_legend" => color_table_to_legend_schema(),
-        "trim-contigs" | "trim_contigs" => trim_contigs_schema(),
-        "extract-domains" | "extract_domains" => extract_domains_schema(),
-        "extract-peptides" | "extract_peptides" => extract_peptides_schema(),
-        "extract-unannotated" | "extract_unannotated" => extract_unannotated_schema(),
-        "seq-dist" | "seq_dist" => seq_dist_schema(),
-        "compare-contigs" | "compare_contigs" => compare_contigs_schema(),
-        "hmmer-compare" | "hmmer_compare" => hmmer_compare_schema(),
-        "transform-matrix" | "transform_matrix" => transform_matrix_schema(),
-        "build-ssn" | "build_ssn" => build_ssn_schema(),
-        "build-ssn-viewer" | "build_ssn_viewer" => build_ssn_viewer_schema(),
-        "matrix-report" | "matrix_report" => matrix_report_schema(),
-        "ssn-navigator" | "ssn_navigator" => ssn_navigator_schema(),
-        "summary-report" | "summary_report" => summary_report_schema(),
-        "hmmer-report" | "hmmer_report" => hmmer_report_schema(),
-        "hmmer-select" | "hmmer_select" => hmmer_select_schema(),
-        "hmmer-build" | "hmmer_build" => hmmer_build_schema(),
-        "hmmer-search" | "hmmer_search" => hmmer_search_schema(),
-        "format-db" | "format_db" | "domainator-format-db" | "domainator_format_db" => format_db_schema(),
-        other => anyhow::bail!(
-            "no schema for tool {other:?} (have: domainate, domain-search, seq-dist, compare-contigs, hmmer-compare, hmmer-report, hmmer-select, format-db, transform-matrix, build-ssn, build-ssn-viewer, matrix-report, ssn-navigator, summary-report, select-by-contig, select-by-cds, enum-report)"
-        ),
+        "domain_search" => domain_search_schema(),
+        "deduplicate_genbank" => deduplicate_schema(),
+        "genbank_to_fasta" => genbank_to_fasta_schema(),
+        "clean_sequences" => clean_sequences_schema(),
+        "gene_call" => gene_call_schema(),
+        "sort_contigs" => sort_contigs_schema(),
+        "select_by_coord" => select_by_coord_schema(),
+        "filter_domains" => filter_domains_schema(),
+        "color_genbank" => color_genbank_schema(),
+        "color_table_to_legend" => color_table_to_legend_schema(),
+        "trim_contigs" => trim_contigs_schema(),
+        "extract_domains" => extract_domains_schema(),
+        "extract_peptides" => extract_peptides_schema(),
+        "extract_unannotated" => extract_unannotated_schema(),
+        "seq_dist" => seq_dist_schema(),
+        "compare_contigs" => compare_contigs_schema(),
+        "hmmer_compare" => hmmer_compare_schema(),
+        "transform_matrix" => transform_matrix_schema(),
+        "build_ssn" => build_ssn_schema(),
+        "build_ssn_viewer" => build_ssn_viewer_schema(),
+        "matrix_report" => matrix_report_schema(),
+        "ssn_navigator" => ssn_navigator_schema(),
+        "summary_report" => summary_report_schema(),
+        "hmmer_report" => hmmer_report_schema(),
+        "hmmer_select" => hmmer_select_schema(),
+        "hmmer_build" => hmmer_build_schema(),
+        "hmmer_search" => hmmer_search_schema(),
+        "format_db" => format_db_schema(),
+        other => {
+            anyhow::bail!("no schema for tool {other:?} (`domainatoredux --help` lists the tools)")
+        }
     };
     let mut s = s;
     fill_common_descriptions(&mut s);
@@ -1801,7 +1801,7 @@ fn enum_columns_schema() -> serde_json::Value {
                 json!({"name": {"type": "string", "description": "Domain name"}})),
             static_column("score", "Score (sum)", "The sum of domain scores."),
             static_column("identity", "Identity (sum)", "The sum of domain identities."),
-            static_column("domain_search", "Domain search hit", "Several columns describing the domain-search hit: best_query, query_description, query_start, query_end, query_length, match_start, match_end, match_strand, match_score, match_identity."),
+            static_column("domain_search", "Domain search hit", "Several columns describing the domain_search hit: best_query, query_description, query_start, query_end, query_length, match_start, match_end, match_strand, match_score, match_identity."),
             static_column("length", "Length", "The contig, CDS or domain length."),
             static_column("start", "Start", "The start coordinate of the feature."),
             static_column("end", "End", "The end coordinate of the feature."),
@@ -1990,7 +1990,7 @@ fn deduplicate_schema() -> serde_json::Value {
             "log": {"type": ["string", "null"]},
             "fasta_type": {"enum": ["protein", "nucleotide", null]},
             "algorithm": {"enum": ["hash", "cd-hit", "cd-hit-est", "diamond", "usearch", null], "default": "cd-hit", "description": "Clustering algorithm (default cd-hit; cd-hit switches to cd-hit-est for non-protein input)"},
-            "bin_path": {"type": ["string", "null"], "description": "Path to the external clusterer binary (else $DOMAINATOR_CDHIT / $DOMAINATOR_DIAMOND / $DOMAINATOR_USEARCH, then PATH)"},
+            "bin_path": {"type": ["string", "null"], "description": "Path to the external clusterer binary (else $DOMAINATOREDUX_CDHIT / $DOMAINATOREDUX_DIAMOND / $DOMAINATOREDUX_USEARCH, then PATH)"},
             "id": {"type": ["number", "null"], "description": "Identity threshold 0-1 (must be 1 for hash)"},
             "prefix_count": {"type": "boolean", "default": false},
             "suffix_count": {"type": "boolean", "default": false},
@@ -2056,7 +2056,7 @@ fn gene_call_schema() -> serde_json::Value {
             "closed": {"type": "boolean", "default": false, "description": "Closed ends: no genes running off the ends of a contig"},
             "mask": {"type": "boolean", "default": false, "description": "No genes across runs of N"},
             "cpu": {"type": ["integer", "null"], "description": "Orphos threads (0 = all cores)"},
-            "bin_path": {"type": ["string", "null"], "description": "Path to the orphos binary (else $DOMAINATOR_ORPHOS, then PATH)"}
+            "bin_path": {"type": ["string", "null"], "description": "Path to the orphos binary (else $DOMAINATOREDUX_ORPHOS, then PATH)"}
         }
     })
 }
@@ -2699,38 +2699,38 @@ mod tests {
 
     fn every_tool() -> Vec<(&'static str, serde_json::Value)> {
         tools![
-            "enum-report" => EnumConfig,
-            "select-by-contig" => SelectByContigConfig,
-            "select-by-cds" => SelectByCdsConfig,
+            "enum_report" => EnumConfig,
+            "select_by_contig" => SelectByContigConfig,
+            "select_by_cds" => SelectByCdsConfig,
             "domainate" => DomainateConfig,
-            "domain-search" => DomainSearchConfig,
-            "deduplicate" => DeduplicateConfig,
-            "genbank-to-fasta" => GenbankToFastaConfig,
-            "clean-sequences" => CleanSequencesConfig,
-            "gene-call" => GeneCallConfig,
-            "sort-contigs" => SortContigsConfig,
-            "select-by-coord" => SelectByCoordConfig,
-            "filter-domains" => FilterDomainsConfig,
-            "color-genbank" => ColorGenbankConfig,
-            "color-table-to-legend" => ColorTableToLegendConfig,
-            "trim-contigs" => TrimContigsConfig,
-            "extract-domains" => ExtractDomainsConfig,
-            "extract-peptides" => ExtractPeptidesConfig,
-            "extract-unannotated" => ExtractUnannotatedConfig,
-            "seq-dist" => SeqDistConfig,
-            "compare-contigs" => CompareContigsConfig,
-            "transform-matrix" => TransformMatrixConfig,
-            "build-ssn" => BuildSsnConfig,
-            "build-ssn-viewer" => BuildSsnViewerConfig,
-            "matrix-report" => MatrixReportConfig,
-            "ssn-navigator" => SsnNavigatorConfig,
-            "summary-report" => SummaryReportConfig,
-            "hmmer-compare" => HmmerCompareConfig,
-            "hmmer-report" => HmmerReportConfig,
-            "hmmer-select" => HmmerSelectConfig,
-            "hmmer-build" => HmmerBuildConfig,
-            "hmmer-search" => HmmerSearchConfig,
-            "format-db" => FormatDbConfig,
+            "domain_search" => DomainSearchConfig,
+            "deduplicate_genbank" => DeduplicateConfig,
+            "genbank_to_fasta" => GenbankToFastaConfig,
+            "clean_sequences" => CleanSequencesConfig,
+            "gene_call" => GeneCallConfig,
+            "sort_contigs" => SortContigsConfig,
+            "select_by_coord" => SelectByCoordConfig,
+            "filter_domains" => FilterDomainsConfig,
+            "color_genbank" => ColorGenbankConfig,
+            "color_table_to_legend" => ColorTableToLegendConfig,
+            "trim_contigs" => TrimContigsConfig,
+            "extract_domains" => ExtractDomainsConfig,
+            "extract_peptides" => ExtractPeptidesConfig,
+            "extract_unannotated" => ExtractUnannotatedConfig,
+            "seq_dist" => SeqDistConfig,
+            "compare_contigs" => CompareContigsConfig,
+            "transform_matrix" => TransformMatrixConfig,
+            "build_ssn" => BuildSsnConfig,
+            "build_ssn_viewer" => BuildSsnViewerConfig,
+            "matrix_report" => MatrixReportConfig,
+            "ssn_navigator" => SsnNavigatorConfig,
+            "summary_report" => SummaryReportConfig,
+            "hmmer_compare" => HmmerCompareConfig,
+            "hmmer_report" => HmmerReportConfig,
+            "hmmer_select" => HmmerSelectConfig,
+            "hmmer_build" => HmmerBuildConfig,
+            "hmmer_search" => HmmerSearchConfig,
+            "format_db" => FormatDbConfig,
         ]
     }
 
@@ -2749,14 +2749,14 @@ mod tests {
         default.as_object().unwrap().keys().cloned().collect()
     }
 
-    /// `domainator schema <tool>` is the documented agent interface *and* what the
+    /// `domainatoredux schema <tool>` is the documented agent interface *and* what the
     /// GUI renders its tool dialogs from (`cmd_tools::tool_schema`), while the
     /// config struct is what actually gets deserialized. The two are written by
     /// hand in different places, so they drift silently and in both directions:
     ///
     /// * a field missing from the schema is a flag no agent and no GUI dialog can
-    ///   discover -- which is how `hmmer-build --window_length` and
-    ///   `format-db --log` went missing;
+    ///   discover -- which is how `hmmer_build --window_length` and
+    ///   `format_db --log` went missing;
     /// * a property the struct does not have is worse, because every config struct
     ///   is `deny_unknown_fields`, so a config written to match the schema is
     ///   *rejected*.
@@ -2800,8 +2800,6 @@ mod tests {
     #[test]
     fn the_tool_list_covers_every_schema() {
         let listed: Vec<&str> = every_tool().iter().map(|(t, _)| *t).collect();
-        // The dispatcher accepts both spellings of each name; the canonical
-        // (kebab) one is what `every_tool` uses.
         for tool in &listed {
             assert!(schema(tool).is_ok(), "{tool} is listed but has no schema");
         }
@@ -2844,7 +2842,7 @@ mod tests {
                 serde_json::to_value(DomainateConfig::default()).unwrap(),
             ),
             (
-                "domain-search",
+                "domain_search",
                 serde_json::to_value(DomainSearchConfig::default()).unwrap(),
             ),
         ] {
@@ -2862,19 +2860,6 @@ mod tests {
                 }
             };
             assert_eq!(merged.as_deref(), Some("all"), "{tool}");
-        }
-    }
-
-    /// Underscore and kebab spellings must resolve to the same schema: config files
-    /// and `--print_config` use the struct's underscore field names, while the CLI
-    /// subcommand is kebab.
-    #[test]
-    fn both_tool_name_spellings_agree() {
-        for (tool, _) in every_tool() {
-            let under = tool.replace('-', "_");
-            if let Ok(alt) = schema(&under) {
-                assert_eq!(schema(tool).unwrap(), alt, "{tool} vs {under}");
-            }
         }
     }
 
@@ -3067,7 +3052,7 @@ mod tests {
 
     #[test]
     fn column_schemas_match_their_enums() {
-        check_columns_schema("enum-report", &every_enum_column());
-        check_columns_schema("hmmer-report", &every_hmmer_column());
+        check_columns_schema("enum_report", &every_enum_column());
+        check_columns_schema("hmmer_report", &every_hmmer_column());
     }
 }

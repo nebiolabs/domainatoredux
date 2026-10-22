@@ -1,5 +1,5 @@
-# GUI dialog for `domainator clean-sequences`. Format: see README.md in this directory.
-id: clean-sequences
+# GUI dialog for `domainatoredux clean_sequences`. Format: see README.md in this directory.
+id: clean_sequences
 label: "Clean sequences"
 category: "Selection & extraction"
 description: "Normalize sequences: clean/deduplicate names, strip gaps, filter non-canonical residues."

@@ -1,5 +1,5 @@
-# GUI dialog for `domainator select-by-coord`. Format: see README.md in this directory.
-id: select-by-coord
+# GUI dialog for `domainatoredux select_by_coord`. Format: see README.md in this directory.
+id: select_by_coord
 label: "Select by coordinate"
 category: "Selection & extraction"
 description: "Extract sub-regions listed in a coordinate table (contig, start, end)."

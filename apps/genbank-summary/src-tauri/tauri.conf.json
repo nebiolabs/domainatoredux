@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Domainator GenBank Summary",
-  "identifier": "org.domainator.genbank-summary",
+  "productName": "Domainatoredux GenBank Summary",
+  "identifier": "org.domainatoredux.genbank-summary",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Domainator GenBank Summary",
+        "title": "Domainatoredux GenBank Summary",
         "width": 960,
         "height": 720,
         "minWidth": 720,

@@ -2,7 +2,7 @@
 //! setting.
 //!
 //! These are per *app*, not per workspace, so they can't live under a workspace's
-//! `.domainator/` directory — they go in Tauri's per-app data dir, next to the
+//! `.domainatoredux/` directory — they go in Tauri's per-app data dir, next to the
 //! managed external-tool binaries (`external_tools::managed_dir`). The format and
 //! the list semantics live in `domainator_core::app_support::prefs`, which is
 //! where their tests are; this file only resolves the path and exposes commands.

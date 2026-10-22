@@ -578,7 +578,7 @@ pub fn domainate(
     }
 
     // contig index -> (cds feature index -> SearchResults). Independent profiles
-    // and databases run in parallel for domainate; domain-search processes its
+    // and databases run in parallel for domainate; domain_search processes its
     // partitions in parallel instead. Merge in database and profile order.
     let mut hits: HashMap<usize, HashMap<usize, Vec<SearchResult>>> = HashMap::new();
     if !refs.protein.is_empty() && !peptides.is_empty() {

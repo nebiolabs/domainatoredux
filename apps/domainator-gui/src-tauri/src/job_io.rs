@@ -24,7 +24,7 @@ use crate::tool_specs::{FieldSpec, ToolSpec};
 /// `derived_provenance_roles_match_the_golden_table` holds the old values.
 pub fn input_role(field: &FieldSpec) -> String {
     // Search references are never a node's sequence source, whatever their format
-    // (`hmmer-compare`'s are `.hmm`, `seq-dist`'s may be FASTA).
+    // (`hmmer_compare`'s are `.hmm`, `seq_dist`'s may be FASTA).
     if matches!(field.name.as_str(), "reference" | "references") {
         return "reference".into();
     }

@@ -288,11 +288,11 @@
           {#if ws.root}
             <dt>Workspace data</dt>
             <dd class="path row">
-              <span class="grow">{ws.root}/.domainator</span>
+              <span class="grow">{ws.root}/.domainatoredux</span>
               <button
                 class="mini"
                 onclick={() =>
-                  revealInFileManager(ws.root, `${ws.root}/.domainator`).catch(
+                  revealInFileManager(ws.root, `${ws.root}/.domainatoredux`).catch(
                     (e) => (err = String(e)),
                   )}
               >
@@ -302,7 +302,7 @@
           {/if}
         </dl>
         <p class="hint">
-          <b>.domainator</b> inside a workspace holds this app's own records — the file
+          <b>.domainatoredux</b> inside a workspace holds this app's own records — the file
           manifest, the database registry, job history and provenance. Deleting it loses
           that history but never your data files.
         </p>

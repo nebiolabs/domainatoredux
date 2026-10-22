@@ -74,7 +74,7 @@ fn unique_dest(dir: &Path, name: &std::ffi::OsStr) -> PathBuf {
 
 /// Import (copy) `sources` into workspace folder `dir`, renaming to avoid clobbering
 /// existing files. Skips directories and non-existent paths. Returns the paths
-/// actually written. Refuses the reserved `.domainator/` machinery directory.
+/// actually written. Refuses the reserved `.domainatoredux/` machinery directory.
 #[tauri::command]
 pub async fn import_files(
     workspace_root: String,
@@ -85,7 +85,7 @@ pub async fn import_files(
         let root = Path::new(&workspace_root);
         let target = Path::new(&dir);
         if is_in_dot_dir(root, target) {
-            return Err("cannot import into the .domainator directory".to_string());
+            return Err("cannot import into the .domainatoredux directory".to_string());
         }
         if !target.is_dir() {
             return Err(format!("not a directory: {dir}"));
@@ -194,7 +194,7 @@ pub async fn open_workspace(app: tauri::AppHandle, root: String) -> Result<Works
 }
 
 /// List the recognized data files directly inside `dir` (sidecar metadata is read
-/// from `<workspace_root>/.domainator/meta`).
+/// from `<workspace_root>/.domainatoredux/meta`).
 #[tauri::command]
 pub async fn list_folder(workspace_root: String, dir: String) -> Result<Vec<FileEntry>, String> {
     // Off the UI thread: classifies each file (may read first records).
@@ -264,7 +264,7 @@ pub fn create_folder(parent: String, name: String) -> Result<String, String> {
 }
 
 /// Rename a data file in place (same folder), moving its metadata sidecar too.
-/// Refuses the reserved `.domainator/` dir, invalid/reserved names, and collisions.
+/// Refuses the reserved `.domainatoredux/` dir, invalid/reserved names, and collisions.
 #[tauri::command]
 pub async fn rename_file(
     workspace_root: String,
@@ -287,7 +287,7 @@ pub async fn rename_file(
         }
         let old = Path::new(&path);
         if is_in_dot_dir(root, old) {
-            return Err("refusing to rename inside the .domainator directory".into());
+            return Err("refusing to rename inside the .domainatoredux directory".into());
         }
         if !old.is_file() {
             return Err(format!("not a file: {path}"));
@@ -311,14 +311,14 @@ pub async fn rename_file(
 }
 
 /// Delete a data file and its metadata sidecar. Refuses anything inside the
-/// reserved `.domainator/` machinery directory.
+/// reserved `.domainatoredux/` machinery directory.
 #[tauri::command]
 pub async fn delete_file(workspace_root: String, path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let root = Path::new(&workspace_root);
         let p = Path::new(&path);
         if is_in_dot_dir(root, p) {
-            return Err("refusing to delete inside the .domainator directory".to_string());
+            return Err("refusing to delete inside the .domainatoredux directory".to_string());
         }
         if !p.is_file() {
             return Err(format!("not a file: {path}"));

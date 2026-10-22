@@ -9,7 +9,7 @@
 //! `P7H_GA`/`TC`/`NC` flags are populated); only the writer loses it.
 //!
 //! This is `p7_hmmfile_WriteASCII`'s layout, field for field. The gate is
-//! `hmmer-select`, which only *selects* whole profiles and so must reproduce its
+//! `hmmer_select`, which only *selects* whole profiles and so must reproduce its
 //! input byte for byte; upstream's does, because pyhmmer round-trips exactly.
 //!
 //! Layout, from the fixtures (`test/data/pdonr_hmms.hmm` and friends):
@@ -37,7 +37,7 @@ use hmmer_pure_rs::hmm::{
 ///
 /// `HMMER3/f` is the *file format* version; the bracketed half names the program
 /// that wrote the file. Upstream writes profiles through pyhmmer, which stamps
-/// HMMER 3.4 — and since `hmmer-select` must reproduce its input byte for byte,
+/// HMMER 3.4 — and since `hmmer_select` must reproduce its input byte for byte,
 /// matching that string is the whole point. The layout below is that format.
 const MAGIC: &str = "HMMER3/f [3.4 | Aug 2023]";
 
@@ -470,7 +470,7 @@ mod tests {
 
     /// Column positions read off `test/data/pdonr_hmms.hmm`, which `hmmbuild`
     /// wrote: every model value occupies nine columns and the first one ends at
-    /// column 17. Getting this one column narrow is what made `hmmer-select`
+    /// column 17. Getting this one column narrow is what made `hmmer_select`
     /// rewrite its input instead of reproducing it.
     #[test]
     fn model_values_sit_on_a_nine_column_grid() {

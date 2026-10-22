@@ -47,13 +47,13 @@ export interface Placement {
 /// (`assignFiles`).
 ///
 /// Files of a type no list field takes are matched to single fields first (a
-/// small bipartite matching, so seq-dist's two `[sequence, hmm]` inputs take two
-/// FASTAs, and a GenBank file takes domain-search's `input` whatever else is
+/// small bipartite matching, so seq_dist's two `[sequence, hmm]` inputs take two
+/// FASTAs, and a GenBank file takes domain_search's `input` whatever else is
 /// selected). Each remaining type goes to the first list field that takes it,
 /// unless it is a lone file and a free single field comes earlier -- so for
-/// build-ssn an .hdf5 + .tsv fill `input` and `metadata`, not the cluster-table
+/// build_ssn an .hdf5 + .tsv fill `input` and `metadata`, not the cluster-table
 /// field after them. "First" and "earlier" are in `prefillOrder`, which is how
-/// domain-search sends a lone FASTA to `references` rather than `input`.
+/// domain_search sends a lone FASTA to `references` rather than `input`.
 export function placeFiles(tool: ToolMeta, files: TypedPath[]): Placement {
   const inputs = prefillOrder(tool);
   const singles = inputs.filter((f) => f.role === "input_file");
@@ -65,7 +65,7 @@ export function placeFiles(tool: ToolMeta, files: TypedPath[]): Placement {
   const hard = files.filter((f) => multiIndex(f.file_type) < 0);
   // Kuhn's augmenting paths; `seen` is per top-level attempt. A free field is
   // tried before displacing anyone, so files land in selection order when they
-  // can (seq-dist: first file -> `input`, second -> `reference`). A failed
+  // can (seq_dist: first file -> `input`, second -> `reference`). A failed
   // attempt changes nothing, so a file that fits nowhere is simply left out.
   const place = (file: TypedPath, seen: Set<string>): boolean => {
     const free = singles.find((f) => !taken.has(f.name) && fieldAccepts(f, file.file_type));
@@ -115,7 +115,7 @@ export function placeFiles(tool: ToolMeta, files: TypedPath[]): Placement {
 /// cannot all go in at once (or there are none).
 ///
 /// Counting capacity, not just types, is what keeps the file table's Tools menu
-/// honest: two Stockholm files do not offer hmmer-build (one input), because its
+/// honest: two Stockholm files do not offer hmmer_build (one input), because its
 /// dialog could only take one of them.
 export function assignFiles(tool: ToolMeta, files: TypedPath[]): Record<string, string | string[]> | null {
   if (!files.length) return null;

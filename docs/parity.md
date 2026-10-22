@@ -27,7 +27,7 @@ Needs the conda environment and the vendored upstream clone, so it is **not**
 part of the CI check job. A full sweep takes about six minutes.
 
 ```bash
-cargo build                                    # the harness runs target/debug/domainator
+cargo build                                    # the harness runs target/debug/domainatoredux
 scripts/parity/differential.py                 # full sweep; exits non-zero on a new gap
 scripts/parity/differential.py --only domainate --only domain_search -v
 scripts/parity/differential.py --report /tmp/report.tsv   # every invocation, not just gaps
@@ -43,11 +43,11 @@ fails first**, so the harness classifies the invocation `skipped: python rejecte
 the invocation` — an `OK` outcome. A sweep run without them is therefore green
 while covering nothing, which is exactly how five broken cd-hit invocations sat
 invisible until the backend was written. Put the conda environment's `bin` on
-`PATH` (it carries all three), and point `$DOMAINATOR_CDHIT` at a `cdhit` binary
+`PATH` (it carries all three), and point `$DOMAINATOREDUX_CDHIT` at a `cdhit` binary
 so the Rust side can find one too:
 
 ```bash
-PATH=/path/to/conda/envs/domainator/bin:$PATH DOMAINATOR_CDHIT=/path/to/cdhit \
+PATH=/path/to/conda/envs/domainator/bin:$PATH DOMAINATOREDUX_CDHIT=/path/to/cdhit \
   scripts/parity/differential.py --only deduplicate_genbank -v
 ```
 
@@ -56,23 +56,22 @@ skips, a binary is missing rather than anything being fine.
 
 `--gene_call` is the reverse case. Python calls genes in-process with pyrodigal, so it
 never fails for want of a binary, while the Rust side needs Orphos. Without it, the 13
-`extra:` gene-call rows of `domainate` and `domain_search` fail on the Rust side, and the
-sweep reports them as new gaps. Point `$DOMAINATOR_ORPHOS` at an `orphos` (0.4.0 or
+`extra:` gene_call rows of `domainate` and `domain_search` fail on the Rust side, and the
+sweep reports them as new gaps. Point `$DOMAINATOREDUX_ORPHOS` at an `orphos` (0.4.0 or
 newer) when you run those modules:
 
 ```bash
-DOMAINATOR_ORPHOS=/path/to/orphos scripts/parity/differential.py --only domainate --only domain_search
+DOMAINATOREDUX_ORPHOS=/path/to/orphos scripts/parity/differential.py --only domainate --only domain_search
 ```
 
 ## The pieces
 
 | path | role |
 |---|---|
-| `scripts/parity/harvest_invocations.py` | AST-walks upstream's tests, emits one TSV row per `main([...])` |
+| `scripts/parity/harvest_invocations.py` | AST-walks upstream's tests, emits one TSV row per `main([...])`. It reads the test module of every tool that is both in `upstream_manifest.json` and a subcommand of `target/debug/domainatoredux`; the names are identical, so there is no mapping table |
 | `scripts/parity/differential.py` | replays each row through both implementations and classifies the result |
 | `scripts/parity/extra_invocations.tsv` | hand-written invocations for upstream tests the harvester cannot replay (inputs built at test time, loops over flag values) |
 | `scripts/parity/generated_fixtures.py` | builds those tests' inputs once per sweep with upstream's own `test/helpers.py`, into the `@GEN@` directory |
-| `scripts/parity/toolmap.tsv` | `<python module>` → `<domainator subcommand>` |
 | `scripts/parity/known_gaps.tsv` | the tracked list of invocations that do not yet reproduce |
 | `scripts/parity/sync_fixtures.py` | keeps `test/data/` in step with upstream's `test/data` |
 | `test/data/` | the committed fixture subset (see its `README.md`) |
@@ -204,7 +203,5 @@ If a newly interesting test is being skipped, widen `Resolver.render` in
 lines. Multi-step tests (build a file, then consume it) would need the harness to
 replay a whole test function as a sequence, which it deliberately does not do.
 
-Upstream's tests also lean on argparse accepting any unambiguous option prefix
-(`--o` for `--output`); clap does not, so `expand_abbreviations` resolves them
-against the Rust tool's own `--help` before running. An abbreviation that is *not*
-unique on our side is left alone, so a genuinely absent flag still reports as one.
+Upstream 1.0 turned off argparse's option-prefix matching (`allow_abbrev=False`), so
+the harvested argument lists use full option names and are replayed unchanged.

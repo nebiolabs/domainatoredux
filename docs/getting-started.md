@@ -20,7 +20,7 @@ cp /path/to/domainatoredux/test/data/FeSOD_pfam.hmm .
 ## 1. Look at what you have
 
 ```bash
-domainator inspect FeSOD_20.gb
+domainatoredux inspect FeSOD_20.gb
 ```
 
 ```
@@ -36,7 +36,7 @@ per-record summary.
 the profiles to annotate it *with* are `-r`:
 
 ```bash
-domainator domainate -i FeSOD_20.gb -r FeSOD_pfam.hmm -o annotated.gb
+domainatoredux domainate -i FeSOD_20.gb -r FeSOD_pfam.hmm -o annotated.gb
 ```
 
 ```
@@ -49,11 +49,11 @@ the tools are shaped this way.
 
 ## 3. Tabulate the annotations
 
-`enum-report` writes a table, one row per contig, CDS or domain. **The order of the column
+`enum_report` writes a table, one row per contig, CDS or domain. **The order of the column
 flags is the order of the output columns:**
 
 ```bash
-domainator enum-report -i annotated.gb --domains --length -o report.tsv
+domainatoredux enum_report -i annotated.gb --domains --length -o report.tsv
 ```
 
 ```
@@ -64,12 +64,12 @@ FeSOD_A0A067LT26|unreviewed|Superoxide          Sod_Fe_C; Sod_Fe_N   208
 
 Each sequence has an N-terminal and a C-terminal iron/manganese SOD domain. There are
 ~20 more columns available (taxonomy, molecular weight, isoelectric point, PROSITE motif
-counts, architecture); see [the reference](cli-reference.md#enum-report).
+counts, architecture); see [the reference](cli-reference.md#enum_report).
 
 For a dataset-level overview rather than a per-record table:
 
 ```bash
-domainator summary-report -i annotated.gb -o summary.txt
+domainatoredux summary_report -i annotated.gb -o summary.txt
 ```
 
 ```
@@ -85,10 +85,10 @@ this on annotated genome contigs and you get CDS and domain frequency tables too
 
 ## 4. Score everything against everything
 
-`seq-dist` builds a similarity matrix. Leaving `-r` off means all-vs-all:
+`seq_dist` builds a similarity matrix. Leaving `-r` off means all-vs-all:
 
 ```bash
-domainator seq-dist -i annotated.gb --dense dist.hdf5 --algorithm hmmer --mode score
+domainatoredux seq_dist -i annotated.gb --dense dist.hdf5 --algorithm hmmer --mode score
 ```
 
 ```
@@ -103,7 +103,7 @@ requires the external `diamond` binary — see
 Check the score distribution before you pick a network cutoff:
 
 ```bash
-domainator matrix-report -i dist.hdf5 -o matrix.txt
+domainatoredux matrix_report -i dist.hdf5 -o matrix.txt
 ```
 
 ```
@@ -128,7 +128,7 @@ breaks into meaningfully different groups.
 ## 5. Build the network
 
 ```bash
-domainator build-ssn-viewer -i dist.hdf5 -o network.dsnv --html network.html --embed_data
+domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html network.html --embed_data
 ```
 
 ```
@@ -139,12 +139,12 @@ wrote HTML viewer to network.html
 You now have two things:
 
 - **`network.dsnv`** — a compact bundle. Open it in the desktop app's SSN viewer tab, or
-  query it from a script with [`ssn-navigator`](cli-reference.md#ssn-navigator).
+  query it from a script with [`ssn_navigator`](cli-reference.md#ssn_navigator).
 - **`network.html`** — a standalone page with the data embedded (`--embed_data`). Open it
   in any browser; drag the threshold slider to split the network into clusters. Nothing
   else is required to view or share it.
 
-If you'd rather work in Cytoscape, use [`build-ssn`](cli-reference.md#build-ssn) to write
+If you'd rather work in Cytoscape, use [`build_ssn`](cli-reference.md#build_ssn) to write
 XGMML instead.
 
 ## Where to go next

@@ -30,7 +30,7 @@ const SGD: usize = 4;
 /// `f32` here), and `round(numpy_float32, 2)` returns a float32. So the score
 /// that reaches a matrix is a float32 widened to double: `146.4` is stored and
 /// printed as `146.39999389648438`. Rounding in f64 instead yields a clean
-/// `146.4`, which is a visible difference in `seq-dist --dense_text`.
+/// `146.4`, which is a visible difference in `seq_dist --dense_text`.
 fn round2_f32(x: f32) -> f32 {
     (x * 100.0).round_ties_even() / 100.0
 }
@@ -430,8 +430,8 @@ pub fn alphabet_mismatch_message(
     format!(
         "Input (-i) profiles in '{input_name}' are {}, but the reference (-r) profiles are \
          {}. {tool_name} aligns profiles column by column, so both sides must use the same \
-         alphabet. Rebuild one side with hmmer-build --alphabet, or use domainate / \
-         domain-search to search nucleotide profiles against sequences.",
+         alphabet. Rebuild one side with hmmer_build --alphabet, or use domainate / \
+         domain_search to search nucleotide profiles against sequences.",
         alphabet_name(input),
         alphabet_name(reference)
     )
@@ -457,7 +457,7 @@ pub fn common_hmm_alphabet(
                     "The {role} profiles mix alphabets: '{first_name}' is {}, but '{}' is \
                      {}. An .hmm file is locked to the alphabet of its first profile, so a \
                      mixed set cannot be read back. Split them by alphabet, or rebuild one \
-                     side with hmmer-build --alphabet.",
+                     side with hmmer_build --alphabet.",
                     alphabet_name(abc),
                     hmm.name,
                     alphabet_name(hmm.abc_type)

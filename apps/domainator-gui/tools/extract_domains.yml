@@ -1,5 +1,5 @@
-# GUI dialog for `domainator extract-domains`. Format: see README.md in this directory.
-id: extract-domains
+# GUI dialog for `domainatoredux extract_domains`. Format: see README.md in this directory.
+id: extract_domains
 label: "Extract domains"
 category: "Selection & extraction"
 description: "Extract annotated domain regions as their own records (GenBank or FASTA)."

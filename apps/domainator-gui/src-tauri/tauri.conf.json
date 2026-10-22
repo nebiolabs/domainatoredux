@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Domainator",
-  "identifier": "org.domainator.gui",
+  "productName": "Domainatoredux",
+  "identifier": "org.domainatoredux.gui",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Domainator",
+        "title": "Domainatoredux",
         "width": 1400,
         "height": 900,
         "minWidth": 900,

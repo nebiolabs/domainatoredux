@@ -28,8 +28,33 @@ for how to widen the resolver when a newly interesting test is being skipped.
 """
 import argparse
 import ast
+import json
 import pathlib
+import subprocess
 import sys
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+MANIFEST = REPO / "scripts" / "parity" / "upstream_manifest.json"
+DEFAULT_RUST = REPO / "target" / "debug" / "domainatoredux"
+
+
+def subcommands(rust):
+    """The subcommands our binary offers, from the `Commands:` section of its --help."""
+    help_text = subprocess.run([str(rust), "--help"], capture_output=True, text=True,
+                               check=True).stdout
+    section = help_text.split("Commands:", 1)[1].split("\n\n", 1)[0]
+    return {line.split()[0] for line in section.splitlines() if line.strip()}
+
+
+def ported_tools(rust):
+    """Upstream's tools (its manifest snapshot) that our binary also offers.
+
+    Subcommand names equal upstream's tool names, so this needs no mapping table. A
+    tool upstream has and we do not is not harvested; the manifest golden test is
+    where an unported tool is accounted for.
+    """
+    upstream = {t["name"] for t in json.loads(MANIFEST.read_text())["tools"]}
+    return sorted(upstream & subcommands(rust))
 
 # Fixture names pytest injects, which the replay substitutes for.
 RESERVED = {"shared_datadir": "@DATA@", "output_dir": "@TMP@"}
@@ -148,14 +173,16 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--test_dir", default="external/domainator/test",
                     help="upstream pytest directory (default: the vendored clone)")
-    ap.add_argument("--toolmap", default="scripts/parity/toolmap.tsv",
-                    help="TSV of <python module>\\t<domainator subcommand>")
+    ap.add_argument("--tools", nargs="+",
+                    help="tools whose test modules to harvest (default: every upstream "
+                         "tool the --rust binary also offers)")
+    ap.add_argument("--rust", default=str(DEFAULT_RUST),
+                    help="our binary, asked for its subcommands (default: %(default)s)")
     ap.add_argument("-o", "--output", default="-", help="TSV output path ('-' = stdout)")
     args = ap.parse_args(argv)
 
     test_dir = pathlib.Path(args.test_dir)
-    modules = [line.split("\t")[0]
-               for line in pathlib.Path(args.toolmap).read_text().splitlines() if line.strip()]
+    modules = args.tools or ported_tools(args.rust)
 
     rows, skipped = [], []
     for module in modules:

@@ -1,4 +1,4 @@
-//! `build-ssn`: build a Cytoscape XGMML sequence-similarity network from a
+//! `build_ssn`: build a Cytoscape XGMML sequence-similarity network from a
 //! symmetric score matrix. Mirrors `domainator.build_ssn`: three edge modes
 //! (all-edges above `--lb`, `--mst`, `--mst_knn`), optional connected-component
 //! clustering (`SSN_cluster`), TSV node metadata, and node coloring.

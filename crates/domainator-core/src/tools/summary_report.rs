@@ -1,4 +1,4 @@
-//! `summary-report`: dataset-level statistics over a domainator-annotated GenBank file.
+//! `summary_report`: dataset-level statistics over a domainator-annotated GenBank file.
 //!
 //! Port of `domainator.summary_report`'s data path: contig/CDS counts and length stats,
 //! per-domain frequency with average score, focus-domain co-occurrence, and (optionally)

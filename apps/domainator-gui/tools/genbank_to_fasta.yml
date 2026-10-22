@@ -1,5 +1,5 @@
-# GUI dialog for `domainator genbank-to-fasta`. Format: see README.md in this directory.
-id: genbank-to-fasta
+# GUI dialog for `domainatoredux genbank_to_fasta`. Format: see README.md in this directory.
+id: genbank_to_fasta
 label: "GenBank → FASTA"
 category: "Conversion"
 description: "Convert sequence records to FASTA."

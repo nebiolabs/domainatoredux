@@ -1,5 +1,5 @@
-# GUI dialog for `domainator hmmer-compare`. Format: see README.md in this directory.
-id: hmmer-compare
+# GUI dialog for `domainatoredux hmmer_compare`. Format: see README.md in this directory.
+id: hmmer_compare
 label: "HMM compare"
 category: "HMM profiles"
 description: "Profile-vs-profile Viterbi comparison; writes a scores/alignments table."

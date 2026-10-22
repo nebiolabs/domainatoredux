@@ -1,4 +1,4 @@
-//! `transform-matrix`: normalize / convert / sparsify a score matrix. Mirrors
+//! `transform_matrix`: normalize / convert / sparsify a score matrix. Mirrors
 //! `domainator.transform_matrix`: apply a `--mode` value transform (only from a
 //! `score` matrix), optionally `--mst_knn` sparsify and `--lb` threshold, then
 //! the CLI writes the result as dense HDF5 / dense TSV / sparse HDF5.

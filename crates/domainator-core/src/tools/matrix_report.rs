@@ -1,4 +1,4 @@
-//! `matrix-report`: summarize a similarity matrix to help choose an SSN edge
+//! `matrix_report`: summarize a similarity matrix to help choose an SSN edge
 //! threshold. Mirrors `domainator.matrix_report` (text path) and adds an
 //! agent-friendly `--json` payload with the threshold→cluster curve, ranked
 //! merge events, and suggested cutoffs. (`--include_mst_knn` projections and the

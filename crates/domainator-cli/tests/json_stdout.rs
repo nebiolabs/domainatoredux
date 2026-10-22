@@ -18,10 +18,10 @@ fn matrix_report_json_dash_is_parseable_stdout() {
         "\ta\tb\tc\na\t10.0\t3.0\t0.0\nb\t3.0\t10.0\t1.0\nc\t0.0\t1.0\t10.0\n",
     )
     .unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_domainator"))
+    let out = Command::new(env!("CARGO_BIN_EXE_domainatoredux"))
         .current_dir(&dir)
         .args([
-            "matrix-report",
+            "matrix_report",
             "-i",
             matrix.to_str().unwrap(),
             "--json",

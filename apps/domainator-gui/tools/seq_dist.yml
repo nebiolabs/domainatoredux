@@ -1,5 +1,5 @@
-# GUI dialog for `domainator seq-dist`. Format: see README.md in this directory.
-id: seq-dist
+# GUI dialog for `domainatoredux seq_dist`. Format: see README.md in this directory.
+id: seq_dist
 label: "Sequence distance"
 category: "Matrices & networks"
 description: "All-vs-all sequence similarity matrix (step 3; default 'hmmer' is pure-Rust — diamond algorithms need the diamond binary)."

@@ -9,7 +9,7 @@ Contributor-facing notes. For using the tools, start at
 cargo build                      # debug build of the workspace
 cargo build --release            # optimized (lto); use for any timing or benchmarks
 cargo test                       # the unit suite; no conda or clone needed
-./target/debug/domainator <tool> [opts]
+./target/debug/domainatoredux <tool> [opts]
 ```
 
 **The project holds itself to zero warnings, from `rustc`, clippy and rustdoc, with
@@ -85,7 +85,7 @@ When adding to any of those, a test is the whole safety net. A few guards earn t
 in particular:
 
 - **`every_schema_matches_its_config_struct`** (`domainator-config`) —
-  `domainator schema <tool>` is both the documented agent interface and what the GUI
+  `domainatoredux schema <tool>` is both the documented agent interface and what the GUI
   renders its dialogs from, while the config struct is what actually deserializes. They
   are hand-written in different places and drift both ways: a field missing from the
   schema is a flag no agent and no GUI dialog can discover, and a property the struct
@@ -166,7 +166,7 @@ Packaging is two more workflows, both manually dispatched too (pushing a `v*` ta
 not start them):
 
 - **`build-release.yml`**: the desktop app (macOS `.dmg`, Windows NSIS installer plus a
-  portable `.exe`, Linux `.deb`/AppImage) and the `domainator` CLI binary for the same
+  portable `.exe`, Linux `.deb`/AppImage) and the `domainatoredux` CLI binary for the same
   three platforms. The dispatch form has checkboxes for the products (GUI, CLI) and the
   platforms (macOS, Windows, Linux), all ticked by default; a `setup` job filters the
   build matrices to the ticked boxes, so an unticked target never starts a runner. From
@@ -193,7 +193,7 @@ Python release it reproduces is recorded separately and reported next to it.
   - **PATCH:** fixes only.
 - **Upstream parity** is `UPSTREAM_VERSION` (upstream's `__version__` at the pin) and
   `UPSTREAM_COMMIT` (the pin itself) in `crates/domainator-core/src/version.rs`. They
-  appear in `domainator --version`, the About box, the diagnostics blob and every job's
+  appear in `domainatoredux --version`, the About box, the diagnostics blob and every job's
   provenance (`upstream_version`). `UPSTREAM_VERSION` is also what a `.dsnv` bundle's
   `domainator_version` key holds, because upstream reads that key as "which domainator
   release wrote this". Three guards keep the constants honest:
@@ -276,12 +276,12 @@ The tool dialogs are described by one spec file per tool,
 fields, their order, and which files each input offers. It lists every CLI option with
 its CLI default, and a GUI default can override that for the dialog alone. The format
 is in `apps/domainator-gui/tools/README.md`. The tests in `tool_specs.rs` check each spec
-against `domainator schema <id>`: every option is listed, and each `cli_default` equals
+against `domainatoredux schema <id>`: every option is listed, and each `cli_default` equals
 the schema's.
 
 Three internal design notes live alongside it:
 `apps/domainator-gui/PERSISTENT_CACHE_PLAN.md` (a deferred on-disk report cache),
-`apps/domainator-gui/EMBEDDED_DB_NOTES.md` (whether `.domainator/` should use an embedded
+`apps/domainator-gui/EMBEDDED_DB_NOTES.md` (whether `.domainatoredux/` should use an embedded
 database; conclusion: not yet) and `apps/domainator-gui/LARGE_FILE_EDITING_PLAN.md` (how
 the Text / Table editors would lift their 64 MB cap — a windowed document model, staged so
 the read-only phase ships on its own).

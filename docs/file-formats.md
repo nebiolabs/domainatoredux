@@ -25,7 +25,7 @@ Feature types Domainator writes:
 | Feature | Meaning |
 | --- | --- |
 | `Domainator` | a domain annotation — this region matched this reference profile. `domainate` writes these. |
-| `Domain_Search` | the single best hit that caused this record to be selected. `domain-search` writes one per focus CDS. |
+| `Domain_Search` | the single best hit that caused this record to be selected. `domain_search` writes one per focus CDS. |
 | `CDS` | a coding sequence, either from the input or from gene calling done elsewhere. |
 
 Qualifiers worth knowing:
@@ -34,7 +34,7 @@ Qualifiers worth knowing:
   reference database, e.g. `/domainator_Pfam="Sod_Fe_N; Sod_Fe_C"`. Regenerated whenever a
   file is written, so it always matches the features present.
 - **`/Color`** — a hex color honored by the [contig viewer](gui.md#viewers), Geneious
-  and other viewers. Written by [`color-genbank`](cli-reference.md#color-genbank).
+  and other viewers. Written by [`color_genbank`](cli-reference.md#color_genbank).
 - **`/evalue`, `/score`, `/identity`** on a domain feature — the search statistics for
   that hit.
 - **`/cds_id`** — a stable identifier for a CDS.
@@ -59,10 +59,10 @@ the feature starts before the given position, and `>` means it ends after it. Fo
 so its 5' end (and its protein's N-terminus) is missing.
 
 **Slicing.** Tools that extract part of a record keep the features the slice cuts, and
-mark the cut ends with `<` or `>`. These tools are the `select-by-cds` and `domain-search`
-neighborhoods, `select-by-coord`, `extract-domains`, `extract-peptides`,
-`extract-unannotated`, `trim-contigs`, `clean-sequences --strip` and
-`enum-report --by cds|domain`. A marker already on an end that the slice keeps is kept.
+mark the cut ends with `<` or `>`. These tools are the `select_by_cds` and `domain_search`
+neighborhoods, `select_by_coord`, `extract_domains`, `extract_peptides`,
+`extract_unannotated`, `trim_contigs`, `clean_sequences --strip` and
+`enum_report --by cds|domain`. A marker already on an end that the slice keeps is kept.
 There are three exceptions:
 
 - `source` features don't get new markers.
@@ -79,7 +79,7 @@ the `/translation` is removed, and `domainate` translates it again the next time
 goes through it.
 
 Some files give a partial CDS the translation of the full protein, including residues
-encoded off the edge of the contig. When `domainate` and `domain-search` read such a CDS,
+encoded off the edge of the contig. When `domainate` and `domain_search` read such a CDS,
 they trim the translation to the on-contig residues, from the partial end. If both ends
 are partial, they can't tell where the extra residues belong, so they translate the CDS
 again from the contig and print a warning. A complete 3' end is assumed to end in a stop
@@ -106,7 +106,7 @@ missing, so it is left as is, and its CDS is a fragment with unknown missing end
   `N` (5' end, and so the N-terminus, missing), `C` (3' end missing), or `NC` (both). A
   CDS with a bare `/partial` qualifier (no value) and no markers is `?`.
 - For a protein record, a `CDS` or `Protein` feature spanning the record decides, the same
-  way. `domain-search --translate` writes such a feature, and NCBI GenPept records carry one.
+  way. `domain_search --translate` writes such a feature, and NCBI GenPept records carry one.
 - Otherwise, UniProt `NON_TER` features on the first or last residue decide: `N`, `C` or
   `NC`.
 - Otherwise, a protein record is a fragment with unknown missing ends, `?`, if its
@@ -121,24 +121,24 @@ fragment status. `--partial` is never inverted by `--invert`.
 
 | Tool | What `--partial` selects |
 | --- | --- |
-| `domainate`, `domain-search` | which CDSs/proteins are searched. `domainate` still writes every record. |
-| `select-by-cds` | which CDSs regions are extracted around |
-| `extract-peptides` | which CDSs peptides are extracted from |
-| `extract-domains` | which domains are extracted, by the CDS or protein they are on. Contig-level nucleotide hits are never on fragments. |
-| `select-by-contig` | which contigs are selected. A protein record is judged by its own status; a nucleotide contig is a fragment if it contains any partial CDS. |
-| `enum-report` | which rows are reported: by contig (as for `select-by-contig`), by CDS, or by domain (by the CDS or protein the domain is on) |
-| `summary-report` | which CDSs/proteins are counted. Filtered protein records are skipped. On nucleotide contigs, filtered CDSs and the domains on them aren't counted, but the contig is. The report always gives the number of partial CDSs and protein fragments among those counted. |
+| `domainate`, `domain_search` | which CDSs/proteins are searched. `domainate` still writes every record. |
+| `select_by_cds` | which CDSs regions are extracted around |
+| `extract_peptides` | which CDSs peptides are extracted from |
+| `extract_domains` | which domains are extracted, by the CDS or protein they are on. Contig-level nucleotide hits are never on fragments. |
+| `select_by_contig` | which contigs are selected. A protein record is judged by its own status; a nucleotide contig is a fragment if it contains any partial CDS. |
+| `enum_report` | which rows are reported: by contig (as for `select_by_contig`), by CDS, or by domain (by the CDS or protein the domain is on) |
+| `summary_report` | which CDSs/proteins are counted. Filtered protein records are skipped. On nucleotide contigs, filtered CDSs and the domains on them aren't counted, but the contig is. The report always gives the number of partial CDSs and protein fragments among those counted. |
 
-`enum-report --fragment` adds a `fragment` column with the status (`complete`, `N`, `C`,
+`enum_report --fragment` adds a `fragment` column with the status (`complete`, `N`, `C`,
 `NC` or `?`) for rows that are a single protein or CDS: protein records, CDSs, and domains
 on protein records (which get the status of their protein). For other rows it is empty,
-with a warning. `enum-report --partial_count` adds a `partial_count` column. By contig, it
+with a warning. `enum_report --partial_count` adds a `partial_count` column. By contig, it
 is the number of partial CDSs on the contig (for a protein record, 1 if it is a fragment).
 By CDS, it is 1 if the CDS or protein is a fragment. By domain, it is 1 if the CDS or protein
 the domain is on is a fragment, whether or not the domain reaches the missing end. In every
 other case it is 0.
 
-FASTA output (`--fasta_out`, `genbank-to-fasta`) carries no locations, so a fragment's
+FASTA output (`--fasta_out`, `genbank_to_fasta`) carries no locations, so a fragment's
 status survives only if its header already says ` (Fragment)`.
 
 ## FASTA
@@ -146,7 +146,7 @@ status survives only if its header already says ` (Fragment)`.
 `.fasta` `.fa` `.fna` `.faa` `.pep`
 
 Accepted as input everywhere, and offered as output by tools with a `--fasta_out` flag,
-plus [`genbank-to-fasta`](cli-reference.md#genbank-to-fasta). It cannot carry annotations,
+plus [`genbank_to_fasta`](cli-reference.md#genbank_to_fasta). It cannot carry annotations,
 so it is an endpoint rather than an intermediate. Use `--fasta_type` to tell a tool whether
 to read FASTA as protein (the default) or nucleotide.
 
@@ -155,9 +155,9 @@ to read FASTA as protein (the default) or nucleotide.
 `.hdf5` `.hdf` `.h5` (binary), `.tsv` (text)
 
 A pairwise matrix of scores between sequences, profiles or contigs, produced by
-[`seq-dist`](cli-reference.md#seq-dist),
-[`compare-contigs`](cli-reference.md#compare-contigs) and
-[`transform-matrix`](cli-reference.md#transform-matrix).
+[`seq_dist`](cli-reference.md#seq_dist),
+[`compare_contigs`](cli-reference.md#compare_contigs) and
+[`transform_matrix`](cli-reference.md#transform_matrix).
 
 Three representations, chosen by which output flag you pass:
 
@@ -172,21 +172,21 @@ The format is the Python suite's: same HDF5 layout and attributes, readable by i
 are stored with the data; a matrix with column labels is asymmetric (query × reference),
 one without is symmetric (all-vs-all).
 
-`transform-matrix` converts freely between the three, so `--dense` in and `--sparse` out
+`transform_matrix` converts freely between the three, so `--dense` in and `--sparse` out
 is a conversion.
 
 ## Networks
 
 ### `.dsnv` — the interactive viewer bundle
 
-Written by [`build-ssn-viewer`](cli-reference.md#build-ssn-viewer): a gzipped JSON bundle
+Written by [`build_ssn_viewer`](cli-reference.md#build_ssn_viewer): a gzipped JSON bundle
 holding the nodes, the maximum spanning tree, and the cluster hierarchy — **and nothing
 else**. Everything a viewer shows (split events, slider stops, cluster membership at a
 given cutoff) is derived from those when the file is read.
 
 That is why there is no threshold and no event cap baked into the file: you choose them
 while looking at the network, in the viewer or with
-[`ssn-navigator`](cli-reference.md#ssn-navigator).
+[`ssn_navigator`](cli-reference.md#ssn_navigator).
 
 `.ssnv` is the older spelling of the same thing. It is still read; new files are always
 written as `.dsnv`.
@@ -197,7 +197,7 @@ web server with nothing else alongside it.
 
 ### `.xgmml` — Cytoscape
 
-Written by [`build-ssn`](cli-reference.md#build-ssn). A static network: the edges are
+Written by [`build_ssn`](cli-reference.md#build_ssn). A static network: the edges are
 fixed at the `--lb` cutoff you chose, unlike the `.dsnv` bundle. Node attributes carry any
 metadata you joined on with `--metadata`, and `--cluster` adds a cluster id.
 
@@ -208,7 +208,7 @@ metadata you joined on with `--metadata`, and `--cluster` adds a cluster id.
 HMMER3 profile files, interchangeable with HMMER and pyhmmer. Domainator writes the
 `HMMER3/f` format including the Pfam `GA`/`TC`/`NC` gathering cutoffs, so
 `hmmsearch --cut_ga` still works on a file that has been through
-[`hmmer-select`](cli-reference.md#hmmer-select) — which reproduces the profiles it keeps
+[`hmmer_select`](cli-reference.md#hmmer_select) — which reproduces the profiles it keeps
 byte for byte.
 
 **Compression.** A `.hmm` input may be gzip- or BGZF-compressed anywhere a plain one is
@@ -230,7 +230,7 @@ counts the profile bytes *before* compression. This is the opposite of the advic
 `.hmm` only by file name, so a profile file edited after pressing would silently yield the
 old profiles. Leftover sidecars are harmless and safe to delete.
 
-Build profiles with [`hmmer-build`](cli-reference.md#hmmer-build) from a **Stockholm**
+Build profiles with [`hmmer_build`](cli-reference.md#hmmer_build) from a **Stockholm**
 alignment (`.sto` `.stockholm` `.sth`), the only alignment format currently read.
 
 Profiles built here are re-readable by pyhmmer and carry the same NAME, LENG and DESC, but
@@ -239,7 +239,7 @@ and calibration. For identical profiles, build with HMMER and use them here.
 
 ## Formatted databases
 
-For repeated searching of something large, [`format-db`](cli-reference.md#format-db)
+For repeated searching of something large, [`format_db`](cli-reference.md#format_db)
 prepares a directory:
 
 - **shards** (`--shards N`) split the records across files so they can be searched in
@@ -249,14 +249,14 @@ prepares a directory:
   file;
 - a **`.didx` index** (`--index`) mapping record names to virtual offsets.
 
-Pass the directory as `-i` to [`domain-search`](cli-reference.md#domain-search).
+Pass the directory as `-i` to [`domain_search`](cli-reference.md#domain_search).
 
 These are hard on-disk contracts and the `.didx` files are byte-compatible with the Python
 suite's, in both directions. Two consequences:
 
 - **Plain gzip is rejected.** A `.gz` that is not BGZF cannot be seeked into, so the whole
   indexed-I/O layer refuses it rather than silently falling back to a full scan. Recompress
-  it with `format-db --compress`.
+  it with `format_db --compress`.
 - **An index is checked for staleness** by size and modification time, and a stale one is
   an error, not a warning.
 - Having both an unsharded file and a shard directory present is an error — Domainator
@@ -266,10 +266,10 @@ suite's, in both directions. Two consequences:
 
 `.tsv` `.csv` `.tab`
 
-Used for report output ([`enum-report`](cli-reference.md#enum-report),
-[`hmmer-report`](cli-reference.md#hmmer-report)), for network metadata
+Used for report output ([`enum_report`](cli-reference.md#enum_report),
+[`hmmer_report`](cli-reference.md#hmmer_report)), for network metadata
 (`--metadata`), for color tables (`--color_table`), and for coordinate lists
-([`select-by-coord`](cli-reference.md#select-by-coord)). Plain delimited text with a header
+([`select_by_coord`](cli-reference.md#select_by_coord)). Plain delimited text with a header
 row; editable in the [Table viewer](gui.md#viewers) or any spreadsheet.
 
 ## JSON

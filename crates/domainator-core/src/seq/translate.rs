@@ -161,7 +161,7 @@ pub fn revcomp(seq: &[u8]) -> Vec<u8> {
 }
 
 /// IUPAC complement (no reversal), preserving case (matches Biopython's
-/// `Seq.complement`). Used by `deduplicate`'s both-strands hashing.
+/// `Seq.complement`). Used by `deduplicate_genbank`'s both-strands hashing.
 pub fn complement(seq: &[u8]) -> Vec<u8> {
     seq.iter()
         .map(|&b| match b {

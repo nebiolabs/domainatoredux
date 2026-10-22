@@ -19,7 +19,7 @@ extend-exclude = [
 [default]
 locale = "en-us"
 extend-ignore-re = [
-    # Upstream's report heading, misspelling included; summary-report's text output
+    # Upstream's report heading, misspelling included; summary_report's text output
     # is compared against Python's, so the port keeps it.
     "Domain Co-occurence",
     # Test vector for base64 (RFC 4648 section 10).

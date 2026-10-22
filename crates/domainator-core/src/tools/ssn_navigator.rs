@@ -1,4 +1,4 @@
-//! `ssn-navigator`: read-only navigation of a `build-ssn-viewer` `.dsnv` bundle.
+//! `ssn_navigator`: read-only navigation of a `build_ssn_viewer` `.dsnv` bundle.
 //!
 //! Mirrors `domainator.ssn_navigator`. An agent-friendly companion to the interactive
 //! HTML viewer: instead of rendering the whole network it answers targeted questions

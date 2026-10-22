@@ -69,7 +69,7 @@ pub fn specs() -> Vec<ToolSpec> {
     };
 
     // Prebuilt binaries for Linux, macOS, and Windows. The version must be at least
-    // `MIN_DIAMOND_VERSION` -- `deduplicate --algorithm diamond` fails outright on an
+    // `MIN_DIAMOND_VERSION` -- `deduplicate_genbank --algorithm diamond` fails outright on an
     // older one, and telling a user to "upgrade diamond" is absurd when the app is
     // what installed it. A test below enforces that.
     let diamond_asset = match platform_key() {
@@ -92,7 +92,7 @@ pub fn specs() -> Vec<ToolSpec> {
     };
 
     // The Rust cd-hit port: one `cdhit` multiplexer whose first argument is the
-    // program name, which is what `deduplicate`'s cd-hit backend drives. GPL, so it
+    // program name, which is what `deduplicate_genbank`'s cd-hit backend drives. GPL, so it
     // is downloaded at runtime and never bundled with the app. No Intel-macOS build
     // is published; the panel renders that as "n/a on macos-x64".
     let cdhit_asset = match platform_key() {
@@ -131,7 +131,7 @@ pub fn specs() -> Vec<ToolSpec> {
         member: "",
     });
 
-    // Orphos, the Rust Prodigal: gene calling for the gene-call tool and
+    // Orphos, the Rust Prodigal: gene calling for the gene_call tool and
     // `--gene_call`. GPL, so downloaded at runtime and never bundled. Each archive
     // holds one binary named for its platform, installed as `orphos`. No Intel-macOS
     // build has been published since v0.1.0, which predates the flags gene calling
@@ -161,7 +161,7 @@ pub fn specs() -> Vec<ToolSpec> {
             bin_name: exe(DIAMOND_BIN_NAME),
             env_var: DIAMOND_ENV_VAR,
             version: "2.2.5",
-            description: "DIAMOND — fast protein aligner, for seq-dist diamond_* algorithms.",
+            description: "DIAMOND — fast protein aligner, for seq_dist diamond_* algorithms.",
             asset: diamond_asset,
         },
         ToolSpec {
@@ -170,7 +170,7 @@ pub fn specs() -> Vec<ToolSpec> {
             env_var: CDHIT_ENV_VAR,
             version: "0.1.0",
             description:
-                "cd-hit (Rust port) — sequence clustering, for deduplicate --algorithm cd-hit.",
+                "cd-hit (Rust port) — sequence clustering, for deduplicate_genbank --algorithm cd-hit.",
             asset: cdhit_asset,
         },
         ToolSpec {
@@ -178,7 +178,7 @@ pub fn specs() -> Vec<ToolSpec> {
             bin_name: exe(USEARCH_BIN_NAME),
             env_var: USEARCH_ENV_VAR,
             version: "12.0-beta1",
-            description: "USEARCH v12 — sequence clustering, for deduplicate --algorithm usearch.",
+            description: "USEARCH v12 — sequence clustering, for deduplicate_genbank --algorithm usearch.",
             asset: usearch_asset,
         },
         ToolSpec {
@@ -186,7 +186,7 @@ pub fn specs() -> Vec<ToolSpec> {
             bin_name: exe(ORPHOS_BIN_NAME),
             env_var: ORPHOS_ENV_VAR,
             version: "0.4.0",
-            description: "Orphos (Rust Prodigal) — gene calling, for gene-call and --gene_call.",
+            description: "Orphos (Rust Prodigal) — gene calling, for gene_call and --gene_call.",
             asset: orphos_asset,
         },
     ]
@@ -309,7 +309,7 @@ mod tests {
     /// The whole point of the External tools panel is that a user who has no
     /// diamond can get a working one. Shipping a version older than the core
     /// requires makes it install a binary that fails on the first single-cluster
-    /// `deduplicate`, with an error telling them to upgrade the thing they just
+    /// `deduplicate_genbank`, with an error telling them to upgrade the thing they just
     /// installed.
     #[test]
     fn the_managed_diamond_is_new_enough_for_deduplicate() {
@@ -320,7 +320,7 @@ mod tests {
             .expect("diamond spec");
         assert!(
             parts(spec.version) >= parts(min),
-            "the managed diamond is {} but deduplicate needs >= {min}",
+            "the managed diamond is {} but deduplicate_genbank needs >= {min}",
             spec.version
         );
     }

@@ -1,5 +1,5 @@
-# GUI dialog for `domainator build-ssn`. Format: see README.md in this directory.
-id: build-ssn
+# GUI dialog for `domainatoredux build_ssn`. Format: see README.md in this directory.
+id: build_ssn
 label: "Build SSN (XGMML)"
 category: "Matrices & networks"
 description: "Build a Cytoscape XGMML network from a similarity matrix."

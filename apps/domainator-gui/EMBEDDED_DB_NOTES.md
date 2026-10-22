@@ -1,7 +1,7 @@
-# Investigation: a lightweight embedded DB in `.domainator/`?
+# Investigation: a lightweight embedded DB in `.domainatoredux/`?
 
 **Question:** would an embedded DB (rusqlite / turso / redb / …) help, in addition to
-or instead of, the `.json` files under `.domainator/`?
+or instead of, the `.json` files under `.domainatoredux/`?
 
 **Short answer:** Not as a replacement for the small JSON singletons. There *is* a
 real case for one embedded store — but only for the **derived / high-cardinality
@@ -10,7 +10,7 @@ report cache), and if we do it we should use a **pure-Rust** store (redb), not
 rusqlite. It's worth doing **together with** `PERSISTENT_CACHE_PLAN.md`, when a large
 workspace actually feels slow — not urgent today.
 
-## What's stored under `.domainator/` today
+## What's stored under `.domainatoredux/` today
 
 | Data | Form | Cardinality | Access | Human/Python-readable matters? |
 |---|---|---|---|---|
@@ -35,7 +35,7 @@ workspace actually feels slow — not urgent today.
    record-count / sequence caches **persist across sessions** instead of the current
    in-memory maps. Cleaner than spraying `cache/*.json`.
 3. **Concurrency.** Detached sequence windows + background jobs can touch
-   `.domainator` at once; a transactional store is safer than racing JSON writes.
+   `.domainatoredux` at once; a transactional store is safer than racing JSON writes.
    (Low incidence today, but a latent hazard.)
 
 ## Where a DB does NOT help
@@ -46,7 +46,7 @@ workspace actually feels slow — not urgent today.
   audit trail. Keep as JSON.
 - **Transparency.** The whole project deliberately keeps user data in plain,
   Python-readable files and quarantines app machinery under one hidden dir. A DB is
-  opaque — acceptable for *derived* data under `.domainator`, but a reason not to
+  opaque — acceptable for *derived* data under `.domainatoredux`, but a reason not to
   migrate anything user-facing into it.
 
 ## Which DB (if we do it)
@@ -72,7 +72,7 @@ cross-compilation — should decide this too.
 - **Don't add a DB now.** In-memory caches already cover within-session speed, and
   the sprawl/cold-start pain only shows up at scale.
 - **When** a large workspace feels slow (slow folder listing, or slow cold re-opens),
-  add a single **redb** store at `.domainator/cache.redb` that folds together: (a)
+  add a single **redb** store at `.domainatoredux/cache.redb` that folds together: (a)
   per-file metadata, (b) record counts, (c) the report cache from
   `PERSISTENT_CACHE_PLAN.md`. Treat it as a **rebuildable cache** (deletable; regenerated
   on demand) with `(size, mtime_ns)` stamps — same staleness contract as `.didx`.

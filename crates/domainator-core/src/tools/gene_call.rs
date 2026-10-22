@@ -5,7 +5,7 @@
 //! GPL, so this port drives **Orphos** (a Rust reimplementation of Prodigal,
 //! GPL-3.0-or-later) as an external binary instead: a subprocess, located by
 //! `find_binary`, never linked or bundled -- the same arrangement as cd-hit and
-//! usearch in `deduplicate`.
+//! usearch in `deduplicate_genbank`.
 //!
 //! Orphos only reports gene coordinates usefully: its GenBank output has no strand or
 //! partial markers, it has no protein output, and `-t` is a no-op. So it is run with
@@ -30,13 +30,13 @@ use crate::DOMAIN_FEATURE_NAME;
 /// The Orphos executable's name (`orphos.exe` on Windows, added by `find_binary`).
 pub const ORPHOS_BIN_NAME: &str = "orphos";
 /// Environment variable naming the Orphos executable; checked first.
-pub const ORPHOS_ENV_VAR: &str = "DOMAINATOR_ORPHOS";
+pub const ORPHOS_ENV_VAR: &str = "DOMAINATOREDUX_ORPHOS";
 /// The oldest Orphos whose flags mean what this module passes: before 0.4.0 `-g` was
 /// ignored and `-c`/`-m`/`-q` took values.
 pub const MIN_ORPHOS_VERSION: &str = "0.4.0";
 /// The values `--mode` accepts.
 pub const GENE_CALL_MODES: [&str; 2] = ["meta", "single"];
-/// The values `--gene_call` (and the `gene-call` tool's `--scope`) accept.
+/// The values `--gene_call` (and the `gene_call` tool's `--scope`) accept.
 pub const GENE_CALL_SCOPES: [&str; 2] = ["all", "unannotated"];
 
 /// Bases on each side of the origin of a circular contig searched for genes crossing
@@ -122,7 +122,7 @@ pub struct GeneCall {
     pub options: GeneCallOptions,
 }
 
-/// The standalone `gene-call` tool: clear existing annotations when the scope is
+/// The standalone `gene_call` tool: clear existing annotations when the scope is
 /// [`GeneCallScope::All`], then call genes on every nucleotide contig left with no
 /// searchable CDS. Returns the number of CDS features added.
 pub fn gene_call(records: &mut [SeqRecord], request: &GeneCall) -> io::Result<usize> {
@@ -191,7 +191,7 @@ pub fn call_genes(
     // order, and in single mode the windows are training data too, so keep them last.
     fasta.sort_by_key(|(id, _)| id.starts_with('w'));
 
-    let tmp = TempDir::new("domainator_genecall")?;
+    let tmp = TempDir::new("domainatoredux_genecall")?;
     let input = tmp.path().join("input.fasta");
     write_fasta_ids(&fasta, &input)?;
     drop(fasta);
@@ -256,7 +256,7 @@ fn table_code(table: u8) -> io::Result<&'static [u8; 64]> {
     })
 }
 
-/// The Orphos executable: `bin_path`, else `$DOMAINATOR_ORPHOS`/`$ORPHOS`, a bundled
+/// The Orphos executable: `bin_path`, else `$DOMAINATOREDUX_ORPHOS`/`$ORPHOS`, a bundled
 /// `external/orphos/orphos`, or `orphos` on PATH.
 fn orphos_binary(opts: &GeneCallOptions) -> PathBuf {
     match &opts.bin_path {
@@ -266,7 +266,7 @@ fn orphos_binary(opts: &GeneCallOptions) -> PathBuf {
 }
 
 const INSTALL_HINT: &str = "Install orphos (https://github.com/FullHuman/orphos/releases, \
-     or the GUI's External tools panel) or set $DOMAINATOR_ORPHOS.";
+     or the GUI's External tools panel) or set $DOMAINATOREDUX_ORPHOS.";
 
 fn run_orphos(opts: &GeneCallOptions, input: &Path, gff: &Path) -> io::Result<()> {
     let bin = orphos_binary(opts);

@@ -3,7 +3,7 @@
 
 This is the broad-coverage parity gate. `harvest_invocations.py` mines upstream's
 pytest suite for `main([...])` argument lists; this runs each one twice -- once
-against the Python package, once against `target/debug/domainator` -- into two
+against the Python package, once against `target/debug/domainatoredux` -- into two
 scratch directories, then compares every file the two runs produced.
 
 Outcomes, worst-wins across an invocation's output files:
@@ -27,7 +27,6 @@ of the CI check job. See `docs/parity.md`.
 import argparse
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
@@ -171,38 +170,6 @@ def compare(a, b, helpers, SeqIO):
 # replay
 # --------------------------------------------------------------------------
 
-_LONG_OPTS = {}
-
-
-def _long_options(rust, subcommand):
-    """The long options `domainator <subcommand>` accepts, from its own --help."""
-    if subcommand not in _LONG_OPTS:
-        help_text = subprocess.run([rust, subcommand, "--help"],
-                                   capture_output=True, text=True).stdout
-        _LONG_OPTS[subcommand] = set(re.findall(r"--[A-Za-z0-9][A-Za-z0-9_-]*", help_text))
-    return _LONG_OPTS[subcommand]
-
-
-def expand_abbreviations(argv, rust, subcommand):
-    """Expand argparse-style unique prefixes, e.g. `--o` -> `--output`.
-
-    Upstream's tests lean on argparse accepting any unambiguous prefix of an
-    option name; clap does not. Without this, seven `extract_domains` cases look
-    like a missing `--output` flag rather than a spelling difference. An
-    abbreviation that is *not* unique on our side is left alone, so a genuinely
-    absent flag still reports as one.
-    """
-    options = _long_options(rust, subcommand)
-    out = []
-    for arg in argv:
-        if arg.startswith("--") and "=" not in arg and arg not in options:
-            matches = [o for o in options if o.startswith(arg)]
-            if len(matches) == 1:
-                arg = matches[0]
-        out.append(arg)
-    return out
-
-
 def _rust_error(proc):
     """The useful line of a failed Rust run.
 
@@ -211,7 +178,7 @@ def _rust_error(proc):
     name of a flag this port has not implemented.
     """
     lines = [l.strip() for l in proc.stderr.decode(errors="replace").splitlines() if l.strip()]
-    noise = ("Usage:", "For more information", "Try 'domainator")
+    noise = ("Usage:", "For more information", "Try 'domainatoredux")
     useful = [l for l in lines if not l.startswith(noise)]
     if not useful:
         return f"exit {proc.returncode}"
@@ -237,16 +204,14 @@ def run_one(row, cfg, helpers, SeqIO):
                        .replace("@TMP@", out_dir)
                        .replace("@OUT@", os.path.join(out_dir, "out")))
 
-        subcommand = cfg.toolmap[module]
         py_argv = [substitute(a, py_dir) for a in argv]
-        rs_argv = expand_abbreviations([substitute(a, rs_dir) for a in argv],
-                                       cfg.rust, subcommand)
+        rs_argv = [substitute(a, rs_dir) for a in argv]
         try:
             # Upstream 1.0 runs every tool through its dispatcher; the per-module
             # `python -m domainator.<module>` form exits 0 having done nothing.
             py = subprocess.run([cfg.python, "-m", "domainator", module] + py_argv,
                                 capture_output=True, timeout=cfg.timeout, cwd=py_dir)
-            rs = subprocess.run([cfg.rust, subcommand] + rs_argv,
+            rs = subprocess.run([cfg.rust, module] + rs_argv,
                                 capture_output=True, timeout=cfg.timeout, cwd=rs_dir)
         except subprocess.TimeoutExpired:
             return "error", f"timed out after {cfg.timeout}s"
@@ -336,11 +301,10 @@ def main(argv=None):
     ap.add_argument("--data_dir", default=str(REPO / "test" / "data"),
                     help="fixture directory substituted for @DATA@")
     ap.add_argument("--python", default="/home/sean/miniforge3/envs/domainator/bin/python")
-    ap.add_argument("--rust", default=str(REPO / "target" / "debug" / "domainator"))
+    ap.add_argument("--rust", default=str(REPO / "target" / "debug" / "domainatoredux"))
     ap.add_argument("--extra", default=str(REPO / "scripts" / "parity" / "extra_invocations.tsv"),
                     help="hand-written invocations appended to the harvest; their @GEN@ "
                          "fixtures are built by generated_fixtures.py (pass '' to skip)")
-    ap.add_argument("--toolmap", default=str(REPO / "scripts" / "parity" / "toolmap.tsv"))
     ap.add_argument("--baseline", default=str(REPO / "scripts" / "parity" / "known_gaps.tsv"))
     ap.add_argument("--update_baseline", action="store_true",
                     help="rewrite the gap list from this run instead of checking it")
@@ -359,8 +323,6 @@ def main(argv=None):
     cfg.rust = os.path.abspath(cfg.rust)
     if not os.path.exists(cfg.rust):
         sys.exit(f"no Rust binary at {cfg.rust} -- run `cargo build` first")
-    cfg.toolmap = dict(l.split("\t") for l in
-                       pathlib.Path(cfg.toolmap).read_text().splitlines() if l.strip())
 
     # `helpers.compare_seqfiles` is the upstream comparator; import it from the
     # vendored clone rather than copying it in, so it can never drift.
@@ -376,7 +338,8 @@ def main(argv=None):
         harvested = tempfile.NamedTemporaryFile(suffix=".tsv", delete=False)
         harvested.close()
         subprocess.run([sys.executable, str(REPO / "scripts" / "parity" / "harvest_invocations.py"),
-                        "--test_dir", cfg.test_dir, "-o", harvested.name], check=True)
+                        "--test_dir", cfg.test_dir, "--rust", cfg.rust, "-o", harvested.name],
+                       check=True)
         rows = [l.split("\t") for l in
                 pathlib.Path(harvested.name).read_text().splitlines() if l.strip()]
         os.unlink(harvested.name)

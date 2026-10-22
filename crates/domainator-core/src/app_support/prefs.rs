@@ -1,6 +1,6 @@
 //! Application preferences — the small amount of state that belongs to the *app*
 //! rather than to any one workspace, and therefore cannot live under a workspace's
-//! `.domainator/` directory.
+//! `.domainatoredux/` directory.
 //!
 //! Today that is the recent-workspace list, which is what lets the GUI reopen the
 //! workspace you were last in instead of starting cold every launch. The caller

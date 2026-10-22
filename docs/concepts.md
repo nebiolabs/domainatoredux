@@ -27,14 +27,14 @@ This is the single most important convention, and it surprises people:
 So to annotate your contigs with Pfam, the contigs are `-i` and Pfam is `-r`:
 
 ```bash
-domainator domainate -i unannotated.gb -r pfam-A.hmm -o annotated.gb
+domainatoredux domainate -i unannotated.gb -r pfam-A.hmm -o annotated.gb
 ```
 
 And to search a big database for hits to your query, **the database is `-i`** and your
 query is `-r`:
 
 ```bash
-domainator domain-search -i uniprot.fasta -r my_query.hmm -o hits.gb
+domainatoredux domain_search -i uniprot.fasta -r my_query.hmm -o hits.gb
 ```
 
 That second one reads backwards if you are used to BLAST, where the query leads. Think of
@@ -45,27 +45,27 @@ it as "take this file, and keep/annotate the parts that match these references."
 Tools fall into a few roles, and they compose:
 
 **Editors** take a format and return the same format, so they chain arbitrarily. Each does
-one simple thing. `domainate` adds annotations; `domain-search` keeps the subset of
-records that hit a reference; `select-by-cds` extracts genome neighborhoods around
-interesting genes; `filter-domains` strips weak annotations; `deduplicate` collapses
+one simple thing. `domainate` adds annotations; `domain_search` keeps the subset of
+records that hit a reference; `select_by_cds` extracts genome neighborhoods around
+interesting genes; `filter_domains` strips weak annotations; `deduplicate_genbank` collapses
 near-identical sequences. Most of a workflow is a chain of editors.
 
 **Comparison tools** turn a set of sequences into a pairwise score matrix.
-`seq-dist` scores by local alignment (DIAMOND or HMMER); `compare-contigs` scores by
+`seq_dist` scores by local alignment (DIAMOND or HMMER); `compare_contigs` scores by
 shared domain content (Jaccard and adjacency indexes), which is what you want for
-comparing gene neighborhoods rather than single proteins. `hmmer-compare` compares HMM
+comparing gene neighborhoods rather than single proteins. `hmmer_compare` compares HMM
 profiles to each other.
 
-**Record-wise reports** write one row per contig, CDS or domain — `enum-report`,
-`hmmer-report`. Use them to get data into Excel or R, and as intermediate files for other
+**Record-wise reports** write one row per contig, CDS or domain — `enum_report`,
+`hmmer_report`. Use them to get data into Excel or R, and as intermediate files for other
 Domainator tools that take a table.
 
 **Summary reports** describe a whole dataset rather than its records —
-`summary-report`, `matrix-report`.
+`summary_report`, `matrix_report`.
 
-**Network tools** turn a matrix into something you can look at: `build-ssn` writes
-Cytoscape XGMML, `build-ssn-viewer` writes a self-contained interactive viewer, and
-`ssn-navigator` queries a built network from a script.
+**Network tools** turn a matrix into something you can look at: `build_ssn` writes
+Cytoscape XGMML, `build_ssn_viewer` writes a self-contained interactive viewer, and
+`ssn_navigator` queries a built network from a script.
 
 The [command-line reference](cli-reference.md) is organized along these lines.
 
@@ -76,9 +76,9 @@ Two different feature types appear in output files, and they mean different thin
 - **`Domainator`** features are domain annotations — "this region matches this profile."
   `domainate` writes them. There can be many per CDS.
 - **`Domain_Search`** features mark the *best* hit that caused a record to be selected.
-  `domain-search` writes one per focus CDS.
+  `domain_search` writes one per focus CDS.
 
-The distinction matters for ranking. `domain-search --max_hits` ranks by the
+The distinction matters for ranking. `domain_search --max_hits` ranks by the
 `Domain_Search` score only, never by the `Domainator` annotations — otherwise an extracted
 neighborhood would be scored by whatever strong gene happened to sit next to your weak
 hit.
@@ -97,7 +97,7 @@ example:
 
 It is a convenience rollup of that CDS's `Domainator` features, regenerated every time a
 file is written. You can read it in any GenBank viewer without parsing sub-features, and
-tools like `select-by-contig --domains` match against it.
+tools like `select_by_contig --domains` match against it.
 
 ## Sequences, CDSs and domains are three levels
 
@@ -108,8 +108,8 @@ Most tools let you work at whichever level you mean:
   [getting started](getting-started.md#3-tabulate-the-annotations));
 - **domain** — a region within a CDS matching a profile.
 
-`enum-report --by contig|cds|domain` is the clearest expression of this; `select-by-contig`
-versus `select-by-cds` is the same distinction applied to selection.
+`enum_report --by contig|cds|domain` is the clearest expression of this; `select_by_contig`
+versus `select_by_cds` is the same distinction applied to selection.
 
 ## Protein and nucleotide references
 

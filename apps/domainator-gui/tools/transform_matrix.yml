@@ -1,5 +1,5 @@
-# GUI dialog for `domainator transform-matrix`. Format: see README.md in this directory.
-id: transform-matrix
+# GUI dialog for `domainatoredux transform_matrix`. Format: see README.md in this directory.
+id: transform_matrix
 label: "Transform matrix"
 category: "Matrices & networks"
 description: "Rescale or prune a similarity matrix (mode, lower bound, MST-kNN)."

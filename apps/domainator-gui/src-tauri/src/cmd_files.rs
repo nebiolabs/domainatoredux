@@ -49,7 +49,7 @@ pub async fn load_contig_view(path: String) -> Result<ContigFileView, String> {
 }
 
 /// Build a matrix report for the SSN threshold-selection view. Returns the same
-/// payload as the CLI's `matrix-report --json` (via `to_json`, which is
+/// payload as the CLI's `matrix_report --json` (via `to_json`, which is
 /// parity-locked to the Python output) plus a GUI-only `histogram` of edge scores
 /// computed here from `MatrixReport.scores_desc`.
 #[tauri::command]
@@ -778,7 +778,7 @@ pub async fn resolve_records(
 
 /// Trace a network artifact (`.dsnv`/matrix) back to the sequence files that
 /// supplied its node labels, via the provenance job DAG. The workspace root is
-/// discovered by walking up from `path` for a `.domainator/` dir, so this works in
+/// discovered by walking up from `path` for a `.domainatoredux/` dir, so this works in
 /// detached windows too. Returns `has_provenance=false` (empty sources) when no
 /// creating-job chain reaches sequence inputs — the UI then disables extraction.
 #[tauri::command]
@@ -823,7 +823,7 @@ pub struct RecordRef {
 }
 
 /// Validate a bare filename and join it to `dir`, refusing path separators, the
-/// reserved `.domainator` name, and pre-existing targets (caller supplies a name).
+/// reserved `.domainatoredux` name, and pre-existing targets (caller supplies a name).
 fn validated_target(dir: &str, name: &str) -> Result<std::path::PathBuf, String> {
     use domainator_core::app_support::workspace::{
         accepted_types_hint, classify_file, is_reserved_name,
@@ -882,7 +882,7 @@ pub struct ExtractItem {
 
 /// Write each selected item, in order, as its own record of a new file
 /// `dir/name`: a whole contig is copied as is, and a region is sliced the way
-/// `select-by-coord` slices it (overlapping features kept and truncated, the
+/// `select_by_coord` slices it (overlapping features kept and truncated, the
 /// record named `<id>_<start>:<end>`). The format follows `name`'s extension
 /// (FASTA vs GenBank). When `translate` is set the records are then run through
 /// `extract_peptides`, so the output is a protein GenBank of the CDSs they hold.
@@ -1217,7 +1217,7 @@ mod tests {
     fn the_machinery_directory_is_reserved() {
         let dir = scratch("reserved");
         // Case-insensitively, so it cannot be shadowed on a case-folding filesystem.
-        for name in [".domainator", ".DOMAINATOR", ".Domainator"] {
+        for name in [".domainatoredux", ".DOMAINATOREDUX", ".Domainatoredux"] {
             let err = validated_target(&dir, name).unwrap_err();
             assert!(err.contains("reserved"), "{name}: {err}");
         }

@@ -55,7 +55,7 @@ Linux) and use Windows only to *validate the GUI*:
   Export SVG from a logo and check the dialog comes up *in front*; quit and
   relaunch to confirm the workspace and window geometry come back. After touching
   job running (`worker.rs`, `cmd_tools.rs`):
-  - Cancel a diamond `seq-dist` run. In Task Manager, check that neither
+  - Cancel a diamond `seq_dist` run. In Task Manager, check that neither
     `domainator-gui.exe` (the worker) nor `diamond.exe` is left behind.
   - Kill the GUI from Task Manager in the middle of a job; check that the worker
     dies.
@@ -161,18 +161,18 @@ header has a **＋** to create a subdirectory under the selected folder
 (`create_folder` + `rescan_tree`), and each file row has a trash button that
 deletes the file (and its metadata) via `delete_file` (with a confirm).
 
-**Reserved `.domainator/` directory.** Data files are never rewritten; instead *all*
-app machinery lives under a single hidden directory, `<root>/.domainator/`: the
+**Reserved `.domainatoredux/` directory.** Data files are never rewritten; instead *all*
+app machinery lives under a single hidden directory, `<root>/.domainatoredux/`: the
 `workspace.json` manifest, job provenance
-(`.domainator/jobs/<id>/`), per-file metadata sidecars mirrored under
-`.domainator/meta/<rel>.dom.json`, and combined SSN subsets (`.domainator/subsets/`).
-`.domainator` is the ONLY name the app reserves (so no clashes with user files); it
+(`.domainatoredux/jobs/<id>/`), per-file metadata sidecars mirrored under
+`.domainatoredux/meta/<rel>.dom.json`, and combined SSN subsets (`.domainatoredux/subsets/`).
+`.domainatoredux` is the ONLY name the app reserves (so no clashes with user files); it
 is hidden from the tree and rejected as a user folder name, and `delete_file`
 refuses to touch anything inside it. Opening a workspace created before this change
 migrates the old top-level `workspace.json`/`databases.json`/`jobs/` into it
 automatically. (The database registry has since moved out of the workspace
 entirely, to `<app data>/databases.json`, shared by every workspace; a workspace's
-old `.domainator/databases.json` is merged into it on open and renamed to
+old `.domainatoredux/databases.json` is merged into it on open and renamed to
 `databases.json.migrated`.) Everything else stays Python/CLI-readable.
 
 ## Phase status
@@ -183,7 +183,7 @@ old `.domainator/databases.json` is merged into it on open and renamed to
 | 1 | shell + folder browser + read-only contig viewer | ✅ done |
 | 2 | matrix report tab + SSN viewer tab + multi-view registry | ✅ done |
 | 3 | config crate + tool forms + off-thread run + provenance + cross-view nav | ✅ done (curated tools) |
-| 4 | HMM logo view + enum-report tab + databases panel + contig editing | ✅ done |
+| 4 | HMM logo view + enum_report tab + databases panel + contig editing | ✅ done |
 | 5 | desktop shell: native menu bar, context menus, About/Preferences, theme, window title, close guard | ✅ done |
 
 ## Deferred details / known limitations
@@ -193,19 +193,19 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
 - **Config crate refactor — DONE.** `config.rs` lives in
   `crates/domainator-config/` (CLI + GUI both depend on it); verified byte-identical
   `--print_config` and `schema` output across all 28 tools. `resolve.rs` holds the
-  shared config→`*Options` resolvers, and the **`transform-matrix`, `build-ssn`, and
-  `build-ssn-viewer` CLI arms now call them** (verified: `cluster_tsv` byte-identical,
+  shared config→`*Options` resolvers, and the **`transform_matrix`, `build_ssn`, and
+  `build_ssn_viewer` CLI arms now call them** (verified: `cluster_tsv` byte-identical,
   `.ssnv`/`.xgmml` structurally identical order-independent — those two have
   pre-existing nondeterministic output ordering). The remaining CLI arms
   (domainate/domain_search/seq_dist/…) still resolve inline in `main.rs`; adding
   their resolvers is future cleanup, needed only when those tools become
   GUI-runnable.
 - **Tool execution — the full SSN workflow runs from the GUI.** `run_tool`
-  (`cmd_tools.rs`) handles **`domain-search` → `domainate` → `seq-dist` (or
-  `compare-contigs`) → `transform-matrix` → `build-ssn` → `build-ssn-viewer`**.
+  (`cmd_tools.rs`) handles **`domain_search` → `domainate` → `seq_dist` (or
+  `compare_contigs`) → `transform_matrix` → `build_ssn` → `build_ssn_viewer`**.
   Matrix-producing tools write `.hdf5` so their output is a recognized type that
-  chains into the SSN tools' input dropdowns (e.g. seq-dist → `.hdf5` →
-  build-ssn-viewer → `.ssnv` → SSN tab). Each tool's dialog is described by a
+  chains into the SSN tools' input dropdowns (e.g. seq_dist → `.hdf5` →
+  build_ssn_viewer → `.ssnv` → SSN tab). Each tool's dialog is described by a
   **spec file**, `tools/<id>.yml`, embedded at compile time (format:
   [`tools/README.md`](tools/README.md)). The spec lists every CLI option with its
   CLI default and an optional `gui_default` override.
@@ -221,45 +221,45 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   Adding a tool takes a spec file, nothing else: a job runs `<id> --config <params>`
   through the CLI in a worker process (see "Jobs run in worker processes" below), so
   the CLI must have a subcommand named after the spec's `id`.
-  `domain-search` exposes **neighborhood extraction** — `whole_contig`,
+  `domain_search` exposes **neighborhood extraction** — `whole_contig`,
   `cds_range`/`cds_up`/`cds_down`, `kb_range`/`kb_up`/`kb_down`, `strand` (f/r),
   `keep_direction`, `translate` — so the neighborhood-based SSN path works
-  (domain-search with a CDS/kb range → neighborhood GenBank → compare-contigs or
-  seq-dist → matrix → build-ssn-viewer). Verified: none→16 CDS, whole_contig→96,
+  (domain_search with a CDS/kb range → neighborhood GenBank → compare_contigs or
+  seq_dist → matrix → build_ssn_viewer). Verified: none→16 CDS, whole_contig→96,
   cds±1→48 on the pDONR fixture.
-  `domain-search`/`domainate` expose **taxonomy filters** (`include_taxids` /
+  `domain_search`/`domainate` expose **taxonomy filters** (`include_taxids` /
   `exclude_taxids` / `taxonomy_expr`, requiring an NCBI **taxdump directory** via
-  `ncbi_taxonomy_path`) and `domain-search` also **decoys** (`decoys` list +
+  `ncbi_taxonomy_path`) and `domain_search` also **decoys** (`decoys` list +
   `decoys_file`), handled by the CLI like every other option.
   Array params (decoys/taxid lists) render as comma-separated text in the form.
-  `seq-dist` defaults to the pure-Rust `hmmer` algorithm; the `diamond_*`
+  `seq_dist` defaults to the pure-Rust `hmmer` algorithm; the `diamond_*`
   algorithms need the external `diamond` binary — **auto-downloadable** via the
   **External tools** panel (see below).
-  The Tools menu also runs the **selection/filtering tools**: `select-by-cds`
+  The Tools menu also runs the **selection/filtering tools**: `select_by_cds`
   (CDSs by name/domain/`domain_expr`/`search_hits`/`unannotated` + neighborhood
-  extraction + pad/dedup/strand/invert), `select-by-contig` (whole contigs by
+  extraction + pad/dedup/strand/invert), `select_by_contig` (whole contigs by
   name/regex, domain content, taxonomy, length or CDS count; `fasta_out` toggles
-  FASTA vs GenBank output), and `filter-domains` (strip domain annotations by
+  FASTA vs GenBank output), and `filter_domains` (strip domain annotations by
   e-value/overlap/name/database, keeping the sequences); `input` is a multi-file
   dropdown (`input_files`).
-  The **HMM curation** tools are also in the menu: `hmmer-select` ("HMM select" —
+  The **HMM curation** tools are also in the menu: `hmmer_select` ("HMM select" —
   pull a subset of profiles from `.hmm` file(s) by regex/exact/substring on
-  name/desc/acc; pairs with the HMM Logo viewer) and `hmmer-build` ("HMM build" —
-  build a profile from a Stockholm MSA). `hmmer-build`'s input is a **Stockholm**
+  name/desc/acc; pairs with the HMM Logo viewer) and `hmmer_build` ("HMM build" —
+  build a profile from a Stockholm MSA). `hmmer_build`'s input is a **Stockholm**
   file (`.sto`/`.stockholm`/`.sth`), a GUI-only `classify_file` type added so MSAs
   show up in the dropdown (no viewer tab — `viewsFor` returns none, which renders
   the graceful "no viewer" message). Both output `.hmm`, so the result opens in the
-  HMM Logo viewer and appears in the domain-search/domainate reference dropdowns.
+  HMM Logo viewer and appears in the domain_search/domainate reference dropdowns.
   The menu additionally covers the **sequence utilities / extractors / HMM-vs-HMM**
-  tools: `genbank-to-fasta`,
-  `clean-sequences`, `sort-contigs`, `select-by-coord`, `trim-contigs`,
-  `extract-domains`, `extract-peptides`, `extract-unannotated`, `color-genbank`
-  (batch color-by-name/database + optional `color_table_out`), `color-table-to-legend`
-  (SVG), `deduplicate` (hash backend needs nothing; cd-hit/diamond/usearch need a
-  binary), `hmmer-compare`, and `hmmer-search`.
+  tools: `genbank_to_fasta`,
+  `clean_sequences`, `sort_contigs`, `select_by_coord`, `trim_contigs`,
+  `extract_domains`, `extract_peptides`, `extract_unannotated`, `color_genbank`
+  (batch color-by-name/database + optional `color_table_out`), `color_table_to_legend`
+  (SVG), `deduplicate_genbank` (hash backend needs nothing; cd-hit/diamond/usearch need a
+  binary), `hmmer_compare`, and `hmmer_search`.
   Two more GUI-only `classify_file` types support these: **`table`** (`.tsv`/`.csv`/
   `.tab`) so coordinate/color tables show in dropdowns, alongside **`stockholm`**.
-- **`hmmer-report` with a column builder.** "HMM report (export)" writes a per-profile
+- **`hmmer_report` with a column builder.** "HMM report (export)" writes a per-profile
   TSV/JSON report from `.hmm` file(s). Its `columns` field uses the shared
   **`columns`** role (below, under the enum report export). A leading `name` column
   is always emitted.
@@ -268,20 +268,20 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   each `ToolSpec` describes a binary (per-platform download URL + archive kind +
   member), and `download()` fetches (via `ureq`), extracts (`.tar.gz`/raw), stores
   it under `<app_data>/bin/`, `chmod +x`, and sets the env var the core locator
-  checks (`DOMAINATOR_DIAMOND` → `tools::external::find_binary`). The **External
+  checks (`DOMAINATOREDUX_DIAMOND` → `tools::external::find_binary`). The **External
   tools** panel (left sidebar, collapsed) lists each tool with installed/available
   status and a Download button; `ensure_env` at startup wires up already-downloaded
   binaries. Handles `.tar.gz`, `.zip`, and bare (`Raw`) executables. Four entries:
   **diamond v2.2.5** (all platforms), **cdhit v0.1.0** — the Rust cd-hit port, one
   multiplexer binary, no Intel-macOS build so the panel shows `n/a` there — and
   **usearch v12.0-beta1**, whose assets are bare per-platform executables and are the
-  one `Archive::Raw` user — and **orphos v0.4.0**, the Rust Prodigal behind `gene-call`
+  one `Archive::Raw` user — and **orphos v0.4.0**, the Rust Prodigal behind `gene_call`
   and `--gene_call`, whose archive members are named per platform and installed as
   `orphos` (no Intel-macOS build either). cd-hit, usearch and Orphos are GPL, so they are
   downloaded at runtime and never bundled with the app. Three tests guard the registry:
   diamond and orphos must stay at or above `deduplicate_genbank::MIN_DIAMOND_VERSION` /
   `gene_call::MIN_ORPHOS_VERSION` (an older diamond fails on a single-cluster
-  `deduplicate`; before 0.4.0 Orphos ignored `-g`), and `managed_tools_match_the_core_locator`
+  `deduplicate_genbank`; before 0.4.0 Orphos ignored `-g`), and `managed_tools_match_the_core_locator`
   pins every spec's `bin_name`/`env_var` to the core's `*_BIN_NAME`/`*_ENV_VAR`
   constants — a rename on either side would install a binary where nothing looks for
   it. Adding a future dependency (mmseqs2, foldseek, …) is just another
@@ -361,10 +361,10 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   backend restart.
 - **Jobs run in worker processes** (`worker.rs`, `cmd_tools.rs`, `job_io.rs`; the
   design is `WORKER_PROCESS_PLAN.md`). `main.rs` first checks for a hidden
-  `--domainator-worker` flag; with it, the rest of the command line is a CLI command
+  `--domainatoredux-worker` flag; with it, the rest of the command line is a CLI command
   line, handed to `domainator_cli::run`, and Tauri never starts. `run_tool` writes the
-  dialog's params to `.domainator/jobs/<id>/worker-config.json` and launches
-  `<this exe> --domainator-worker <tool> --config <that file>` (`/proc/self/exe` on
+  dialog's params to `.domainatoredux/jobs/<id>/worker-config.json` and launches
+  `<this exe> --domainatoredux-worker <tool> --config <that file>` (`/proc/self/exe` on
   Linux), with stdout/stderr copied to `worker.log` beside it. The job message is
   the tool's last line of output, or the CLI's error chain folded onto one line.
   - **Queue.** Jobs wait (`queued`) for one of `Prefs::max_concurrent_jobs` slots
@@ -382,7 +382,7 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   - **Provenance** is derived from the spec (`job_io::input_role`): the roles are
     what `trace_source_sequences` walks, pinned by
     `derived_provenance_roles_match_the_golden_table`.
-  - **Escape hatch.** `DOMAINATOR_INPROCESS_JOBS=1` runs `domainator_cli::run` on
+  - **Escape hatch.** `DOMAINATOREDUX_INPROCESS_JOBS=1` runs `domainator_cli::run` on
     the job's own thread instead (no kill, no captured output). Remove it the
     release after worker processes ship.
   - The CLI runs on a 256 MB-stack thread in every path (`worker::run_cli`): its
@@ -390,8 +390,8 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
     main thread.
   - Tests needing the real binary are in `src-tauri/tests/worker.rs`; the
     `__sleep*` worker commands they use are compiled out of release builds.
-- **Report-export tools** (also shown as jobs): `enum-report` writes a per-contig/
-  cds/domain **TSV**, `matrix-report` writes a **text** summary + suggested cutoffs.
+- **Report-export tools** (also shown as jobs): `enum_report` writes a per-contig/
+  cds/domain **TSV**, `matrix_report` writes a **text** summary + suggested cutoffs.
   (These export files to disk; the in-app Enum Report / Matrix Report *viewer* tabs
   remain the interactive views.)
 - **Cross-view navigation — DONE (combined subset view).** The SSN shell posts
@@ -399,7 +399,7 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   `assets/ssn_viewer_shell.html`); `SsnView` shows an "Open sequence(s)" bar. On
   click it resolves *every* selected label (`resolve_record` scans the workspace's
   GenBank/FASTA for a record whose id/name matches) and calls `extract_records`,
-  which writes just those records to a single `.domainator/subsets/selection_N.gb`;
+  which writes just those records to a single `.domainatoredux/subsets/selection_N.gb`;
   that opens as **one** normal sequence tab with the full Contig / Enum Report /
   Summary sub-tabs — instead of N whole-file windows. Requires the
   `src-tauri/capabilities/default.json` capability (which also enables the Jobs
@@ -413,7 +413,7 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   GUI. They are the schema's `columns.items.oneOf`, which `domainator-config`
   generates next to the `ColumnSpec` / `HmmerReportColumn` enums, and
   `column_schemas_match_their_enums` checks the two agree. The spec's `column_types`
-  (`tools/<id>.yml`) only relabels, hides and seeds them, e.g. enum-report's rank
+  (`tools/<id>.yml`) only relabels, hides and seeds them, e.g. enum_report's rank
   chips. `columns.ts` holds the model and the row ↔ column-object conversion.
   `run_export_enum_report` goes through `EnumConfig` exactly as the CLI's arm does:
   parameterized columns, `databases`, `contigs`, `column_names` and `json`, and the
@@ -428,7 +428,7 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   for any property a per-tool schema left blank, so all 333 options across the tools
   have a tooltip (and the CLI's emitted schema gets them too). Per-tool schemas can
   still override with a more specific description.
-- **domainate / domain-search accept HMM *and* FASTA references.** The references
+- **domainate / domain_search accept HMM *and* FASTA references.** The references
   field uses a `reference` pseudo file-type (`typeMatches` → hmm | fasta), matching
   what the core `read_references` accepts (protein/nucleotide HMM or FASTA; `.cm` and
   GenBank are not references). The dropdown lists folder files and registered
@@ -496,7 +496,7 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   external taxdump needed). Pure data + client-side charts — sidesteps the
   matplotlib dependency that keeps the CLI `summary_report` deferred.
   The Enum Report tab's **Columns** popover is the export's `ColumnBuilder`, over the
-  same schema types and `tools/enum-report.yml` `column_types`, applied with an
+  same schema types and `tools/enum_report.yml` `column_types`, applied with an
   explicit Apply (each change reruns the whole report). `run_enum_report` takes
   column objects and an `ncbi_taxonomy_path`, chosen in the tab's Taxonomy dropdown
   from the registered `taxonomy` databases. The parsed taxonomy (~9 s and ~2 GB peak

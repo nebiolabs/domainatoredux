@@ -1,5 +1,5 @@
-# GUI dialog for `domainator build-ssn-viewer`. Format: see README.md in this directory.
-id: build-ssn-viewer
+# GUI dialog for `domainatoredux build_ssn_viewer`. Format: see README.md in this directory.
+id: build_ssn_viewer
 label: "Build SSN viewer"
 category: "Matrices & networks"
 description: "Build a .dsnv bundle for the interactive network viewer."

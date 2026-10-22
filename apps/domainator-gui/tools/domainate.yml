@@ -1,4 +1,4 @@
-# GUI dialog for `domainator domainate`. Format: see README.md in this directory.
+# GUI dialog for `domainatoredux domainate`. Format: see README.md in this directory.
 id: domainate
 label: "Domainate"
 category: "Annotation & search"

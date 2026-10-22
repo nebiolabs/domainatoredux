@@ -25,7 +25,8 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 
 def referenced_fixtures(test_dir):
     """Fixture paths (relative to the data dir) that harvested invocations use, and
-    the hand-written ones in `extra_invocations.tsv`."""
+    the hand-written ones in `extra_invocations.tsv`. The harvest covers the tools
+    `target/debug/domainatoredux` offers, so build it first."""
     with tempfile.NamedTemporaryFile(suffix=".tsv") as tmp:
         subprocess.run([sys.executable, str(REPO / "scripts/parity/harvest_invocations.py"),
                         "--test_dir", str(test_dir), "-o", tmp.name],

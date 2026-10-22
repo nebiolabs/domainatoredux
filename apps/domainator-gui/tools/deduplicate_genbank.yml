@@ -1,5 +1,5 @@
-# GUI dialog for `domainator deduplicate`. Format: see README.md in this directory.
-id: deduplicate
+# GUI dialog for `domainatoredux deduplicate`. Format: see README.md in this directory.
+id: deduplicate_genbank
 label: "Deduplicate"
 category: "Selection & extraction"
 description: "Collapse near-identical sequences to representatives (hash, or diamond/cd-hit/usearch backends)."

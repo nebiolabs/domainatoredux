@@ -1,5 +1,5 @@
-# GUI dialog for `domainator extract-peptides`. Format: see README.md in this directory.
-id: extract-peptides
+# GUI dialog for `domainatoredux extract_peptides`. Format: see README.md in this directory.
+id: extract_peptides
 label: "Extract peptides"
 category: "Selection & extraction"
 description: "Extract CDS translations (peptides) by domain/CDS name, search hit, or all."

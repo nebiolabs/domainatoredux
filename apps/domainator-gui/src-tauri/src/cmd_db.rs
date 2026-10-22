@@ -220,7 +220,7 @@ static INDEXING: LazyLock<Mutex<HashMap<String, Arc<LiveJob>>>> = LazyLock::new(
 
 /// Build the `.didx` index for each of a database's data files, in place.
 ///
-/// Can take minutes on a large database, so it runs as `format-db --index` in a
+/// Can take minutes on a large database, so it runs as `format_db --index` in a
 /// worker process (`worker.rs`), like a Tools-menu job: [`cancel_database_index`]
 /// can stop it, and a crash cannot take the app down. Returns the number of data
 /// files indexed.
@@ -269,7 +269,7 @@ fn index_with(
     .and(launcher)
     .and_then(|launcher| {
         let args = [
-            "format-db".into(),
+            "format_db".into(),
             "--config".into(),
             config.clone().into_os_string(),
         ];
@@ -332,7 +332,7 @@ pub async fn reveal_database(app: AppHandle, path: String) -> Result<(), String>
 mod tests {
     use super::*;
 
-    /// Indexing goes through the CLI's `format-db --config` now, so the config it
+    /// Indexing goes through the CLI's `format_db --config` now, so the config it
     /// writes must be one `FormatDbConfig` accepts, and the run must leave the
     /// same `.didx` the in-process `registry::build_database_index` did.
     #[test]

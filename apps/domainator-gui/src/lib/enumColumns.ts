@@ -30,13 +30,13 @@ export function defaultColumns(by: EnumBy, prefs: Prefs | null): Column[] {
   return (prefs?.enum_report_columns?.[by] as Column[] | null | undefined) ?? builtinColumns(by);
 }
 
-/// The column types, from the enum-report schema and its spec's `column_types`
-/// (`tools/enum-report.yml`), exactly as in the export dialog.
+/// The column types, from the enum_report schema and its spec's `column_types`
+/// (`tools/enum_report.yml`), exactly as in the export dialog.
 export async function loadEnumColumnTypes(): Promise<ColumnType[]> {
-  const [schemaText, tools] = await Promise.all([toolSchemaCached("enum-report"), cached("tools", listTools)]);
+  const [schemaText, tools] = await Promise.all([toolSchemaCached("enum_report"), cached("tools", listTools)]);
   const schema = JSON.parse(schemaText) as JsonSchema;
   const field: ToolField | undefined = tools
-    .find((t) => t.id === "enum-report")
+    .find((t) => t.id === "enum_report")
     ?.fields.find((f) => f.role === "columns");
   return columnTypes(field ?? ({ column_types: {} } as unknown as ToolField), schema.properties?.columns);
 }

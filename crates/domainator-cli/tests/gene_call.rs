@@ -1,5 +1,5 @@
-//! `gene-call` end to end. Orphos is an external binary, so the tests that need it
-//! skip (with a note) when it is not installed: set `$DOMAINATOR_ORPHOS` or put
+//! `gene_call` end to end. Orphos is an external binary, so the tests that need it
+//! skip (with a note) when it is not installed: set `$DOMAINATOREDUX_ORPHOS` or put
 //! `orphos` on PATH to run them. The expected genes are pyrodigal's (upstream's
 //! engine) on the same fixtures.
 
@@ -22,22 +22,22 @@ fn fixture(name: &str) -> String {
 }
 
 fn orphos_available() -> bool {
-    let bin = std::env::var("DOMAINATOR_ORPHOS").unwrap_or_else(|_| "orphos".into());
+    let bin = std::env::var("DOMAINATOREDUX_ORPHOS").unwrap_or_else(|_| "orphos".into());
     let found = Command::new(bin)
         .arg("--version")
         .output()
         .is_ok_and(|o| o.status.success());
     if !found {
-        eprintln!("skipping: orphos not found (set $DOMAINATOR_ORPHOS)");
+        eprintln!("skipping: orphos not found (set $DOMAINATOREDUX_ORPHOS)");
     }
     found
 }
 
-/// Run `gene-call` and return the output GenBank's CDS location lines and text.
+/// Run `gene_call` and return the output GenBank's CDS location lines and text.
 fn gene_call(name: &str, args: &[&str]) -> (Vec<String>, String) {
     let out_path = scratch_dir(name).join("out.gb");
-    let out = Command::new(env!("CARGO_BIN_EXE_domainator"))
-        .arg("gene-call")
+    let out = Command::new(env!("CARGO_BIN_EXE_domainatoredux"))
+        .arg("gene_call")
         .args(args)
         .args(["-o", out_path.to_str().unwrap()])
         .output()
@@ -128,9 +128,9 @@ fn unannotated_scope_leaves_annotated_contigs_alone() {
 
 #[test]
 fn a_missing_orphos_says_how_to_get_one() {
-    let out = Command::new(env!("CARGO_BIN_EXE_domainator"))
+    let out = Command::new(env!("CARGO_BIN_EXE_domainatoredux"))
         .args([
-            "gene-call",
+            "gene_call",
             "-i",
             &fixture("pDONR201.fasta"),
             "--bin_path",

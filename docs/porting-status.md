@@ -5,9 +5,9 @@ Rust, how faithful each tool is to its Python original, and how the tool is reac
 the desktop app.
 
 **It is keyed by the upstream Python filename** (`domainate.py`, `seq_dist.py`), because
-that is the unit the port tracks — not by the Rust subcommand a user types. A single
-Python script usually maps to the same name with hyphens (`domainate.py` →
-`domainator domainate`), but some rows describe scripts that were deliberately never
+that is the unit the port tracks — not by the Rust subcommand a user types. A Python
+script maps to the subcommand of the same name (`select_by_cds.py` →
+`domainatoredux select_by_cds`), but some rows describe scripts that were deliberately never
 ported, and a few describe functionality that exists only in the GUI. For the
 user-facing list of what you can actually run, see the
 [command-line reference](cli-reference.md) and [the desktop app](gui.md).
@@ -16,8 +16,8 @@ Three counts appear in this project and they measure different things:
 
 | Count | What it is |
 | --- | --- |
-| **35** | subcommands of the `domainator` executable (`domainator --help`), including the `inspect`, `convert` and `schema` dev/meta commands |
-| **32** | tools with a `--config` schema (`domainator schema <tool>`) — all but those three |
+| **35** | subcommands of the `domainatoredux` executable (`domainatoredux --help`), including the `inspect`, `convert` and `schema` dev/meta commands |
+| **32** | tools with a `--config` schema (`domainatoredux schema <tool>`) — all but those three |
 | **29** | tools wired into the GUI's Tools menu |
 | **41 rows below** | upstream Python scripts, ported *and* deliberately unported |
 
@@ -36,7 +36,7 @@ by driving the external, GPL [Orphos](https://github.com/FullHuman/orphos) binar
 Prodigal) where upstream uses pyrodigal in-process; see `docs/architecture.md`, "External
 binaries". Its 13 `extra:` parity invocations are byte-identical, and a stress comparison
 of `prodigal_CDS_annotate` on random genomes (circular and linear, N runs, contigs down to
-45 bp) matched all 889 genes. The same code is also exposed as **`gene-call`**, a tool
+45 bp) matched all 889 genes. The same code is also exposed as **`gene_call`**, a tool
 with no upstream counterpart (so it has no row below) that adds Orphos's single mode, a
 translation table, `--closed` and `--mask`; it is in the GUI's Tools menu as "Gene call".
 

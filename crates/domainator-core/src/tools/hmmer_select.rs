@@ -224,7 +224,7 @@ pub fn hmmer_select<W: Write>(
                      is {}. HMMER locks an hmm file to the alphabet of its first profile, so \
                      writing both into one output file would produce a file that cannot be read \
                      past its first profile. Pass --alphabet to keep only one alphabet, or run \
-                     hmmer-select once per alphabet.",
+                     hmmer_select once per alphabet.",
                     selected_source.as_deref().unwrap_or("--alphabet"),
                     alphabet_name(chosen),
                     alphabet_name(file_alphabet),

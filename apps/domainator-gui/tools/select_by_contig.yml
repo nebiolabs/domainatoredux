@@ -1,5 +1,5 @@
-# GUI dialog for `domainator select-by-contig`. Format: see README.md in this directory.
-id: select-by-contig
+# GUI dialog for `domainatoredux select_by_contig`. Format: see README.md in this directory.
+id: select_by_contig
 label: "Select by contig"
 category: "Selection & extraction"
 description: "Select whole contigs by name/regex, domain content, taxonomy, length, or CDS count."

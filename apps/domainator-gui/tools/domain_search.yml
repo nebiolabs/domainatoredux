@@ -1,5 +1,5 @@
-# GUI dialog for `domainator domain-search`. Format: see README.md in this directory.
-id: domain-search
+# GUI dialog for `domainatoredux domain_search`. Format: see README.md in this directory.
+id: domain_search
 label: "Domain search"
 category: "Annotation & search"
 description: "Search sequences with HMM/FASTA references and extract hit CDSs or their genomic neighborhoods (step 1)."

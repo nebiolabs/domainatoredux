@@ -2,7 +2,7 @@
 //!
 //! Forms are driven by `domainator-config`'s per-tool JSON Schema, and the form's
 //! values are the tool's `*Config` as JSON. A run writes them to
-//! `.domainator/jobs/<id>/worker-config.json` and runs `<tool> --config <that
+//! `.domainatoredux/jobs/<id>/worker-config.json` and runs `<tool> --config <that
 //! file>` through the CLI in a worker copy of this executable (`worker.rs`), so a
 //! GUI run takes exactly the code path a CLI run does. The job's inputs and
 //! outputs for provenance come from the tool spec (`job_io.rs`); each completed
@@ -54,7 +54,7 @@ pub struct JobRegistry {
     /// when a job reaches a terminal state, so the map tracks live jobs rather
     /// than growing all session.
     live: Mutex<HashMap<String, Arc<LiveJob>>>,
-    /// Workspace root for persisting job history to `.domainator/jobs.json`
+    /// Workspace root for persisting job history to `.domainatoredux/jobs.json`
     /// (set when a workspace is opened via `load_jobs`).
     root: Mutex<Option<String>>,
     queue: JobQueue,
@@ -334,14 +334,14 @@ pub(crate) enum Launcher {
     Worker(PathBuf),
     /// `domainator_cli::run` on the job's own thread: no kill, no crash
     /// isolation, no captured output. The escape hatch behind
-    /// `DOMAINATOR_INPROCESS_JOBS=1`, kept for one release in case worker
+    /// `DOMAINATOREDUX_INPROCESS_JOBS=1`, kept for one release in case worker
     /// processes misbehave on some platform, and what the unit tests use (a test
     /// binary has no worker mode).
     InProcess,
 }
 
 /// Set to `1` to run jobs in-process instead of in worker processes.
-pub const INPROCESS_ENV: &str = "DOMAINATOR_INPROCESS_JOBS";
+pub const INPROCESS_ENV: &str = "DOMAINATOREDUX_INPROCESS_JOBS";
 
 pub(crate) fn launcher() -> Result<Launcher, String> {
     if std::env::var(INPROCESS_ENV).is_ok_and(|v| v == "1") {
@@ -483,7 +483,7 @@ fn mark_running(registry: &JobRegistry, app: &AppHandle, job_id: &str) {
     }
 }
 
-/// Persisted job-history cap (newest kept), so `.domainator/jobs.json` can't grow
+/// Persisted job-history cap (newest kept), so `.domainatoredux/jobs.json` can't grow
 /// without bound.
 const MAX_PERSISTED_JOBS: usize = 500;
 
@@ -491,7 +491,7 @@ fn jobs_file(root: &str) -> PathBuf {
     dot_dir(Path::new(root)).join("jobs.json")
 }
 
-/// Write the current job history to `.domainator/jobs.json` (newest first, capped).
+/// Write the current job history to `.domainatoredux/jobs.json` (newest first, capped).
 /// Best-effort: no-op until a workspace root is known; failures are ignored.
 fn persist_jobs(registry: &JobRegistry) {
     let Some(root) = reg_lock(&registry.root).clone() else {
@@ -539,7 +539,7 @@ pub fn list_jobs(registry: tauri::State<'_, JobRegistry>) -> Vec<JobInfo> {
 /// root (so future updates persist there), replaces the in-memory jobs with the
 /// file's, and marks any left-over live jobs as interrupted (the process that
 /// ran them is gone). Returns the history.
-/// Reads and rewrites `.domainator/jobs.json`, so `(async)`: a plain `fn`
+/// Reads and rewrites `.domainatoredux/jobs.json`, so `(async)`: a plain `fn`
 /// command would do that on Tauri's main thread.
 #[tauri::command(async)]
 pub fn load_jobs(registry: tauri::State<'_, JobRegistry>, workspace_root: String) -> Vec<JobInfo> {
@@ -732,7 +732,7 @@ fn preflight(tool: &str, params: &Value) -> Result<(), String> {
             .and_then(Value::as_str)
             .is_none_or(|s| s.trim().is_empty())
     };
-    if tool == "enum-report" && blank("ncbi_taxonomy_path") {
+    if tool == "enum_report" && blank("ncbi_taxonomy_path") {
         if let Ok(cfg) = serde_json::from_value::<domainator_config::EnumConfig>(params.clone()) {
             let analyses: Vec<_> = cfg
                 .columns
@@ -805,7 +805,7 @@ fn run_in_worker(
 
 /// The [`Launcher::InProcess`] path.
 fn run_in_process(args: &[OsString]) -> Result<String, String> {
-    let argv: Vec<OsString> = std::iter::once(OsString::from("domainator"))
+    let argv: Vec<OsString> = std::iter::once(OsString::from("domainatoredux"))
         .chain(args.iter().cloned())
         .collect();
     worker::run_cli(argv)
@@ -851,7 +851,7 @@ pub(crate) mod tests {
         let path = dir.join(format!("{tool}.json"));
         std::fs::write(&path, serde_json::to_vec(params).unwrap()).unwrap();
         let args = [
-            "domainator",
+            "domainatoredux",
             tool,
             "--config",
             &path.to_string_lossy(),
@@ -929,21 +929,21 @@ pub(crate) mod tests {
                 );
             }
             match spec.id.as_str() {
-                "enum-report" => {
+                "enum_report" => {
                     let cfg: domainator_config::EnumConfig =
                         serde_json::from_value(params.clone()).unwrap();
                     cfg.by_enum().unwrap();
                     for c in &cfg.columns {
                         c.to_analysis()
-                            .unwrap_or_else(|e| panic!("enum-report column {c:?}: {e}"));
+                            .unwrap_or_else(|e| panic!("enum_report column {c:?}: {e}"));
                     }
                 }
-                "hmmer-report" => {
+                "hmmer_report" => {
                     let cfg: domainator_config::HmmerReportConfig =
                         serde_json::from_value(params.clone()).unwrap();
                     for c in &cfg.columns {
                         c.to_analysis()
-                            .unwrap_or_else(|e| panic!("hmmer-report column {c:?}: {e}"));
+                            .unwrap_or_else(|e| panic!("hmmer_report column {c:?}: {e}"));
                     }
                 }
                 _ => {}
@@ -985,40 +985,40 @@ pub(crate) mod tests {
     /// to worker processes, captured from those runners before they were deleted.
     /// `(tool, field, role)`.
     const GOLDEN_INPUT_ROLES: &[(&str, &str, &str)] = &[
-        ("build-ssn", "input", "matrix"),
-        ("build-ssn-viewer", "input", "matrix"),
-        ("clean-sequences", "input", "sequence"),
-        ("color-genbank", "input", "sequence"),
-        ("color-table-to-legend", "input", "table"),
-        ("compare-contigs", "input", "genbank"),
-        ("deduplicate", "input", "sequence"),
-        ("domain-search", "input", "sequence"),
-        ("domain-search", "references", "reference"),
+        ("build_ssn", "input", "matrix"),
+        ("build_ssn_viewer", "input", "matrix"),
+        ("clean_sequences", "input", "sequence"),
+        ("color_genbank", "input", "sequence"),
+        ("color_table_to_legend", "input", "table"),
+        ("compare_contigs", "input", "genbank"),
+        ("deduplicate_genbank", "input", "sequence"),
+        ("domain_search", "input", "sequence"),
+        ("domain_search", "references", "reference"),
         ("domainate", "input", "sequence"),
         ("domainate", "references", "reference"),
-        ("gene-call", "input", "sequence"),
-        ("enum-report", "input", "sequence"),
-        ("extract-domains", "input", "sequence"),
-        ("extract-peptides", "input", "sequence"),
-        ("extract-unannotated", "input", "sequence"),
-        ("filter-domains", "input", "sequence"),
-        ("genbank-to-fasta", "input", "sequence"),
-        ("hmmer-build", "input", "msa"),
-        ("hmmer-compare", "input", "hmm"),
-        ("hmmer-compare", "reference", "reference"),
-        ("hmmer-report", "input", "hmm"),
-        ("hmmer-search", "input", "hmm"),
-        ("hmmer-search", "reference", "reference"),
-        ("hmmer-select", "input", "hmm"),
-        ("matrix-report", "input", "matrix"),
-        ("select-by-cds", "input", "sequence"),
-        ("select-by-contig", "input", "sequence"),
-        ("select-by-coord", "input", "sequence"),
-        ("seq-dist", "input", "sequence"),
-        ("seq-dist", "reference", "reference"),
-        ("sort-contigs", "input", "sequence"),
-        ("transform-matrix", "input", "matrix"),
-        ("trim-contigs", "input", "sequence"),
+        ("gene_call", "input", "sequence"),
+        ("enum_report", "input", "sequence"),
+        ("extract_domains", "input", "sequence"),
+        ("extract_peptides", "input", "sequence"),
+        ("extract_unannotated", "input", "sequence"),
+        ("filter_domains", "input", "sequence"),
+        ("genbank_to_fasta", "input", "sequence"),
+        ("hmmer_build", "input", "msa"),
+        ("hmmer_compare", "input", "hmm"),
+        ("hmmer_compare", "reference", "reference"),
+        ("hmmer_report", "input", "hmm"),
+        ("hmmer_search", "input", "hmm"),
+        ("hmmer_search", "reference", "reference"),
+        ("hmmer_select", "input", "hmm"),
+        ("matrix_report", "input", "matrix"),
+        ("select_by_cds", "input", "sequence"),
+        ("select_by_contig", "input", "sequence"),
+        ("select_by_coord", "input", "sequence"),
+        ("seq_dist", "input", "sequence"),
+        ("seq_dist", "reference", "reference"),
+        ("sort_contigs", "input", "sequence"),
+        ("transform_matrix", "input", "matrix"),
+        ("trim_contigs", "input", "sequence"),
     ];
 
     /// `provenance::trace_source_sequences` walks the job graph by input role, and
@@ -1283,12 +1283,12 @@ ORIGIN
         (gb, tax)
     }
 
-    /// The enum-report dialog's column objects run through the CLI's `EnumConfig`
+    /// The enum_report dialog's column objects run through the CLI's `EnumConfig`
     /// -- parameterized columns and the taxonomy ones included -- and the job is
     /// recorded with its inputs and outputs.
     #[test]
     fn enum_report_runs_parameterized_and_taxonomy_columns() {
-        let (gb, tax) = enum_report_fixture("enum-report");
+        let (gb, tax) = enum_report_fixture("enum_report");
         let out = gb.with_file_name("out.tsv");
         let params = serde_json::json!({
             "input": [gb.to_string_lossy()],
@@ -1305,7 +1305,7 @@ ORIGIN
             ]
         });
         let root = gb.parent().unwrap().to_path_buf();
-        let r = run_in_process_job("enum-report", params, &root).unwrap();
+        let r = run_in_process_job("enum_report", params, &root).unwrap();
         assert_eq!(r.outputs, vec![out.to_string_lossy().into_owned()]);
         let text = std::fs::read_to_string(&out).unwrap();
         let mut lines = text.lines();
@@ -1336,14 +1336,14 @@ ORIGIN
     /// with what to do about it, not run into the CLI's `/tmp` default.
     #[test]
     fn enum_report_taxonomy_columns_need_a_taxonomy_database() {
-        let (gb, _tax) = enum_report_fixture("enum-report-notax");
+        let (gb, _tax) = enum_report_fixture("enum_report-notax");
         let params = serde_json::json!({
             "input": [gb.to_string_lossy()],
             "output": gb.with_file_name("out.tsv").to_string_lossy(),
             "columns": [{"type": "taxname_lineage"}]
         });
         let root = gb.parent().unwrap().to_path_buf();
-        let Err(JobFailure::Failed(err)) = run_in_process_job("enum-report", params, &root) else {
+        let Err(JobFailure::Failed(err)) = run_in_process_job("enum_report", params, &root) else {
             panic!("a taxonomy column with no taxonomy database must be refused");
         };
         assert!(err.contains("taxonomy database"), "{err}");
@@ -1373,7 +1373,7 @@ ORIGIN
             );
             // The two report tools build their output columns in the dialog, so
             // that field is the tool -- losing it leaves an empty report.
-            if matches!(tool.id.as_str(), "hmmer-report" | "enum-report") {
+            if matches!(tool.id.as_str(), "hmmer_report" | "enum_report") {
                 assert!(
                     roles.contains(&"columns"),
                     "{} lost its column builder",

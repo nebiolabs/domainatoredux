@@ -2,12 +2,12 @@
 
 ## "diamond not found" / "cdhit not found" / "usearch not found"
 
-`seq-dist`'s default algorithm (`diamond_us`) and `deduplicate`'s default (`cd-hit`) both
+`seq_dist`'s default algorithm (`diamond_us`) and `deduplicate_genbank`'s default (`cd-hit`) both
 call an external program. Either install it, or switch to an algorithm that needs nothing:
 
 ```bash
-domainator seq-dist -i in.fasta --dense out.hdf5 --algorithm hmmer
-domainator deduplicate -i in.fasta -o out.fasta --algorithm hash --id 1
+domainatoredux seq_dist -i in.fasta --dense out.hdf5 --algorithm hmmer
+domainatoredux deduplicate_genbank -i in.fasta -o out.fasta --algorithm hash --id 1
 ```
 
 The built-in `hmmer` algorithm is a complete HMMER3 implementation — slower than DIAMOND
@@ -19,22 +19,22 @@ To install the binaries, the easiest route is the **External tools** panel in th
 at it explicitly:
 
 ```bash
-domainator seq-dist ... --bin_path /opt/diamond/diamond      # per run
-export DOMAINATOR_DIAMOND=/opt/diamond/diamond               # for the session
+domainatoredux seq_dist ... --bin_path /opt/diamond/diamond      # per run
+export DOMAINATOREDUX_DIAMOND=/opt/diamond/diamond               # for the session
 ```
 
-The search order is `--bin_path` → `$DOMAINATOR_DIAMOND` / `$DOMAINATOR_CDHIT` /
-`$DOMAINATOR_USEARCH` → a bundled copy under `external/` → the bare name on `PATH`.
+The search order is `--bin_path` → `$DOMAINATOREDUX_DIAMOND` / `$DOMAINATOREDUX_CDHIT` /
+`$DOMAINATOREDUX_USEARCH` → a bundled copy under `external/` → the bare name on `PATH`.
 
 **On Windows you need a Windows binary.** A `diamond` built for Linux under WSL2 will not
 run from a native Windows build.
 
 ## "orphos not found", or orphos is too old
 
-`gene-call`, and `--gene_call` on `domainate` and `domain-search`, run
+`gene_call`, and `--gene_call` on `domainate` and `domain_search`, run
 [Orphos](https://github.com/FullHuman/orphos) (a Rust reimplementation of Prodigal) to
 predict genes. Install it from the **External tools** panel, or download a release and set
-`$DOMAINATOR_ORPHOS` (or pass `gene-call --bin_path`). It must be version 0.4.0 or newer:
+`$DOMAINATOREDUX_ORPHOS` (or pass `gene_call --bin_path`). It must be version 0.4.0 or newer:
 older releases ignored the genetic-code flag, so Domainator refuses them rather than
 calling genes with the wrong table.
 
@@ -43,13 +43,13 @@ yourself instead:
 
 ```bash
 cargo install orphos-cli
-export DOMAINATOR_ORPHOS=~/.cargo/bin/orphos
+export DOMAINATOREDUX_ORPHOS=~/.cargo/bin/orphos
 ```
 
 You don't need Orphos if your contigs already carry CDS annotations, for example
 GenBank files downloaded from NCBI.
 
-## `deduplicate` with cd-hit complains about the molecule type
+## `deduplicate_genbank` with cd-hit complains about the molecule type
 
 cd-hit ships as two programs: `cd-hit` for protein and `cd-hit-est` for nucleotide.
 Domainator picks based on the first record's molecule type. If you point `--bin_path` at
@@ -62,23 +62,23 @@ its first argument) and this resolves itself.
 
 ## "HTML output is not supported in this port"
 
-`enum-report --html` and `hmmer-report --html` are deliberately not implemented, and error
+`enum_report --html` and `hmmer_report --html` are deliberately not implemented, and error
 rather than silently writing something else. Use TSV (`-o`) or JSON (`--json`):
 
 ```bash
-domainator enum-report -i in.gb --domains --length -o table.tsv
+domainatoredux enum_report -i in.gb --domains --length -o table.tsv
 ```
 
-The same applies to `matrix-report` and `summary-report`. For the visual version, the
+The same applies to `matrix_report` and `summary_report`. For the visual version, the
 [desktop app](gui.md#viewers) has live Enum Report, Summary, and Matrix Report tabs.
 
 ## "sparse distance matrices not implemented"
 
-`transform-matrix --mode score_dist` cannot write `--sparse`, because a distance matrix's
+`transform_matrix --mode score_dist` cannot write `--sparse`, because a distance matrix's
 zeros are meaningful and the sparse representation cannot express them. Write it dense:
 
 ```bash
-domainator transform-matrix -i in.hdf5 --dense out.hdf5 --mode score_dist
+domainatoredux transform_matrix -i in.hdf5 --dense out.hdf5 --mode score_dist
 ```
 
 ## A `.gz` file is rejected
@@ -88,7 +88,7 @@ Only **BGZF** (block gzip) is accepted. BGZF files are readable by any gzip read
 recompressing costs you nothing:
 
 ```bash
-domainator format-db -i sequences.fasta --output_dir seq_db --compress --index
+domainatoredux format_db -i sequences.fasta --output_dir seq_db --compress --index
 ```
 
 See [formatted databases](file-formats.md#formatted-databases).
@@ -104,14 +104,14 @@ Indexes record the size and modification time of the file they describe, and a m
 an error rather than a warning, because a stale index returns wrong records. Rebuild it:
 
 ```bash
-domainator format-db -i sequences.fasta --output_dir seq_db --index --force
+domainatoredux format_db -i sequences.fasta --output_dir seq_db --index --force
 ```
 
 ## `missing required 'input' (-i / --input or config)`
 
 This is the "you forgot an argument" error. It is reported by the tool rather than as a
 usage message because the value could legitimately have come from a `--config` file, so it
-cannot be checked until after the merge. `domainator <tool> --help` lists what is needed.
+cannot be checked until after the merge. `domainatoredux <tool> --help` lists what is needed.
 
 ## A boolean in my config file won't turn off
 
@@ -127,7 +127,7 @@ E-values and bit scores can differ in the last digits. If you need numerically i
 results to a published HMMER run, run HMMER itself and use
 [`domainate`](cli-reference.md#domainate) on the annotated output.
 
-Similarly, profiles from [`hmmer-build`](cli-reference.md#hmmer-build) are valid and
+Similarly, profiles from [`hmmer_build`](cli-reference.md#hmmer_build) are valid and
 re-readable by pyhmmer but their emissions are not byte-identical to `hmmbuild`'s.
 
 ## A piped command fails partway through a large input
@@ -136,7 +136,7 @@ Piped input is spilled to a temporary file first, so a read-only or very small `
 will fail on large inputs. Point it somewhere with room:
 
 ```bash
-TMPDIR=/scratch/tmp domainator select-by-contig --domains Cas9 < big.gb > hits.gb
+TMPDIR=/scratch/tmp domainatoredux select_by_contig --domains Cas9 < big.gb > hits.gb
 ```
 
 ## The run is slower than expected
@@ -148,15 +148,15 @@ cargo build --release -p domainator-cli
 ```
 
 Then check threading. `--cpu 0` (the default) uses all cores, but only `domainate`,
-`domain-search`, `deduplicate`, `seq-dist`, `compare-contigs`, `hmmer-compare` and
-`hmmer-search` are threaded. For large all-vs-all comparisons, DIAMOND is far faster than
+`domain_search`, `deduplicate_genbank`, `seq_dist`, `compare_contigs`, `hmmer_compare` and
+`hmmer_search` are threaded. For large all-vs-all comparisons, DIAMOND is far faster than
 the built-in `hmmer` algorithm.
 
 If a network is too dense to lay out, prune it rather than raising the cutoff until it
 fragments:
 
 ```bash
-domainator transform-matrix -i dist.hdf5 --dense pruned.hdf5 --mst_knn 5
+domainatoredux transform_matrix -i dist.hdf5 --dense pruned.hdf5 --mst_knn 5
 ```
 
 ## The desktop app won't launch (macOS / Linux)
@@ -164,20 +164,20 @@ domainator transform-matrix -i dist.hdf5 --dense pruned.hdf5 --mst_knn 5
 The bundles are unsigned. On macOS, open it once with right-click → Open, or:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Domainator.app
+xattr -dr com.apple.quarantine /Applications/Domainatoredux.app
 ```
 
 ## A job in the app failed and the message is cut short
 
 The Jobs panel shows one line. The tool's complete output, including the full error, is
-in `.domainator/jobs/<job>/worker.log` inside the workspace, beside the
+in `.domainatoredux/jobs/<job>/worker.log` inside the workspace, beside the
 `worker-config.json` it ran with. You can rerun that exact job from a terminal with
-`domainator <tool> --config .domainator/jobs/<job>/worker-config.json`.
+`domainatoredux <tool> --config .domainatoredux/jobs/<job>/worker-config.json`.
 
 ## Still stuck
 
 Open an issue at
 <https://github.com/nebiolabs/domainatoredux/issues>. From the desktop app, **Help →
 About** has a copyable diagnostics blob (versions, platform, installed external tools) —
-please include it. For the command line, include `domainator --version` and the full
+please include it. For the command line, include `domainatoredux --version` and the full
 command you ran.

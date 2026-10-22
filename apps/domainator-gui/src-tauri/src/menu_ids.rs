@@ -15,7 +15,7 @@
 //!
 //! * **static** — `^[a-z]+\.[a-z0-9_]+$`, e.g. `file.open_workspace`. A closed set,
 //!   pinned to the frontend by [`tests::every_menu_id_is_known_to_the_frontend`].
-//! * **parameterized** — `<prefix>:<arg>`, e.g. `tools.run:domain-search`,
+//! * **parameterized** — `<prefix>:<arg>`, e.g. `tools.run:domain_search`,
 //!   `file.open_recent:3`. `:` is reserved as the separator
 //!   and therefore forbidden in a static id.
 
@@ -160,7 +160,7 @@ pub const COMMANDS: &[MenuCommandSpec] = &[
         None,
         Needs::Nothing,
     ),
-    cmd("help.about", "About Domainator", None, Needs::Nothing),
+    cmd("help.about", "About Domainatoredux", None, Needs::Nothing),
     cmd("help.project", "Project on GitHub", None, Needs::Nothing),
     cmd("help.issues", "Report an Issue", None, Needs::Nothing),
 ];
@@ -725,9 +725,9 @@ mod tests {
 
     #[test]
     fn parsing_splits_only_on_the_first_colon() {
-        let m = MenuCommand::parse("tools.run:domain-search");
+        let m = MenuCommand::parse("tools.run:domain_search");
         assert_eq!(m.id, "tools.run");
-        assert_eq!(m.arg.as_deref(), Some("domain-search"));
+        assert_eq!(m.arg.as_deref(), Some("domain_search"));
 
         let plain = MenuCommand::parse("help.about");
         assert_eq!(plain.id, "help.about");

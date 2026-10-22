@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A from-scratch **pure-Rust** rewrite of `domainator`, a Python bioinformatics suite for protein-domain / genome-neighborhood analysis and building sequence similarity networks (SSNs). Goals (see `README.md`, now a user-facing front page): cross-platform (incl. Windows), a single `domainator <tool> [opts]` executable, a Tauri GUI (**built** — `apps/domainator-gui/`), and easier agentic integration.
+A from-scratch **pure-Rust** rewrite of `domainator`, a Python bioinformatics suite for protein-domain / genome-neighborhood analysis and building sequence similarity networks (SSNs). Goals (see `README.md`, now a user-facing front page): cross-platform (incl. Windows), a single `domainatoredux <tool> [opts]` executable, a Tauri GUI (**built** — `apps/domainator-gui/`), and easier agentic integration.
 
 **Hard requirement:** on-disk compatibility with files produced by the original Python tool — GenBank, HDF5 matrices, and formatted databases (shards / BGZF / `.didx` indexes). Compatibility is **semantic** (re-readable by the original, equal under the Python suite's comparators), *not* byte-identical — see the `preserve_order` note under Architecture for why JSON is compared parsed.
 
@@ -16,7 +16,7 @@ cargo build --release            # optimized (lto); use for any timing/benchmark
 cargo build --workspace 2>&1 | grep -c warning:   # keep this at 0
 cargo clippy --workspace --all-targets -- -D warnings   # also keep this clean
 cargo fmt --all                                         # CI runs --check
-./target/debug/domainator <tool> [opts]           # run a tool
+./target/debug/domainatoredux <tool> [opts]           # run a tool
 ```
 
 **Zero warnings means all of them**: `rustc`, `cargo clippy --all-targets -- -D warnings`,
@@ -34,21 +34,22 @@ codebase, silence it with a narrow `#[allow(...)]` **plus a one-line reason** (t
 existing ones cover Tauri IPC signatures, parity-mirroring parameter lists, and HMMER's
 1-based node indices); never add a crate-wide allow.
 
-**35 tools** (`domainator <tool>`), grouped: I/O and dev (`inspect`, `convert`,
-`genbank-to-fasta`, `format-db`, `schema <tool>`); annotation and search (`domainate`,
-`domain-search`, `gene-call`, `filter-domains`); selection and extraction (`select-by-cds`,
-`select-by-contig`, `select-by-coord`, `extract-domains`, `extract-peptides`,
-`extract-unannotated`, `trim-contigs`, `sort-contigs`, `clean-sequences`,
-`deduplicate`); color (`color-genbank`, `color-table-to-legend`); matrices and networks
-(`seq-dist`, `compare-contigs`, `transform-matrix`, `build-ssn`, `build-ssn-viewer`,
-`matrix-report`, `ssn-navigator`); reports (`enum-report`, `summary-report`); and the
-HMM family (`hmmer-compare`, `hmmer-report`, `hmmer-select`, `hmmer-build`,
-`hmmer-search`). `docs/porting-status.md` holds the per-tool coverage ledger (keyed by upstream Python
+**35 tools** (`domainatoredux <tool>`), grouped: I/O and dev (`inspect`, `convert`,
+`genbank_to_fasta`, `format_db`, `schema <tool>`); annotation and search (`domainate`,
+`domain_search`, `gene_call`, `filter_domains`); selection and extraction (`select_by_cds`,
+`select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`,
+`extract_unannotated`, `trim_contigs`, `sort_contigs`, `clean_sequences`,
+`deduplicate_genbank`); color (`color_genbank`, `color_table_to_legend`); matrices and networks
+(`seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer`,
+`matrix_report`, `ssn_navigator`); reports (`enum_report`, `summary_report`); and the
+HMM family (`hmmer_compare`, `hmmer_report`, `hmmer_select`, `hmmer_build`,
+`hmmer_search`). `docs/porting-status.md` holds the per-tool coverage ledger (keyed by upstream Python
 filename), moved there out of `README.md` when the docs became user-facing.
 
 CLI flags use the Python suite's **underscore** names (e.g. `--max_overlap`,
 `--dense_text`, `--whole_contig`, `-Z`/`--z`), set explicitly via clap `long = "..."` —
-don't assume clap's kebab default. (`enum-report` and `hmmer-report` parse their args by
+don't assume clap's kebab default. Subcommands are snake_case too (`rename_all` on the
+`Command` enum), equal to upstream's tool names. (`enum_report` and `hmmer_report` parse their args by
 hand in the CLI because column order follows flag order, which clap derive does not
 preserve.)
 
@@ -56,7 +57,7 @@ preserve.)
 `config.rs` in the CLI): every tool accepts `--config <file.json|.yml>` (a **native Rust**
 serde schema, *not* byte-compatible with Python's jsonargparse files) and `--print_config`
 (dump resolved params as YAML). Merge order is config = base, CLI flags override (scalars
-replace, lists replace when non-empty, bools OR, report columns append). `domainator
+replace, lists replace when non-empty, bools OR, report columns append). `domainatoredux
 schema <tool>` emits a draft-07 JSON Schema. `resolve.rs` maps each `*Config` to the
 core's `*Options` and is shared by the CLI **and** the GUI, so the two cannot drift.
 
@@ -65,9 +66,9 @@ To make merge correct, **defaulted scalar and required-path flags are `Option` i
 validated post-merge so they can come from the config file).
 
 **Agent-facing `--json`** (upstream's documented contract, see its `AGENTS.md`):
-`enum-report` and `hmmer-report` write **streaming NDJSON**, one compact object per row;
-`matrix-report` and `summary-report` write **one JSON object** with a stable shape;
-`ssn-navigator` always writes JSON. In every case `--json` takes a path (`-` = stdout) and
+`enum_report` and `hmmer_report` write **streaming NDJSON**, one compact object per row;
+`matrix_report` and `summary_report` write **one JSON object** with a stable shape;
+`ssn_navigator` always writes JSON. In every case `--json` takes a path (`-` = stdout) and
 is **independent of `-o`**, so a run can produce TSV/text and JSON together.
 
 **Versioning** (`docs/development.md`, "Versioning and releases"): our own SemVer line is
@@ -94,7 +95,7 @@ labels and status strings alike (`color`, `behavior`, `neighbor`, `center`, `lab
 now reads as a typo; match the existing words when you add code or docs. Three places are
 exempt because they are not ours to edit: the generated
 `crates/domainator-core/assets/ssn_viewer_shell.html`, the synced fixtures under
-`test/data/`, and `vendor/hdf5-pure/`. Upstream Python names (`--color_by`, `color-genbank`)
+`test/data/`, and `vendor/hdf5-pure/`. Upstream Python names (`--color_by`, `color_genbank`)
 were already American and are unaffected.
 
 Dev/diagnostic examples live in `crates/domainator-core/examples/` (`offsets`, `didx_tool`, `shards_tool`, `matrix_probe`, ...): `cargo run -p domainator-core --example matrix_probe`.
@@ -112,12 +113,12 @@ only one possible.** Parity can only ask "is this the same as Python"; everythin
 database registry, HMM logo, contig editor, summary dashboard), and the Tauri command layer.
 When adding to any of those, a test is the whole safety net. Two guards there earn their
 keep in particular:
-- **`every_schema_matches_its_config_struct`** (`domainator-config`) — `domainator schema
+- **`every_schema_matches_its_config_struct`** (`domainator-config`) — `domainatoredux schema
   <tool>` is the documented agent interface *and* what the GUI renders its tool dialogs
   from (`cmd_tools::tool_schema`), while the config struct is what actually deserializes.
   They are hand-written in different places and drift in both directions: a field missing
   from the schema is a flag no agent and no GUI dialog can discover (this is how
-  `hmmer-build --window_length` and `format-db --log` went missing), and a property the
+  `hmmer_build --window_length` and `format_db --log` went missing), and a property the
   struct lacks is worse, because every config struct is `deny_unknown_fields`, so a config
   written to match the schema is *rejected*. Add a tool to `every_tool()` when you add a tool.
 - **`merge_cli` coverage** — a struct field the merge forgets is a CLI flag that silently
@@ -126,7 +127,7 @@ keep in particular:
   registry, the CLI's subcommands and the schema emitter are three hand-maintained lists in
   three places. A Tools-menu job runs `<tool> --config <dialog params>` through
   `domainator_cli::run` in a **worker process** (a copy of the GUI executable started with
-  `--domainator-worker`, `src-tauri/src/worker.rs`), so there is no per-tool GUI runner to
+  `--domainatoredux-worker`, `src-tauri/src/worker.rs`), so there is no per-tool GUI runner to
   drift from the CLI. A menu entry the CLI has no subcommand for fails only when the user
   presses Run; a dialog field that is not a config property is rejected outright by
   `deny_unknown_fields` (`every_tools_dialog_params_parse_as_its_cli_config` feeds every
@@ -226,7 +227,7 @@ WASM app.
 
 - **`crates/domainator-core/`** — the data model, all I/O, and all tool logic as library functions (GUI-reusable; mirrors the Python convention that every tool is also a library function). Also holds `app_support/` — the GUI-facing seam (workspace file classification, provenance/job DAG, contig view + edit, HMM logo, summary stats).
 - **`crates/domainator-config/`** — per-tool serde config structs, `merge_cli`, `--print_config`, the draft-07 `schema <tool>` emitter, and `resolve.rs` (config → `*Options`), shared by the CLI and the GUI.
-- **`crates/domainator-cli/`** — thin clap front-end; arg parsing + I/O wiring only, calls into core. Binary name `domainator`.
+- **`crates/domainator-cli/`** — thin clap front-end; arg parsing + I/O wiring only, calls into core. Binary name `domainatoredux` (upstream's is `domainator`; the subcommand names are identical).
 - **`apps/domainator-gui/`** — the Tauri v2 + Svelte 5 desktop app: schema-driven tool dialogs, a workspace/job model, and a dozen viewers (contig, SSN, matrix report, enum report, HMM logo, summary dashboard, …). Its Rust side is a thin `#[tauri::command]` layer over `app_support`.
 - **`apps/genbank-summary/`** and **`wasm_apps/genbank-summary/`** — a small standalone Tauri app and its browser/WASM twin.
 
@@ -239,8 +240,8 @@ Core module map:
 - `io/` — own GenBank `parse`/`reader`/`writer`/`offsets`, `fasta`, `bgzf` (random access + virtual offsets), `didx` (`.didx` index), `shards`, `partition`.
 - `search/` — `hmmer` (hmmsearch for domainate), `seq_compare` (phmmer/hmmsearch scoring), `hmm_compare` (profile-vs-profile Viterbi), `results` (`SearchResult` → GenBank feature).
 - `matrix/` — `DataMatrix` (dense/CSR) + `hdf5_io` (read+write; symmetry inferred from `COL_LABELS` **presence** on read — the actual on-disk contract, robust even if the `SYMMETRIC_LABELS` attr is absent. The vendored `hdf5-pure` was also patched to decode enum attributes so h5py's numpy-bool `SYMMETRIC_LABELS` is no longer silently dropped — see `vendor/hdf5-pure/CHANGELOG.md`), `text` (TSV read+write), `transform` (`--mode`s + `apply_lower_bound`), `mst_knn` (MST∪kNN pruner; shares `UnionFind` and `mst_knn_kept` with `ssn`), `cytoscape` (XGMML writer), and `ssn` (the SSN engine: `MaxTree` + `component_size_summary_by_threshold`/merge events + `build_mst_component_hierarchy` + `edge_scores_desc`/`mst_knn_edge_list` + `merge_event_moving_sum`/`filter_merge_event_rows_binned` (with the viewer's optional zoom `window` + `pinned_threshold`: the window narrows the top-N pool only, never the band back-fill)/`threshold_slider_stops` (`with_threshold_index` — only `matrix_report` has threshold tables to index; `MaxTree::from_mst_edges` rebuilds a tree from a bundle's stored merge order and has none)/`floor_threshold_value`, mirroring `ssn_edges`/`ssn_hierarchy`). **Threshold tables carry one row per distinct threshold**, and each row describes exactly the graph `build_ssn --lb T` keeps — edges scoring *strictly above* T — with a trailing synthetic `threshold = 0` row when every score is positive. Keying rows by MST edge position instead was upstream bug `9ab625f`. `read_matrix(path)` sniffs HDF5-vs-TSV by extension like Python's `DataMatrix.from_file`. MST edge ordering matches the Python **dense** `sorted_undirected_edges` fast path (score desc, ties by row-major index desc).
-- `tools/` — `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `hmmer_compare`, `transform_matrix` (mode/lb/mst_knn + dense↔sparse conversion), `build_ssn` (XGMML SSN: default/`--mst`/`--mst_knn` edges, connected-component clustering, TSV metadata, coloring), `build_ssn_viewer` (the O(n) gzip-JSON **`.dsnv`** bundle, schema version 6 = nodes + MST + hierarchy + `merge_impact_metric` and **nothing else**: the split-event series, its moving sum and the slider stops are a pure function of those, so readers derive them — `ssn_bundle`'s `merge_event_rows`/`merge_event_series`/`moving_sum`/`slider_stops` and the shell's JS ports — rather than inherit a cap chosen at build time, which is why `--max_merge_events` lives on `ssn-navigator`/`matrix-report` and the viewer's "Split events" box, not on `build-ssn-viewer`. v3/v4/v5 files still load, and their stored derived keys are deliberately ignored; `.ssnv` is the pre-0.11 spelling, still read but never written, plus the vendored HTML shell in `crates/domainator-core/assets/ssn_viewer_shell.html` filled via two string tokens — that shell is **generated** from Python's `ssn_viewer_html.py` by `scripts/regen_ssn_viewer_shell.py`, never hand-edited; see "Staying in sync" below), `matrix_report` (text report + the agent `--json` contract, plus a separate `to_viewer_json` for the GUI tab that is deliberately *not* parity-locked; `--include_mst_knn`/HTML deferred), `summary_report` (data path only; HTML deferred), `ssn_bundle` + `ssn_navigator` (read-only `.dsnv` navigation), `neighborhood` (the `select_by_cds` geometry, shared by `domain_search`'s hit path and the standalone `select_by_cds`), `select_by_contig`, `select_by_cds`, `enum_report`, and `select_common` (shared `DomainatorCds.list_from_contig`, `BooleanEvaluator`, `get_sources`/`get_non_domainator_features`, name-list parsing, the `--databases` rollup filter). `seq_dist`'s `diamond_*` algorithms shell out to the external **`diamond`** binary: build a db from the reference, then `blastp --outfmt 6 qseqid sseqid bitscore --algo 0 --max-hsps 1`, with the hit table streamed line-by-line into the per-cell max map (never a temp output file). The binary is located via `$DOMAINATOR_DIAMOND`/`$DIAMOND`, then a bundled `external/diamond/diamond` (searched upward from the exe, then cwd), then bare `diamond` on `PATH`. The normalized query/db FASTA + db live in a self-cleaning temp dir.
-- **External binaries** are the only non-pure-Rust runtime dependencies, all optional and all driven as subprocesses through `tools/external.rs`'s `find_binary` (env var → bundled `external/<dir>/<name>` → `PATH`): **`diamond`** for `seq_dist` and `deduplicate`, **`cdhit`** and **`usearch`** for `deduplicate`, and **`orphos`** (a Rust Prodigal) for gene calling — `tools/gene_call.rs`, behind the port-only `gene-call` tool and `domainate`/`domain_search --gene_call`. Their locator identity lives in `deduplicate_genbank`'s and `gene_call`'s `*_BIN_NAME`/`*_ENV_VAR` constants, which the GUI's External tools registry is pinned to by a test. cd-hit, usearch and Orphos are GPL: driving them across a process boundary, downloaded at runtime and never bundled, is what keeps this project's licensing unaffected — do not link or vendor any of them (that includes the `orphos-core` crate and every other Prodigal implementation). Orphos is read only through its GFF (`-f gff`; its GenBank output lacks strand and partial markers, it has no protein output, `-t` is a no-op), so `gene_call.rs` rebuilds what `prodigal_CDS_annotate` derives from a pyrodigal gene: edge-extended partial locations with `/codon_start`, the translation (start codon → `M`, trailing `*`, in the table each sequence's model reports — meta mode can pick table 4), and circular contigs' origin-crossing genes from a second "origin window" sequence in the same run. The `--gene_call` parity rows are `extra:` invocations and need `$DOMAINATOR_ORPHOS` set, or the sweep fails on them. `deduplicate`'s cd-hit backend targets the **`cdhit` Rust port**, one multiplexer binary whose first argument is the program name; `cdhit_command` runs a binary already *called* `cd-hit`/`cd-hit-est` directly instead, and when that name cannot serve the request (protein `cd-hit` on nucleotide input) it prefers the sibling executable and errors rather than silently clustering DNA as protein. `cd-hit` switches to `cd-hit-est` on the **first record's** molecule type, `-n` is derived from `--id` via upstream's two word-size tables, and `-d 0` is load-bearing: cluster membership is read back out of the `.clstr`, whose names it stops cd-hit truncating.
+- `tools/` — `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `hmmer_compare`, `transform_matrix` (mode/lb/mst_knn + dense↔sparse conversion), `build_ssn` (XGMML SSN: default/`--mst`/`--mst_knn` edges, connected-component clustering, TSV metadata, coloring), `build_ssn_viewer` (the O(n) gzip-JSON **`.dsnv`** bundle, schema version 6 = nodes + MST + hierarchy + `merge_impact_metric` and **nothing else**: the split-event series, its moving sum and the slider stops are a pure function of those, so readers derive them — `ssn_bundle`'s `merge_event_rows`/`merge_event_series`/`moving_sum`/`slider_stops` and the shell's JS ports — rather than inherit a cap chosen at build time, which is why `--max_merge_events` lives on `ssn_navigator`/`matrix_report` and the viewer's "Split events" box, not on `build_ssn_viewer`. v3/v4/v5 files still load, and their stored derived keys are deliberately ignored; `.ssnv` is the pre-0.11 spelling, still read but never written, plus the vendored HTML shell in `crates/domainator-core/assets/ssn_viewer_shell.html` filled via two string tokens — that shell is **generated** from Python's `ssn_viewer_html.py` by `scripts/regen_ssn_viewer_shell.py`, never hand-edited; see "Staying in sync" below), `matrix_report` (text report + the agent `--json` contract, plus a separate `to_viewer_json` for the GUI tab that is deliberately *not* parity-locked; `--include_mst_knn`/HTML deferred), `summary_report` (data path only; HTML deferred), `ssn_bundle` + `ssn_navigator` (read-only `.dsnv` navigation), `neighborhood` (the `select_by_cds` geometry, shared by `domain_search`'s hit path and the standalone `select_by_cds`), `select_by_contig`, `select_by_cds`, `enum_report`, and `select_common` (shared `DomainatorCds.list_from_contig`, `BooleanEvaluator`, `get_sources`/`get_non_domainator_features`, name-list parsing, the `--databases` rollup filter). `seq_dist`'s `diamond_*` algorithms shell out to the external **`diamond`** binary: build a db from the reference, then `blastp --outfmt 6 qseqid sseqid bitscore --algo 0 --max-hsps 1`, with the hit table streamed line-by-line into the per-cell max map (never a temp output file). The binary is located via `$DOMAINATOREDUX_DIAMOND`/`$DIAMOND`, then a bundled `external/diamond/diamond` (searched upward from the exe, then cwd), then bare `diamond` on `PATH`. The normalized query/db FASTA + db live in a self-cleaning temp dir.
+- **External binaries** are the only non-pure-Rust runtime dependencies, all optional and all driven as subprocesses through `tools/external.rs`'s `find_binary` (env var → bundled `external/<dir>/<name>` → `PATH`): **`diamond`** for `seq_dist` and `deduplicate_genbank`, **`cdhit`** and **`usearch`** for `deduplicate_genbank`, and **`orphos`** (a Rust Prodigal) for gene calling — `tools/gene_call.rs`, behind the port-only `gene_call` tool and `domainate`/`domain_search --gene_call`. Their locator identity lives in `deduplicate_genbank`'s and `gene_call`'s `*_BIN_NAME`/`*_ENV_VAR` constants, which the GUI's External tools registry is pinned to by a test. cd-hit, usearch and Orphos are GPL: driving them across a process boundary, downloaded at runtime and never bundled, is what keeps this project's licensing unaffected — do not link or vendor any of them (that includes the `orphos-core` crate and every other Prodigal implementation). Orphos is read only through its GFF (`-f gff`; its GenBank output lacks strand and partial markers, it has no protein output, `-t` is a no-op), so `gene_call.rs` rebuilds what `prodigal_CDS_annotate` derives from a pyrodigal gene: edge-extended partial locations with `/codon_start`, the translation (start codon → `M`, trailing `*`, in the table each sequence's model reports — meta mode can pick table 4), and circular contigs' origin-crossing genes from a second "origin window" sequence in the same run. The `--gene_call` parity rows are `extra:` invocations and need `$DOMAINATOREDUX_ORPHOS` set, or the sweep fails on them. `deduplicate_genbank`'s cd-hit backend targets the **`cdhit` Rust port**, one multiplexer binary whose first argument is the program name; `cdhit_command` runs a binary already *called* `cd-hit`/`cd-hit-est` directly instead, and when that name cannot serve the request (protein `cd-hit` on nucleotide input) it prefers the sibling executable and errors rather than silently clustering DNA as protein. `cd-hit` switches to `cd-hit-est` on the **first record's** molecule type, `-n` is derived from `--id` via upstream's two word-size tables, and `-d 0` is load-bearing: cluster membership is read back out of the `.clstr`, whose names it stops cd-hit truncating.
 - `parallel.rs` — `with_threads(cpu, f)` wrapper (`cpu == 0` → all cores). Tools parallelize with rayon over their natural unit (profiles / references / partitions / rows); output is **deterministic** regardless of thread count (results funnel through order-independent maps/sorts).
 
 Key cross-cutting invariants (these gate parity — grep the modules for details before changing):
@@ -256,7 +257,7 @@ Key cross-cutting invariants (these gate parity — grep the modules for details
   `HmmOutput`/`write_hmm_output`: `.gz` is **plain gzip**, `.bgz`/`.bgzf` is **refused**
   (HMMER cannot open BGZF), and a failed run removes its partial file. Database names use
   `io::db_name_from_path`, so `refs.hmm.gz` labels annotations `refs`, not `refs.hmm`.
-- **HMM writer** (`search/hmm_write.rs`, not the `hmmer-pure-rs` one): `HMMER3/f`, a nine-column model-matrix grid, and the `GA`/`TC`/`NC` Pfam cutoffs — the crate's writer drops those, which breaks `hmmsearch --cut_ga` downstream. Its reader also mis-parses them (Pfam's trailing `;`), so read profiles through `search/hmm_read.rs`. `hmmer-select` reproducing its input byte for byte is the gate. **All five annotation columns are written on every match line**, `-` for the ones a profile lacks — MAP included, whose column is present even under `MAP no`: C's reader consumes that token unconditionally and only *stores* it when the flag is set, so omitting it shifts CONS/RF/MM/CS left and makes the file unreadable. Every fixture is `MAP yes`, so no parity gate covers this; the `hmmer_select` round-trip tests are the guard.
+- **HMM writer** (`search/hmm_write.rs`, not the `hmmer-pure-rs` one): `HMMER3/f`, a nine-column model-matrix grid, and the `GA`/`TC`/`NC` Pfam cutoffs — the crate's writer drops those, which breaks `hmmsearch --cut_ga` downstream. Its reader also mis-parses them (Pfam's trailing `;`), so read profiles through `search/hmm_read.rs`. `hmmer_select` reproducing its input byte for byte is the gate. **All five annotation columns are written on every match line**, `-` for the ones a profile lacks — MAP included, whose column is present even under `MAP no`: C's reader consumes that token unconditionally and only *stores* it when the flag is set, so omitting it shifts CONS/RF/MM/CS left and makes the file unreadable. Every fixture is `MAP yes`, so no parity gate covers this; the `hmmer_select` round-trip tests are the guard.
 - **Number formatting** (`%.1e` via a custom `py_sci`, `%.1f`, NumPy `str(float64)` for TSV) is replicated to match Python output exactly.
 - **`.didx` / shard resolution / BGZF offsets** are hard on-disk contracts (`io/didx.rs`, `io/shards.rs`, `io/bgzf.rs`): `.didx` is byte-compatible; staleness is rejected via size+mtime_ns; both unsharded + shards present is an error (refuse to guess).
 - **Parser must never reject a record** (handles odd LOCUS layouts, missing molecule unit, `*` stop codons).
@@ -266,7 +267,7 @@ Key cross-cutting invariants (these gate parity — grep the modules for details
 - **Coordinate suffixes come from the *human-readable* stranded properties.** `stranded_start_human_readable` reads `parts[0]`, `stranded_end_human_readable` reads `parts[-1]` (`Loc::stranded_{start,end}_hr`), and the `_start:end` label on a sliced record is `SliceLoc::name_label` — **not** a hand-rolled `start + 1 : end`, which is the forward rule and is off by one in each direction on a reverse slice. Both rules only diverge from the naive version on reverse or multi-part (origin-crossing) locations, which is why they survived so long. Upstream fixed both in `2de50d8`/`f0741bc`; the port follows.
 - **Slicing across the origin remaps into *every* overlapping slice part, then merges.** When a window wraps a circular contig the slice has two parts, and one feature part can reach into both; each match contributes a piece (Python's `overlap[i]` is a set, not a first match). The pieces then go through `merge_touching_parts` — Python's `CompoundLocation.merge_parts` — which coalesces same-strand parts that touch *inclusively*, so the halves a junction cut (`[0,130)` + `[130,840)`) become one range instead of a spurious `join`. Merging is gated on the original operator (which is kept, not forced to `join`), so `order` locations keep their parts apart; pieces are listed in order *along the feature* and never sorted. There is **one** slicer, `neighborhood::slice_features` — every tool reaches it through `slice_record`, `slice_linear_features` or `extract_common::slice_from_location`; do not grow a second. Note `helpers.compare_seqfiles` compares feature *count* and *qualifiers* but **not coordinates or types**, so a parity gate alone will not catch a regression here — the `slice_record` tests are the guard.
 - **A slice truncates what it cuts and marks the cut ends** (upstream `8bf3c42`, `slice_record_from_location` with `truncate_features=True`, now the only mode). A feature overlapping the slice is kept, truncated; an end the slice really cuts gets `<`/`>` (`before`/`after`), except on `source`; an uncut end keeps its original marker; a cut `Domainator`/`Domain_Search` is **dropped**. "Really cut" is decided on intervals along the feature, so one split across a rotated origin is not cut and gets no markers. A cut nucleotide CDS gets a recomputed `/codon_start` (written when ≠1 or already present) and a `/translation` trimmed to the fully kept codons, or removed if the kept part is not contiguous. `merge_touching_parts` keeps the markers of the ends it takes. `before`/`after` always mean the **low/high coordinate**, so a minus-strand 5' end is `after`; a reverse slice part swaps them. Fragment status and `--partial` live in `seq/partial.rs`. Gene-caller `/partial="10"` codes are turned into markers (and removed) **on read**, at the end of `parse_record` (upstream `0a8ba4c`), so no tool ever sees one.
-- **`/codon_start` is the reading frame everywhere**: protein hits are placed at `codon_offset + start*3` (`domainate::overlay`, which returns `None` where Python's `overlay` raises), missing translations start at that offset, and `extract-peptides` maps positions as `max(0, (p - offset) // 3)`.
+- **`/codon_start` is the reading frame everywhere**: protein hits are placed at `codon_offset + start*3` (`domainate::overlay`, which returns `None` where Python's `overlay` raises), missing translations start at that offset, and `extract_peptides` maps positions as `max(0, (p - offset) // 3)`.
 - **`domainator_<db>` rollup is regenerated by the writer** (`write_record`) from the CDS's `Domainator` features *in current feature order*, then features are sorted by `location.start` for output — mirroring `utils.write_genbank` (rollup built before its sort). `slice_record` therefore must **not** pre-sort its features (it preserves the input order so the rollup ordering matches), and `domainate` appends domains in score-descending order. This is why pass-through tools (`select_by_*`) reproduce the original's rollup string.
 
 ### Vendored `hdf5-pure` (patched dependency)
@@ -303,7 +304,7 @@ See `UPSTREAM.md` for the full workflow. Key points:
 
 ## Scope / status
 
-The approved plan is at `/home/sean/.claude/plans/make-a-plan-for-kind-brooks.md`. The prioritized SSN pipeline (README steps 1–3) is complete and Python-verified: GenBank/FASTA I/O, `domainate`, `domain_search` (shards/BGZF/`.didx`, `-Z 0`, neighborhood extraction for linear **and** circular contigs, `--translate`, strand filter, overlap dedup), `seq_dist` (DIAMOND `diamond_*` via the external binary — now the default `--algorithm`, exact-parity-verified against the Python tool when both use the same diamond version; plus hmmsearch / phmmer / hmmer_compare + dense/sparse/TSV), `compare_contigs` (JI/AI), the standalone `hmmer-compare` (with alignments), and rayon multithreading.
+The approved plan is at `/home/sean/.claude/plans/make-a-plan-for-kind-brooks.md`. The prioritized SSN pipeline (README steps 1–3) is complete and Python-verified: GenBank/FASTA I/O, `domainate`, `domain_search` (shards/BGZF/`.didx`, `-Z 0`, neighborhood extraction for linear **and** circular contigs, `--translate`, strand filter, overlap dedup), `seq_dist` (DIAMOND `diamond_*` via the external binary — now the default `--algorithm`, exact-parity-verified against the Python tool when both use the same diamond version; plus hmmsearch / phmmer / hmmer_compare + dense/sparse/TSV), `compare_contigs` (JI/AI), the standalone `hmmer_compare` (with alignments), and rayon multithreading.
 
 Also complete and Python-verified: `select_by_contig`, `select_by_cds` (standalone CDS selection by name/domain/`--domain_expr`/`--search_hits`/`--unannotated`, neighborhood extraction reusing `neighborhood.rs`, `--pad`/dedup/`--strand`/`--invert`/`--include_nucleic_acids`), and `enum_report` (TSV; all `--by contig|cds|domain` columns including taxonomy, protein chemistry, and PROSITE motif). Parity gates: `select_by_contig` 21/21, `select_by_cds` 27/27, `enum_report` 27/27 (full `compare_seqfiles` / exact TSV equality).
 

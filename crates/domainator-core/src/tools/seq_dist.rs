@@ -544,7 +544,7 @@ fn run_diamond(
     bool_mode: bool,
 ) -> std::io::Result<DiamondCells> {
     let diamond_bin = find_diamond();
-    let tmp = TempDir::new("domainator_diamond")?;
+    let tmp = TempDir::new("domainatoredux_diamond")?;
 
     // Normalize input/reference to FASTA whose header first token is the record
     // id, so DIAMOND's `qseqid`/`sseqid` match the name index exactly.
@@ -710,7 +710,7 @@ fn write_diamond_fasta(records: &[(String, Vec<u8>)], path: &Path) -> std::io::R
     super::external::write_fasta_ids(records, path)
 }
 
-/// Locate the `diamond` executable: `$DOMAINATOR_DIAMOND` / `$DIAMOND`, then a
+/// Locate the `diamond` executable: `$DOMAINATOREDUX_DIAMOND` / `$DIAMOND`, then a
 /// bundled `external/diamond/diamond` (searched upward from the running
 /// executable and in the current directory), then bare `diamond` on `PATH`.
 fn find_diamond() -> PathBuf {
@@ -723,7 +723,7 @@ fn diamond_spawn_error(e: std::io::Error, bin: &Path) -> std::io::Error {
     super::external::spawn_error(
         e,
         bin,
-        "Set $DOMAINATOR_DIAMOND to the diamond binary, place it at external/diamond/diamond, \
+        "Set $DOMAINATOREDUX_DIAMOND to the diamond binary, place it at external/diamond/diamond, \
          or add diamond to PATH.",
     )
 }

@@ -14,7 +14,7 @@ file takes effect on the next build.
 
 - **New tool:** write `<id>.yml`. The file name must equal the tool's `id`, and the CLI
   must have a subcommand of that name. Nothing else is needed: a job runs
-  `domainator <id> --config <the dialog's params>` in a worker process.
+  `domainatoredux <id> --config <the dialog's params>` in a worker process.
 - **File fields drive provenance and Cancel.** An input's role in the job's provenance
   record comes from its `file_type` (a field named `reference`/`references` is always
   `reference`), and the SSN viewer's node → sequence tracing follows those roles. A
@@ -28,7 +28,7 @@ file takes effect on the next build.
 ## Example
 
 ```yaml
-id: domain-search
+id: domain_search
 label: "Domain search"
 category: "Annotation & search"
 description: "Shown under the dialog title."
@@ -68,7 +68,7 @@ fields:
 
 | Key | Required | What it does |
 |---|---|---|
-| `id` | yes | The tool's id, as in `domainator <id>` and `domainator schema <id>`. It must equal the file name without `.yml`. A job runs `domainator <id> --config …`. |
+| `id` | yes | The tool's id, as in `domainatoredux <id>` and `domainatoredux schema <id>`. It must equal the file name without `.yml`. A job runs `domainatoredux <id> --config …`. |
 | `label` | yes | The name shown in the Tools menu, on the toolbar's Tools button, and as the dialog title. |
 | `category` | yes | The Tools menu submenu. It must be one of `cmd_tools::TOOL_CATEGORIES`: `Annotation & search`, `Selection & extraction`, `Matrices & networks`, `Reports`, `HMM profiles`, `Color` or `Conversion`. Categories appear in that order. Within one, tools appear in file-name order. |
 | `description` | yes | The sentence under the dialog title. |
@@ -78,7 +78,7 @@ fields:
 
 | Key | Applies to | Default | What it does |
 |---|---|---|---|
-| `name` | all | (required) | The schema property. Use its spelling in `domainator schema <id>`, which is the underscore form (`max_overlap`, not `max-overlap`). |
+| `name` | all | (required) | The schema property. Use its spelling in `domainatoredux schema <id>`, which is the underscore form (`max_overlap`, not `max-overlap`). |
 | `label` | all | (required) | The text left of the control. |
 | `role` | all | `param` | Which control the dialog draws, and how the value is sent. See [Roles](#roles). |
 | `required` | all | `false` | Adds a red `*` to the label. On an input, removes the "(none)" entry. On a dropdown option (enum), removes the blank "(default)" entry unless the schema allows null. A required field cannot be hidden. A required output needs an `output_name`. The dialog doesn't block Run when a required field is blank. The tool refuses instead. |
@@ -185,12 +185,12 @@ A file can go to any input whose `file_type` accepts it (`placeFiles` in
 `src/lib/toolInputs.ts`):
 - An `input_file` takes one file, and an `input_files` takes any number.
 - A file only single inputs can take is matched first, so it always gets an input when
-  one is free. A GenBank file goes to domain-search's `input` whatever else is selected.
+  one is free. A GenBank file goes to domain_search's `input` whatever else is selected.
 - The other files go to the first list input that takes their type. A type with just one
   selected file goes to a free single input instead, when one comes before that list
   input.
 - "First" and "before" are in `prefill_priority` order: higher first, ties in field
-  order. domain-search and domainate set `prefill_priority: 1` on `references`, so a
+  order. domain_search and domainate set `prefill_priority: 1` on `references`, so a
   selected FASTA becomes a reference and `input` starts on its `select`.
 
 The toolbar's Tools button and the right-click submenu offer only the tools that can
@@ -199,12 +199,12 @@ what fits and lists the files it left out under the directory line.
 
 ## Column builder
 
-A `columns` field (enum-report's and hmmer-report's `columns`) is an ordered list. The
-Enum Report viewer tab uses the same builder, with `enum-report.yml`'s `column_types`. Each
+A `columns` field (enum_report's and hmmer_report's `columns`) is an ordered list. The
+Enum Report viewer tab uses the same builder, with `enum_report.yml`'s `column_types`. Each
 row is a column type plus that type's parameters, and the list order is the report's
 column order. ↑/↓ reorder the rows.
 
-**The types come from the schema, not from this file.** `domainator schema <id>` gives
+**The types come from the schema, not from this file.** `domainatoredux schema <id>` gives
 `columns.items.oneOf`, one entry per column type. Each entry has:
 - a `title`, shown in the type dropdown
 - a `description`, shown as the row's hint
@@ -287,7 +287,7 @@ written. Every required output needs an `output_name`.
 ## Help text
 
 The hint under a field is the schema property's `description`, the same text
-`domainator schema <id>` gives agents. Those descriptions are written in
+`domainatoredux schema <id>` gives agents. Those descriptions are written in
 `crates/domainator-config/src/lib.rs`: in each tool's schema function, with gaps filled
 from the shared `common_help` list by `fill_common_descriptions`.
 

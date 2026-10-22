@@ -101,7 +101,7 @@ export function retype(row: ColumnRow, type: string, types: ColumnType[]): void 
 }
 
 /// Rows from a column list: the spec's `gui_default`, or a cloned job's saved
-/// `columns`. A bare string is a parameterless column (enum-report's old
+/// `columns`. A bare string is a parameterless column (enum_report's old
 /// checklist saved its columns that way).
 export function toRows(list: unknown, types: ColumnType[]): ColumnRow[] {
   if (!Array.isArray(list)) return [];

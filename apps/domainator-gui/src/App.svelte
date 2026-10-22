@@ -252,14 +252,14 @@
       });
   });
 
-  // Window title: "file — workspace — Domainator", with a bullet when the active
+  // Window title: "file — workspace — Domainatoredux", with a bullet when the active
   // buffer is unsaved. Needs `core:window:allow-set-title`.
   $effect(() => {
     const tab = ws.tabs.find((t) => t.id === ws.activeTabId);
     const parts: string[] = [];
     if (tab) parts.push((ws.dirty[tab.id] ? "• " : "") + tab.file.name);
     if (ws.root) parts.push(shortName(ws.root));
-    parts.push("Domainator");
+    parts.push("Domainatoredux");
     getCurrentWindow()
       .setTitle(parts.join(" — "))
       .catch(() => {
@@ -464,7 +464,7 @@
 >
   <header class="toolbar">
     <div class="tb-left">
-      <span class="brand">Domainator</span>
+      <span class="brand">Domainatoredux</span>
       <ToolsButton {tools} />
       <button onclick={chooseWorkspace} disabled={opening}>
         {opening ? "Opening…" : "Open workspace…"}

@@ -1,4 +1,4 @@
-//! Read-only helpers for navigating a `build-ssn-viewer` `.dsnv` bundle.
+//! Read-only helpers for navigating a `build_ssn_viewer` `.dsnv` bundle.
 //!
 //! Mirrors `domainator.ssn_bundle`. The bundle is a gzip-compressed JSON document
 //! storing an MST merge tree plus a positional metadata table; these helpers let
@@ -526,7 +526,7 @@ mod tests {
         );
     }
 
-    /// A real bundle built the way `build-ssn-viewer` builds one, so the derivation
+    /// A real bundle built the way `build_ssn_viewer` builds one, so the derivation
     /// under test is exercised against the values the matrix itself produces.
     fn bundle_from_matrix(m: &crate::matrix::DataMatrix) -> Value {
         let opts = super::super::build_ssn_viewer::BuildSsnViewerOptions {

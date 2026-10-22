@@ -67,9 +67,9 @@ pub struct SummaryStats {
     /// `[bin_low, count]` over contig lengths.
     pub length_histogram: Vec<[f64; 2]>,
     pub n_cds: usize,
-    /// CDSs with a `<`/`>` partial end (`summary-report`'s `partial_cdss`).
+    /// CDSs with a `<`/`>` partial end (`summary_report`'s `partial_cdss`).
     pub n_partial_cds: usize,
-    /// Protein records that are fragments (`summary-report`'s `fragment_proteins`).
+    /// Protein records that are fragments (`summary_report`'s `fragment_proteins`).
     pub n_fragment_proteins: usize,
     pub n_domain_features: usize,
     pub distinct_domains: usize,
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(stats.length_median, 20);
     }
 
-    /// Counted like `summary-report`'s `partial_cdss` / `fragment_proteins`: a CDS
+    /// Counted like `summary_report`'s `partial_cdss` / `fragment_proteins`: a CDS
     /// with a `<`/`>` end, and a protein record whose fragment status is set.
     #[test]
     fn partial_cdss_and_fragment_proteins_are_counted() {

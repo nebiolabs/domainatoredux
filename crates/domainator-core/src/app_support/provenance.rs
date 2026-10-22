@@ -1,5 +1,5 @@
 //! Provenance records for GUI-run tool jobs. Each run writes
-//! `<workspace>/.domainator/jobs/<job_id>/job.json` capturing the tool, its
+//! `<workspace>/.domainatoredux/jobs/<job_id>/job.json` capturing the tool, its
 //! resolved parameters, input/output files, and timing — and stamps each output's
 //! metadata sidecar with `created_by_job`. Together these form a files↔jobs DAG
 //! the UI can walk (e.g. SSN node → source sequence).
@@ -78,7 +78,7 @@ pub fn write_job(root: &Path, record: &JobRecord, output_description: &str) -> s
     Ok(())
 }
 
-/// Load a job record by id from `<root>/.domainator/jobs/<job_id>/job.json`.
+/// Load a job record by id from `<root>/.domainatoredux/jobs/<job_id>/job.json`.
 pub fn load_job(root: &Path, job_id: &str) -> Option<JobRecord> {
     let path = dot_dir(root).join("jobs").join(job_id).join("job.json");
     serde_json::from_slice(&std::fs::read(path).ok()?).ok()
@@ -201,7 +201,7 @@ mod tests {
     fn job(id: &str, inputs: Vec<IoRef>, outputs: Vec<IoRef>) -> JobRecord {
         JobRecord {
             job_id: id.to_string(),
-            tool: "seq-dist".into(),
+            tool: "seq_dist".into(),
             params: serde_json::json!({}),
             inputs,
             outputs,
@@ -236,7 +236,7 @@ mod tests {
         write_job(&root, &record, "a distance matrix").unwrap();
 
         let loaded = load_job(&root, "job_1").expect("job should load");
-        assert_eq!(loaded.tool, "seq-dist");
+        assert_eq!(loaded.tool, "seq_dist");
         assert_eq!(loaded.outputs[0].role, "matrix");
 
         let meta = FileMeta::load(&root, Path::new(&out));

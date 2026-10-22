@@ -1,4 +1,4 @@
-//! `domainator <tool> [opts]` — the CLI for the Domainator Rust rewrite, as a
+//! `domainatoredux <tool> [opts]` — the CLI for the Domainator Rust rewrite, as a
 //! library so that more than one front end can run it.
 //!
 //! [`run`] takes a whole command line and does exactly what the `domainator`
@@ -46,13 +46,14 @@ use domainator_core::tools::transform_matrix::transform_matrix;
 use domainator_core::tools::{domain_search, domainate};
 
 #[derive(Parser)]
-#[command(name = "domainator", version, long_version = domainator_core::version::LONG_VERSION, about = "Domainator (Rust): protein-domain / SSN analysis")]
+#[command(name = "domainatoredux", version, long_version = domainator_core::version::LONG_VERSION, about = "Domainatoredux: protein-domain / SSN analysis (a Rust port of domainator)")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Subcommand)]
+#[command(rename_all = "snake_case")]
 enum Command {
     /// Parse a sequence file and report per-record summary (dev/diagnostic).
     Inspect {
@@ -256,7 +257,7 @@ enum Command {
         gene_call: Option<String>,
     },
     /// Remove redundant sequences (hash exact-dedup, or cd-hit/diamond/usearch clustering).
-    Deduplicate {
+    DeduplicateGenbank {
         /// Input GenBank/FASTA file(s).
         #[arg(short, long, num_args = 1..)]
         input: Vec<PathBuf>,
@@ -272,8 +273,8 @@ enum Command {
         /// Clustering algorithm: cd-hit | hash | diamond | usearch [default: cd-hit].
         #[arg(long)]
         algorithm: Option<String>,
-        /// Path to the external clusterer binary (else $DOMAINATOR_CDHIT / $DOMAINATOR_DIAMOND /
-        /// $DOMAINATOR_USEARCH, then PATH). For cd-hit this is the `cdhit` multiplexer, or a
+        /// Path to the external clusterer binary (else $DOMAINATOREDUX_CDHIT / $DOMAINATOREDUX_DIAMOND /
+        /// $DOMAINATOREDUX_USEARCH, then PATH). For cd-hit this is the `cdhit` multiplexer, or a
         /// `cd-hit`/`cd-hit-est` executable, which is run directly.
         #[arg(long = "bin_path")]
         bin_path: Option<String>,
@@ -392,7 +393,7 @@ enum Command {
         /// Orphos threads (0 = all cores).
         #[arg(long)]
         cpu: Option<usize>,
-        /// Path to the orphos binary (else $DOMAINATOR_ORPHOS, then PATH).
+        /// Path to the orphos binary (else $DOMAINATOREDUX_ORPHOS, then PATH).
         #[arg(long = "bin_path")]
         bin_path: Option<String>,
         #[arg(long)]
@@ -1124,7 +1125,7 @@ enum Command {
     },
     /// Print a JSON Schema for a tool's `--config` file.
     Schema {
-        /// Tool name: any of the tool subcommands (e.g. domainate, seq-dist, enum-report).
+        /// Tool name: any of the tool subcommands (e.g. domainate, seq_dist, enum_report).
         tool: String,
     },
     /// Write a TSV table of per-contig/CDS/domain info (column order = flag order).
@@ -1744,7 +1745,7 @@ fn load_typed(input: &Path, fasta_type: &str) -> Result<Vec<SeqRecord>> {
     }
 }
 
-/// Parse `deduplicate`'s `--params` (an inner JSON dict like `"-s":0.9`) into an
+/// Parse `deduplicate_genbank`'s `--params` (an inner JSON dict like `"-s":0.9`) into an
 /// ordered list of `(flag, value)` args. Numbers/bools are stringified; a null
 /// value means a bare flag.
 /// Parse a `FromStr` choice (`--mode`, `--scope`), keeping its own error message.
@@ -2016,7 +2017,7 @@ fn parse_hmmer_report_args(args: &[String]) -> Result<HmmerReportCli> {
     })
 }
 
-/// Run one `domainator` command line. `args` includes the program name first, as
+/// Run one `domainatoredux` command line. `args` includes the program name first, as
 /// `std::env::args_os()` does.
 ///
 /// A command line clap rejects, and `--help`/`--version`, come back as an `Err`
@@ -2321,7 +2322,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             write_genbank(&output, &hits).context("writing GenBank")?;
             println!("wrote {} hit contigs to {}", hits.len(), output);
         }
-        Command::Deduplicate {
+        Command::DeduplicateGenbank {
             input,
             output,
             log,

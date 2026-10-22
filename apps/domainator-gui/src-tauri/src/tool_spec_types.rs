@@ -29,7 +29,7 @@ pub struct FieldSpec {
     pub name: String,
     pub label: String,
     /// The hint under the field. Unset, the dialog shows the schema property's
-    /// `description` -- the same text `domainator schema <id>` gives agents.
+    /// `description` -- the same text `domainatoredux schema <id>` gives agents.
     #[serde(default)]
     pub help: Option<String>,
     /// One of `cmd_tools::ROLES`.

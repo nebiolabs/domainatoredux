@@ -1,5 +1,5 @@
-# GUI dialog for `domainator select-by-cds`. Format: see README.md in this directory.
-id: select-by-cds
+# GUI dialog for `domainatoredux select_by_cds`. Format: see README.md in this directory.
+id: select_by_cds
 label: "Select by CDS"
 category: "Selection & extraction"
 description: "Extract CDSs (and optionally their genomic neighborhoods) by name, domain content, or search hit."

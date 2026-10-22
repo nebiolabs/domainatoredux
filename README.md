@@ -7,7 +7,7 @@ around them, and turns collections of sequences into **sequence similarity netwo
 This is a from-scratch Rust implementation of the
 [Python Domainator suite](https://github.com/nebiolabs/domainator). It ships as:
 
-- **one command-line executable** — `domainator <tool> [options]`, 35 tools, no
+- **one command-line executable** — `domainatoredux <tool> [options]`, 35 tools, no
   interpreter or conda environment required;
 - **one desktop app** — a workspace browser with a contig viewer, an interactive SSN
   viewer, HMM logos and dialogs for running the tools;
@@ -21,15 +21,15 @@ Download from the [Releases page](https://github.com/nebiolabs/domainatoredux/re
 
 | Platform | Desktop app | Command-line tool |
 | --- | --- | --- |
-| macOS (Apple silicon) | `.dmg` | `domainator` |
-| Windows (x64) | NSIS installer | `domainator.exe` |
-| Linux (x64) | `.deb`, `.AppImage` | `domainator` |
+| macOS (Apple silicon) | `.dmg` | `domainatoredux` |
+| Windows (x64) | NSIS installer | `domainatoredux.exe` |
+| Linux (x64) | `.deb`, `.AppImage` | `domainatoredux` |
 
 Or build it — you need [Rust](https://rustup.rs/) 1.89+ and nothing else:
 
 ```bash
 cargo build --release -p domainator-cli
-./target/release/domainator --help
+./target/release/domainatoredux --help
 ```
 
 Full details, including the three optional external programs, are in
@@ -41,13 +41,13 @@ Annotate 20 proteins, score them all against each other, and build an interactiv
 network — using two files from `test/data/`:
 
 ```bash
-domainator domainate -i FeSOD_20.gb -r FeSOD_pfam.hmm -o annotated.gb
+domainatoredux domainate -i FeSOD_20.gb -r FeSOD_pfam.hmm -o annotated.gb
 #> wrote 20 records to annotated.gb
 
-domainator seq-dist -i annotated.gb --dense dist.hdf5 --algorithm hmmer --mode score
+domainatoredux seq_dist -i annotated.gb --dense dist.hdf5 --algorithm hmmer --mode score
 #> wrote 20x20 matrix
 
-domainator build-ssn-viewer -i dist.hdf5 -o network.dsnv --html network.html --embed_data
+domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html network.html --embed_data
 #> wrote 20-node .dsnv bundle to network.dsnv
 #> wrote HTML viewer to network.html
 ```
@@ -63,18 +63,20 @@ Walked through step by step in **[Getting started](docs/getting-started.md)**.
 
 ## The tools
 
-`domainator --help` lists them all; `domainator <tool> --help` documents one. Flags use
-the Python suite's underscore spellings (`--max_overlap`), while subcommands use hyphens.
+`domainatoredux --help` lists them all; `domainatoredux <tool> --help` documents one. Flags use
+the Python suite's underscore spellings (`--max_overlap`), and so do subcommands
+(`domain_search`). `domainatoredux <tool>` takes the same tool names as Python's
+`domainator <tool>`; the different executable name lets both be installed side by side.
 
 | | |
 | --- | --- |
-| **Annotation and search** | `domainate` annotate with hits to references · `domain-search` keep the records or neighborhoods that hit · `filter-domains` prune weak annotations |
-| **Selection and extraction** | `select-by-cds` · `select-by-contig` · `select-by-coord` · `extract-domains` · `extract-peptides` · `extract-unannotated` · `trim-contigs` · `sort-contigs` · `clean-sequences` · `deduplicate` |
-| **Matrices and networks** | `seq-dist` similarity by alignment · `compare-contigs` similarity by shared domain content · `transform-matrix` · `build-ssn` (Cytoscape XGMML) · `build-ssn-viewer` (interactive) |
-| **Reports** | `enum-report` per contig/CDS/domain tables · `summary-report` · `matrix-report` score distribution and suggested cutoffs · `ssn-navigator` query a network as JSON |
-| **HMM profiles** | `hmmer-build` · `hmmer-select` · `hmmer-search` · `hmmer-compare` · `hmmer-report` |
-| **Color** | `color-genbank` · `color-table-to-legend` |
-| **I/O and database prep** | `format-db` shard/compress/index for fast searching · `genbank-to-fasta` · `convert` · `inspect` · `schema` |
+| **Annotation and search** | `domainate` annotate with hits to references · `domain_search` keep the records or neighborhoods that hit · `filter_domains` prune weak annotations |
+| **Selection and extraction** | `select_by_cds` · `select_by_contig` · `select_by_coord` · `extract_domains` · `extract_peptides` · `extract_unannotated` · `trim_contigs` · `sort_contigs` · `clean_sequences` · `deduplicate_genbank` |
+| **Matrices and networks** | `seq_dist` similarity by alignment · `compare_contigs` similarity by shared domain content · `transform_matrix` · `build_ssn` (Cytoscape XGMML) · `build_ssn_viewer` (interactive) |
+| **Reports** | `enum_report` per contig/CDS/domain tables · `summary_report` · `matrix_report` score distribution and suggested cutoffs · `ssn_navigator` query a network as JSON |
+| **HMM profiles** | `hmmer_build` · `hmmer_select` · `hmmer_search` · `hmmer_compare` · `hmmer_report` |
+| **Color** | `color_genbank` · `color_table_to_legend` |
+| **I/O and database prep** | `format_db` shard/compress/index for fast searching · `genbank_to_fasta` · `convert` · `inspect` · `schema` |
 
 Every tool documented with examples in the
 **[command-line reference](docs/cli-reference.md)**; complete pipelines in

@@ -10,7 +10,7 @@ Every tool except `inspect`, `convert` and `schema` accepts `--config`, pointing
 JSON or YAML file:
 
 ```bash
-domainator domainate --config annotate.yml
+domainatoredux domainate --config annotate.yml
 ```
 
 ```yaml
@@ -36,11 +36,11 @@ The config file is the base, and command-line flags override it:
 | scalars (`evalue`, `cpu`, `output`) | the CLI value replaces the file's |
 | lists (`references`, `domains`) | the CLI value replaces the file's, when non-empty |
 | booleans (`hits_only`, `max_mode`) | **OR'd together** |
-| report columns (`enum-report`, `hmmer-report`) | appended |
+| report columns (`enum_report`, `hmmer_report`) | appended |
 
 ```bash
 # override just the E-value, keep everything else from the file
-domainator domainate --config annotate.yml -e 1e-10
+domainatoredux domainate --config annotate.yml -e 1e-10
 ```
 
 Two things to watch:
@@ -59,7 +59,7 @@ Because inputs may legitimately come from the file, required arguments are valid
 `--print_config` dumps the merged parameter set as YAML and exits without doing any work:
 
 ```bash
-domainator domainate -i contigs.gb -r pfam-A.hmm -o out.gb --print_config
+domainatoredux domainate -i contigs.gb -r pfam-A.hmm -o out.gb --print_config
 ```
 
 ```yaml
@@ -81,20 +81,20 @@ and `--help` to see what each default actually is.
 The output is a valid config file, so this is also how you capture a working invocation:
 
 ```bash
-domainator domainate -i contigs.gb -r pfam-A.hmm -o out.gb --print_config > annotate.yml
+domainatoredux domainate -i contigs.gb -r pfam-A.hmm -o out.gb --print_config > annotate.yml
 ```
 
 ## Discovering a tool's parameters
 
-`domainator schema <tool>` prints a draft-07 JSON Schema describing that tool's config
+`domainatoredux schema <tool>` prints a draft-07 JSON Schema describing that tool's config
 file — every option, its type, its allowed values, and a description:
 
 ```bash
-domainator schema domain-search
-domainator schema seq_dist | jq -r '.properties | keys[]'
+domainatoredux schema domain_search
+domainatoredux schema seq_dist | jq -r '.properties | keys[]'
 ```
 
-Tool names are accepted with hyphens or underscores. The 32 config-backed tools are
+The 32 config-backed tools are
 covered; `inspect`, `convert` and `schema` have no config and no schema.
 
 This is the interface to use when generating invocations programmatically: it is the same
@@ -109,16 +109,16 @@ human-readable report and a JSON one at the same time.
 
 | Tool | Shape |
 | --- | --- |
-| [`enum-report`](cli-reference.md#enum-report) | **streaming NDJSON** — one compact object per row |
-| [`hmmer-report`](cli-reference.md#hmmer-report) | **streaming NDJSON** — one object per profile |
-| [`matrix-report`](cli-reference.md#matrix-report) | one JSON object, stable shape |
-| [`summary-report`](cli-reference.md#summary-report) | one JSON object, stable shape |
-| [`ssn-navigator`](cli-reference.md#ssn-navigator) | always JSON — it has no other mode |
+| [`enum_report`](cli-reference.md#enum_report) | **streaming NDJSON** — one compact object per row |
+| [`hmmer_report`](cli-reference.md#hmmer_report) | **streaming NDJSON** — one object per profile |
+| [`matrix_report`](cli-reference.md#matrix_report) | one JSON object, stable shape |
+| [`summary_report`](cli-reference.md#summary_report) | one JSON object, stable shape |
+| [`ssn_navigator`](cli-reference.md#ssn_navigator) | always JSON — it has no other mode |
 
 NDJSON streams, so it works on datasets far larger than memory:
 
 ```bash
-domainator enum-report -i annotated.gb --domains --length --json -
+domainatoredux enum_report -i annotated.gb --domains --length --json -
 ```
 
 ```
@@ -129,7 +129,7 @@ domainator enum-report -i annotated.gb --domains --length --json -
 Both at once:
 
 ```bash
-domainator enum-report -i annotated.gb --domains --length -o table.tsv --json rows.ndjson
+domainatoredux enum_report -i annotated.gb --domains --length -o table.tsv --json rows.ndjson
 ```
 
 The object keys are the column names, in the order you asked for the columns.
@@ -139,24 +139,24 @@ JSON. The [desktop app](gui.md) covers the visual case.
 
 ## Querying a built network
 
-[`ssn-navigator`](cli-reference.md#ssn-navigator) is the scriptable counterpart to the SSN
+[`ssn_navigator`](cli-reference.md#ssn_navigator) is the scriptable counterpart to the SSN
 viewer — it answers questions about a `.dsnv` bundle as JSON, with no display:
 
 ```bash
 # how is the network shaped?
-domainator ssn-navigator -i network.dsnv --mode overview
+domainatoredux ssn_navigator -i network.dsnv --mode overview
 
 # where are the interesting cutoffs?
-domainator ssn-navigator -i network.dsnv --mode thresholds
+domainatoredux ssn_navigator -i network.dsnv --mode thresholds
 
 # what clusters exist at a cutoff, biggest first?
-domainator ssn-navigator -i network.dsnv --mode clusters --threshold 120 --min_size 3
+domainatoredux ssn_navigator -i network.dsnv --mode clusters --threshold 120 --min_size 3
 
 # what's in one cluster?
-domainator ssn-navigator -i network.dsnv --mode cluster --id 4 --members
+domainatoredux ssn_navigator -i network.dsnv --mode cluster --id 4 --members
 
 # what's around one node?
-domainator ssn-navigator -i network.dsnv --mode node \
+domainatoredux ssn_navigator -i network.dsnv --mode node \
   --node "FeSOD_A0A1F4ZT98|unreviewed|Superoxide"
 ```
 
@@ -169,19 +169,19 @@ A reasonable shape for automated analysis:
 
 ```bash
 # 1. discover what the tool takes
-domainator schema domain-search > schema.json
+domainatoredux schema domain_search > schema.json
 
 # 2. run it from a generated config
-domainator domain-search --config search.json
+domainatoredux domain_search --config search.json
 
 # 3. read the results as data
-domainator summary-report -i hits.gb --json - > summary.json
-domainator enum-report -i hits.gb --by cds --domains --score --json rows.ndjson
+domainatoredux summary_report -i hits.gb --json - > summary.json
+domainatoredux enum_report -i hits.gb --by cds --domains --score --json rows.ndjson
 
 # 4. build a network and explore it without a GUI
-domainator seq-dist -i hits.gb --dense dist.hdf5 --algorithm hmmer
-domainator build-ssn-viewer -i dist.hdf5 -o network.dsnv
-domainator ssn-navigator -i network.dsnv --mode thresholds
+domainatoredux seq_dist -i hits.gb --dense dist.hdf5 --algorithm hmmer
+domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv
+domainatoredux ssn_navigator -i network.dsnv --mode thresholds
 ```
 
 Every step is deterministic: tools that use multiple threads still produce identical

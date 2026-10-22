@@ -95,7 +95,7 @@ impl UnionFind {
 /// Compute the kept undirected edge set (canonical pairs `a < b`) for MST ∪
 /// OR-symmetric kNN, along with the symmetric candidate scores `max(M[i,j],
 /// M[j,i])` per pair. Shared by [`apply_mst_knn`] (which writes the pruned
-/// matrix) and `build-ssn`'s `--mst_knn` edge list, so both select identical
+/// matrix) and `build_ssn`'s `--mst_knn` edge list, so both select identical
 /// edges.
 pub(crate) fn mst_knn_kept(
     m: &DataMatrix,

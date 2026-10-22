@@ -131,7 +131,7 @@ mod tests {
 
     fn sample() -> Diagnostics {
         Diagnostics {
-            product: "Domainator".into(),
+            product: "Domainatoredux".into(),
             version: "1.0.0".into(),
             upstream_version: "0.11.0".into(),
             upstream_commit: "9c70934".into(),
@@ -140,9 +140,9 @@ mod tests {
             os: "linux".into(),
             arch: "x86_64".into(),
             profile: "release".into(),
-            app_data_dir: "/home/u/.local/share/org.domainator.gui".into(),
-            prefs_path: "/home/u/.local/share/org.domainator.gui/prefs.json".into(),
-            managed_tools_dir: "/home/u/.local/share/org.domainator.gui/tools".into(),
+            app_data_dir: "/home/u/.local/share/org.domainatoredux.gui".into(),
+            prefs_path: "/home/u/.local/share/org.domainatoredux.gui/prefs.json".into(),
+            managed_tools_dir: "/home/u/.local/share/org.domainatoredux.gui/tools".into(),
             external_tools: vec![ToolLine {
                 name: "diamond".into(),
                 version: "2.2.5".into(),
@@ -199,7 +199,7 @@ mod tests {
         let d = sample();
         let out = render_diagnostics(&d);
         for needle in [
-            "Domainator",
+            "Domainatoredux",
             "1.0.0",
             "0.11.0",
             "9c70934",

@@ -4,10 +4,10 @@
 //! derived by scanning subdirectories, and the file table (MIDDLE panel) lists the
 //! recognized data files in a directory. Data files are never rewritten to carry
 //! GUI metadata — everything the app writes lives under a single reserved hidden
-//! directory, [`DOT_DIR`] (`.domainator/`): the manifest, the database registry,
+//! directory, [`DOT_DIR`] (`.domainatoredux/`): the manifest, the database registry,
 //! job provenance, per-file metadata sidecars, and cached payloads. This keeps
 //! every `.gb`/`.hdf5`/`.hmm` file untouched and Python-readable, and means
-//! `.domainator` is the ONLY name the app reserves — no clashes with user files.
+//! `.domainatoredux` is the ONLY name the app reserves — no clashes with user files.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,14 +16,14 @@ use serde::{Deserialize, Serialize};
 
 /// The single reserved directory that holds all app machinery for a workspace.
 /// Users may not create a file or folder with this name.
-pub const DOT_DIR: &str = ".domainator";
+pub const DOT_DIR: &str = ".domainatoredux";
 
-/// `<root>/.domainator` (not created here; writers call [`ensure_dot_subdir`]).
+/// `<root>/.domainatoredux` (not created here; writers call [`ensure_dot_subdir`]).
 pub fn dot_dir(root: &Path) -> PathBuf {
     root.join(DOT_DIR)
 }
 
-/// Create `<root>/.domainator/<sub>` and return it.
+/// Create `<root>/.domainatoredux/<sub>` and return it.
 pub fn ensure_dot_subdir(root: &Path, sub: &str) -> std::io::Result<PathBuf> {
     let d = dot_dir(root).join(sub);
     fs::create_dir_all(&d)?;
@@ -36,7 +36,7 @@ pub fn is_reserved_name(name: &str) -> bool {
 }
 
 /// Find the workspace root containing `data_file` by walking up its ancestors for
-/// the first directory that holds a `.domainator/` machinery dir. Lets provenance
+/// the first directory that holds a `.domainatoredux/` machinery dir. Lets provenance
 /// be located from a file path alone (e.g. in a detached window that doesn't know
 /// the workspace root). Returns `None` if the file isn't inside a workspace.
 /// Whether `candidate` lies inside `root`.
@@ -69,7 +69,7 @@ pub fn find_workspace_root(data_file: &Path) -> Option<PathBuf> {
 }
 
 /// Move legacy top-level machinery (`workspace.json`, `databases.json`, `jobs/`)
-/// into `.domainator/` for workspaces created before the restructure. Best-effort:
+/// into `.domainatoredux/` for workspaces created before the restructure. Best-effort:
 /// ignores individual failures so an old workspace still opens.
 pub fn migrate_legacy_layout(root: &Path) {
     let dot = dot_dir(root);
@@ -167,7 +167,7 @@ pub fn classify_file(path: &Path) -> Option<&'static str> {
     })
 }
 
-/// GUI metadata for a data file, stored under `<root>/.domainator/meta/` mirroring
+/// GUI metadata for a data file, stored under `<root>/.domainatoredux/meta/` mirroring
 /// the file's path relative to the workspace root (so data files stay clean).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FileMeta {
@@ -175,7 +175,7 @@ pub struct FileMeta {
     pub description: String,
     #[serde(default)]
     pub tags: Vec<String>,
-    /// Id of the job (`.domainator/jobs/<id>/job.json`) that produced this file.
+    /// Id of the job (`.domainatoredux/jobs/<id>/job.json`) that produced this file.
     #[serde(default)]
     pub created_by_job: Option<String>,
     /// The GUI's Enum Report tab as last left for this file.
@@ -196,7 +196,7 @@ pub struct EnumReportView {
 }
 
 impl FileMeta {
-    /// Sidecar path: `<root>/.domainator/meta/<rel>.dom.json`, where `<rel>` is the
+    /// Sidecar path: `<root>/.domainatoredux/meta/<rel>.dom.json`, where `<rel>` is the
     /// data file relative to `root` (falling back to the bare file name if the file
     /// lives outside the workspace, e.g. an external database).
     pub fn sidecar_path(root: &Path, data_file: &Path) -> PathBuf {
@@ -273,7 +273,7 @@ fn move_path(src: &Path, dest: &Path) -> std::io::Result<()> {
 }
 
 /// Move data file `src` into workspace folder `dest_dir`, keeping its name, and
-/// bring along what belongs to it: the metadata sidecar under `.domainator/meta/`
+/// bring along what belongs to it: the metadata sidecar under `.domainatoredux/meta/`
 /// and a `<name>.didx` index beside it (the file table never lists the index, so
 /// leaving it behind would strand it invisibly). Returns the new path; moving a
 /// file into the folder it is already in returns `src` unchanged.
@@ -381,14 +381,14 @@ fn manifest_path(root: &Path) -> PathBuf {
     dot_dir(root).join(MANIFEST_NAME)
 }
 
-/// Directory names hidden from the folder tree (dotdirs, incl. `.domainator`, plus
+/// Directory names hidden from the folder tree (dotdirs, incl. `.domainatoredux`, plus
 /// the legacy top-level `jobs/` dir from pre-restructure workspaces).
 fn is_hidden_or_machinery(name: &str) -> bool {
     name.starts_with('.') || name == "jobs"
 }
 
 /// Load the workspace manifest, creating a default one on disk if absent. Also
-/// migrates any legacy top-level machinery into `.domainator/`.
+/// migrates any legacy top-level machinery into `.domainatoredux/`.
 pub fn open_or_init_manifest(root: &Path) -> std::io::Result<WorkspaceManifest> {
     migrate_legacy_layout(root);
     if let Ok(bytes) = fs::read(manifest_path(root)) {
@@ -448,7 +448,7 @@ pub fn scan_folder_tree(root: &Path) -> std::io::Result<FolderNode> {
 }
 
 /// List recognized data files directly inside `dir` (non-recursive), with sidecar
-/// metadata (from `<root>/.domainator/meta`) folded in. Unrecognized files skipped.
+/// metadata (from `<root>/.domainatoredux/meta`) folded in. Unrecognized files skipped.
 pub fn list_files(root: &Path, dir: &Path) -> std::io::Result<Vec<FileEntry>> {
     let mut out = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -553,7 +553,7 @@ mod tests {
     fn sidecar_path_mirrors_under_dot_dir() {
         assert_eq!(
             FileMeta::sidecar_path(Path::new("/ws"), Path::new("/ws/sub/foo.gb")),
-            PathBuf::from("/ws/.domainator/meta/sub/foo.gb.dom.json")
+            PathBuf::from("/ws/.domainatoredux/meta/sub/foo.gb.dom.json")
         );
     }
 
@@ -656,7 +656,7 @@ mod tests {
 
     #[test]
     fn reserved_name() {
-        assert!(is_reserved_name(".domainator"));
+        assert!(is_reserved_name(".domainatoredux"));
         assert!(!is_reserved_name("genomes"));
     }
 }

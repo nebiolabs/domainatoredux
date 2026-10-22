@@ -19,14 +19,14 @@ file records how far the port is caught up and how to advance it.
   `neighborhood::slice_features` (with `slice_record` / `slice_linear_features` /
   `extract_common::slice_from_location` around it). `/codon_start` is honored when
   `domainate` places a hit (`overlay`, which now refuses out-of-bounds spans the way
-  Python raises), and in fallback translations and `extract-peptides` coordinates. An
+  Python raises), and in fallback translations and `extract_peptides` coordinates. An
   overlong partial-CDS translation is trimmed (`seq/partial.rs`, `on_contig_translation`).
-  Fragment status and `--partial` on `domainate`/`domain-search` come from this commit,
-  as does `enum-report --fragment`.
+  Fragment status and `--partial` on `domainate`/`domain_search` come from this commit,
+  as does `enum_report --fragment`.
 - **Fragment support in more tools** (`bdc74bb`), ported. `--partial` is now also on
-  `select-by-cds`, `select-by-contig`, `extract-peptides`, `extract-domains`,
-  `enum-report` (a row filter) and `summary-report`, and `enum-report` gains
-  `--partial_count`. `summary-report` reports `partial_cdss`/`fragment_proteins`. Fragment
+  `select_by_cds`, `select_by_contig`, `extract_peptides`, `extract_domains`,
+  `enum_report` (a row filter) and `summary_report`, and `enum_report` gains
+  `--partial_count`. `summary_report` reports `partial_cdss`/`fragment_proteins`. Fragment
   status also reads `NON_TER` features and `Flags: Fragment`. The `find_features` and
   `domainator_db_download` halves have no counterpart, since both tools are unported.
 - **Gene calling keeps partial genes** (`f39ec15`), ported along with `--gene_call`
@@ -51,9 +51,9 @@ file records how far the port is caught up and how to advance it.
 - **Found while syncing** (pre-existing, now fixed):
   - GenBank header wrapping now follows Biopython's `_split_multi_line`, with 68 columns
     after the indent; it was 67.
-  - A reverse-strand CDS ending at a contig's last base sorted first in `select-by-cds`.
-  - `trim-contigs`/`clean-sequences --strip` kept header annotations Python's slice drops.
-  - `extract-domains` let a `--domains` match skip `--evalue`/`--score`.
+  - A reverse-strand CDS ending at a contig's last base sorted first in `select_by_cds`.
+  - `trim_contigs`/`clean_sequences --strip` kept header annotations Python's slice drops.
+  - `extract_domains` let a `--domains` match skip `--evalue`/`--score`.
 - **Vendored copy:** `external/domainator/` (gitignored; a git clone of upstream, kept at
   the pin above). It is the deterministic, repo-local source for regeneration and drift
   checks. Refresh it with `scripts/sync_upstream.sh` (fast-forwards to a target ref).
@@ -95,7 +95,7 @@ Use this to triage which module a changed upstream file lands in:
 | `seq_dist.py` | `.../tools/seq_dist.rs` |
 | `compare_contigs.py` | `.../tools/compare_contigs.rs` |
 | `domainate.py` | `.../tools/domainate.rs`, `.../search/hmmer.rs` |
-| `domainate.py` gene calling (`prodigal_CDS_annotate`, `_prodigal_linear_location`, `_prodigal_origin_genes`) | `.../tools/gene_call.rs` (drives the external Orphos binary; also the port-only `gene-call` tool) |
+| `domainate.py` gene calling (`prodigal_CDS_annotate`, `_prodigal_linear_location`, `_prodigal_origin_genes`) | `.../tools/gene_call.rs` (drives the external Orphos binary; also the port-only `gene_call` tool) |
 | `domain_search.py`, `select_by_cds.py` | `.../tools/{domain_search,select_by_cds,neighborhood}.rs` |
 | `select_by_contig.py`, `enum_report.py` | `.../tools/{select_by_contig,enum_report,select_common}.rs` |
 | `matrix_report.py` | `.../tools/matrix_report.rs` |

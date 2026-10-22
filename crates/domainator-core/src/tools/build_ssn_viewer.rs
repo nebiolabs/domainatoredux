@@ -1,4 +1,4 @@
-//! `build-ssn-viewer`: build the compact, MST-based `.dsnv` bundle (and the
+//! `build_ssn_viewer`: build the compact, MST-based `.dsnv` bundle (and the
 //! standalone HTML shell) for the interactive SSN viewer. Mirrors
 //! `domainator.build_ssn_viewer`: the bundle carries only the MST and an
 //! MST-component hierarchy (both O(n)); the browser reconstructs clusters

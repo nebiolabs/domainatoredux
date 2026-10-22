@@ -1,7 +1,7 @@
 //! Worker-mode tests against the real `domainator-gui` binary (see `src/worker.rs`).
 //!
 //! Tools-menu jobs run in a copy of the GUI executable started with
-//! `--domainator-worker`. Nothing but these tests exercises that path end to end:
+//! `--domainatoredux-worker`. Nothing but these tests exercises that path end to end:
 //! it has no Python counterpart for the parity sweep to compare against. The
 //! `__sleep*` worker commands they use exist only in debug builds, which is what
 //! `cargo test` builds.
@@ -252,7 +252,7 @@ fn a_worker_run_matches_the_cli() {
     assert!(exit.stdout.contains("wrote 20 records"), "{}", exit.stdout);
 
     let cli: Vec<OsString> = vec![
-        "domainator".into(),
+        "domainatoredux".into(),
         "domainate".into(),
         "-i".into(),
         data.join("FeSOD_20.fasta").into(),

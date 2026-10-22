@@ -1,5 +1,5 @@
-# GUI dialog for `domainator matrix-report`. Format: see README.md in this directory.
-id: matrix-report
+# GUI dialog for `domainatoredux matrix_report`. Format: see README.md in this directory.
+id: matrix_report
 label: "Matrix report (export)"
 category: "Matrices & networks"
 description: "Export a text summary + suggested cutoffs from a similarity matrix."

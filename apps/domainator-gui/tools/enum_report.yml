@@ -1,5 +1,5 @@
-# GUI dialog for `domainator enum-report`. Format: see README.md in this directory.
-id: enum-report
+# GUI dialog for `domainatoredux enum_report`. Format: see README.md in this directory.
+id: enum_report
 label: "Enum report (export)"
 category: "Reports"
 description: "Export a per-contig/cds/domain TSV report from a sequence file with a chosen column set."
@@ -23,7 +23,7 @@ fields:
     label: "Columns"
     role: columns
     gui_default: [{type: domains}, {type: architecture}, {type: length}]
-    # Types and parameters come from `domainator schema enum-report`; this only
+    # Types and parameters come from `domainatoredux schema enum_report`; this only
     # relabels and seeds them (see README.md, "Column builder").
     column_types:
       taxid:
