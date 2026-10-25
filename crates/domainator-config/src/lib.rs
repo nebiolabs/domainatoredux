@@ -451,54 +451,6 @@ impl TrimContigsConfig {
     }
 }
 
-/// `extract_domains` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct ExtractDomainsConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub evalue: Option<f64>,
-    pub score: Option<f64>,
-    pub domains: Vec<String>,
-    pub domains_file: Option<String>,
-    pub databases: Vec<String>,
-    pub search_hits: bool,
-    pub pad_up: Option<i64>,
-    pub pad_down: Option<i64>,
-    pub combine: bool,
-    pub splice: bool,
-    pub keep_direction: bool,
-    pub keep_name: bool,
-    pub fasta_out: bool,
-    pub contigs: Vec<String>,
-    pub contigs_file: Option<String>,
-    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
-    pub partial: Option<String>,
-}
-
-impl ExtractDomainsConfig {
-    pub fn merge_cli(&mut self, cli: ExtractDomainsConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, evalue);
-        merge_scalar!(self, cli, score);
-        merge_vec!(self, cli, domains);
-        merge_scalar!(self, cli, domains_file);
-        merge_vec!(self, cli, databases);
-        self.search_hits |= cli.search_hits;
-        merge_scalar!(self, cli, pad_up);
-        merge_scalar!(self, cli, pad_down);
-        self.combine |= cli.combine;
-        self.splice |= cli.splice;
-        self.keep_direction |= cli.keep_direction;
-        self.keep_name |= cli.keep_name;
-        self.fasta_out |= cli.fasta_out;
-        merge_vec!(self, cli, contigs);
-        merge_scalar!(self, cli, contigs_file);
-        merge_scalar!(self, cli, partial);
-    }
-}
-
 /// `extract_peptides` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -1105,7 +1057,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "color_genbank" => color_genbank_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "trim_contigs" => trim_contigs_schema(),
-        "extract_domains" => extract_domains_schema(),
         "extract_peptides" => extract_peptides_schema(),
         "extract_unannotated" => extract_unannotated_schema(),
         "seq_dist" => seq_dist_schema(),
@@ -1498,36 +1449,6 @@ fn trim_contigs_schema() -> serde_json::Value {
             "domains_file": {"type": ["string", "null"]},
             "domain_expr": {"type": ["string", "null"]},
             "no_domain": {"type": "boolean", "default": false},
-            "contigs": {"type": "array", "items": {"type": "string"}},
-            "contigs_file": {"type": ["string", "null"]}
-        }
-    })
-}
-
-fn extract_domains_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "extract_domains config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
-            "input": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "evalue": {"type": ["number", "null"]},
-            "score": {"type": ["number", "null"]},
-            "domains": {"type": "array", "items": {"type": "string"}},
-            "domains_file": {"type": ["string", "null"]},
-            "databases": {"type": "array", "items": {"type": "string"}},
-            "search_hits": {"type": "boolean", "default": false},
-            "pad_up": {"type": ["integer", "null"], "default": 0},
-            "pad_down": {"type": ["integer", "null"], "default": 0},
-            "combine": {"type": "boolean", "default": false},
-            "splice": {"type": "boolean", "default": false},
-            "keep_direction": {"type": "boolean", "default": false},
-            "keep_name": {"type": "boolean", "default": false},
-            "fasta_out": {"type": "boolean", "default": false},
             "contigs": {"type": "array", "items": {"type": "string"}},
             "contigs_file": {"type": ["string", "null"]}
         }
@@ -1963,7 +1884,6 @@ mod tests {
             "color_genbank" => ColorGenbankConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
             "trim_contigs" => TrimContigsConfig,
-            "extract_domains" => ExtractDomainsConfig,
             "extract_peptides" => ExtractPeptidesConfig,
             "extract_unannotated" => ExtractUnannotatedConfig,
             "seq_dist" => SeqDistConfig,

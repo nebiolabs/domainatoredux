@@ -108,11 +108,15 @@ pub const TOOLS: &[ToolInfo] = &[
         "edit",
         "Reduce redundancy by clustering sequences (cd-hit, usearch, diamond, or exact hashes).",
     ),
-    tool(
-        "extract_domains",
-        "edit",
-        "Extract annotated domains as their own records.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        ..tool(
+            "extract_domains",
+            "edit",
+            "Extract annotated domains as their own records.",
+        )
+    },
     tool(
         "extract_peptides",
         "edit",

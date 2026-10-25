@@ -516,67 +516,7 @@ enum Command {
     },
     /// Extract domain-annotated regions from annotated contigs.
     #[command(allow_negative_numbers = true)]
-    ExtractDomains {
-        /// Input GenBank file(s) (stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output file (stdout if omitted).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// E-value cutoff (max) for domains to extract.
-        #[arg(short, long)]
-        evalue: Option<f64>,
-        /// Score cutoff (min) for domains to extract.
-        #[arg(long)]
-        score: Option<f64>,
-        /// Include domains with these names.
-        #[arg(long, num_args = 1..)]
-        domains: Vec<String>,
-        /// File of domain names to include.
-        #[arg(long = "domains_file")]
-        domains_file: Option<String>,
-        /// Only these databases.
-        #[arg(long, num_args = 1..)]
-        databases: Vec<String>,
-        /// Select domains marked as search hits.
-        #[arg(long = "search_hits")]
-        search_hits: bool,
-        /// Extract this many extra residues/bases upstream of the hit.
-        #[arg(long = "pad_up")]
-        pad_up: Option<i64>,
-        /// Extract this many extra residues/bases downstream of the hit.
-        #[arg(long = "pad_down")]
-        pad_down: Option<i64>,
-        /// Extract one envelope covering all target domains per contig.
-        #[arg(long)]
-        combine: bool,
-        /// Splice target domains together, deleting intervening sequence.
-        #[arg(long)]
-        splice: bool,
-        /// Don't reverse-complement reverse-strand hits.
-        #[arg(long = "keep_direction")]
-        keep_direction: bool,
-        /// Keep original contig names (don't add coordinate suffixes).
-        #[arg(long = "keep_name")]
-        keep_name: bool,
-        /// Write FASTA instead of GenBank.
-        #[arg(long = "fasta_out")]
-        fasta_out: bool,
-        /// Only process contigs with these names.
-        #[arg(long, num_args = 1..)]
-        contigs: Vec<String>,
-        /// File of contig names to process.
-        #[arg(long = "contigs_file")]
-        contigs_file: Option<String>,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-        /// Which domains to extract, by the CDS or protein they are on, by fragment status: include (all), exclude (skip fragments) or
-        /// only (only fragments). Default: include.
-        #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
-        partial: Option<String>,
-    },
+    ExtractDomains(config::args::ExtractDomainsArgs),
     /// Extract peptide sequences from selected CDSs.
     ExtractPeptides {
         /// Input GenBank file(s) (stdin if omitted).
@@ -2525,88 +2465,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .map_err(|e| anyhow::anyhow!(e))?;
             write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
         }
-        Command::ExtractDomains {
-            input,
-            output,
-            evalue,
-            score,
-            domains,
-            domains_file,
-            databases,
-            search_hits,
-            pad_up,
-            pad_down,
-            combine,
-            splice,
-            keep_direction,
-            keep_name,
-            fasta_out,
-            contigs,
-            contigs_file,
-            partial,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::ExtractDomainsConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                evalue,
-                score,
-                domains,
-                domains_file,
-                databases,
-                search_hits,
-                pad_up,
-                pad_down,
-                combine,
-                splice,
-                keep_direction,
-                keep_name,
-                fasta_out,
-                contigs,
-                contigs_file,
-                partial,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::ExtractDomainsConfig>(p)?,
-                None => config::ExtractDomainsConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let mut records = load_inputs_str(&cfg.input)?;
-            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let selected_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
-            let databases = if cfg.databases.is_empty() {
-                None
-            } else {
-                Some(cfg.databases.iter().cloned().collect())
-            };
-            let opts = tools::extract_domains::ExtractDomainsOptions {
-                evalue: cfg.evalue,
-                score: cfg.score,
-                domains: selected_domains,
-                pad_up: cfg.pad_up.unwrap_or(0),
-                pad_down: cfg.pad_down.unwrap_or(0),
-                combine: cfg.combine,
-                keep_direction: cfg.keep_direction,
-                keep_name: cfg.keep_name,
-                search_hits: cfg.search_hits,
-                databases,
-                splice: cfg.splice,
-                partial: config::parse_partial(cfg.partial.as_deref())?,
-            };
-            let out = tools::extract_domains::extract_domains(&records, &opts)
-                .map_err(|e| anyhow::anyhow!(e))?;
-            if cfg.fasta_out {
-                write_fasta_bp_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-            } else {
-                write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-            }
-        }
+        Command::ExtractDomains(args) => commands::extract_domains::run(&args)?,
         Command::ExtractPeptides {
             input,
             output,

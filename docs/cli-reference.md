@@ -296,15 +296,16 @@ domainatoredux select_by_coord -i contigs.gb --coords regions.tsv -o regions.gb
 
 ### `extract_domains`
 
-Extract just the domain-annotated regions as their own records. `--pad_up`/`--pad_down`
-extend the boundaries (negative values trim), `--combine` merges adjacent domains into one
-record, `--splice` joins non-adjacent ones, `--keep_direction` and `--keep_name` control
-orientation and naming, `--fasta_out` writes FASTA. Filter by `-e/--evalue`, `--score`,
-`--domains`, `--databases` or `--search_hits`.
+Extract just the domain-annotated regions as their own records. `--extend_range`, or
+`--extend_up`/`--extend_down`, extend the boundaries (negative values trim), `--combine`
+merges adjacent domains into one record, `--splice` joins non-adjacent ones,
+`--keep_direction` and `--keep_name` control orientation and naming. Filter by
+`-e/--evalue`, `--min_score`, `--domains`, `--databases`, or extract the `Domain_Search`
+best hits with `--annotation_type domain_search`.
 
 ```bash
-domainatoredux extract_domains -i annotated.gb -o domains.fasta \
-  --domains Sod_Fe_N --pad_up 10 --pad_down 10 --fasta_out
+domainatoredux extract_domains -i annotated.gb --fasta_out domains.fasta \
+  --domains Sod_Fe_N --extend_range 10
 ```
 
 ### `extract_peptides`
