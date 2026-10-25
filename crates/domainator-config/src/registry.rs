@@ -113,11 +113,17 @@ pub const TOOLS: &[ToolInfo] = &[
             "Add color qualifiers to CDS and domain features.",
         )
     },
-    tool(
-        "deduplicate_genbank",
-        "edit",
-        "Reduce redundancy by clustering sequences (cd-hit, usearch, diamond, or exact hashes).",
-    ),
+    ToolInfo {
+        migrated: true,
+        stdin: false,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        no_stdout: &["log_out", "cluster_tsv_out"],
+        ..tool(
+            "deduplicate_genbank",
+            "edit",
+            "Reduce redundancy by clustering sequences (cd-hit, usearch, diamond, or exact hashes).",
+        )
+    },
     ToolInfo {
         migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),

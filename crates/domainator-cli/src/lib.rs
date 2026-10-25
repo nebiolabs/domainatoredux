@@ -32,7 +32,6 @@ use domainator_core::tools::build_ssn_viewer::{
     build_ssn_viewer_bundle, gzip, render_html, serialize_bundle,
 };
 use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
-use domainator_core::tools::deduplicate_genbank;
 use domainator_core::tools::gene_call;
 use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
 use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
@@ -258,61 +257,7 @@ enum Command {
         gene_call: Option<String>,
     },
     /// Remove redundant sequences (hash exact-dedup, or cd-hit/diamond/usearch clustering).
-    DeduplicateGenbank {
-        /// Input GenBank/FASTA file(s).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output file. Writes to stdout if omitted.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Log file (default: stderr).
-        #[arg(long)]
-        log: Option<String>,
-        /// Molecule type for FASTA input (protein/nucleotide).
-        #[arg(long = "fasta_type")]
-        fasta_type: Option<String>,
-        /// Clustering algorithm: cd-hit | hash | diamond | usearch [default: cd-hit].
-        #[arg(long)]
-        algorithm: Option<String>,
-        /// Path to the external clusterer binary (else $DOMAINATOREDUX_CDHIT / $DOMAINATOREDUX_DIAMOND /
-        /// $DOMAINATOREDUX_USEARCH, then PATH). For cd-hit this is the `cdhit` multiplexer, or a
-        /// `cd-hit`/`cd-hit-est` executable, which is run directly.
-        #[arg(long = "bin_path")]
-        bin_path: Option<String>,
-        /// Identity threshold in [0,1] (must be 1 for hash).
-        #[arg(long)]
-        id: Option<f64>,
-        /// Prepend "<cluster_size>-" to representative names.
-        #[arg(long = "prefix_count")]
-        prefix_count: bool,
-        /// Append "-<cluster_size>" to representative names.
-        #[arg(long = "suffix_count")]
-        suffix_count: bool,
-        /// Threads (0 = all cores).
-        #[arg(long)]
-        cpu: Option<usize>,
-        /// Extra clusterer args as an inner JSON dict, e.g. '"-s":0.9'.
-        #[arg(long)]
-        params: Option<String>,
-        /// Write output as FASTA instead of GenBank.
-        #[arg(long = "fasta_out")]
-        fasta_out: bool,
-        /// Consider both strands (nucleotide only).
-        #[arg(long = "both_strands")]
-        both_strands: bool,
-        /// Write a representative/contigs cluster-membership TSV to this path.
-        #[arg(long = "cluster_table")]
-        cluster_table: Option<String>,
-        /// Separator between contig names in the cluster table (default ' ; ').
-        #[arg(long = "cluster_sep")]
-        cluster_sep: Option<String>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    DeduplicateGenbank(config::args::DeduplicateGenbankArgs),
     /// Convert GenBank record(s) to FASTA.
     GenbankToFasta(config::args::GenbankToFastaArgs),
     /// Clean/filter sequences: newick-safe names, dedup names, strip/filter residues.
@@ -1153,26 +1098,6 @@ fn write_genbank_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result<
     }
 }
 
-/// Write records as FASTA (Biopython header convention) to a file or stdout.
-fn write_fasta_bp_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result<()> {
-    match output {
-        Some(p) => {
-            let file = std::fs::File::create(p).context("creating FASTA output")?;
-            let mut w = std::io::BufWriter::new(file);
-            fasta::write_fasta_bp(&mut w, records)?;
-            w.flush()?;
-            Ok(())
-        }
-        None => {
-            let stdout = std::io::stdout();
-            let mut h = std::io::BufWriter::new(stdout.lock());
-            fasta::write_fasta_bp(&mut h, records)?;
-            h.flush()?;
-            Ok(())
-        }
-    }
-}
-
 /// Load an `NCBITaxonomy` from `--ncbi_taxonomy_path` (only when a taxonomy
 /// filter/column is in use).
 fn load_taxonomy(path: &str) -> Result<NCBITaxonomy> {
@@ -1192,9 +1117,6 @@ pub(crate) fn load_typed(input: &Path, fasta_type: &str) -> Result<Vec<SeqRecord
     }
 }
 
-/// Parse `deduplicate_genbank`'s `--params` (an inner JSON dict like `"-s":0.9`) into an
-/// ordered list of `(flag, value)` args. Numbers/bools are stringified; a null
-/// value means a bare flag.
 /// Parse a `FromStr` choice (`--mode`, `--scope`), keeping its own error message.
 fn parse_choice<T: std::str::FromStr<Err = String>>(s: &str) -> Result<T> {
     s.parse().map_err(|e: String| anyhow::anyhow!(e))
@@ -1214,28 +1136,6 @@ fn gene_call_request(scope: Option<&str>, cpu: usize) -> Result<Option<gene_call
             })
         })
         .transpose()
-}
-
-fn parse_dedup_params(s: Option<&str>) -> Result<Vec<(String, Option<String>)>> {
-    let Some(s) = s.filter(|s| !s.trim().is_empty()) else {
-        return Ok(Vec::new());
-    };
-    let wrapped = format!("{{{s}}}");
-    let val: serde_json::Value =
-        serde_json::from_str(&wrapped).context("parsing --params as a JSON dict")?;
-    let obj = val
-        .as_object()
-        .context("--params must be a JSON object body")?;
-    let mut out = Vec::new();
-    for (k, v) in obj {
-        let sv = match v {
-            serde_json::Value::Null => None,
-            serde_json::Value::String(s) => Some(s.clone()),
-            other => Some(other.to_string()),
-        };
-        out.push((k.clone(), sv));
-    }
-    Ok(out)
 }
 
 /// Compile `--include_taxids`/`--exclude_taxids`/`--taxonomy_expr` into an
@@ -1718,134 +1618,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             write_genbank(&output, &hits).context("writing GenBank")?;
             println!("wrote {} hit contigs to {}", hits.len(), output);
         }
-        Command::DeduplicateGenbank {
-            input,
-            output,
-            log,
-            fasta_type,
-            algorithm,
-            bin_path,
-            id,
-            prefix_count,
-            suffix_count,
-            cpu,
-            params,
-            fasta_out,
-            both_strands,
-            cluster_table,
-            cluster_sep,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::DeduplicateConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                log,
-                fasta_type,
-                algorithm,
-                bin_path,
-                id,
-                prefix_count,
-                suffix_count,
-                cpu,
-                params,
-                fasta_out,
-                both_strands,
-                cluster_table,
-                cluster_sep,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::DeduplicateConfig>(p)?,
-                None => config::DeduplicateConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            if cfg.input.is_empty() {
-                anyhow::bail!("missing required `input` (-i / --input or config)");
-            }
-            if cfg.prefix_count && cfg.suffix_count {
-                anyhow::bail!("--prefix_count and --suffix_count are mutually exclusive");
-            }
-            let id = cfg.id.context("missing required `--id`")?;
-            let fasta_type = cfg.fasta_type.clone().unwrap_or_else(|| "protein".into());
-            let params = parse_dedup_params(cfg.params.as_deref())?;
-            // Read all inputs once (used for both clustering and output).
-            let mut records: Vec<SeqRecord> = Vec::new();
-            for p in &cfg.input {
-                records.extend(load_typed(&PathBuf::from(p), &fasta_type)?);
-            }
-            let opts = deduplicate_genbank::DeduplicateOptions {
-                algorithm: cfg.algorithm.clone().unwrap_or_else(|| "cd-hit".into()),
-                id,
-                both_strands: cfg.both_strands,
-                fasta_type: fasta_type.clone(),
-                cpu: cfg.cpu.unwrap_or(0),
-                bin_path: cfg.bin_path.clone(),
-                params,
-            };
-            let result = deduplicate_genbank::deduplicate(&records, &opts)
-                .map_err(|e| anyhow::anyhow!(e))?;
-
-            // Build output records (representatives, input order) with optional counts.
-            let count_by_rep: std::collections::HashMap<usize, usize> =
-                result.clusters.iter().map(|(r, m)| (*r, m.len())).collect();
-            let mut final_name: std::collections::HashMap<usize, String> =
-                std::collections::HashMap::new();
-            let mut out_records: Vec<SeqRecord> = Vec::new();
-            for &i in &result.representatives {
-                let mut rec = records[i].clone();
-                let base = rec.id.clone();
-                let count = count_by_rep.get(&i).copied().unwrap_or(1);
-                let newname = if cfg.prefix_count {
-                    format!("{count}-{base}")
-                } else if cfg.suffix_count {
-                    format!("{base}-{count}")
-                } else {
-                    base
-                };
-                rec.id = newname.clone();
-                final_name.insert(i, newname);
-                out_records.push(rec);
-            }
-
-            if cfg.fasta_out {
-                write_fasta_bp_out(
-                    &out_records,
-                    cfg.output.as_ref().map(PathBuf::from).as_ref(),
-                )?;
-            } else {
-                write_genbank_out(
-                    &out_records,
-                    cfg.output.as_ref().map(PathBuf::from).as_ref(),
-                )?;
-            }
-
-            if let Some(table_path) = &cfg.cluster_table {
-                let sep = cfg.cluster_sep.clone().unwrap_or_else(|| " ; ".into());
-                let mut t = String::from("representative\tcontigs\n");
-                for (rep, members) in &result.clusters {
-                    let rep_name = final_name.get(rep).cloned().unwrap_or_default();
-                    let names: Vec<String> =
-                        members.iter().map(|&m| records[m].id.clone()).collect();
-                    t.push_str(&format!("{rep_name}\t{}\n", names.join(&sep)));
-                }
-                std::fs::write(table_path, t).context("writing cluster table")?;
-            }
-
-            let log_msg = format!(
-                "Input  size: {}\nOutput size: {}\n",
-                records.len(),
-                out_records.len()
-            );
-            match &cfg.log {
-                Some(p) => std::fs::write(p, log_msg).context("writing log")?,
-                None => eprint!("{log_msg}"),
-            }
-        }
+        Command::DeduplicateGenbank(args) => commands::deduplicate_genbank::run(&args)?,
         Command::GenbankToFasta(args) => commands::genbank_to_fasta::run(&args)?,
         Command::CleanSequences(args) => commands::clean_sequences::run(&args)?,
         Command::GeneCall {

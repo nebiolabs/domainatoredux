@@ -7,12 +7,12 @@ call an external program. Either install it, or switch to an algorithm that need
 
 ```bash
 domainatoredux seq_dist -i in.fasta --dense out.hdf5 --algorithm hmmer
-domainatoredux deduplicate_genbank -i in.fasta -o out.fasta --algorithm hash --id 1
+domainatoredux deduplicate_genbank -i in.fasta --fasta_out out.fasta --algorithm hash --identity 1
 ```
 
 The built-in `hmmer` algorithm is a complete HMMER3 implementation — slower than DIAMOND
 on large datasets, but always available. The `hash` deduplication backend does exact
-duplicate removal only, which is why it requires `--id 1`.
+duplicate removal only, which is why it requires `--identity 1`.
 
 To install the binaries, the easiest route is the **External tools** panel in the
 [desktop app](gui.md#external-tools). Otherwise put the program on your `PATH`, or point
@@ -52,13 +52,14 @@ GenBank files downloaded from NCBI.
 ## `deduplicate_genbank` with cd-hit complains about the molecule type
 
 cd-hit ships as two programs: `cd-hit` for protein and `cd-hit-est` for nucleotide.
-Domainator picks based on the first record's molecule type. If you point `--bin_path` at
+Domainator picks based on the first record's molecule type. If you point `--cdhit_path` at
 a binary that cannot serve the request — protein `cd-hit` for nucleotide input — it
 prefers the sibling executable next to it, and errors if there isn't one rather than
 clustering DNA as if it were protein.
 
-Point `--bin_path` at the `cdhit` multiplexer binary (the Rust port, which dispatches on
-its first argument) and this resolves itself.
+Point `--cdhit_path` at the `cdhit` multiplexer binary (the Rust port, which dispatches on
+its first argument) and this resolves itself, or give `cd-hit-est`'s location with
+`--cdhit_est_path`.
 
 ## "unexpected argument '--html_out'"
 

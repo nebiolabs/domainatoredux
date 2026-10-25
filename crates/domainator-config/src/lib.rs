@@ -243,47 +243,6 @@ impl DomainSearchConfig {
     }
 }
 
-/// `deduplicate_genbank` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct DeduplicateConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub log: Option<String>,
-    pub fasta_type: Option<String>,
-    pub algorithm: Option<String>,
-    pub bin_path: Option<String>,
-    pub id: Option<f64>,
-    pub prefix_count: bool,
-    pub suffix_count: bool,
-    pub cpu: Option<usize>,
-    pub params: Option<String>,
-    pub fasta_out: bool,
-    pub both_strands: bool,
-    pub cluster_table: Option<String>,
-    pub cluster_sep: Option<String>,
-}
-
-impl DeduplicateConfig {
-    pub fn merge_cli(&mut self, cli: DeduplicateConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, log);
-        merge_scalar!(self, cli, fasta_type);
-        merge_scalar!(self, cli, algorithm);
-        merge_scalar!(self, cli, bin_path);
-        merge_scalar!(self, cli, id);
-        self.prefix_count |= cli.prefix_count;
-        self.suffix_count |= cli.suffix_count;
-        merge_scalar!(self, cli, cpu);
-        merge_scalar!(self, cli, params);
-        self.fasta_out |= cli.fasta_out;
-        self.both_strands |= cli.both_strands;
-        merge_scalar!(self, cli, cluster_table);
-        merge_scalar!(self, cli, cluster_sep);
-    }
-}
-
 /// `gene_call` parameters (a port-only tool: Prodigal-style gene calling through the
 /// external Orphos binary).
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -849,7 +808,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
         "domainate" => domainate_schema(),
         "domain_search" => domain_search_schema(),
-        "deduplicate_genbank" => deduplicate_schema(),
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "seq_dist" => seq_dist_schema(),
@@ -1096,33 +1054,6 @@ fn domain_search_schema() -> serde_json::Value {
             "ncbi_taxonomy_path": {"type": ["string", "null"]},
             "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if projected uncompressed GenBank output exceeds this many GB (0 disables)"},
             "gene_call": {"enum": ["all", "unannotated", null], "description": GENE_CALL_HELP}
-        }
-    })
-}
-
-fn deduplicate_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "deduplicate_genbank config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}, "description": "GenBank/FASTA inputs"},
-            "output": {"type": ["string", "null"], "description": "Output path (stdout if omitted)"},
-            "log": {"type": ["string", "null"]},
-            "fasta_type": {"enum": ["protein", "nucleotide", null]},
-            "algorithm": {"enum": ["hash", "cd-hit", "cd-hit-est", "diamond", "usearch", null], "default": "cd-hit", "description": "Clustering algorithm (default cd-hit; cd-hit switches to cd-hit-est for non-protein input)"},
-            "bin_path": {"type": ["string", "null"], "description": "Path to the external clusterer binary (else $DOMAINATOREDUX_CDHIT / $DOMAINATOREDUX_DIAMOND / $DOMAINATOREDUX_USEARCH, then PATH)"},
-            "id": {"type": ["number", "null"], "description": "Identity threshold 0-1 (must be 1 for hash)"},
-            "prefix_count": {"type": "boolean", "default": false},
-            "suffix_count": {"type": "boolean", "default": false},
-            "cpu": {"type": ["integer", "null"], "description": "Threads (0 = all cores)"},
-            "params": {"type": ["string", "null"], "description": "Extra clusterer args as an inner JSON dict, e.g. '\"-s\":0.9'"},
-            "fasta_out": {"type": "boolean", "default": false},
-            "both_strands": {"type": "boolean", "default": false, "description": "Nucleotide only"},
-            "cluster_table": {"type": ["string", "null"], "description": "Write representative/contigs TSV"},
-            "cluster_sep": {"type": ["string", "null"], "description": "Separator in the cluster table (default ' ; ')"}
         }
     })
 }
@@ -1531,7 +1462,6 @@ mod tests {
         tools![
             "domainate" => DomainateConfig,
             "domain_search" => DomainSearchConfig,
-            "deduplicate_genbank" => DeduplicateConfig,
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
             "seq_dist" => SeqDistConfig,

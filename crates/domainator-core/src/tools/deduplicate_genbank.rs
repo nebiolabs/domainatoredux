@@ -35,10 +35,16 @@ pub struct DeduplicateOptions {
     pub fasta_type: String,
     /// Worker threads for the external clusterer (`0` = all cores).
     pub cpu: usize,
-    /// Override path to the external binary.
+    /// The clusterer's executable (`--cdhit_path`, `--usearch_path`,
+    /// `--diamond_path`), instead of locating it.
     pub bin_path: Option<String>,
-    /// Extra `(flag, value)` args forwarded to the external clusterer (`--params`).
-    pub params: Vec<(String, Option<String>)>,
+    /// cd-hit-est's executable (`--cdhit_est_path`), used for nucleotide input with
+    /// `cd-hit`; `bin_path` when not given, since the `cdhit` program runs both.
+    pub cdhit_est_path: Option<String>,
+    /// Extra arguments for the external clusterer (`--cdhit_args`, `--usearch_args`,
+    /// `--diamond_args`, already split into words). One that sets an option this
+    /// tool sets itself is refused.
+    pub extra_args: Vec<String>,
 }
 
 impl Default for DeduplicateOptions {
@@ -50,7 +56,8 @@ impl Default for DeduplicateOptions {
             fasta_type: "protein".into(),
             cpu: 0,
             bin_path: None,
-            params: Vec::new(),
+            cdhit_est_path: None,
+            extra_args: Vec::new(),
         }
     }
 }
@@ -289,7 +296,11 @@ fn run_diamond(
         .arg(format!("{}", opts.id * 100.0))
         .arg("--threads")
         .arg(cpus.to_string());
-    append_params(&mut cmd, &opts.params);
+    cmd.args(extra_args(
+        &opts.extra_args,
+        &["-d", "-o", "--approx-id", "--threads"],
+        "--diamond_args",
+    )?);
     let out = cmd.output().map_err(|e| {
         spawn_error(e, &bin, "Install diamond or set $DOMAINATOREDUX_DIAMOND.").to_string()
     })?;
@@ -401,7 +412,7 @@ fn cdhit_word_size(id: f64, est: bool) -> Result<u32, String> {
 /// C++ suite installs both executables together, look for the sibling first; only if
 /// it is genuinely absent is this an error, and it is an error rather than a silent
 /// substitution. (Python has the same hazard and does substitute silently, but no
-/// upstream invocation passes `--bin_path`, so nothing here is parity-relevant.)
+/// upstream invocation passes `--cdhit_path`, so nothing here is parity-relevant.)
 fn cdhit_command(bin: &Path, est: bool) -> Result<(PathBuf, Option<&'static str>), String> {
     let want = if est { "cd-hit-est" } else { "cd-hit" };
     let name = bin.file_name().and_then(|n| n.to_str()).unwrap_or_default();
@@ -421,7 +432,7 @@ fn cdhit_command(bin: &Path, est: bool) -> Result<(PathBuf, Option<&'static str>
     }
     Err(format!(
         "{} is the {stem} program, but this input needs {want}, and no {want}{ext} sits \
-         beside it. Point $DOMAINATOREDUX_CDHIT (or --bin_path) at the `cdhit` multiplexer \
+         beside it. Point $DOMAINATOREDUX_CDHIT (or --cdhit_path) at the `cdhit` multiplexer \
          or at {want}{ext}.",
         bin.display()
     ))
@@ -434,7 +445,12 @@ fn run_cdhit(
     cpus: usize,
     est: bool,
 ) -> Result<Vec<(String, Vec<String>)>, String> {
-    let bin = match &opts.bin_path {
+    let path = if est {
+        opts.cdhit_est_path.as_ref().or(opts.bin_path.as_ref())
+    } else {
+        opts.bin_path.as_ref()
+    };
+    let bin = match path {
         Some(p) => PathBuf::from(p),
         None => find_binary(CDHIT_BIN_NAME, &[CDHIT_ENV_VAR, "CDHIT"], "cdhit"),
     };
@@ -466,13 +482,16 @@ fn run_cdhit(
         .arg(input_fasta)
         .arg("-o")
         .arg(&out_fasta);
-    let mut params = opts.params.clone();
-    // Only cd-hit-est has a both-strands mode; Python sets it with `setdefault`, so
-    // an explicit `--params` `-r` wins.
-    if est && opts.both_strands && !params.iter().any(|(k, _)| k == "-r") {
-        params.push(("-r".into(), Some("1".into())));
+    let mut extra = extra_args(
+        &opts.extra_args,
+        &["-n", "-M", "-T", "-d", "-c", "-i", "-o"],
+        "--cdhit_args",
+    )?;
+    // Only cd-hit-est has a both-strands mode; an explicit `--cdhit_args` `-r` wins.
+    if est && opts.both_strands && !extra.iter().any(|a| a == "-r") {
+        extra.extend(["-r".to_string(), "1".to_string()]);
     }
-    append_params(&mut cmd, &params);
+    cmd.args(extra);
 
     let out = cmd.output().map_err(|e| {
         spawn_error(
@@ -583,11 +602,22 @@ fn run_usearch(
         .arg(&centroids)
         .arg("-uc")
         .arg(&uc);
-    let mut params = opts.params.clone();
-    if opts.both_strands && !params.iter().any(|(k, _)| k == "-strand") {
-        params.push(("-strand".into(), Some("both".into())));
+    let mut extra = extra_args(
+        &opts.extra_args,
+        &[
+            "-sort",
+            "-threads",
+            "-cluster_fast",
+            "-id",
+            "-centroids",
+            "-uc",
+        ],
+        "--usearch_args",
+    )?;
+    if opts.both_strands && !extra.iter().any(|a| a == "-strand") {
+        extra.extend(["-strand".to_string(), "both".to_string()]);
     }
-    append_params(&mut cmd, &params);
+    cmd.args(extra);
     let out = cmd.output().map_err(|e| {
         spawn_error(e, &bin, "Install usearch or set $DOMAINATOREDUX_USEARCH.").to_string()
     })?;
@@ -637,13 +667,24 @@ fn parse_uc(path: &Path) -> Result<Vec<(String, Vec<String>)>, String> {
         .collect())
 }
 
-fn append_params(cmd: &mut Command, params: &[(String, Option<String>)]) {
-    for (k, v) in params {
-        cmd.arg(k);
-        if let Some(v) = v {
-            cmd.arg(v);
-        }
+/// The user's extra arguments for a clusterer (upstream `external.append_extra_args`):
+/// an error naming `option` if they set one of `set` (the options this tool passes
+/// itself), else the arguments.
+fn extra_args(extra: &[String], set: &[&str], option: &str) -> Result<Vec<String>, String> {
+    let mut conflicts: Vec<&str> = set
+        .iter()
+        .copied()
+        .filter(|flag| extra.iter().any(|a| a == flag))
+        .collect();
+    conflicts.sort_unstable();
+    if conflicts.is_empty() {
+        return Ok(extra.to_vec());
     }
+    Err(format!(
+        "{option} cannot set {}: Domainator sets {} itself.",
+        conflicts.join(", "),
+        if conflicts.len() == 1 { "it" } else { "them" }
+    ))
 }
 
 fn num_cpus() -> usize {
@@ -793,7 +834,7 @@ mod tests {
     }
 
     /// The Rust port is one `cdhit` multiplexer taking the program name as its first
-    /// argument, but `--bin_path` may name a C++ `cd-hit`/`cd-hit-est` (or a symlink
+    /// argument, but `--cdhit_path` may name a C++ `cd-hit`/`cd-hit-est` (or a symlink
     /// to those names), which must be run directly or it sees `cd-hit` as an input.
     #[test]
     fn cdhit_command_only_prefixes_the_multiplexer() {
@@ -870,5 +911,24 @@ mod tests {
             ..Default::default()
         };
         assert!(deduplicate(&recs, &bad_strand).is_err());
+    }
+
+    /// Upstream `append_extra_args`: extra arguments may add options, never override
+    /// one the tool sets, and the error names the option they came from.
+    #[test]
+    fn extra_args_cannot_set_what_the_tool_sets() {
+        let words = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
+        assert_eq!(
+            extra_args(&words("-s 0.9"), &["-c", "-n"], "--cdhit_args").unwrap(),
+            ["-s", "0.9"]
+        );
+        assert_eq!(
+            extra_args(&words("-n 5 -s 0.9 -c 1"), &["-n", "-c"], "--cdhit_args").unwrap_err(),
+            "--cdhit_args cannot set -c, -n: Domainator sets them itself."
+        );
+        assert_eq!(
+            extra_args(&words("--threads 2"), &["--threads"], "--diamond_args").unwrap_err(),
+            "--diamond_args cannot set --threads: Domainator sets it itself."
+        );
     }
 }

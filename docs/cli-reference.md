@@ -370,16 +370,19 @@ Collapse redundant sequences, keeping one representative per cluster.
 
 `--algorithm` selects the backend: **`cd-hit`** (the default), `diamond`, `usearch` — each
 needing that external binary — or **`hash`**, which is pure Rust, needs nothing, and does
-exact deduplication only (so it requires `--id 1`). `--id` is required and is the identity
-threshold in `[0,1]`. `--bin_path` points at the binary; `--cluster_table` writes cluster
-membership; `--prefix_count`/`--suffix_count` annotate representative names with the
-cluster size; `--both_strands` for nucleotides; `--params` forwards extra arguments.
+exact deduplication only (so it requires `--identity 1`). `--identity` is required and is
+the identity threshold in `[0,1]`. `--cdhit_path`, `--cdhit_est_path`, `--usearch_path` and
+`--diamond_path` point at the binaries; `--cluster_tsv_out` writes cluster membership;
+`--prefix_count`/`--suffix_count` annotate representative names with the cluster size;
+`--both_strands` for nucleotides. `--cdhit_args`, `--usearch_args` and `--diamond_args`
+pass extra options to the program, as one quoted string (`--cdhit_args="-s 0.9"`); an
+option Domainator sets itself is refused.
 
 ```bash
-domainatoredux deduplicate_genbank -i proteins.fasta -o representatives.fasta \
-  --algorithm hash --id 1
-domainatoredux deduplicate_genbank -i proteins.fasta -o representatives.fasta \
-  --id 0.9 --cluster_table clusters.tsv
+domainatoredux deduplicate_genbank -i proteins.fasta --fasta_out representatives.fasta \
+  --algorithm hash --identity 1
+domainatoredux deduplicate_genbank -i proteins.fasta --fasta_out representatives.fasta \
+  --identity 0.9 --cluster_tsv_out clusters.tsv
 ```
 
 ---

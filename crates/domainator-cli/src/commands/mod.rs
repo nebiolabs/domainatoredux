@@ -3,6 +3,7 @@
 
 pub mod clean_sequences;
 pub mod color_genbank;
+pub mod deduplicate_genbank;
 pub mod enum_report;
 pub mod extract_domains;
 pub mod extract_peptides;
@@ -30,6 +31,14 @@ pub fn usage_error(message: impl std::fmt::Display) -> anyhow::Error {
         format!("{message}\n"),
     )
     .into()
+}
+
+/// A `--cpu` value as a thread count for the core (`0`: all cores), refusing a
+/// negative one as upstream's `resolve_cpu` does.
+pub fn cpu_threads(cpu: i64) -> Result<usize> {
+    usize::try_from(cpu).map_err(|_| {
+        anyhow::anyhow!("--cpu must be 0 (all cores) or a positive number of threads, not {cpu}.")
+    })
 }
 
 /// Read every `-i` input in order; `-` or `/dev/stdin` is GenBank on standard input.
