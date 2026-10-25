@@ -277,5 +277,5 @@ row; editable in the [Table viewer](gui.md#viewers) or any spreadsheet.
 
 ## JSON
 
-Report tools emit machine-readable output with `--json`, which is independent of `-o`.
+Report tools emit machine-readable output with `--json_out`, which is independent of `-o`.
 See [Config files and agent output](config-and-agents.md) for the shape of each.

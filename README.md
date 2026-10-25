@@ -141,7 +141,7 @@ deliberately not ported, is tracked in [Porting status](docs/porting-status.md).
 Not ported: anything depending on torch or Infernal. Gene calling runs Prodigal's
 algorithm through the external [Orphos](https://github.com/FullHuman/orphos) binary. The
 `structure_*` subsystem and HTML report output are out of scope for now; report tools offer
-`--json` instead.
+`--json_out` instead.
 
 ## Credits
 

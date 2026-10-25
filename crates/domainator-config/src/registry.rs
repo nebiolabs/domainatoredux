@@ -357,11 +357,28 @@ pub const TOOLS: &[ToolInfo] = &[
             "Tabulate properties of each HMM profile.",
         )
     },
-    tool(
-        "summary_report",
-        "report",
-        "Summarize the domain and taxonomy content of a dataset.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&[
+            "text_out",
+            "json_out",
+            "domains_tsv_out",
+            "co_occurrence_fraction_out",
+            "co_occurrence_count_out",
+        ]),
+        no_stdout: &[
+            "domains_tsv_out",
+            "co_occurrence_fraction_out",
+            "co_occurrence_count_out",
+        ],
+        dynamic_defaults: &["ncbi_taxonomy_path"],
+        unsupported: &[("html_out", "null"), ("taxonomy_update", "false")],
+        ..tool(
+            "summary_report",
+            "report",
+            "Summarize the domain and taxonomy content of a dataset.",
+        )
+    },
     ToolInfo {
         migrated: true,
         stdin: false,

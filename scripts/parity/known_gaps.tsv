@@ -67,11 +67,6 @@ select_by_cds	test_select_by_cds_3#0	differs	pending:1.0-behavior	extraction.gb:
 select_by_cds	test_select_by_cds_4#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:44
 select_by_cds	test_select_by_cds_align_1#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:44
 select_by_cds	test_select_by_cds_invert_1#0	differs	pending:1.0-behavior	extraction.gb: 2 feature location/type, 0 LOCUS name
-summary_report	extra:test_bare_partial_qualifier_is_a_fragment#0	rust-failed	pending:1.0-cli	error: unexpected argument '--json_out' found
-summary_report	extra:test_summary_report_counts_protein_fragments#0	rust-failed	pending:1.0-cli	error: unexpected argument '--json_out' found
-summary_report	extra:test_summary_report_partial#0	rust-failed	pending:1.0-cli	error: unexpected argument '--json_out' found
-summary_report	extra:test_summary_report_partial#1	rust-failed	pending:1.0-cli	error: unexpected argument '--json_out' found
-summary_report	extra:test_summary_report_partial#2	rust-failed	pending:1.0-cli	error: unexpected argument '--json_out' found
 summary_report	test_contig_stats_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 summary_report	test_contig_stats_empty_input#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 summary_report	test_contig_stats_taxonomy_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found

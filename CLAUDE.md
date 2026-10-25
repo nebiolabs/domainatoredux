@@ -68,7 +68,7 @@ report tools' `--columns` take upstream's `name:arg:arg` tokens, parsed against 
 catalogs in `columns.rs` (the clap value type, so a bad token fails at parse time).
 An upstream option a migrated tool lacks is listed in its registry entry's
 `unsupported`, with upstream's default, so upstream configs that name it still load.
-Migrated so far: `sort_contigs`, `enum_report`, `hmmer_report`, `select_by_contig`, `select_by_cds`, `select_by_coord`, `filter_domains`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `color_genbank`, `clean_sequences`, `genbank_to_fasta`, `deduplicate_genbank`, `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer`, `matrix_report`, `ssn_navigator`; the rest still use the
+Migrated so far: `sort_contigs`, `enum_report`, `hmmer_report`, `select_by_contig`, `select_by_cds`, `select_by_coord`, `filter_domains`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `color_genbank`, `clean_sequences`, `genbank_to_fasta`, `deduplicate_genbank`, `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer`, `matrix_report`, `ssn_navigator`, `summary_report`; the rest still use the
 old layer below.
 
 **Config files / agent interface, unmigrated tools** (the `crates/domainator-config` crate — *not* a
@@ -86,7 +86,7 @@ validated post-merge so they can come from the config file).
 
 **Agent-facing JSON** (upstream's documented contract, see its `AGENTS.md`):
 `enum_report` and `hmmer_report` write **streaming NDJSON** with `--json_out`, one
-compact object per row; `matrix_report` (`--json_out`) and `summary_report` (`--json`)
+compact object per row; `matrix_report` and `summary_report` (also `--json_out`)
 write **one JSON object** with a stable shape, compact and ASCII-escaped like Python's
 `json.dump` (`io::python_json`); `ssn_navigator` always writes JSON. In every case the
 option takes a path (`-` = stdout) and is **independent of `-o`**, so a run can produce
@@ -345,7 +345,7 @@ as are `--cluster_tsv_out` and `--color_table_out`), `build_ssn_viewer` (`.dsnv`
 identical after gunzip, and accepted by Python's own
 `ssn_bundle.load_bundle`), `matrix_report` (`--json_out` byte-identical to Python's; text report
 line-for-line identical apart from the histogram), `ssn_navigator` (all five modes, against both
-implementations' bundles), and `summary_report` (`--json` identical incl. co-occurrence and
+implementations' bundles), and `summary_report` (`--json_out` byte-identical incl. co-occurrence and
 `--databases`). The SSN core is cross-checked field for field by
 `scripts/sync_upstream.sh`'s `ssn_probe` guard.
 

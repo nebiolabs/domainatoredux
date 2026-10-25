@@ -36,7 +36,7 @@ interface, and these tools have moved so far: `sort_contigs`, `enum_report`,
 `domainatoredux describe` lists every tool's options exactly, including which ones a tool
 has not migrated yet.
 
-**There are no global flags.** `--config`, `--print_config`, `--cpu`, `--json` and
+**There are no global flags.** `--config`, `--print_config`, `--cpu`, `--json_out` and
 `--max_output_gb` are declared per tool, so they must come *after* the tool name, and a
 tool that doesn't declare one doesn't accept it.
 
@@ -561,18 +561,25 @@ still name them at their defaults (`null`, `false`), so upstream's configs load.
 ### `summary_report`
 
 Dataset-level statistics: contig and CDS counts, length distribution, domain frequency,
-taxonomy. `--domains` and `--databases` restrict the rollup; `--taxonomy` adds a taxonomic
-breakdown. `--json <path|->` emits one JSON object. The counts include partial CDSs and
-protein fragments (`partial_cdss`, `fragment_proteins`), and `--partial` restricts what
-is counted.
+taxonomy. `--contigs`/`--contigs_file` choose which contigs are counted and `--databases`
+which domain annotations; `--domains`/`--domains_file` name focus domains whose
+co-occurrence with every other domain is reported; `--taxonomy` adds a taxonomic
+breakdown. The counts include partial CDSs and protein fragments (`partial_cdss`,
+`fragment_proteins`), and `--partial` restricts what is counted.
+
+Outputs (at least one is required): `-o/--text_out` the text report, `--json_out` one
+compact JSON object (`schema_version` 1), `--domains_tsv_out` the domain frequency table,
+and `--co_occurrence_count_out`/`--co_occurrence_fraction_out` domain-by-domain matrices
+(dense TSV) of how many contigs carry both domains, or what fraction of the row domain's
+contigs also carry the column domain.
 
 ```bash
 domainatoredux summary_report -i annotated.gb -o summary.txt
-domainatoredux summary_report -i annotated.gb --json - | jq .domain_counts
+domainatoredux summary_report -i annotated.gb --json_out - | jq .domain_frequency
 ```
 
-Writes text to stdout if you request no output at all. HTML and the ASCII length histogram
-are not ported; the [desktop app's Summary tab](gui.md#viewers) covers that visually.
+HTML and the ASCII length histogram are not ported; the
+[desktop app's Summary tab](gui.md#viewers) covers that visually.
 
 ### `matrix_report`
 

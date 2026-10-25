@@ -157,34 +157,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `summary_report` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct SummaryReportConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub json: Option<String>,
-    pub domains: Vec<String>,
-    pub databases: Vec<String>,
-    pub taxonomy: bool,
-    pub ncbi_taxonomy_path: Option<String>,
-    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
-    pub partial: Option<String>,
-}
-
-impl SummaryReportConfig {
-    pub fn merge_cli(&mut self, cli: SummaryReportConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, json);
-        merge_vec!(self, cli, domains);
-        merge_vec!(self, cli, databases);
-        self.taxonomy |= cli.taxonomy;
-        merge_scalar!(self, cli, ncbi_taxonomy_path);
-        merge_scalar!(self, cli, partial);
-    }
-}
-
 /// `hmmer_compare` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -429,7 +401,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "hmmer_compare" => hmmer_compare_schema(),
-        "summary_report" => summary_report_schema(),
         "hmmer_select" => hmmer_select_schema(),
         "hmmer_build" => hmmer_build_schema(),
         "hmmer_search" => hmmer_search_schema(),
@@ -624,26 +595,6 @@ fn color_table_to_legend_schema() -> serde_json::Value {
     })
 }
 
-fn summary_report_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "summary_report parameters",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
-            "input": {"type": "array", "items": {"type": "string"}, "description": "Input GenBank file(s)"},
-            "output": {"type": ["string", "null"], "description": "Text report output path"},
-            "json": {"type": ["string", "null"], "description": "Write the full summary as one compact JSON object here; '-' for stdout"},
-            "domains": {"type": "array", "items": {"type": "string"}, "description": "Focus domains to report co-occurrence for"},
-            "databases": {"type": "array", "items": {"type": "string"}, "description": "Only count domains from these databases"},
-            "taxonomy": {"type": "boolean", "default": false},
-            "ncbi_taxonomy_path": {"type": ["string", "null"]}
-        }
-    })
-}
-
 fn hmmer_compare_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -818,7 +769,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "summary_report" => SummaryReportConfig,
             "hmmer_compare" => HmmerCompareConfig,
             "hmmer_select" => HmmerSelectConfig,
             "hmmer_build" => HmmerBuildConfig,

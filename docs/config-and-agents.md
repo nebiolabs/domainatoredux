@@ -134,8 +134,8 @@ shows its current options, and its config keys are the option names it lists.
 
 ## JSON output
 
-Four tools write machine-readable output on request: `enum_report`, `hmmer_report`
-and `matrix_report` with `--json_out`, `summary_report` with `--json`. In every case the
+Four tools write machine-readable output on request with `--json_out`: `enum_report`,
+`hmmer_report`, `matrix_report` and `summary_report`. In every case the
 option **takes a path, `-` means stdout, and it is independent of `-o`** — so one run can
 produce a human-readable report and a JSON one at the same time. `ssn_navigator` always
 writes JSON.
@@ -208,7 +208,7 @@ domainatoredux describe --tool domain_search > domain_search.json
 domainatoredux domain_search --config search.json
 
 # 3. read the results as data
-domainatoredux summary_report -i hits.gb --json - > summary.json
+domainatoredux summary_report -i hits.gb --json_out - > summary.json
 domainatoredux enum_report -i hits.gb --by cds --columns domains score --json_out rows.ndjson
 
 # 4. build a network and explore it without a GUI

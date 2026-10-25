@@ -113,22 +113,6 @@ structure_dist	-	tool	false	true	deferred:structure
 structure_domainate	-	tool	false	true	deferred:structure	
 structure_search	-	tool	false	true	deferred:structure	
 structure_to_genbank	-	tool	false	true	deferred:structure	
-summary_report	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-summary_report	-	required_outputs	null	["text_out","html_out","json_out","domains_tsv_out","co_occurrence_fraction_out","co_occurrence_count_out"]	todo:1.0-cli	
-summary_report	co_occurrence_count_out	missing	null	{"default":null,"flags":["--co_occurrence_count_out"],"kind":"path","name":"co_occurrence_count_out","required":false,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
-summary_report	co_occurrence_fraction_out	missing	null	{"default":null,"flags":["--co_occurrence_fraction_out"],"kind":"path","name":"co_occurrence_fraction_out","required":false,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
-summary_report	contigs	missing	null	{"default":null,"flags":["--contigs"],"kind":"value","multiple":true,"name":"contigs","required":false,"type":"string"}	todo:1.0-cli	
-summary_report	contigs_file	missing	null	{"default":null,"flags":["--contigs_file"],"kind":"path","name":"contigs_file","required":false,"role":"input","type":"string"}	todo:1.0-cli	
-summary_report	domains_file	missing	null	{"default":null,"flags":["--domains_file"],"kind":"path","name":"domains_file","required":false,"role":"input","type":"string"}	todo:1.0-cli	
-summary_report	domains_tsv_out	missing	null	{"default":null,"flags":["--domains_tsv_out"],"kind":"path","name":"domains_tsv_out","required":false,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
+summary_report	-	required_outputs	["text_out","json_out","domains_tsv_out","co_occurrence_fraction_out","co_occurrence_count_out"]	["text_out","html_out","json_out","domains_tsv_out","co_occurrence_fraction_out","co_occurrence_count_out"]	deferred:html	no html_out
 summary_report	html_out	missing	null	{"default":null,"flags":["--html_out"],"kind":"path","name":"html_out","required":false,"role":"output","stdout":true,"type":"string"}	deferred:html	
-summary_report	input	required	false	true	todo:1.0-cli	
-summary_report	json	extra	{"name":"json","flags":["--json"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-summary_report	json_out	missing	null	{"default":null,"flags":["--json_out"],"kind":"path","name":"json_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-summary_report	ncbi_taxonomy_path	default_dynamic	false	true	todo:1.0-cli	
-summary_report	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-summary_report	partial	default	null	"include"	todo:1.0-cli	
-summary_report	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-summary_report	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	todo:1.0-cli	
-summary_report	text_out	missing	null	{"default":null,"flags":["-o","--text_out"],"kind":"path","name":"text_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-summary_report	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
+summary_report	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs

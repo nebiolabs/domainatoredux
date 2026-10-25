@@ -5,15 +5,17 @@
 //! taxonomy counts.
 //!
 //! HTML output stays deferred — it is matplotlib/seaborn plots with no clean pure-Rust
-//! path, the same reason the tool as a whole was deferred before. The `--json` payload
+//! path, the same reason the tool as a whole was deferred before. The JSON payload
 //! is one of upstream's four documented agent contracts and needs no plotting, so it is
 //! ported in full; the text report reproduces everything except the ASCII length
 //! histogram (bashplotlib is not replicated, as in `matrix_report`).
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Map, Value};
 
+use crate::matrix::text::py_float_str;
+use crate::matrix::{DataMatrix, Storage};
 use crate::seq::partial::{feature_fragment_status, record_fragment_status, Partial};
 use crate::seq::taxonomy::NCBITaxonomy;
 use crate::seq::SeqRecord;
@@ -61,9 +63,19 @@ pub struct SummaryReport {
     pub cds_per_10kb: f64,
     pub length: Option<LengthStats>,
     pub domains: Vec<DomainRow>,
-    /// `{row_domain: {col_domain: percent}}` for the requested focus domains; empty
-    /// when none were given.
-    pub cooccurrence: BTreeMap<String, BTreeMap<String, f64>>,
+    /// `(row_domain, [(col_domain, percent)])` for the requested focus domains, each
+    /// row's columns in the order upstream's dict holds them (the order the pairs were
+    /// first seen); empty when none were given.
+    pub cooccurrence: Vec<(String, Vec<(String, f64)>)>,
+    /// Every counted domain, in first-encounter order: the axes of the co-occurrence
+    /// matrices.
+    pub cooccurrence_domains: Vec<String>,
+    /// Row-major `cooccurrence_domains`² counts: how many contigs carry both domains.
+    /// The diagonal is how many contigs carry each domain.
+    pub cooccurrence_counts: Vec<u64>,
+    /// Whether taxonomy was requested; the JSON then has a `taxonomy` list even when
+    /// it is empty.
+    pub report_taxonomy: bool,
     pub taxonomy: Vec<TaxonRow>,
 }
 
@@ -92,8 +104,30 @@ struct DomainAcc {
     avg_score: f64,
     databases: HashSet<String>,
     descriptions: HashSet<String>,
-    /// How many contigs carrying this domain also carry each other domain.
-    correlations: HashMap<String, u64>,
+    /// How many contigs carrying this domain also carry each other domain, in the
+    /// order the pairs were first seen, as upstream's dict keeps them.
+    correlations: Vec<(String, u64)>,
+    /// Where each domain is in `correlations`.
+    correlation_index: HashMap<String, usize>,
+}
+
+impl DomainAcc {
+    fn correlation(&self, other: &str) -> Option<u64> {
+        self.correlation_index
+            .get(other)
+            .map(|&i| self.correlations[i].1)
+    }
+
+    fn add_correlation(&mut self, other: &str) {
+        match self.correlation_index.get(other) {
+            Some(&i) => self.correlations[i].1 += 1,
+            None => {
+                self.correlation_index
+                    .insert(other.to_string(), self.correlations.len());
+                self.correlations.push((other.to_string(), 1));
+            }
+        }
+    }
 }
 
 pub fn summary_report(
@@ -157,8 +191,9 @@ pub fn summary_report(
             }
         }
 
-        // Domain names present on THIS contig, for the co-occurrence counts.
-        let mut contig_domains: HashSet<String> = HashSet::new();
+        // Domain names present on THIS contig, for the co-occurrence counts, in feature
+        // order (upstream's dict).
+        let mut contig_domains: Vec<String> = Vec::new();
         for feature in &contig.features {
             if feature.kind == "CDS"
                 && (excluded_cds_ids.is_empty()
@@ -189,7 +224,9 @@ pub fn summary_report(
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0.0);
 
-            contig_domains.insert(name.clone());
+            if !contig_domains.contains(&name) {
+                contig_domains.push(name.clone());
+            }
             if !domains.contains_key(&name) {
                 domain_order.push(name.clone());
             }
@@ -207,7 +244,7 @@ pub fn summary_report(
         for d1 in &contig_domains {
             for d2 in &contig_domains {
                 if let Some(acc) = domains.get_mut(d1) {
-                    *acc.correlations.entry(d2.clone()).or_insert(0) += 1;
+                    acc.add_correlation(d2);
                 }
             }
         }
@@ -232,12 +269,12 @@ pub fn summary_report(
     };
 
     // Co-occurrence, as a percentage of the contigs carrying the row domain.
-    let mut cooccurrence: BTreeMap<String, BTreeMap<String, f64>> = BTreeMap::new();
+    let mut cooccurrence: Vec<(String, Vec<(String, f64)>)> = Vec::new();
     for focus in &opts.focus_domains {
         let Some(acc) = domains.get(focus) else {
             continue;
         };
-        let Some(&self_count) = acc.correlations.get(focus) else {
+        let Some(self_count) = acc.correlation(focus) else {
             continue;
         };
         if self_count == 0 {
@@ -246,10 +283,19 @@ pub fn summary_report(
         let row = acc
             .correlations
             .iter()
-            .map(|(other, &n)| (other.clone(), 100.0 * n as f64 / self_count as f64))
+            .map(|(other, n)| (other.clone(), 100.0 * *n as f64 / self_count as f64))
             .collect();
-        cooccurrence.insert(focus.clone(), row);
+        cooccurrence.push((focus.clone(), row));
     }
+
+    let n_domains = domain_order.len();
+    let mut cooccurrence_counts = vec![0u64; n_domains * n_domains];
+    for (i, d1) in domain_order.iter().enumerate() {
+        for (j, d2) in domain_order.iter().enumerate() {
+            cooccurrence_counts[i * n_domains + j] = domains[d1].correlation(d2).unwrap_or(0);
+        }
+    }
+    let cooccurrence_domains = domain_order.clone();
 
     // Frequency table, most common first; ties by name so the order is deterministic
     // (Python's sort is stable over an insertion-ordered dict, which a HashMap is not).
@@ -298,7 +344,62 @@ pub fn summary_report(
         length,
         domains: rows,
         cooccurrence,
+        cooccurrence_domains,
+        cooccurrence_counts,
+        report_taxonomy: opts.report_taxonomy,
         taxonomy: taxonomy_rows,
+    }
+}
+
+/// The domain-by-domain co-occurrence matrix over every counted domain (upstream
+/// `write_cooccurence_matrix`): contig counts, or with `fraction` each row divided by
+/// its diagonal, the fraction of the row domain's contigs that also carry the column
+/// domain.
+pub fn cooccurrence_matrix(r: &SummaryReport, fraction: bool) -> DataMatrix {
+    let n = r.cooccurrence_domains.len();
+    let mut values: Vec<f64> = r.cooccurrence_counts.iter().map(|&c| c as f64).collect();
+    if fraction {
+        for i in 0..n {
+            let diagonal = values[i * n + i];
+            for v in &mut values[i * n..(i + 1) * n] {
+                *v /= diagonal;
+            }
+        }
+    }
+    DataMatrix {
+        rows: r.cooccurrence_domains.clone(),
+        cols: r.cooccurrence_domains.clone(),
+        row_lengths: None,
+        col_lengths: None,
+        data_type: String::new(),
+        storage: Storage::Dense(values),
+    }
+}
+
+/// The domain-frequency table as TSV, as pandas' `to_csv(sep="\t", index=False)`
+/// writes it: a header, one row per domain, and floats in their shortest form.
+pub fn domains_tsv(r: &SummaryReport) -> String {
+    let mut s = String::from("domain\tdatabase\tcount\tdescription\tavg score\n");
+    for d in &r.domains {
+        s.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\n",
+            csv_field(&d.domain),
+            csv_field(&d.database),
+            d.count,
+            csv_field(&d.description),
+            py_float_str(d.avg_score)
+        ));
+    }
+    s
+}
+
+/// A field as Python's `csv` module writes it with `QUOTE_MINIMAL` and a tab
+/// delimiter: quoted, with quotes doubled, only if it holds a tab, quote or line break.
+fn csv_field(field: &str) -> String {
+    if field.contains(['\t', '"', '\n', '\r']) {
+        format!("\"{}\"", field.replace('"', "\"\""))
+    } else {
+        field.to_string()
     }
 }
 
@@ -322,9 +423,27 @@ fn contig_taxid(record: &SeqRecord) -> i64 {
     crate::seq::taxid::record_taxid(record)
 }
 
-/// The agent-facing `--json` payload, matching Python's `SummaryJSONWriter`.
+/// Every co-occurrence row's columns, in first-seen order across the rows (the columns
+/// pandas gives a DataFrame built from them).
+fn cooccurrence_columns(r: &SummaryReport) -> Vec<&String> {
+    let mut columns: Vec<&String> = Vec::new();
+    for (_, row) in &r.cooccurrence {
+        for (column, _) in row {
+            if !columns.contains(&column) {
+                columns.push(column);
+            }
+        }
+    }
+    columns
+}
+
+/// The version of the `--json_out` document (upstream `JSON_SCHEMA_VERSION`).
+pub const JSON_SCHEMA_VERSION: i64 = 1;
+
+/// The agent-facing `--json_out` payload, matching Python's `SummaryJSONWriter`.
 pub fn to_json(r: &SummaryReport) -> Value {
     let mut payload = Map::new();
+    payload.insert("schema_version".into(), json!(JSON_SCHEMA_VERSION));
     payload.insert(
         "contig_stats".into(),
         json!({
@@ -364,16 +483,24 @@ pub fn to_json(r: &SummaryReport) -> Value {
         if r.cooccurrence.is_empty() {
             Value::Null
         } else {
+            // Upstream builds a DataFrame from the rows, so every row has every row's
+            // columns, and pandas' fillna("") makes a missing one an empty string.
+            let columns = cooccurrence_columns(r);
             let mut outer = Map::new();
             for (row, cols) in &r.cooccurrence {
-                let inner: Map<String, Value> =
-                    cols.iter().map(|(c, v)| (c.clone(), json!(v))).collect();
+                let inner: Map<String, Value> = columns
+                    .iter()
+                    .map(|&c| {
+                        let value = cols.iter().find(|(d, _)| d == c).map(|(_, v)| *v);
+                        (c.clone(), value.map_or(json!(""), |v| json!(v)))
+                    })
+                    .collect();
                 outer.insert(row.clone(), Value::Object(inner));
             }
             Value::Object(outer)
         },
     );
-    if !r.taxonomy.is_empty() {
+    if r.report_taxonomy {
         payload.insert(
             "taxonomy".into(),
             Value::Array(
@@ -427,13 +554,7 @@ pub fn render_text(r: &SummaryReport) -> String {
             "Domain Co-occurence (what percent of the time when the row-domain occurs \
              does the column domain occur on the same contig)\n",
         );
-        let cols: Vec<&String> = r
-            .cooccurrence
-            .values()
-            .flat_map(|m| m.keys())
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect();
+        let cols = cooccurrence_columns(r);
         s.push_str(&format!("{:<24}", ""));
         for c in &cols {
             s.push_str(&format!("{c:>14}"));
@@ -442,8 +563,8 @@ pub fn render_text(r: &SummaryReport) -> String {
         for (row, vals) in &r.cooccurrence {
             s.push_str(&format!("{row:<24}"));
             for c in &cols {
-                match vals.get(*c) {
-                    Some(v) => s.push_str(&format!("{v:>14.1}")),
+                match vals.iter().find(|(d, _)| d == *c) {
+                    Some((_, v)) => s.push_str(&format!("{v:>14.1}")),
                     None => s.push_str(&format!("{:>14}", "")),
                 }
             }

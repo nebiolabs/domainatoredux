@@ -30,6 +30,7 @@ mod select_by_coord;
 mod seq_dist;
 mod sort_contigs;
 mod ssn_navigator;
+mod summary_report;
 mod transform_matrix;
 mod trim_contigs;
 
@@ -56,6 +57,7 @@ pub use select_by_coord::SelectByCoordArgs;
 pub use seq_dist::SeqDistArgs;
 pub use sort_contigs::SortContigsArgs;
 pub use ssn_navigator::SsnNavigatorArgs;
+pub use summary_report::SummaryReportArgs;
 pub use transform_matrix::TransformMatrixArgs;
 pub use trim_contigs::TrimContigsArgs;
 
@@ -89,6 +91,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "build_ssn_viewer" => BuildSsnViewerArgs::augment_args(cmd),
         "matrix_report" => MatrixReportArgs::augment_args(cmd),
         "ssn_navigator" => SsnNavigatorArgs::augment_args(cmd),
+        "summary_report" => SummaryReportArgs::augment_args(cmd),
         _ => return None,
     })
 }

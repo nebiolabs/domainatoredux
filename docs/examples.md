@@ -192,7 +192,7 @@ Every report tool can emit JSON, and `ssn_navigator` answers questions about a b
 network without a GUI:
 
 ```bash
-domainatoredux summary_report -i annotated.gb --json - | jq .domain_counts
+domainatoredux summary_report -i annotated.gb --json_out - | jq .domain_frequency
 domainatoredux enum_report -i annotated.gb --by cds --columns domains --json_out - | head -1
 domainatoredux ssn_navigator -i network.dsnv -o - --query overview
 domainatoredux ssn_navigator -i network.dsnv -o - --query clusters --threshold 120 --min_size 3
