@@ -24,6 +24,7 @@ mod extract_unannotated;
 mod filter_domains;
 mod format_db;
 mod genbank_to_fasta;
+mod gene_call;
 mod hmmer_build;
 mod hmmer_compare;
 mod hmmer_report;
@@ -57,6 +58,7 @@ pub use extract_unannotated::ExtractUnannotatedArgs;
 pub use filter_domains::FilterDomainsArgs;
 pub use format_db::FormatDbArgs;
 pub use genbank_to_fasta::GenbankToFastaArgs;
+pub use gene_call::GeneCallArgs;
 pub use hmmer_build::HmmerBuildArgs;
 pub use hmmer_compare::HmmerCompareArgs;
 pub use hmmer_report::HmmerReportArgs;
@@ -110,6 +112,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "hmmer_search" => HmmerSearchArgs::augment_args(cmd),
         "format_db" => FormatDbArgs::augment_args(cmd),
         "color_table_to_legend" => ColorTableToLegendArgs::augment_args(cmd),
+        "gene_call" => GeneCallArgs::augment_args(cmd),
         _ => return None,
     })
 }

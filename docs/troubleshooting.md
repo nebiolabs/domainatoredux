@@ -34,7 +34,7 @@ run from a native Windows build.
 `gene_call`, and `--gene_call` on `domainate` and `domain_search`, run
 [Orphos](https://github.com/FullHuman/orphos) (a Rust reimplementation of Prodigal) to
 predict genes. Install it from the **External tools** panel, or download a release and set
-`$DOMAINATOREDUX_ORPHOS` (or pass `gene_call --bin_path`). It must be version 0.4.0 or newer:
+`$DOMAINATOREDUX_ORPHOS` (or pass `gene_call --orphos_path`). It must be version 0.4.0 or newer:
 older releases ignored the genetic-code flag, so Domainator refuses them rather than
 calling genes with the wrong table.
 
@@ -101,17 +101,11 @@ an error rather than a warning, because a stale index returns wrong records. Reb
 domainatoredux format_db -i sequences.fasta --output_dir seq_db --index --force
 ```
 
-## `missing required 'input' (-i / --input or config)`
+## `No output specified. Give at least one of: ...`
 
-This is the "you forgot an argument" error. It is reported by the tool rather than as a
-usage message because the value could legitimately have come from a `--config` file, so it
-cannot be checked until after the merge. `domainatoredux <tool> --help` lists what is needed.
-
-## A boolean in my config file won't turn off
-
-Booleans from a config file are OR'd with the command line, so a `true` in the file cannot
-be overridden to `false` by a flag. Remove it from the config file and pass it explicitly
-when you want it. See [config files](config-and-agents.md#how-a-config-file-and-the-command-line-combine).
+Every output is its own option (`-o/--genbank_out`, `--tsv_out`, `--json_out`, ...), and
+nothing is written to stdout unless you ask for it with `-`. Name at least one of the
+outputs the message lists. `domainatoredux <tool> --help` shows them all.
 
 ## Scores differ slightly from HMMER or pyhmmer
 

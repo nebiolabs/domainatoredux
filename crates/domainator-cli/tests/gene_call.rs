@@ -118,7 +118,7 @@ fn unannotated_scope_leaves_annotated_contigs_alone() {
         &[
             "-i",
             &fixture("pDONR201.gb"),
-            "--bin_path",
+            "--orphos_path",
             "/nonexistent/orphos",
         ],
     );
@@ -133,7 +133,12 @@ fn a_missing_orphos_says_how_to_get_one() {
             "gene_call",
             "-i",
             &fixture("pDONR201.fasta"),
-            "--bin_path",
+            "-o",
+            scratch_dir("missing_orphos")
+                .join("out.gb")
+                .to_str()
+                .unwrap(),
+            "--orphos_path",
             "/nonexistent/orphos",
         ])
         .output()

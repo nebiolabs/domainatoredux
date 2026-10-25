@@ -13,13 +13,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
-use config::{load_config, print_config};
 use domainator_config as config;
 
 mod commands;
 pub mod output;
 
-use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
 use domainator_core::io::{detect_filetype, fasta, FileType};
 use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
@@ -63,46 +61,7 @@ enum Command {
     CleanSequences(config::args::CleanSequencesArgs),
     /// Call genes (Prodigal-style CDS features) on nucleotide contigs with the
     /// external Orphos binary.
-    GeneCall {
-        /// Input GenBank/FASTA file(s) (GenBank on stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output GenBank file (stdout if omitted).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Molecule type for FASTA input (default: nucleotide).
-        #[arg(long = "fasta_type", value_parser = ["protein", "nucleotide"])]
-        fasta_type: Option<String>,
-        /// meta: pre-trained models chosen per contig (metagenomes, plasmids, phages,
-        /// short contigs). single: train on all input records together (one complete
-        /// genome). Default: meta.
-        #[arg(long, value_parser = ["meta", "single"])]
-        mode: Option<String>,
-        /// unannotated: call only contigs with no CDS. all: delete every CDS (and its
-        /// Domainator annotations) and re-call every contig. Default: unannotated.
-        #[arg(long, value_parser = ["unannotated", "all"])]
-        scope: Option<String>,
-        /// Genetic code (1-6, 9-16, 21-25). Default: 11, or in meta mode the table of
-        /// each contig's best model.
-        #[arg(long = "translation_table")]
-        translation_table: Option<u8>,
-        /// Closed ends: no genes running off the ends of a contig.
-        #[arg(long)]
-        closed: bool,
-        /// No genes across runs of N.
-        #[arg(long)]
-        mask: bool,
-        /// Orphos threads (0 = all cores).
-        #[arg(long)]
-        cpu: Option<usize>,
-        /// Path to the orphos binary (else $DOMAINATOREDUX_ORPHOS, then PATH).
-        #[arg(long = "bin_path")]
-        bin_path: Option<String>,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    GeneCall(config::args::GeneCallArgs),
     SortContigs(config::args::SortContigsArgs),
     /// Extract contig regions using explicit 1-based coordinate ranges from a table.
     SelectByCoord(config::args::SelectByCoordArgs),
@@ -185,29 +144,6 @@ fn load(input: &Path) -> Result<Vec<SeqRecord>> {
     }
 }
 
-/// Load and concatenate one or more sequence files; if `inputs` is empty, read
-/// GenBank from stdin (matching the Python tools' stdin default).
-fn load_inputs(inputs: &[PathBuf]) -> Result<Vec<SeqRecord>> {
-    if inputs.is_empty() {
-        use std::io::Read;
-        let mut buf = String::new();
-        std::io::stdin()
-            .read_to_string(&mut buf)
-            .context("reading stdin")?;
-        let dir = std::env::temp_dir();
-        let tmp = dir.join(format!("domainator_stdin_{}.gb", std::process::id()));
-        std::fs::write(&tmp, &buf)?;
-        let recs = read_genbank(tmp.to_str().unwrap()).context("parsing stdin GenBank");
-        let _ = std::fs::remove_file(&tmp);
-        return recs;
-    }
-    let mut out = Vec::new();
-    for p in inputs {
-        out.extend(load(p)?);
-    }
-    Ok(out)
-}
-
 /// Filter `records` in place to those whose LOCUS name (Python's `contig.id`) is
 /// in the `--contigs`/`--contigs_file` set. A no-op when both are empty.
 pub(crate) fn filter_contigs(
@@ -222,14 +158,6 @@ pub(crate) fn filter_contigs(
     Ok(())
 }
 
-/// Convert paths to UTF-8 strings.
-fn paths_to_strings(paths: &[PathBuf]) -> Result<Vec<String>> {
-    paths
-        .iter()
-        .map(|p| p.to_str().map(str::to_string).context("non-UTF8 path"))
-        .collect()
-}
-
 /// Read a color table: a TSV with no header mapping a value to a hex color, which is
 /// normalized to `#RRGGBB` (upstream `colors.read_color_table`).
 pub(crate) fn read_color_table(path: &str) -> Result<std::collections::HashMap<String, String>> {
@@ -239,36 +167,10 @@ pub(crate) fn read_color_table(path: &str) -> Result<std::collections::HashMap<S
     Ok(table.into_iter().collect())
 }
 
-/// Convert an optional path to an optional UTF-8 string.
-fn opt_path(path: &Option<PathBuf>) -> Result<Option<String>> {
-    match path {
-        Some(p) => Ok(Some(p.to_str().context("non-UTF8 path")?.to_string())),
-        None => Ok(None),
-    }
-}
-
 /// `output_guardrails.max_output_gb_to_bytes` (the core port): negative or
 /// non-finite is an error, `0` disables (returns `None`).
 pub(crate) fn max_output_gb_to_bytes(max_gb: f64) -> Result<Option<u64>> {
     tools::output_guardrails::max_output_gb_to_bytes(max_gb).map_err(anyhow::Error::msg)
-}
-
-/// Write records as GenBank to a file, or to stdout when `output` is None.
-fn write_genbank_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result<()> {
-    match output {
-        Some(p) => {
-            write_genbank(p.to_str().context("non-UTF8 path")?, records).context("writing GenBank")
-        }
-        None => {
-            let stdout = std::io::stdout();
-            let mut h = std::io::BufWriter::new(stdout.lock());
-            for rec in records {
-                write_record(&mut h, rec)?;
-            }
-            h.flush()?;
-            Ok(())
-        }
-    }
 }
 
 /// Load an `NCBITaxonomy` from `--ncbi_taxonomy_path` (only when a taxonomy
@@ -539,67 +441,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::DeduplicateGenbank(args) => commands::deduplicate_genbank::run(&args)?,
         Command::GenbankToFasta(args) => commands::genbank_to_fasta::run(&args)?,
         Command::CleanSequences(args) => commands::clean_sequences::run(&args)?,
-        Command::GeneCall {
-            input,
-            output,
-            fasta_type,
-            mode,
-            scope,
-            translation_table,
-            closed,
-            mask,
-            cpu,
-            bin_path,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::GeneCallConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                fasta_type,
-                mode,
-                scope,
-                translation_table,
-                closed,
-                mask,
-                cpu,
-                bin_path,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::GeneCallConfig>(p)?,
-                None => config::GeneCallConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let fasta_type = cfg.fasta_type.as_deref().unwrap_or("nucleotide");
-            let mut records: Vec<SeqRecord> = if cfg.input.is_empty() {
-                load_inputs(&[])?
-            } else {
-                let mut records = Vec::new();
-                for p in &cfg.input {
-                    records.extend(load_typed(&PathBuf::from(p), fasta_type)?);
-                }
-                records
-            };
-            let request = gene_call::GeneCall {
-                scope: parse_choice(cfg.scope.as_deref().unwrap_or("unannotated"))?,
-                options: gene_call::GeneCallOptions {
-                    mode: parse_choice(cfg.mode.as_deref().unwrap_or("meta"))?,
-                    translation_table: cfg.translation_table,
-                    closed: cfg.closed,
-                    mask: cfg.mask,
-                    cpu: cfg.cpu.unwrap_or(0),
-                    bin_path: cfg.bin_path.clone(),
-                },
-            };
-            let added = gene_call::gene_call(&mut records, &request).context("calling genes")?;
-            write_genbank_out(&records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-            eprintln!("called {added} genes on {} records", records.len());
-        }
+        Command::GeneCall(args) => commands::gene_call::run(&args)?,
         Command::SortContigs(args) => commands::sort_contigs::run(&args)?,
         Command::SelectByCoord(args) => commands::select_by_coord::run(&args)?,
         Command::FilterDomains(args) => commands::filter_domains::run(&args)?,

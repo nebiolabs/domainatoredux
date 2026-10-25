@@ -25,82 +25,14 @@ evalue: 1.0e-5
 cpu: 0
 ```
 
-The key names are the long flag names without the dashes.
-
-The tools are moving, one at a time, to the Domainator 1.0 interface, whose config files
-are **interchangeable with the Python suite's** (`domainate` and the selection,
-extraction and editing tools have moved; [porting status](porting-status.md) has the
-list). The rest of this section describes the older, native format of the tools not yet
-moved, which is *not* compatible with the Python suite's files. See
-[Tools on the 1.0 interface](#tools-on-the-10-interface) for the new one.
+The key names are the long flag names without the dashes, and the format is
+**interchangeable with the Python suite's**: an object keyed by option name, exactly what
+`--print_config` prints here (and what `python -m domainator <tool> --print_config`
+prints), so a file written for one implementation works with the other. An option the
+Python suite has and this port does not is accepted at its upstream default (or `null`),
+and is an error that names it otherwise.
 
 ### How a config file and the command line combine
-
-The config file is the base, and command-line flags override it:
-
-| Kind of option | Behavior |
-| --- | --- |
-| scalars (`mode`, `cpu`, `output`) | the CLI value replaces the file's |
-| lists (`references`, `domains`) | the CLI value replaces the file's, when non-empty |
-| booleans (`hits_only`, `max_mode`) | **OR'd together** |
-
-```bash
-# override just the output, keep everything else from the file
-domainatoredux gene_call --config call.yml -o other.gb
-```
-
-Two things to watch:
-
-- **A boolean set `true` in a config file cannot be turned off from the command line**,
-  because booleans are OR'd. Keep flags you want to toggle out of the config file.
-- **Unknown keys are an error**, not a warning. A typo is caught rather than silently
-  ignored.
-
-Because inputs may legitimately come from the file, required arguments are validated
-*after* merging, so a missing input reports
-`missing required 'input' (-i / --input or config)` rather than a usage error.
-
-### Seeing the resolved parameters
-
-`--print_config` dumps the merged parameter set as YAML and exits without doing any work:
-
-```bash
-domainatoredux gene_call -i contigs.fasta -o called.gb --print_config
-```
-
-```yaml
-input:
-- contigs.fasta
-output: called.gb
-fasta_type: null
-mode: null
-scope: null
-...
-```
-
-`null` means "not set, so the tool's built-in default applies" — it is *not* the effective
-value. Use it to check that a config file and your flags combined the way you expected,
-and `--help` to see what each default actually is.
-
-The output is a valid config file, so this is also how you capture a working invocation:
-
-```bash
-domainatoredux gene_call -i contigs.fasta -o called.gb --print_config > call.yml
-```
-
-### Tools on the 1.0 interface
-
-A migrated tool reads upstream's format: an object keyed by option name, exactly what
-`--print_config` prints (and what `python -m domainator <tool> --print_config` prints),
-so a file written for one implementation works with the other.
-
-```yaml
-# sort.yml
-input:
-- hits.gb
-genbank_out: sorted.gb
-max_hits: 100
-```
 
 The file is turned into command-line options and parsed with the rest, so every check
 that applies on the command line (types, bounds, choices) applies to the file too:
@@ -110,8 +42,20 @@ that applies on the command line (types, bounds, choices) applies to the file to
 - `null` or a missing key leaves the default;
 - an unknown key is an error that names it.
 
+```bash
+# override just the output, keep everything else from the file
+domainatoredux sort_contigs --config sort.yml -o other.gb
+```
+
+### Seeing the resolved parameters
+
 `--print_config` prints every option with the value it will have, defaults included, and
-does not require the required ones, so it can capture a partial config to finish later.
+exits without doing any work. It does not require the required options, so it can also
+capture a partial config to finish later:
+
+```bash
+domainatoredux sort_contigs -i hits.gb -o sorted.gb --max_hits 100 --print_config > sort.yml
+```
 
 ## Discovering a tool's parameters
 
@@ -129,8 +73,7 @@ A report's `columns` option also lists its columns, each with its argument names
 
 This is the interface to use when generating invocations programmatically: the desktop
 app renders its tool dialogs from the same manifest, so anything an agent can discover
-here is exactly what the GUI exposes. For a tool not yet on the 1.0 interface, its entry
-shows its current options, and its config keys are the option names it lists.
+here is exactly what the GUI exposes.
 
 ## JSON output
 

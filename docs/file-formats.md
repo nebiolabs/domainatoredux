@@ -147,7 +147,7 @@ status survives only if its header already says ` (Fragment)`.
 
 Accepted as input everywhere, and offered as output by tools with a `--fasta_out` flag,
 plus [`genbank_to_fasta`](cli-reference.md#genbank_to_fasta). It cannot carry annotations,
-so it is an endpoint rather than an intermediate. Use `--fasta_type` to tell a tool whether
+so it is an endpoint rather than an intermediate. Use `--alphabet` to tell a tool whether
 to read FASTA as protein (the default) or nucleotide.
 
 ## Score matrices

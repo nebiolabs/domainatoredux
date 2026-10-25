@@ -19,22 +19,20 @@ These trip people up, so read them once:
 `--add_annotations`. Both mirror the Python suite's names exactly: upstream's executable
 is `domainator`, this one is `domainatoredux`, so the two can be installed side by side.
 
-**The Domainator 1.0 interface, tool by tool.** Upstream 1.0 renamed many options and
-made every output its own `--<content>_out` option. This port is moving each tool to that
-interface, and these tools have moved so far: `sort_contigs`, `enum_report`,
-`hmmer_report`. On a migrated tool:
+**The Domainator 1.0 interface.** Upstream 1.0 renamed many options and made every
+output its own `--<content>_out` option; every tool here follows it. In particular:
 
 - outputs are `-o/--genbank_out`, `--fasta_out`, `--tsv_out`, ... and at least one is
   required. Nothing goes to stdout unless you ask for it with `-`, and at most one output
   can be `-`. A path ending in `.gz` or `.bgz` is written compressed (BGZF), and a file
   appears only once the run has succeeded.
-- `-i -` reads GenBank from stdin. Leaving out `-i` is an error.
+- `-i -` reads GenBank from stdin, except on the tools that read their input more than
+  once, which say so. Leaving out `-i` is an error.
 - `-v/--verbose` and `-q/--quiet` are accepted.
 - `--config` takes upstream's format: an object keyed by option name, as `--print_config`
   writes it. See [Config files](config-and-agents.md).
 
-`domainatoredux describe` lists every tool's options exactly, including which ones a tool
-has not migrated yet.
+`domainatoredux describe` lists every tool's options exactly.
 
 **There are no global flags.** `--config`, `--print_config`, `--cpu`, `--json_out` and
 `--max_output_gb` are declared per tool, so they must come *after* the tool name, and a
@@ -45,10 +43,9 @@ domainatoredux domainate --cpu 8 -i in.gb -r db.hmm -o out.gb   # correct
 domainatoredux --cpu 8 domainate -i in.gb -r db.hmm -o out.gb   # error
 ```
 
-**Required arguments are checked after the config file is merged.** A missing input is
-reported as `missing required 'input' (-i / --input or config)` rather than a usage error,
-because it might legitimately have come from `--config`. See
-[Config files](config-and-agents.md).
+**A config file counts toward required arguments.** Its keys become command-line options
+before parsing, so an input given in `--config` satisfies `-i`, and a missing one is the
+same usage error either way. See [Config files](config-and-agents.md).
 
 **`-i` is the file being edited, `-r` is what you're editing it by.** See
 [Concepts](concepts.md#the--i---r-convention).
@@ -235,8 +232,8 @@ records together, which suits one complete genome); `--scope unannotated` (the d
 only contigs with no CDS) or `--scope all` (delete every CDS, and the `Domainator`
 annotations on them, then re-call); `--translation_table` (default 11; in meta mode each
 contig uses its best model's table, 11 or 4); `--closed` to forbid genes running off the
-ends; `--mask` to forbid genes across runs of `N`; `--fasta_type` (default `nucleotide`);
-`--bin_path` to name the `orphos` binary.
+ends; `--mask` to forbid genes across runs of `N`; `--alphabet` (default `nucleotide`)
+for FASTA input; `--orphos_path` to name the `orphos` binary.
 
 This tool has no counterpart in the Python suite, which calls genes only inside
 `domainate`/`domain_search --gene_call`. Those flags drive the same code here, and their

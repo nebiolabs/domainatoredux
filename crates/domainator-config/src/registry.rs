@@ -429,11 +429,15 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     // port-only
-    tool(
-        "gene_call",
-        "annotate",
-        "Call genes with Orphos (Prodigal): add CDS features to contigs (domainatoredux only).",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out"]),
+        ..tool(
+            "gene_call",
+            "annotate",
+            "Call genes with Orphos (Prodigal): add CDS features to contigs (domainatoredux only).",
+        )
+    },
     ToolInfo {
         in_manifest: false,
         ..tool(

@@ -52,8 +52,8 @@ CLI flags use the Python suite's **underscore** names (e.g. `--max_overlap`,
 don't assume clap's kebab default. Subcommands are snake_case too (`rename_all` on the
 `Command` enum), equal to upstream's tool names.
 
-**The 1.0 interface (migration in progress, see the upstream-1.0 sync plan).** Each
-migrated tool's interface is one clap `Args` struct, `crates/domainator-config/src/args/<tool>.rs`,
+**The 1.0 interface.** Each
+tool's interface is one clap `Args` struct, `crates/domainator-config/src/args/<tool>.rs`,
 with upstream's parameter names (`rename_all = "snake_case"`, so id == long flag ==
 config key), `CommonArgs` flattened in (`-v/-q/--config/--print_config`), and a
 `registry.rs` entry with `migrated: true` (category, summary, required outputs, stdio
@@ -68,21 +68,7 @@ report tools' `--columns` take upstream's `name:arg:arg` tokens, parsed against 
 catalogs in `columns.rs` (the clap value type, so a bad token fails at parse time).
 An upstream option a migrated tool lacks is listed in its registry entry's
 `unsupported`, with upstream's default, so upstream configs that name it still load.
-Migrated so far: `sort_contigs`, `enum_report`, `hmmer_report`, `select_by_contig`, `select_by_cds`, `select_by_coord`, `filter_domains`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `color_genbank`, `clean_sequences`, `genbank_to_fasta`, `deduplicate_genbank`, `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer`, `matrix_report`, `ssn_navigator`, `summary_report`, `hmmer_compare`, `hmmer_select`, `hmmer_build`, `hmmer_search`, `format_db`, `color_table_to_legend`; the rest still use the
-old layer below.
-
-**Config files / agent interface, unmigrated tools** (the `crates/domainator-config` crate — *not* a
-`config.rs` in the CLI): every tool accepts `--config <file.json|.yml>` (a **native Rust**
-serde schema, *not* byte-compatible with Python's jsonargparse files) and `--print_config`
-(dump resolved params as YAML). Merge order is config = base, CLI flags override (scalars
-replace, lists replace when non-empty, bools OR). Each has a draft-07 JSON Schema
-(`legacy_schema`), no longer a command, which `tool_manifest` converts into manifest
-parameters for the GUI until the tool is migrated. The GUI runs every tool through the
-CLI (a worker process), so there is no second resolver to drift from it.
-
-To make merge correct, **defaulted scalar and required-path flags are `Option` in clap**
-(defaults applied via `unwrap_or` after merge; required paths like `-i`/`-o`/`-r` are
-validated post-merge so they can come from the config file).
+Every tool but the port-only `inspect` and `convert` (which take no config) is on it.
 
 **Agent-facing JSON** (upstream's documented contract, see its `AGENTS.md`):
 `enum_report` and `hmmer_report` write **streaming NDJSON** with `--json_out`, one
@@ -129,8 +115,8 @@ sweep below is the primary gate for anything with an upstream counterpart.
 **`cargo test` is not a lesser second gate — for roughly a third of the workspace it is the
 only one possible.** Parity can only ask "is this the same as Python"; everything this port
 *adds* has no upstream to compare against, so nothing else can check it:
-`crates/domainator-config` (the config/schema layer is a native Rust format, deliberately
-**not** jsonargparse-compatible), `app_support/` (the GUI seam: workspace, provenance DAG,
+`crates/domainator-config` (config-file expansion, `--print_config`, the registry's
+stdio rules; the manifest golden test checks option shapes, not behavior), `app_support/` (the GUI seam: workspace, provenance DAG,
 database registry, HMM logo, contig editor, summary dashboard), and the Tauri command layer.
 When adding to any of those, a test is the whole safety net. Two guards there earn their
 keep in particular:
@@ -143,13 +129,6 @@ keep in particular:
   outputs end `_out`, numbers reject nan/inf, `--print_config` round-trips). Both build
   the CLI's `Command` on a 256 MB-stack thread: the derive overflows a test thread in
   debug builds.
-- **`every_schema_matches_its_config_struct`** (`domainator-config`) — an unmigrated
-  tool's old config schema is what the GUI renders its dialog from (converted by
-  `tool_manifest`), while the config struct is what actually deserializes. A property
-  the struct lacks is a dialog field whose run is *rejected* (`deny_unknown_fields`). A
-  tool leaves `every_tool()` when it is migrated.
-- **`merge_cli` coverage** — a struct field the merge forgets is a CLI flag that silently
-  does nothing (unmigrated tools).
 - **`every_offered_tool_is_dispatched`** (`domainator-gui`) — the GUI tool registry and the
   CLI's subcommands are two hand-maintained lists. A Tools-menu job runs
   `<tool> --config <dialog params>` through `domainator_cli::run` in a **worker process**
@@ -255,7 +234,7 @@ Virtual Cargo workspace: three library/binary crates plus two Tauri apps and one
 WASM app.
 
 - **`crates/domainator-core/`** — the data model, all I/O, and all tool logic as library functions (GUI-reusable; mirrors the Python convention that every tool is also a library function). Also holds `app_support/` — the GUI-facing seam (workspace file classification, provenance/job DAG, contig view + edit, HMM logo, summary stats).
-- **`crates/domainator-config/`** — the interface: the 1.0 layer (`args/`, `registry.rs`, `manifest.rs`, `config_file.rs`, `columns.rs`, `tool_manifest`) and, for unmigrated tools, per-tool serde config structs, `merge_cli`, `--print_config`, and the legacy config schemas.
+- **`crates/domainator-config/`** — the interface: the 1.0 layer (`args/`, `registry.rs`, `manifest.rs`, `config_file.rs`, `columns.rs`, `tool_manifest`).
 - **`crates/domainator-cli/`** — thin clap front-end; arg parsing + I/O wiring only, calls into core. Binary name `domainatoredux` (upstream's is `domainator`; the subcommand names are identical).
 - **`apps/domainator-gui/`** — the Tauri v2 + Svelte 5 desktop app: manifest-driven tool dialogs, a workspace/job model, and a dozen viewers (contig, SSN, matrix report, enum report, HMM logo, summary dashboard, …). Its Rust side is a thin `#[tauri::command]` layer over `app_support`.
 - **`apps/genbank-summary/`** and **`wasm_apps/genbank-summary/`** — a small standalone Tauri app and its browser/WASM twin.

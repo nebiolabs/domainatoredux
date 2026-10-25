@@ -75,8 +75,8 @@ adding tests or chasing a divergence.**
 only one possible. Parity can only ask "is this the same as Python"; everything this port
 *adds* has no upstream to compare against:
 
-- `crates/domainator-config` — the config/schema layer is a native Rust format,
-  deliberately not jsonargparse-compatible;
+- `crates/domainator-config` — config-file expansion, `--print_config` and the registry's
+  stdio rules (the manifest golden test checks option shapes, not behavior);
 - `app_support/` — the GUI seam: workspace, provenance DAG, database registry, HMM logo,
   contig editor, summary dashboard;
 - the Tauri command layer.
@@ -88,13 +88,6 @@ in particular:
   `domainatoredux describe` against upstream's own manifest; every difference must be a
   row of `scripts/parity/manifest_allowlist.tsv`, and every row a real difference. See
   [Parity](parity.md).
-- **`every_schema_matches_its_config_struct`** (`domainator-config`) — for the tools not
-  yet on the 1.0 interface, the old config schema is what the GUI's dialogs are converted
-  from (`tool_manifest`), while the config struct is what actually deserializes. A
-  property the struct lacks is a dialog field whose run is *rejected*
-  (`deny_unknown_fields`). Each tool leaves `every_tool()` when it is migrated.
-- **`merge_cli` coverage** — a struct field the merge forgets is a CLI flag that silently
-  does nothing (unmigrated tools only).
 - **`every_offered_tool_is_dispatched`** and
   **`every_tools_dialog_params_parse_as_its_cli_config`** (`domainator-gui`) — GUI jobs
   run `<tool> --config <params>` through the CLI in a worker process, so a menu entry
