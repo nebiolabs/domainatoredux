@@ -259,16 +259,24 @@ impl NCBITaxonomy {
 
     /// `compile_taxonomy_expression`: allowed-taxid set for a boolean expression
     /// over taxids (a token is true for a node when it is in the node's
-    /// lineage), or `None` for an empty expression.
-    pub fn compile_taxonomy_expression(&self, expression: &str) -> Option<HashSet<i64>> {
+    /// lineage), or `None` for an empty expression. A malformed expression, or one
+    /// naming something other than a taxid, is an error.
+    pub fn compile_taxonomy_expression(
+        &self,
+        expression: &str,
+    ) -> Result<Option<HashSet<i64>>, String> {
         if expression.trim().is_empty() {
-            return None;
+            return Ok(None);
         }
-        let evaluator = BooleanEvaluator::new(expression);
+        let evaluator = BooleanEvaluator::new(expression)?;
         let marker_taxids: HashSet<i64> = evaluator
-            .token_values()
-            .filter_map(|t| t.parse::<i64>().ok())
-            .collect();
+            .names()
+            .iter()
+            .map(|t| {
+                t.parse::<i64>()
+                    .map_err(|_| format!("--taxonomy_expr names {t:?}, which is not a taxid"))
+            })
+            .collect::<Result<_, _>>()?;
 
         // present[t] = sorted set of marker taxids in t's lineage, memoized.
         let mut present: HashMap<i64, Vec<i64>> = HashMap::new();
@@ -314,7 +322,7 @@ impl NCBITaxonomy {
             }
         }
         let empty_passes = verdict(&[]);
-        Some(self.finalize_allowed(allowed, empty_passes))
+        Ok(Some(self.finalize_allowed(allowed, empty_passes)))
     }
 }
 
@@ -595,11 +603,13 @@ mod tests {
     fn taxonomy_expression() {
         let t = tax();
         // Within Bacteria(2) but not Proteobacteria(1224).
-        let a = t.compile_taxonomy_expression("2 & ~1224").unwrap();
+        let a = t.compile_taxonomy_expression("2 & ~1224").unwrap().unwrap();
         assert!(a.contains(&2));
         assert!(!a.contains(&562) && !a.contains(&1224) && !a.contains(&131567));
         // Anything under Proteobacteria.
-        let b = t.compile_taxonomy_expression("1224").unwrap();
+        let b = t.compile_taxonomy_expression("1224").unwrap().unwrap();
+        assert!(t.compile_taxonomy_expression("2 &").is_err());
+        assert!(t.compile_taxonomy_expression("Bacteria").is_err());
         assert!(b.contains(&1224) && b.contains(&562) && !b.contains(&2));
     }
 

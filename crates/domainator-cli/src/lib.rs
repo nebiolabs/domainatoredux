@@ -241,6 +241,7 @@ pub(crate) fn compile_allowed_taxids(
     )?;
     let allowed = if has_expr {
         tax.compile_taxonomy_expression(expr.unwrap())
+            .map_err(anyhow::Error::msg)?
     } else {
         use std::collections::HashSet;
         let inc: HashSet<i64> = include.iter().copied().collect();

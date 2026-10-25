@@ -74,140 +74,141 @@ fn names_in_file(path: &str) -> std::io::Result<Vec<String>> {
 // BooleanEvaluator
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
-enum Tok {
-    LParen,
-    RParen,
-    And,
-    Or,
-    Not,
-    Operand(String),
+/// A parsed expression: a name, or a negation, conjunction or disjunction.
+#[derive(Debug)]
+enum Node {
+    Name(String),
+    Not(Box<Node>),
+    And(Box<Node>, Box<Node>),
+    Or(Box<Node>, Box<Node>),
 }
 
-/// `utils.BooleanEvaluator`: evaluate a boolean expression over domain names
-/// using `&` (AND), `|` (OR), `~` (NOT) and parentheses. Operand precedence
-/// matches Python's `eval`: `not` > `and` > `or`.
+const OPERATORS: &str = "&|~()";
+
+/// `expr.BooleanEvaluator`: a boolean expression over names, with `&` (and), `|`
+/// (or), `~` (not) and parentheses. `~` binds tightest, then `&`, then `|`, all left
+/// associative, as in Python. A name is any run of other non-space characters. The
+/// expression is parsed once, by [`BooleanEvaluator::new`], which rejects a
+/// malformed or empty one.
+#[derive(Debug)]
 pub struct BooleanEvaluator {
-    parts: Vec<Tok>,
-    tok_to_domain: HashMap<String, String>,
+    tree: Node,
+    /// Every name the expression mentions.
+    names: HashSet<String>,
 }
 
 impl BooleanEvaluator {
-    pub fn new(expression: &str) -> Self {
-        // Tokenize exactly as Python does.
+    pub fn new(expression: &str) -> Result<Self, String> {
         let mut tokens: Vec<String> = Vec::new();
-        let mut elem = String::new();
-        for y in expression.chars() {
-            match y {
-                '&' | '|' => {
-                    if !elem.is_empty() {
-                        tokens.push(std::mem::take(&mut elem));
-                    }
-                    tokens.push(y.to_string());
+        let mut name = String::new();
+        for c in expression.chars() {
+            if OPERATORS.contains(c) || c.is_whitespace() {
+                if !name.is_empty() {
+                    tokens.push(std::mem::take(&mut name));
                 }
-                '~' | '(' => tokens.push(y.to_string()),
-                ')' => {
-                    tokens.push(std::mem::take(&mut elem));
-                    tokens.push(y.to_string());
+                if !c.is_whitespace() {
+                    tokens.push(c.to_string());
                 }
-                ' ' => {}
-                _ => elem.push(y),
+            } else {
+                name.push(c);
             }
         }
-        if !elem.is_empty() {
-            tokens.push(elem);
+        if !name.is_empty() {
+            tokens.push(name);
         }
+        if tokens.is_empty() {
+            return Err(format!("Empty boolean expression: {expression:?}"));
+        }
+        let mut parser = Parser {
+            expression,
+            tokens: &tokens,
+            pos: 0,
+        };
+        let tree = parser.parse_or()?;
+        if let Some(extra) = parser.peek() {
+            return Err(parser.error(&format!("unexpected {extra:?}")));
+        }
+        let names = tokens.iter().filter(|t| !is_operator(t)).cloned().collect();
+        Ok(BooleanEvaluator { tree, names })
+    }
 
-        // Translate to parts, assigning tok identifiers to operands.
-        let mut parts = Vec::new();
-        let mut tok_to_domain = HashMap::new();
-        let mut i = 0usize;
-        for x in tokens {
-            match x.as_str() {
-                "(" => parts.push(Tok::LParen),
-                ")" => parts.push(Tok::RParen),
-                "|" => parts.push(Tok::Or),
-                "&" => parts.push(Tok::And),
-                "~" => parts.push(Tok::Not),
-                _ => {
-                    let key = format!("tok{i}");
-                    tok_to_domain.insert(key.clone(), x);
-                    parts.push(Tok::Operand(key));
-                    i += 1;
+    /// Every name the expression mentions (the taxids of a `--taxonomy_expr`).
+    pub fn names(&self) -> &HashSet<String> {
+        &self.names
+    }
+
+    /// True if the expression holds when exactly the names in `present` are true.
+    pub fn check_expression(&self, present: &HashSet<String>) -> bool {
+        fn evaluate(node: &Node, present: &HashSet<String>) -> bool {
+            match node {
+                Node::Name(name) => present.contains(name),
+                Node::Not(inner) => !evaluate(inner, present),
+                Node::And(l, r) => evaluate(l, present) && evaluate(r, present),
+                Node::Or(l, r) => evaluate(l, present) || evaluate(r, present),
+            }
+        }
+        evaluate(&self.tree, present)
+    }
+}
+
+fn is_operator(token: &str) -> bool {
+    token.len() == 1 && OPERATORS.contains(token)
+}
+
+/// The recursive-descent parser behind [`BooleanEvaluator::new`].
+struct Parser<'a> {
+    expression: &'a str,
+    tokens: &'a [String],
+    pos: usize,
+}
+
+impl<'a> Parser<'a> {
+    fn peek(&self) -> Option<&'a str> {
+        self.tokens.get(self.pos).map(String::as_str)
+    }
+
+    fn error(&self, problem: &str) -> String {
+        format!(
+            "Invalid boolean expression {:?}: {problem}.",
+            self.expression
+        )
+    }
+
+    fn parse_or(&mut self) -> Result<Node, String> {
+        let mut node = self.parse_and()?;
+        while self.peek() == Some("|") {
+            self.pos += 1;
+            node = Node::Or(Box::new(node), Box::new(self.parse_and()?));
+        }
+        Ok(node)
+    }
+
+    fn parse_and(&mut self) -> Result<Node, String> {
+        let mut node = self.parse_not()?;
+        while self.peek() == Some("&") {
+            self.pos += 1;
+            node = Node::And(Box::new(node), Box::new(self.parse_not()?));
+        }
+        Ok(node)
+    }
+
+    fn parse_not(&mut self) -> Result<Node, String> {
+        let Some(token) = self.peek() else {
+            return Err(self.error("it ends where a name was expected"));
+        };
+        self.pos += 1;
+        match token {
+            "~" => Ok(Node::Not(Box::new(self.parse_not()?))),
+            "(" => {
+                let node = self.parse_or()?;
+                if self.peek() != Some(")") {
+                    return Err(self.error("a '(' is never closed"));
                 }
+                self.pos += 1;
+                Ok(node)
             }
-        }
-        BooleanEvaluator {
-            parts,
-            tok_to_domain,
-        }
-    }
-
-    /// Domain tokens referenced by the expression (used by the taxonomy-expr
-    /// compiler, where tokens are taxids).
-    pub fn token_values(&self) -> impl Iterator<Item = &String> {
-        self.tok_to_domain.values()
-    }
-
-    /// True if the expression holds when `domains` is the present set.
-    pub fn check_expression(&self, domains: &HashSet<String>) -> bool {
-        let mut pos = 0usize;
-        self.parse_or(&mut pos, domains)
-    }
-
-    fn operand_value(&self, key: &str, domains: &HashSet<String>) -> bool {
-        match self.tok_to_domain.get(key) {
-            Some(name) => domains.contains(name),
-            None => false,
-        }
-    }
-
-    fn parse_or(&self, pos: &mut usize, domains: &HashSet<String>) -> bool {
-        let mut v = self.parse_and(pos, domains);
-        while matches!(self.parts.get(*pos), Some(Tok::Or)) {
-            *pos += 1;
-            let r = self.parse_and(pos, domains);
-            v = v || r;
-        }
-        v
-    }
-
-    fn parse_and(&self, pos: &mut usize, domains: &HashSet<String>) -> bool {
-        let mut v = self.parse_not(pos, domains);
-        while matches!(self.parts.get(*pos), Some(Tok::And)) {
-            *pos += 1;
-            let r = self.parse_not(pos, domains);
-            v = v && r;
-        }
-        v
-    }
-
-    fn parse_not(&self, pos: &mut usize, domains: &HashSet<String>) -> bool {
-        let mut negate = false;
-        while matches!(self.parts.get(*pos), Some(Tok::Not)) {
-            *pos += 1;
-            negate = !negate;
-        }
-        let v = self.parse_primary(pos, domains);
-        v ^ negate
-    }
-
-    fn parse_primary(&self, pos: &mut usize, domains: &HashSet<String>) -> bool {
-        match self.parts.get(*pos) {
-            Some(Tok::LParen) => {
-                *pos += 1;
-                let v = self.parse_or(pos, domains);
-                if matches!(self.parts.get(*pos), Some(Tok::RParen)) {
-                    *pos += 1;
-                }
-                v
-            }
-            Some(Tok::Operand(key)) => {
-                let key = key.clone();
-                *pos += 1;
-                self.operand_value(&key, domains)
-            }
-            _ => false,
+            t if is_operator(t) => Err(self.error(&format!("{t:?} where a name was expected"))),
+            t => Ok(Node::Name(t.to_string())),
         }
     }
 }
@@ -443,7 +444,7 @@ mod tests {
     #[test]
     fn boolean_evaluator_precedence_and_parens() {
         // not > and > or, with parentheses (matches Python `eval`).
-        let e = BooleanEvaluator::new("(CcdB) | (CAT & Condensation)");
+        let e = BooleanEvaluator::new("(CcdB) | (CAT & Condensation)").unwrap();
         assert!(e.check_expression(&set(&["CcdB"])));
         assert!(e.check_expression(&set(&["CAT", "Condensation"])));
         assert!(!e.check_expression(&set(&["CAT"])));
@@ -453,22 +454,45 @@ mod tests {
 
     #[test]
     fn boolean_evaluator_contradiction_and_not() {
-        assert!(!BooleanEvaluator::new("CAT&~CAT").check_expression(&set(&["CAT"])));
-        assert!(BooleanEvaluator::new("~CAT").check_expression(&set(&["Other"])));
-        assert!(!BooleanEvaluator::new("~CAT").check_expression(&set(&["CAT"])));
+        let check = |e: &str, present: &[&str]| {
+            BooleanEvaluator::new(e)
+                .unwrap()
+                .check_expression(&set(present))
+        };
+        assert!(!check("CAT&~CAT", &["CAT"]));
+        assert!(check("~CAT", &["Other"]));
+        assert!(!check("~CAT", &["CAT"]));
+        assert!(check("~~CAT", &["CAT"]));
         // `or` binds looser than `and`: A | B & C == A | (B & C)
-        let e = BooleanEvaluator::new("A | B & C");
+        let e = BooleanEvaluator::new("A | B & C").unwrap();
         assert!(e.check_expression(&set(&["A"])));
         assert!(!e.check_expression(&set(&["B"])));
         assert!(e.check_expression(&set(&["B", "C"])));
     }
 
     #[test]
-    fn boolean_evaluator_token_values_are_operands() {
-        let e = BooleanEvaluator::new("2 & ~1224");
-        let mut toks: Vec<i64> = e.token_values().filter_map(|t| t.parse().ok()).collect();
-        toks.sort();
-        assert_eq!(toks, vec![2, 1224]);
+    fn boolean_evaluator_names_are_operands() {
+        let e = BooleanEvaluator::new("2 & ~1224").unwrap();
+        let mut names: Vec<&str> = e.names().iter().map(String::as_str).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["1224", "2"]);
+        // A name is any run of characters other than operators and whitespace.
+        let e = BooleanEvaluator::new("PF00001.2&a-b").unwrap();
+        assert!(e.check_expression(&set(&["PF00001.2", "a-b"])));
+    }
+
+    /// Upstream rejects a malformed expression when it is parsed, instead of
+    /// evaluating whatever part of it makes sense.
+    #[test]
+    fn boolean_evaluator_rejects_malformed_expressions() {
+        for bad in ["", "  ", "A &", "(A | B", "A B", "A | | B", ")A", "A)", "~"] {
+            assert!(BooleanEvaluator::new(bad).is_err(), "{bad:?}");
+        }
+        let err = BooleanEvaluator::new("(A | B").unwrap_err();
+        assert_eq!(
+            err,
+            "Invalid boolean expression \"(A | B\": a '(' is never closed."
+        );
     }
 
     #[test]

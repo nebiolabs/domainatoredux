@@ -101,7 +101,11 @@ pub fn select_by_contig(
     ncbi_taxonomy: Option<&NCBITaxonomy>,
     opts: &SelectByContigOptions,
 ) -> Result<Vec<SeqRecord>, String> {
-    let expr = opts.domain_expr.as_deref().map(BooleanEvaluator::new);
+    let expr = opts
+        .domain_expr
+        .as_deref()
+        .map(BooleanEvaluator::new)
+        .transpose()?;
     let def_re = compile(opts.definition_regex.as_deref())?;
     let seq_re = compile(opts.sequence_regex.as_deref())?;
     let name_re = compile(opts.contigs_regex.as_deref())?;
@@ -135,7 +139,7 @@ pub fn select_by_contig(
                 .as_deref()
                 .filter(|e| !e.trim().is_empty())
             {
-                tax.compile_taxonomy_expression(e)
+                tax.compile_taxonomy_expression(e)?
             } else {
                 tax.compile_taxonomy_filter(
                     opts.include_taxids.as_ref(),

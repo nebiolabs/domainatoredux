@@ -217,7 +217,11 @@ pub fn trim_contigs(
     records: Vec<SeqRecord>,
     opts: &TrimContigsOptions,
 ) -> Result<Vec<SeqRecord>, String> {
-    let expr = opts.domain_expr.as_deref().map(BooleanEvaluator::new);
+    let expr = opts
+        .domain_expr
+        .as_deref()
+        .map(BooleanEvaluator::new)
+        .transpose()?;
     let mut out = Vec::new();
     for record in records {
         // Circular contigs are linearized before trimming (topology dropped).

@@ -62,7 +62,7 @@ pub fn run(args: &SelectByCdsArgs) -> Result<()> {
     if let Some(set) = &target_contigs {
         records.retain(|r| set.contains(&r.id));
     }
-    let mut regions = select_by_cds(&records, &opts);
+    let mut regions = select_by_cds(&records, &opts).map_err(|e| anyhow!(e))?;
     if !args.no_deduplicate {
         let mut seen = HashSet::new();
         regions.retain(|r| seen.insert(r.record.id.clone()));

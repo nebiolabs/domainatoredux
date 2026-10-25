@@ -41,13 +41,20 @@ pub use crate::tools::neighborhood::Region;
 /// Extract regions around selected CDSs across all `records`. Regions are
 /// yielded in contig/CDS order; id-deduplication and `--pad` are applied by the
 /// caller ([`pad_records`]).
-pub fn select_by_cds(records: &[SeqRecord], opts: &SelectByCdsOptions) -> Vec<Region> {
-    let expr = opts.domain_expr.as_deref().map(BooleanEvaluator::new);
+pub fn select_by_cds(
+    records: &[SeqRecord],
+    opts: &SelectByCdsOptions,
+) -> Result<Vec<Region>, String> {
+    let expr = opts
+        .domain_expr
+        .as_deref()
+        .map(BooleanEvaluator::new)
+        .transpose()?;
     let mut out = Vec::new();
     for rec in records {
         out.extend(select_one(rec, opts, expr.as_ref()));
     }
-    out
+    Ok(out)
 }
 
 fn select_one(
