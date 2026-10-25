@@ -7,18 +7,6 @@
 #          upstream: (upstream should change)   todo: (the 1.0 migration; none may remain)
 tool	parameter	aspect	ours	upstream	class	note
 build_projection	-	tool	false	true	deferred:unported-tool	
-build_ssn_viewer	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-build_ssn_viewer	-	required_outputs	null	["dsnv_out","html_out"]	todo:1.0-cli	
-build_ssn_viewer	color_table	missing	null	{"default":null,"flags":["--color_table"],"kind":"path","name":"color_table","required":false,"role":"input","type":"string"}	todo:1.0-cli	
-build_ssn_viewer	dsnv_out	missing	null	{"default":null,"flags":["-o","--dsnv_out"],"kind":"path","name":"dsnv_out","required":false,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
-build_ssn_viewer	html	extra	{"name":"html","flags":["--html"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-build_ssn_viewer	html_out	missing	null	{"default":null,"flags":["--html_out"],"kind":"path","name":"html_out","required":false,"role":"output","stdout":false,"type":"string"}	deferred:html	
-build_ssn_viewer	input	stdin	true	false	todo:1.0-cli	
-build_ssn_viewer	max_output_gb	default	null	25	todo:1.0-cli	
-build_ssn_viewer	merge_impact_metric	default	null	"min_child"	todo:1.0-cli	
-build_ssn_viewer	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-build_ssn_viewer	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-build_ssn_viewer	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 build_tree	-	tool	false	true	deferred:unported-tool	
 color_table_to_legend	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
 color_table_to_legend	-	required_outputs	null	["svg_out"]	todo:1.0-cli	

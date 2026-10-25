@@ -128,7 +128,7 @@ breaks into meaningfully different groups.
 ## 5. Build the network
 
 ```bash
-domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html network.html --embed_data
+domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html_out network.html --embed_data
 ```
 
 ```

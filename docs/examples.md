@@ -77,7 +77,7 @@ domainatoredux seq_dist -i annotated.gb -o dist.hdf5 --algorithm hmmer --mode sc
 domainatoredux matrix_report -i dist.hdf5 -o report.txt
 
 domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv \
-  --html network.html --embed_data
+  --html_out network.html --embed_data
 ```
 
 On a large dataset, swap in DIAMOND and normalize the scores:
@@ -85,7 +85,7 @@ On a large dataset, swap in DIAMOND and normalize the scores:
 ```bash
 domainatoredux seq_dist -i proteins.fasta -o raw.hdf5 --algorithm diamond_us --cpu 0
 domainatoredux transform_matrix -i raw.hdf5 -o efi.hdf5 --mode efi_score
-domainatoredux build_ssn_viewer -i efi.hdf5 -o network.dsnv --html network.html --embed_data
+domainatoredux build_ssn_viewer -i efi.hdf5 -o network.dsnv --html_out network.html --embed_data
 ```
 
 `--mode efi_score` applies the EFI-style normalization, which makes a cutoff comparable
@@ -107,7 +107,7 @@ domainatoredux seq_dist -i pdonr_hmms.hmm -o hmm_dist.hdf5 --mode score
 #> Warning: input and reference are both HMM files; using --algorithm hmmer_compare.
 
 domainatoredux build_ssn_viewer -i hmm_dist.hdf5 -o profiles.dsnv \
-  --html profiles.html --embed_data
+  --html_out profiles.html --embed_data
 ```
 
 For the pairwise alignments themselves rather than a matrix, use

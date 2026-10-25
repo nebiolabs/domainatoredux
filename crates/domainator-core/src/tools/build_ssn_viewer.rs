@@ -4,7 +4,7 @@
 //! MST-component hierarchy (both O(n)); the browser reconstructs clusters
 //! client-side by cutting the tree.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::io;
 
 use libdeflater::{CompressionLvl, Compressor};
@@ -50,6 +50,10 @@ pub struct BuildSsnViewerOptions {
     pub subset_labels: Option<HashSet<String>>,
     pub merge_impact_metric: String,
     pub color_by: Option<String>,
+    /// Maps `color_by` values to hex colors: the column's starting palette in the viewer.
+    /// Values not in it are gray, as in `build_ssn`. Requires `color_by`, and a numeric
+    /// `color_by` column is colored as categories.
+    pub color_table: Option<Vec<(String, String)>>,
     pub label_by: Option<String>,
     /// Numeric metadata columns the viewer should color as discrete categories rather
     /// than with a gradient (e.g. integer cluster numbers). Sets the initial state only.
@@ -64,6 +68,7 @@ impl Default for BuildSsnViewerOptions {
             subset_labels: None,
             merge_impact_metric: MERGE_IMPACT_MIN_CHILD.to_string(),
             color_by: None,
+            color_table: None,
             label_by: None,
             categorical_columns: Vec::new(),
         }
@@ -189,9 +194,11 @@ pub fn build_ssn_viewer_bundle(
     if !matrix.symmetric_labels() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "Input does not have symmetric axis labels. Can only build an SSN viewer bundle from a symmetric matrix.",
+            "Input does not have symmetric axis labels. Can only build a Domainator Similarity Network Viewer bundle from a symmetric matrix.",
         ));
     }
+    crate::matrix::require_similarity(&matrix.data_type, "build_ssn_viewer")
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let names = matrix.rows.clone();
     let (metadata, col_names) = metadata_payload(&names, &opts.metadata_files)?;
 
@@ -211,7 +218,8 @@ pub fn build_ssn_viewer_bundle(
             ));
         }
     }
-    for c in &opts.categorical_columns {
+    let mut categorical_columns = opts.categorical_columns.clone();
+    for c in &categorical_columns {
         if !col_names.iter().any(|n| n == c) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -219,6 +227,25 @@ pub fn build_ssn_viewer_bundle(
             ));
         }
     }
+    let color_table = match (&opts.color_table, &opts.color_by) {
+        (None, _) => None,
+        (Some(_), None) => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "color_table requires color_by, the metadata column the table colors.",
+            ))
+        }
+        (Some(table), Some(color_by)) => {
+            // A color table is a discrete mapping, so a numeric column it colors is a
+            // categorical one.
+            let column = col_names.iter().position(|n| n == color_by);
+            let numeric = column.is_some_and(|i| metadata["columns"][i]["type"] != "str");
+            if numeric && !categorical_columns.contains(color_by) {
+                categorical_columns.push(color_by.clone());
+            }
+            Some(table.iter().cloned().collect::<BTreeMap<_, _>>())
+        }
+    };
 
     let tree = MaxTree::from_matrix(&matrix);
     let hierarchy = build_mst_component_hierarchy(&tree);
@@ -266,9 +293,14 @@ pub fn build_ssn_viewer_bundle(
             // Numeric columns the viewer should color with discrete category colors
             // instead of a gradient (e.g. integer cluster numbers). This only sets the
             // initial state; the viewer's color picker can toggle it.
-            "categorical_columns": opts.categorical_columns,
+            "categorical_columns": categorical_columns,
         }),
     );
+    if let Some(table) = color_table {
+        // value -> "#RRGGBB" for the color_by column; the viewer starts from it in place
+        // of its default palette. Optional, so bundles built without one are unchanged.
+        bundle["defaults"]["color_table"] = json!(table);
+    }
 
     Ok(Value::Object(bundle))
 }

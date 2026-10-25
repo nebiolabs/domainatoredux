@@ -8,6 +8,7 @@
 //! is `rename_all = "snake_case"`) and the config-file keys.
 
 mod build_ssn;
+mod build_ssn_viewer;
 mod clean_sequences;
 mod color_genbank;
 mod common;
@@ -31,6 +32,7 @@ mod transform_matrix;
 mod trim_contigs;
 
 pub use build_ssn::BuildSsnArgs;
+pub use build_ssn_viewer::BuildSsnViewerArgs;
 pub use clean_sequences::CleanSequencesArgs;
 pub use color_genbank::ColorGenbankArgs;
 pub use common::CommonArgs;
@@ -80,6 +82,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "compare_contigs" => CompareContigsArgs::augment_args(cmd),
         "transform_matrix" => TransformMatrixArgs::augment_args(cmd),
         "build_ssn" => BuildSsnArgs::augment_args(cmd),
+        "build_ssn_viewer" => BuildSsnViewerArgs::augment_args(cmd),
         _ => return None,
     })
 }

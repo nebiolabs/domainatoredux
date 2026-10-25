@@ -27,9 +27,6 @@ use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools;
-use domainator_core::tools::build_ssn_viewer::{
-    build_ssn_viewer_bundle, gzip, render_html, serialize_bundle,
-};
 use domainator_core::tools::gene_call;
 use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
 use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
@@ -155,54 +152,7 @@ enum Command {
     /// Build a Cytoscape XGMML sequence-similarity network from a score matrix.
     BuildSsn(config::args::BuildSsnArgs),
     /// Build a compact `.dsnv` bundle (+ standalone HTML) for the interactive SSN viewer.
-    BuildSsnViewer {
-        /// Symmetric similarity matrix (HDF5 or dense TSV).
-        #[arg(short, long)]
-        input: Option<PathBuf>,
-        /// Write the gzip-JSON `.dsnv` bundle here.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Write a standalone HTML viewer shell here.
-        #[arg(long)]
-        html: Option<String>,
-        /// Embed the bundle into the HTML so the viewer autoloads it.
-        #[arg(long = "embed_data")]
-        embed_data: bool,
-        /// Display name recorded in the bundle (defaults to the output stem).
-        #[arg(long)]
-        name: Option<String>,
-        /// TSV metadata files keyed by node id.
-        #[arg(long, num_args = 1..)]
-        metadata: Vec<String>,
-        /// Only consider labels in this list (additive with --subset_file).
-        #[arg(long, num_args = 1..)]
-        subset: Vec<String>,
-        /// Text file of labels to retain.
-        #[arg(long = "subset_file")]
-        subset_file: Option<String>,
-        /// Default metadata field for node coloring in the viewer.
-        #[arg(long = "color_by")]
-        color_by: Option<String>,
-        /// Default metadata field for node labels in the viewer.
-        #[arg(long = "label_by")]
-        label_by: Option<String>,
-        /// Numeric metadata columns to color as discrete categories rather than with
-        /// a gradient (e.g. integer cluster numbers). Sets the viewer's initial state.
-        #[arg(long = "categorical", num_args = 1..)]
-        categorical: Vec<String>,
-        /// Merge-impact metric for split events (min_child or product).
-        #[arg(long = "merge_impact_metric", value_parser = ["min_child", "product"])]
-        merge_impact_metric: Option<String>,
-        /// Fail if the projected .dsnv bundle output exceeds this many GB (default 25; 0 disables).
-        #[arg(long = "max_output_gb")]
-        max_output_gb: Option<f64>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    BuildSsnViewer(config::args::BuildSsnViewerArgs),
     /// Summarize a similarity matrix (stats, cluster-vs-threshold, merge events) as text or JSON.
     MatrixReport {
         /// Input matrix file (HDF5 or dense TSV).
@@ -562,21 +512,13 @@ fn paths_to_strings(paths: &[PathBuf]) -> Result<Vec<String>> {
         .collect()
 }
 
-/// Read a color table: a TSV with no header mapping a value to a hex color.
+/// Read a color table: a TSV with no header mapping a value to a hex color, which is
+/// normalized to `#RRGGBB` (upstream `colors.read_color_table`).
 pub(crate) fn read_color_table(path: &str) -> Result<std::collections::HashMap<String, String>> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading color table {path}"))?;
-    let mut map = std::collections::HashMap::new();
-    for line in text.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let mut it = line.splitn(2, '\t');
-        if let (Some(k), Some(v)) = (it.next(), it.next()) {
-            map.insert(k.to_string(), v.trim().to_string());
-        }
-    }
-    Ok(map)
+    let table = tools::color_genbank::read_color_table(&text).map_err(anyhow::Error::msg)?;
+    Ok(table.into_iter().collect())
 }
 
 /// Convert an optional path to an optional UTF-8 string.
@@ -591,30 +533,6 @@ fn opt_path(path: &Option<PathBuf>) -> Result<Option<String>> {
 /// non-finite is an error, `0` disables (returns `None`).
 pub(crate) fn max_output_gb_to_bytes(max_gb: f64) -> Result<Option<u64>> {
     tools::output_guardrails::max_output_gb_to_bytes(max_gb).map_err(anyhow::Error::msg)
-}
-
-/// Fail when `actual_bytes` of an already-serialized output exceeds the byte
-/// budget for `max_gb`. `description` names the output; `mitigation` lists the
-/// relevant flags for the failure message.
-fn enforce_bytes_gb(
-    actual_bytes: u64,
-    max_gb: f64,
-    description: &str,
-    mitigation: &str,
-) -> Result<()> {
-    let Some(max_bytes) = max_output_gb_to_bytes(max_gb)? else {
-        return Ok(());
-    };
-    if actual_bytes > max_bytes {
-        anyhow::bail!(
-            "Projected {description} size is {:.2} GB, which exceeds the configured limit of \
-             {:.2} GB. Reduce the projected output size or raise the limit with --max_output_gb. \
-             Relevant options: {mitigation}.",
-            actual_bytes as f64 / 1_000_000_000.0,
-            max_bytes as f64 / 1_000_000_000.0
-        );
-    }
-    Ok(())
 }
 
 /// Write records as GenBank to a file, or to stdout when `output` is None.
@@ -1036,136 +954,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::CompareContigs(args) => commands::compare_contigs::run(&args)?,
         Command::TransformMatrix(args) => commands::transform_matrix::run(&args)?,
         Command::BuildSsn(args) => commands::build_ssn::run(&args)?,
-        Command::BuildSsnViewer {
-            input,
-            output,
-            html,
-            embed_data,
-            name,
-            metadata,
-            subset,
-            subset_file,
-            color_by,
-            label_by,
-            categorical,
-            merge_impact_metric,
-            max_output_gb,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::BuildSsnViewerConfig {
-                input: opt_path(&input)?,
-                output: opt_path(&output)?,
-                html,
-                embed_data,
-                name,
-                metadata,
-                subset,
-                subset_file,
-                color_by,
-                label_by,
-                categorical,
-                merge_impact_metric,
-                max_output_gb,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::BuildSsnViewerConfig>(p)?,
-                None => config::BuildSsnViewerConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-
-            let stem = |p: &str| {
-                Path::new(p)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_string()
-            };
-
-            // Arg-combination handling mirrors the Python tool.
-            if cfg.input.is_none() {
-                if cfg.output.is_some() {
-                    anyhow::bail!("-o/--output requires -i/--input.");
-                }
-                if cfg.embed_data {
-                    anyhow::bail!("--embed_data requires -i/--input.");
-                }
-                let html = cfg
-                    .html
-                    .as_ref()
-                    .context("when -i/--input is omitted, --html is required")?;
-                let name = cfg
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| "Domainator SSN Viewer".to_string());
-                std::fs::write(html, render_html(&name, None))?;
-                println!("wrote standalone HTML viewer to {html}");
-                return Ok(());
-            }
-
-            if cfg.output.is_none() && !cfg.embed_data {
-                anyhow::bail!("when -i/--input is supplied, provide -o/--output or --embed_data.");
-            }
-            if cfg.embed_data && cfg.html.is_none() {
-                anyhow::bail!("--embed_data requires --html.");
-            }
-
-            let input = cfg.input.clone().unwrap();
-            let name = cfg
-                .name
-                .clone()
-                .or_else(|| cfg.output.as_deref().map(stem))
-                .or_else(|| cfg.html.as_deref().map(stem))
-                .unwrap_or_else(|| "Domainator SSN Viewer".to_string());
-
-            let subset_labels = if cfg.subset.is_empty() && cfg.subset_file.is_none() {
-                None
-            } else {
-                let mut set: std::collections::HashSet<String> =
-                    cfg.subset.iter().cloned().collect();
-                if let Some(f) = &cfg.subset_file {
-                    for line in std::fs::read_to_string(f)?.lines() {
-                        let l = line.trim();
-                        if !l.is_empty() {
-                            set.insert(l.to_string());
-                        }
-                    }
-                }
-                Some(set)
-            };
-
-            let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
-            let opts = config::resolve::resolve_build_ssn_viewer(&cfg, name.clone(), subset_labels);
-            let bundle =
-                build_ssn_viewer_bundle(&matrix, &opts).context("building SSN viewer bundle")?;
-            let compressed = gzip(&serialize_bundle(&bundle));
-
-            if let Some(out) = &cfg.output {
-                // Output-size guardrail on the compressed bundle (default 25 GB, 0 disables).
-                enforce_bytes_gb(
-                    compressed.len() as u64,
-                    cfg.max_output_gb.unwrap_or(25.0),
-                    &format!("SSN viewer bundle output '{out}'"),
-                    "--subset, --subset_file",
-                )?;
-                std::fs::write(out, &compressed)?;
-                println!("wrote {}-node .dsnv bundle to {out}", matrix.nrows());
-            }
-            if let Some(html) = &cfg.html {
-                let embed = if cfg.embed_data {
-                    Some(compressed.as_slice())
-                } else {
-                    None
-                };
-                std::fs::write(html, render_html(&name, embed))?;
-                println!("wrote HTML viewer to {html}");
-            }
-        }
+        Command::BuildSsnViewer(args) => commands::build_ssn_viewer::run(&args)?,
         Command::MatrixReport {
             input,
             output,

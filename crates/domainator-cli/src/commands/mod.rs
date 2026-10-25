@@ -2,6 +2,7 @@
 //! wiring around the core library function.
 
 pub mod build_ssn;
+pub mod build_ssn_viewer;
 pub mod clean_sequences;
 pub mod color_genbank;
 pub mod compare_contigs;

@@ -193,7 +193,7 @@ while looking at the network, in the viewer or with
 `.ssnv` is the older spelling of the same thing. It is still read; new files are always
 written as `.dsnv`.
 
-With `--html` you also get a standalone HTML page, and with `--embed_data` the bundle is
+With `--html_out` you also get a standalone HTML page, and with `--embed_data` the bundle is
 embedded inside it, so the page is fully self-contained and can be emailed or put on a
 web server with nothing else alongside it.
 

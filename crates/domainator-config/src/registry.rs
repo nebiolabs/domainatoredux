@@ -308,11 +308,17 @@ pub const TOOLS: &[ToolInfo] = &[
             "Build a sequence similarity network as a Cytoscape file.",
         )
     },
-    tool(
-        "build_ssn_viewer",
-        "network",
-        "Build a Domainator Similarity Network Viewer bundle and HTML page.",
-    ),
+    ToolInfo {
+        migrated: true,
+        stdin: false,
+        required_outputs: Some(&["dsnv_out", "html_out"]),
+        no_stdout: &["dsnv_out", "html_out"],
+        ..tool(
+            "build_ssn_viewer",
+            "network",
+            "Build a Domainator Similarity Network Viewer bundle and HTML page.",
+        )
+    },
     tool(
         "ssn_navigator",
         "network",

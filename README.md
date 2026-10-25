@@ -47,7 +47,7 @@ domainatoredux domainate -i FeSOD_20.gb -r FeSOD_pfam.hmm -o annotated.gb
 domainatoredux seq_dist -i annotated.gb -o dist.hdf5 --algorithm hmmer --mode score
 #> wrote 20x20 matrix
 
-domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html network.html --embed_data
+domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html_out network.html --embed_data
 #> wrote 20-node .dsnv bundle to network.dsnv
 #> wrote HTML viewer to network.html
 ```

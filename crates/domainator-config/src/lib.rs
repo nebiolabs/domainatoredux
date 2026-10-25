@@ -240,43 +240,6 @@ impl SsnNavigatorConfig {
     }
 }
 
-/// `build_ssn_viewer` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct BuildSsnViewerConfig {
-    pub input: Option<String>,
-    pub output: Option<String>,
-    pub html: Option<String>,
-    pub embed_data: bool,
-    pub name: Option<String>,
-    pub metadata: Vec<String>,
-    pub subset: Vec<String>,
-    pub subset_file: Option<String>,
-    pub color_by: Option<String>,
-    pub label_by: Option<String>,
-    pub categorical: Vec<String>,
-    pub merge_impact_metric: Option<String>,
-    pub max_output_gb: Option<f64>,
-}
-
-impl BuildSsnViewerConfig {
-    pub fn merge_cli(&mut self, cli: BuildSsnViewerConfig) {
-        merge_scalar!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, html);
-        self.embed_data |= cli.embed_data;
-        merge_scalar!(self, cli, name);
-        merge_vec!(self, cli, metadata);
-        merge_vec!(self, cli, subset);
-        merge_scalar!(self, cli, subset_file);
-        merge_scalar!(self, cli, color_by);
-        merge_scalar!(self, cli, label_by);
-        merge_vec!(self, cli, categorical);
-        merge_scalar!(self, cli, merge_impact_metric);
-        merge_scalar!(self, cli, max_output_gb);
-    }
-}
-
 /// `hmmer_compare` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -521,7 +484,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "hmmer_compare" => hmmer_compare_schema(),
-        "build_ssn_viewer" => build_ssn_viewer_schema(),
         "matrix_report" => matrix_report_schema(),
         "ssn_navigator" => ssn_navigator_schema(),
         "summary_report" => summary_report_schema(),
@@ -732,31 +694,6 @@ fn matrix_report_schema() -> serde_json::Value {
             "json": {"type": ["string", "null"], "description": "Agent-friendly JSON report output path"},
             "merge_impact_metric": {"enum": ["min_child", "product"], "default": "min_child"},
             "max_merge_events": {"type": ["integer", "null"], "default": 500}
-        }
-    })
-}
-
-fn build_ssn_viewer_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "build_ssn_viewer config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": ["string", "null"], "description": "Symmetric matrix (HDF5 or dense TSV)"},
-            "output": {"type": ["string", "null"], "description": "Gzip-JSON .dsnv bundle output"},
-            "html": {"type": ["string", "null"], "description": "Standalone HTML viewer output"},
-            "embed_data": {"type": "boolean", "default": false, "description": "Embed the bundle into the HTML for autoload"},
-            "name": {"type": ["string", "null"]},
-            "metadata": {"type": "array", "items": {"type": "string"}},
-            "subset": {"type": "array", "items": {"type": "string"}},
-            "subset_file": {"type": ["string", "null"]},
-            "color_by": {"type": ["string", "null"]},
-            "label_by": {"type": ["string", "null"]},
-            "categorical": {"type": "array", "items": {"type": "string"}, "description": "Numeric metadata columns to color as discrete categories instead of a gradient"},
-            "merge_impact_metric": {"enum": ["min_child", "product"], "default": "min_child", "description": "Metric the viewer uses for split events, recorded in the bundle as the default; switchable in the viewer"},
-            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected .dsnv bundle output exceeds this many GB (0 disables)"}
         }
     })
 }
@@ -977,7 +914,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "build_ssn_viewer" => BuildSsnViewerConfig,
             "matrix_report" => MatrixReportConfig,
             "ssn_navigator" => SsnNavigatorConfig,
             "summary_report" => SummaryReportConfig,

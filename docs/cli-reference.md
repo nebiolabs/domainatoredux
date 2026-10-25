@@ -502,15 +502,17 @@ domainatoredux build_ssn -i dist.hdf5 -o network.xgmml --threshold 100 \
 
 ### `build_ssn_viewer`
 
-Build a `.dsnv` bundle for the **interactive viewer** — no cutoff needed, because the
-viewer lets you move the threshold instead. `--html` also writes a standalone HTML page,
-and `--embed_data` puts the data inside it so the page is self-contained and shareable.
-`--metadata` joins TSV columns, `--color_by`/`--label_by` choose which colors and labels
-nodes, and `--categorical` marks columns that should be treated as categories rather than
-numbers.
+Build a `.dsnv` bundle (`-o/--dsnv_out`) for the **interactive viewer** from a similarity
+matrix — no cutoff needed, because the viewer lets you move the threshold instead.
+`--html_out` also writes a standalone HTML page, and `--embed_data` puts the data inside
+it so the page is self-contained and shareable (then `-o` is optional); without `-i`,
+`--html_out` writes an empty viewer that opens bundles itself. `--metadata` joins TSV
+columns, `--color_by`/`--label_by` choose which colors and labels nodes, `--color_table`
+sets the starting colors of the `--color_by` column, and `--categorical` marks columns
+that should be treated as categories rather than numbers.
 
 ```bash
-domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html network.html \
+domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html_out network.html \
   --embed_data --metadata annotations.tsv --color_by phylum --categorical phylum
 ```
 

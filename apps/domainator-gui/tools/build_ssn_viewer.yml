@@ -5,27 +5,24 @@ description: "Build a .dsnv bundle for the interactive network viewer."
 fields:
   - name: input
     label: "Input matrix"
-    role: input_file
     file_type: hdf5
     required: true
     sources: workspace_first
     select: first
-  - name: output
+  - name: dsnv_out
     label: "Output (.dsnv)"
-    role: output_file
     required: true
     output_name: "{stem}.dsnv"
   - name: metadata
     label: "Metadata (TSV)"
-    role: input_files
     file_type: table
     sources: workspace_first
     select: none
   - name: merge_impact_metric
     label: "Merge metric"
-  - name: html
+  - name: html_out
     show: false
-    label: "Html"
+    label: "HTML page"
   - name: embed_data
     show: false
     label: "Embed data"
@@ -41,6 +38,9 @@ fields:
   - name: color_by
     show: false
     label: "Color by"
+  - name: color_table
+    show: false
+    label: "Color table"
   - name: label_by
     show: false
     label: "Label by"
