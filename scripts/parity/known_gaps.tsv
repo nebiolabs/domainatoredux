@@ -48,14 +48,6 @@ hmmer_search	test_hmmer_search_dna#0	rust-failed	pending:1.0-cli	error: unexpect
 hmmer_search	test_hmmer_search_explicit_score_cutoff_is_not_rescaled#0	rust-failed	pending:1.0-cli	error: unexpected argument '--min_score' found
 hmmer_search	test_hmmer_search_explicit_score_cutoff_is_not_rescaled#1	rust-failed	pending:1.0-cli	error: unexpected argument '--min_score' found
 hmmer_search	test_hmmer_search_rna#0	rust-failed	pending:1.0-cli	error: unexpected argument '--min_score' found
-hmmer_select	test_hmmer_select_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hmm_out' found
-hmmer_select	test_hmmer_select_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hmm_out' found
-hmmer_select	test_hmmer_select_3#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hmm_out' found
-hmmer_select	test_hmmer_select_4#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hmm_out' found
-hmmer_select	test_hmmer_select_case_sensitivity_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hmm_out' found
-hmmer_select	test_hmmer_select_case_sensitivity_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hmm_out' found
-hmmer_select	test_hmmer_select_case_sensitivity_3#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hmm_out' found
-hmmer_select	test_hmmer_select_case_sensitivity_4#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hmm_out' found
 matrix_report	test_matrix_report_default_excludes_mst_knn#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 matrix_report	test_matrix_report_text_includes_mst_knn_projection#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 select_by_cds	test_select_by_cds_3#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:44

@@ -24,6 +24,7 @@ mod filter_domains;
 mod genbank_to_fasta;
 mod hmmer_compare;
 mod hmmer_report;
+mod hmmer_select;
 mod matrix_report;
 mod select_by_cds;
 mod select_by_contig;
@@ -52,6 +53,7 @@ pub use filter_domains::FilterDomainsArgs;
 pub use genbank_to_fasta::GenbankToFastaArgs;
 pub use hmmer_compare::HmmerCompareArgs;
 pub use hmmer_report::HmmerReportArgs;
+pub use hmmer_select::HmmerSelectArgs;
 pub use matrix_report::MatrixReportArgs;
 pub use select_by_cds::SelectByCdsArgs;
 pub use select_by_contig::SelectByContigArgs;
@@ -95,6 +97,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "ssn_navigator" => SsnNavigatorArgs::augment_args(cmd),
         "summary_report" => SummaryReportArgs::augment_args(cmd),
         "hmmer_compare" => HmmerCompareArgs::augment_args(cmd),
+        "hmmer_select" => HmmerSelectArgs::augment_args(cmd),
         _ => return None,
     })
 }

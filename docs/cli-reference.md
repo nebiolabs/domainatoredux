@@ -651,6 +651,7 @@ Stockholm is the only input format, and the alignment must be a file (not stdin)
 Pull a subset of profiles out of one or more `.hmm` files by text matching on their NAME,
 DESC or ACC fields. `--regex`, `--exact` and `--contains` are the match modes, `--field`
 restricts which field is matched, `--case_sensitive` and `--alphabet` refine further.
+The matches go to `-o/--hmm_out` (`-` for stdout); `-i -` reads standard input.
 
 ```bash
 domainatoredux hmmer_select -i Pfam-A.hmm.gz -o nucleases.hmm --contains nuclease --field desc

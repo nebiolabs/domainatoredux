@@ -177,42 +177,7 @@ enum Command {
     HmmerCompare(config::args::HmmerCompareArgs),
     HmmerReport(config::args::HmmerReportArgs),
     /// Filter an HMM file by text matches on profile NAME/DESC/ACC fields.
-    HmmerSelect {
-        /// Input `.hmm` file(s). Reads stdin if omitted (unsupported: give files).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output `.hmm` file. Writes to stdout if omitted.
-        /// Writes plain gzip if the path ends in `.gz`; `.bgz` is refused because
-        /// HMMER cannot read BGZF. Output to stdout is never compressed.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Regex pattern(s) to match.
-        #[arg(long, num_args = 1..)]
-        regex: Vec<String>,
-        /// Exact string(s) to match (whole field).
-        #[arg(long, num_args = 1..)]
-        exact: Vec<String>,
-        /// Substring(s) to match.
-        #[arg(long, num_args = 1..)]
-        contains: Vec<String>,
-        /// Which field(s) to search: name, desc, acc, or all.
-        #[arg(long)]
-        field: Option<String>,
-        /// Make matching case-sensitive.
-        #[arg(long = "case_sensitive")]
-        case_sensitive: bool,
-        /// Only read input files whose profiles use this alphabet (amino, dna, rna),
-        /// skipping the rest. An .hmm file holds one alphabet, so this selects whole
-        /// files -- which is how a mixed input set is split one alphabet at a time.
-        #[arg(long)]
-        alphabet: Option<String>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    HmmerSelect(config::args::HmmerSelectArgs),
     /// Build an HMM profile from a (Stockholm) multiple sequence alignment.
     HmmerBuild {
         /// Input Stockholm MSA file (stdin if omitted).
@@ -861,70 +826,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::SelectByContig(args) => commands::select_by_contig::run(&args)?,
         Command::HmmerCompare(args) => commands::hmmer_compare::run(&args)?,
         Command::HmmerReport(args) => commands::hmmer_report::run(&args)?,
-        Command::HmmerSelect {
-            input,
-            output,
-            regex,
-            exact,
-            contains,
-            field,
-            case_sensitive,
-            alphabet,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            use domainator_core::tools::hmmer_select as hs;
-            let cli = config::HmmerSelectConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                regex,
-                exact,
-                contains,
-                field,
-                case_sensitive,
-                alphabet,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::HmmerSelectConfig>(p)?,
-                None => config::HmmerSelectConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            if cfg.input.is_empty() {
-                anyhow::bail!("hmmer_select requires at least one -i/--input .hmm file");
-            }
-            let fields = hs::Fields::from_field(cfg.field.as_deref().unwrap_or("all"))
-                .map_err(|e| anyhow::anyhow!(e))?;
-            let opts = hs::SelectOptions {
-                regex: cfg.regex,
-                exact: cfg.exact,
-                contains: cfg.contains,
-                fields,
-                case_sensitive: cfg.case_sensitive,
-                alphabet: hs::parse_alphabet(cfg.alphabet.as_deref())
-                    .map_err(|e| anyhow::anyhow!(e))?,
-            };
-            let summary = match &cfg.output {
-                Some(p) => write_hmm_output(p, |f| hs::hmmer_select(&cfg.input, &opts, f))
-                    .map_err(|e| anyhow::anyhow!(e))?,
-                None => {
-                    let stdout = std::io::stdout();
-                    let mut h = stdout.lock();
-                    hs::hmmer_select(&cfg.input, &opts, &mut h).map_err(|e| anyhow::anyhow!(e))?
-                }
-            };
-            eprintln!("Found {} matching profiles.", summary.found);
-            if summary.skipped_files > 0 {
-                eprintln!(
-                    "Skipped {} input file(s) whose alphabet did not match --alphabet.",
-                    summary.skipped_files
-                );
-            }
-        }
+        Command::HmmerSelect(args) => commands::hmmer_select::run(&args)?,
         Command::HmmerBuild {
             input,
             output,

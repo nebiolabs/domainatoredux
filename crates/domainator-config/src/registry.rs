@@ -241,11 +241,15 @@ pub const TOOLS: &[ToolInfo] = &[
         "profile",
         "Build an HMM profile from a multiple sequence alignment.",
     ),
-    tool(
-        "hmmer_select",
-        "profile",
-        "Extract a subset of profiles from HMM files.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["hmm_out"]),
+        ..tool(
+            "hmmer_select",
+            "profile",
+            "Extract a subset of profiles from HMM files.",
+        )
+    },
     tool(
         "hmmer_search",
         "profile",

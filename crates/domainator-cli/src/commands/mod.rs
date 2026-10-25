@@ -17,6 +17,7 @@ pub mod filter_domains;
 pub mod genbank_to_fasta;
 pub mod hmmer_compare;
 pub mod hmmer_report;
+pub mod hmmer_select;
 pub mod matrix_report;
 pub mod select_by_cds;
 pub mod select_by_contig;
@@ -31,6 +32,7 @@ pub mod trim_contigs;
 use anyhow::{Context, Result};
 use domainator_core::io::genbank::read_genbank;
 use domainator_core::search::hmm_read::{read_hmm_file, Hmm};
+use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::SeqRecord;
 
 use crate::output::is_stdin;
@@ -119,4 +121,22 @@ pub fn read_hmm_inputs(paths: &[String]) -> Result<Vec<(String, Vec<Hmm>)>> {
         out.push((path.clone(), profiles));
     }
     Ok(out)
+}
+
+/// Write HMM profiles to `path` through `write`: `-` is standard output (never
+/// compressed), anything else goes through the core's `write_hmm_output` (`.gz` is
+/// gzip, `.bgz` refused, a failed run leaves no file).
+pub fn write_hmm_out<T>(
+    path: &str,
+    write: impl FnOnce(&mut dyn std::io::Write) -> Result<T, String>,
+) -> Result<T> {
+    if crate::output::is_stdout(path) {
+        let stdout = std::io::stdout();
+        let mut handle = stdout.lock();
+        let value = write(&mut handle).map_err(anyhow::Error::msg)?;
+        std::io::Write::flush(&mut handle)?;
+        Ok(value)
+    } else {
+        write_hmm_output(path, |out| write(out)).map_err(anyhow::Error::msg)
+    }
 }

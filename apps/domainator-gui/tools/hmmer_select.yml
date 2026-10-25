@@ -5,15 +5,11 @@ description: "Extract a subset of profiles from HMM file(s) by name/description/
 fields:
   - name: input
     label: "Input HMM(s)"
-    role: input_files
     file_type: hmm
-    required: true
     sources: workspace_first
     select: first
-  - name: output
+  - name: hmm_out
     label: "Output (HMM)"
-    role: output_file
-    required: true
     output_name: "{stem}.selected.hmm"
   - name: regex
     label: "Regex match"

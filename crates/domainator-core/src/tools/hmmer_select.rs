@@ -10,7 +10,6 @@
 //! drops `GA`/`TC`/`NC`.) Read through `search::hmm_read` for the same reason.
 
 use std::io::Write;
-use std::path::Path;
 
 use hmmer_pure_rs::alphabet::AlphabetType;
 use hmmer_pure_rs::Hmm;
@@ -163,9 +162,12 @@ pub struct SelectSummary {
     pub found: usize,
     /// Input files skipped because their alphabet did not match `--alphabet`.
     pub skipped_files: usize,
+    /// Why each was skipped (upstream logs these at INFO).
+    pub skipped: Vec<String>,
 }
 
-/// Read HMM files, filter their profiles, and write the matches to `out`.
+/// Filter HMM files' profiles and write the matches to `out`. `inputs` holds each
+/// file's name and profiles, in order.
 ///
 /// HMMER locks an `.hmm` file to the alphabet of its first profile, so every
 /// profile written to one output must share one — an input set that mixes them is
@@ -174,7 +176,7 @@ pub struct SelectSummary {
 /// selects whole *files*, which is how a mixed set gets split one alphabet at a
 /// time.
 pub fn hmmer_select<W: Write>(
-    input_files: &[String],
+    inputs: &[(String, Vec<Hmm>)],
     opts: &SelectOptions,
     out: &mut W,
 ) -> Result<SelectSummary, String> {
@@ -193,22 +195,21 @@ pub fn hmmer_select<W: Write>(
     let mut summary = SelectSummary {
         found: 0,
         skipped_files: 0,
+        skipped: Vec::new(),
     };
     let mut selected = opts.alphabet;
     let mut selected_source = opts.alphabet.map(|_| "--alphabet".to_string());
-    for input_file in input_files {
-        let hmms = crate::search::hmm_read::read_hmm_file(Path::new(input_file))
-            .map_err(|e| format!("reading {input_file}: {e:?}"))?;
+    for (input_file, hmms) in inputs {
         let Some(file_alphabet) = hmms.first().map(|h| h.abc_type) else {
             continue; // no profiles in this file
         };
         if let Some(requested) = opts.alphabet {
             if file_alphabet != requested {
-                eprintln!(
+                summary.skipped.push(format!(
                     "Skipping '{input_file}': its profiles are {}, not the requested {}.",
                     alphabet_name(file_alphabet),
                     alphabet_name(requested)
-                );
+                ));
                 summary.skipped_files += 1;
                 continue;
             }
@@ -232,7 +233,7 @@ pub fn hmmer_select<W: Write>(
             }
             Some(_) => {}
         }
-        for hmm in &hmms {
+        for hmm in hmms {
             if match_all || profile_matches(hmm, opts, &regexes) {
                 crate::search::hmm_write::write_hmm(out, hmm)
                     .map_err(|e| format!("writing profile: {e:?}"))?;
@@ -247,6 +248,7 @@ pub fn hmmer_select<W: Write>(
 mod tests {
     use super::*;
     use hmmer_pure_rs::alphabet::AlphabetType;
+    use std::path::Path;
 
     fn hmm(name: &str, acc: Option<&str>, desc: Option<&str>) -> Hmm {
         let mut h = Hmm::new(1, AlphabetType::Amino, 20);
@@ -300,8 +302,15 @@ mod tests {
     }
 
     fn select(inputs: &[String], o: &SelectOptions) -> Result<(usize, usize), String> {
+        let inputs: Vec<(String, Vec<Hmm>)> = inputs
+            .iter()
+            .map(|f| {
+                let hmms = crate::search::hmm_read::read_hmm_file(Path::new(f));
+                (f.clone(), hmms.unwrap())
+            })
+            .collect();
         let mut out = Vec::new();
-        hmmer_select(inputs, o, &mut out).map(|s| (s.found, s.skipped_files))
+        hmmer_select(&inputs, o, &mut out).map(|s| (s.found, s.skipped_files))
     }
 
     fn scratch() -> std::path::PathBuf {

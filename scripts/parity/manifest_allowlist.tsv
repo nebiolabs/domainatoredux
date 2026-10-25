@@ -73,16 +73,6 @@ hmmer_search	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind"
 hmmer_search	reference	required	false	true	todo:1.0-cli	
 hmmer_search	score_cutoff	extra	{"name":"score_cutoff","flags":["--score_cutoff"],"default":null,"kind":"value","type":"number","required":false}	null	todo:1.0-cli	
 hmmer_search	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
-hmmer_select	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-hmmer_select	-	required_outputs	null	["hmm_out"]	todo:1.0-cli	
-hmmer_select	alphabet	choices	null	["amino","dna","rna"]	todo:1.0-cli	
-hmmer_select	field	choices	null	["acc","all","desc","name"]	todo:1.0-cli	
-hmmer_select	field	default	null	"all"	todo:1.0-cli	
-hmmer_select	hmm_out	missing	null	{"default":null,"flags":["-o","--hmm_out"],"kind":"path","name":"hmm_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-hmmer_select	input	required	false	true	todo:1.0-cli	
-hmmer_select	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-hmmer_select	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-hmmer_select	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 infernal_build	-	tool	false	true	deferred:infernal	
 kmer_dist	-	tool	false	true	deferred:unported-tool	
 matrix_report	-	required_outputs	["text_out","json_out"]	["text_out","html_out","json_out"]	deferred:html	no html_out

@@ -157,33 +157,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `hmmer_select` parameters (config-file shape).
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct HmmerSelectConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub regex: Vec<String>,
-    pub exact: Vec<String>,
-    pub contains: Vec<String>,
-    pub field: Option<String>,
-    pub case_sensitive: bool,
-    pub alphabet: Option<String>,
-}
-
-impl HmmerSelectConfig {
-    pub fn merge_cli(&mut self, cli: HmmerSelectConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_vec!(self, cli, regex);
-        merge_vec!(self, cli, exact);
-        merge_vec!(self, cli, contains);
-        merge_scalar!(self, cli, field);
-        self.case_sensitive |= cli.case_sensitive;
-        merge_scalar!(self, cli, alphabet);
-    }
-}
-
 /// `hmmer_build` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -373,7 +346,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
-        "hmmer_select" => hmmer_select_schema(),
         "hmmer_build" => hmmer_build_schema(),
         "hmmer_search" => hmmer_search_schema(),
         "format_db" => format_db_schema(),
@@ -606,26 +578,6 @@ fn hmmer_search_schema() -> serde_json::Value {
     })
 }
 
-fn hmmer_select_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "hmmer_select config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}, "description": "Input .hmm files (optionally gzip/BGZF-compressed)"},
-            "output": {"type": ["string", "null"], "description": "HMM output (stdout if omitted); '.gz' writes plain gzip, '.bgz' is refused (HMMER cannot read BGZF)"},
-            "regex": {"type": "array", "items": {"type": "string"}, "description": "Regex pattern(s) to match"},
-            "exact": {"type": "array", "items": {"type": "string"}, "description": "Exact string(s) to match"},
-            "contains": {"type": "array", "items": {"type": "string"}, "description": "Substring(s) to match"},
-            "field": {"enum": ["name", "desc", "acc", "all", null], "default": "all", "description": "Which field(s) to search (default all)"},
-            "case_sensitive": {"type": "boolean", "default": false},
-            "alphabet": {"enum": ["amino", "dna", "rna", null], "description": "Only read input files whose profiles use this alphabet"}
-        }
-    })
-}
-
 fn format_db_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -721,7 +673,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "hmmer_select" => HmmerSelectConfig,
             "hmmer_build" => HmmerBuildConfig,
             "hmmer_search" => HmmerSearchConfig,
             "format_db" => FormatDbConfig,
