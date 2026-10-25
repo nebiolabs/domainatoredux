@@ -6,6 +6,7 @@ use std::collections::HashSet;
 
 use crate::seq::{SeqFeature, SeqRecord};
 use crate::tools::extract_common::{revcomp_record, slice_from_location, Loc};
+use crate::tools::select_common::evalue_passes;
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
 /// Options for [`extract_unannotated`].
@@ -48,25 +49,15 @@ fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractUnannotatedOptions) -> Ve
                 continue;
             }
         }
-        let mut keep = true;
-        if let Some(e) = opts.evalue {
-            let ev: f64 = feature
-                .get_first("evalue")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(f64::INFINITY);
-            if ev > e {
-                keep = false;
-            }
-        } else if let Some(s) = opts.score {
-            let sc: f64 = feature
+        // Both cutoffs apply (upstream's elif chain rejects on the first that fails).
+        let score_ok = opts.score.is_none_or(|s| {
+            feature
                 .get_first("score")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(f64::NEG_INFINITY);
-            if sc < s {
-                keep = false;
-            }
-        }
-        if keep {
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(f64::NEG_INFINITY)
+                >= s
+        });
+        if evalue_passes(feature, opts.evalue) && score_ok {
             hits.push(feature);
         }
     }
@@ -294,5 +285,24 @@ mod tests {
         let mut r = prot(b"ACGT", vec![]);
         r.molecule_type = Some("DNA".into());
         assert!(extract_unannotated(&[r], &ExtractUnannotatedOptions::default()).is_err());
+    }
+
+    /// Upstream rejects a domain that fails either cutoff, so with both set a weak
+    /// domain stops counting as an annotation even when its e-value passes.
+    #[test]
+    fn the_evalue_and_score_cutoffs_both_apply() {
+        let r = prot(b"ACDEFGHIKLMNPQRSTVWY", vec![dom("A", 5, 10)]);
+        let out = extract_unannotated(
+            &[r],
+            &ExtractUnannotatedOptions {
+                evalue: Some(1.0),
+                score: Some(60.0),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        // The domain (score 50) no longer counts, so the whole protein is unannotated.
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].seq.len(), 20);
     }
 }

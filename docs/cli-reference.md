@@ -321,11 +321,12 @@ domainatoredux extract_peptides -i annotated.gb --fasta_out proteins.fasta --dom
 ### `extract_unannotated`
 
 Extract the parts of proteins that *aren't* covered by a domain annotation — for finding
-novel regions. `--largest` keeps only the longest gap per protein, `--lb` sets a minimum
-length.
+novel regions. `--largest` keeps only the longest gap per protein, `--min_length` sets a
+minimum length, and `-e/--evalue`, `--min_score` and `--databases` decide which domains
+count as annotations.
 
 ```bash
-domainatoredux extract_unannotated -i annotated.gb -o novel.fasta --lb 50 --largest --fasta_out
+domainatoredux extract_unannotated -i annotated.gb --fasta_out novel.fasta --min_length 50 --largest
 ```
 
 ### `trim_contigs`

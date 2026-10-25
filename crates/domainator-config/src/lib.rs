@@ -451,43 +451,6 @@ impl TrimContigsConfig {
     }
 }
 
-/// `extract_unannotated` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct ExtractUnannotatedConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub evalue: Option<f64>,
-    pub score: Option<f64>,
-    pub databases: Vec<String>,
-    pub search_hits: bool,
-    pub keep_direction: bool,
-    pub keep_name: bool,
-    pub largest: bool,
-    pub lb: Option<i64>,
-    pub fasta_out: bool,
-    pub contigs: Vec<String>,
-    pub contigs_file: Option<String>,
-}
-
-impl ExtractUnannotatedConfig {
-    pub fn merge_cli(&mut self, cli: ExtractUnannotatedConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, evalue);
-        merge_scalar!(self, cli, score);
-        merge_vec!(self, cli, databases);
-        self.search_hits |= cli.search_hits;
-        self.keep_direction |= cli.keep_direction;
-        self.keep_name |= cli.keep_name;
-        self.largest |= cli.largest;
-        merge_scalar!(self, cli, lb);
-        self.fasta_out |= cli.fasta_out;
-        merge_vec!(self, cli, contigs);
-        merge_scalar!(self, cli, contigs_file);
-    }
-}
-
 /// `seq_dist` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -1009,7 +972,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "color_genbank" => color_genbank_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "trim_contigs" => trim_contigs_schema(),
-        "extract_unannotated" => extract_unannotated_schema(),
         "seq_dist" => seq_dist_schema(),
         "compare_contigs" => compare_contigs_schema(),
         "hmmer_compare" => hmmer_compare_schema(),
@@ -1406,31 +1368,6 @@ fn trim_contigs_schema() -> serde_json::Value {
     })
 }
 
-fn extract_unannotated_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "extract_unannotated config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "evalue": {"type": ["number", "null"]},
-            "score": {"type": ["number", "null"]},
-            "databases": {"type": "array", "items": {"type": "string"}},
-            "search_hits": {"type": "boolean", "default": false},
-            "keep_direction": {"type": "boolean", "default": false},
-            "keep_name": {"type": "boolean", "default": false},
-            "largest": {"type": "boolean", "default": false},
-            "lb": {"type": ["integer", "null"]},
-            "fasta_out": {"type": "boolean", "default": false},
-            "contigs": {"type": "array", "items": {"type": "string"}},
-            "contigs_file": {"type": ["string", "null"]}
-        }
-    })
-}
-
 fn seq_dist_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -1805,7 +1742,6 @@ mod tests {
             "color_genbank" => ColorGenbankConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
             "trim_contigs" => TrimContigsConfig,
-            "extract_unannotated" => ExtractUnannotatedConfig,
             "seq_dist" => SeqDistConfig,
             "compare_contigs" => CompareContigsConfig,
             "transform_matrix" => TransformMatrixConfig,

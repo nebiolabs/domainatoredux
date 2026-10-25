@@ -126,11 +126,15 @@ pub const TOOLS: &[ToolInfo] = &[
             "Extract translated CDSs as protein records, keeping their domain annotations.",
         )
     },
-    tool(
-        "extract_unannotated",
-        "edit",
-        "Extract the regions of proteins not covered by any domain annotation.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        ..tool(
+            "extract_unannotated",
+            "edit",
+            "Extract the regions of proteins not covered by any domain annotation.",
+        )
+    },
     ToolInfo {
         migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),

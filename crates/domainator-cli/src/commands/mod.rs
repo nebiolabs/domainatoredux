@@ -4,6 +4,7 @@
 pub mod enum_report;
 pub mod extract_domains;
 pub mod extract_peptides;
+pub mod extract_unannotated;
 pub mod filter_domains;
 pub mod hmmer_report;
 pub mod select_by_cds;

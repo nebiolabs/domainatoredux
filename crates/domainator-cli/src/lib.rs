@@ -521,51 +521,7 @@ enum Command {
     ExtractPeptides(config::args::ExtractPeptidesArgs),
     /// Extract regions of proteins not containing domain annotations.
     #[command(allow_negative_numbers = true)]
-    ExtractUnannotated {
-        /// Input GenBank file(s) (stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output file (stdout if omitted).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// E-value cutoff (max) for domains to consider.
-        #[arg(short, long)]
-        evalue: Option<f64>,
-        /// Score cutoff (min) for domains to consider.
-        #[arg(long)]
-        score: Option<f64>,
-        /// Only consider domains from these databases.
-        #[arg(long, num_args = 1..)]
-        databases: Vec<String>,
-        /// Consider domains marked as search hits.
-        #[arg(long = "search_hits")]
-        search_hits: bool,
-        /// Don't reverse-complement reverse-strand regions.
-        #[arg(long = "keep_direction")]
-        keep_direction: bool,
-        /// Keep original names (no coordinate suffixes).
-        #[arg(long = "keep_name")]
-        keep_name: bool,
-        /// Only extract the largest unannotated region per protein.
-        #[arg(long)]
-        largest: bool,
-        /// Minimum length of unannotated regions to extract.
-        #[arg(long)]
-        lb: Option<i64>,
-        /// Write FASTA instead of GenBank.
-        #[arg(long = "fasta_out")]
-        fasta_out: bool,
-        /// Only process contigs with these names.
-        #[arg(long, num_args = 1..)]
-        contigs: Vec<String>,
-        /// File of contig names to process.
-        #[arg(long = "contigs_file")]
-        contigs_file: Option<String>,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    ExtractUnannotated(config::args::ExtractUnannotatedArgs),
     /// Compute a similarity matrix between input and reference sequences/profiles.
     SeqDist {
         /// Input query file (FASTA/GenBank/HMM; two HMM files select --algorithm hmmer_compare).
@@ -2407,73 +2363,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Command::ExtractDomains(args) => commands::extract_domains::run(&args)?,
         Command::ExtractPeptides(args) => commands::extract_peptides::run(&args)?,
-        Command::ExtractUnannotated {
-            input,
-            output,
-            evalue,
-            score,
-            databases,
-            search_hits,
-            keep_direction,
-            keep_name,
-            largest,
-            lb,
-            fasta_out,
-            contigs,
-            contigs_file,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::ExtractUnannotatedConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                evalue,
-                score,
-                databases,
-                search_hits,
-                keep_direction,
-                keep_name,
-                largest,
-                lb,
-                fasta_out,
-                contigs,
-                contigs_file,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::ExtractUnannotatedConfig>(p)?,
-                None => config::ExtractUnannotatedConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let mut records = load_inputs_str(&cfg.input)?;
-            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let databases = if cfg.databases.is_empty() {
-                None
-            } else {
-                Some(cfg.databases.iter().cloned().collect())
-            };
-            let opts = tools::extract_unannotated::ExtractUnannotatedOptions {
-                evalue: cfg.evalue,
-                score: cfg.score,
-                keep_direction: cfg.keep_direction,
-                keep_name: cfg.keep_name,
-                search_hits: cfg.search_hits,
-                databases,
-                largest: cfg.largest,
-                lb: cfg.lb,
-            };
-            let out = tools::extract_unannotated::extract_unannotated(&records, &opts)
-                .map_err(|e| anyhow::anyhow!(e))?;
-            if cfg.fasta_out {
-                write_fasta_bp_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-            } else {
-                write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-            }
-        }
+        Command::ExtractUnannotated(args) => commands::extract_unannotated::run(&args)?,
         Command::SeqDist {
             input,
             reference,
