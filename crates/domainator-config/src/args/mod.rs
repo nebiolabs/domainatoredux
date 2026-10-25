@@ -1,4 +1,4 @@
-//! Each migrated tool's interface, one clap `Args` struct per tool.
+//! Each tool's interface, one clap `Args` struct per tool.
 //!
 //! The struct is the tool's single interface description: the command line parses
 //! into it, a `--config` file is expanded into the same command line
@@ -75,7 +75,7 @@ pub use summary_report::SummaryReportArgs;
 pub use transform_matrix::TransformMatrixArgs;
 pub use trim_contigs::TrimContigsArgs;
 
-/// The `clap::Command` of a migrated tool, built from its args struct alone, for
+/// The `clap::Command` of a tool, built from its args struct alone, for
 /// callers that have no CLI to ask (the GUI's tool dialogs).
 pub fn tool_command(name: &str) -> Option<clap::Command> {
     use clap::Args;

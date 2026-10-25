@@ -33,12 +33,10 @@ pub struct ToolInfo {
     pub category: &'static str,
     /// One line, shown by `--help` and `describe`.
     pub summary: &'static str,
-    /// Listed by `describe`. The dev commands `inspect` and `convert` are not.
+    /// Listed by `describe`, with its interface a `crate::args` struct whose `--config`
+    /// file is expanded into command-line arguments. The dev commands `inspect` and
+    /// `convert` are neither.
     pub in_manifest: bool,
-    /// The tool's interface is a `crate::args` struct, and its `--config` file is
-    /// expanded into command-line arguments (upstream's flat format). The rest still
-    /// read the old per-tool config structs until they are migrated.
-    pub migrated: bool,
     /// Whether `-i -` (standard input) is accepted; tools that read their input more
     /// than once need a file.
     pub stdin: bool,
@@ -70,7 +68,6 @@ const fn tool(name: &'static str, category: &'static str, summary: &'static str)
         category,
         summary,
         in_manifest: true,
-        migrated: false,
         stdin: true,
         stdin_reason: "it reads its input more than once",
         no_stdout: &[],
@@ -87,7 +84,6 @@ const fn tool(name: &'static str, category: &'static str, summary: &'static str)
 pub const TOOLS: &[ToolInfo] = &[
     // annotate
     ToolInfo {
-        migrated: true,
         stdin: false,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
@@ -106,7 +102,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         stdin: false,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
@@ -119,7 +114,6 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // edit
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         no_stdout: &["log_out"],
         ..tool(
@@ -129,7 +123,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         no_stdout: &["color_table_out"],
         ..tool(
@@ -139,7 +132,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         stdin: false,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         no_stdout: &["log_out", "cluster_tsv_out"],
@@ -150,7 +142,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         ..tool(
             "extract_domains",
@@ -159,7 +150,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         ..tool(
             "extract_peptides",
@@ -168,7 +158,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         ..tool(
             "extract_unannotated",
@@ -177,7 +166,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         ..tool(
             "filter_domains",
@@ -186,7 +174,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         switches_on: &["deduplicate"],
         ..tool(
@@ -196,7 +183,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
         unsupported: &[("taxonomy_update", "false")],
@@ -207,7 +193,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         ..tool(
             "select_by_coord",
@@ -216,7 +201,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         ..tool(
             "sort_contigs",
@@ -225,13 +209,11 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         ..tool("trim_contigs", "edit", "Trim the ends of contigs.")
     },
     // convert
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["fasta_out"]),
         ..tool(
             "genbank_to_fasta",
@@ -241,7 +223,6 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // profile
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["hmm_out"]),
         ..tool(
             "hmmer_build",
@@ -250,7 +231,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["hmm_out"]),
         ..tool(
             "hmmer_select",
@@ -259,7 +239,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["hmm_out"]),
         ..tool(
             "hmmer_search",
@@ -268,7 +247,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["tsv_out", "alignments_out"]),
         ..tool(
             "hmmer_compare",
@@ -278,7 +256,6 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // compare
     ToolInfo {
-        migrated: true,
         stdin: false,
         required_outputs: Some(&["hdf_out", "dense_text_out"]),
         no_stdout: &["hdf_out"],
@@ -289,7 +266,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["hdf_out", "dense_text_out"]),
         no_stdout: &["hdf_out"],
         unsupported: &[
@@ -306,7 +282,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         stdin: false,
         required_outputs: Some(&["hdf_out", "dense_text_out"]),
         no_stdout: &["hdf_out"],
@@ -318,7 +293,6 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // network
     ToolInfo {
-        migrated: true,
         stdin: false,
         required_outputs: Some(&["xgmml_out"]),
         no_stdout: &["xgmml_out", "color_table_out", "cluster_tsv_out"],
@@ -329,7 +303,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         stdin: false,
         required_outputs: Some(&["dsnv_out", "html_out"]),
         no_stdout: &["dsnv_out", "html_out"],
@@ -340,7 +313,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         stdin: false,
         required_outputs: Some(&["json_out"]),
         ..tool(
@@ -351,7 +323,6 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // report
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["tsv_out", "json_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
         columns: Some(ENUM_COLUMNS),
@@ -367,7 +338,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["tsv_out", "json_out"]),
         columns: Some(HMMER_COLUMNS),
         unsupported: &[("html_out", "null"), ("html_max_height", "null")],
@@ -378,7 +348,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&[
             "text_out",
             "json_out",
@@ -400,7 +369,6 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        migrated: true,
         stdin: false,
         required_outputs: Some(&["text_out", "json_out"]),
         unsupported: &[("html_out", "null"), ("knn_projection", "false")],
@@ -408,7 +376,6 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // plot
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["svg_out"]),
         ..tool(
             "color_table_to_legend",
@@ -418,7 +385,6 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // database
     ToolInfo {
-        migrated: true,
         stdin: false,
         stdin_reason: "it formats database files in place",
         no_stdout: &["log_out"],
@@ -430,7 +396,6 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // port-only
     ToolInfo {
-        migrated: true,
         required_outputs: Some(&["genbank_out"]),
         ..tool(
             "gene_call",

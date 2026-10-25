@@ -66,22 +66,11 @@ fn resolve(mut spec: ToolSpec) -> ToolSpec {
         .and_then(crate::cmd_tools::category_label)
         .unwrap_or_default()
         .to_string();
-    // An unmigrated tool's names do not follow upstream's rules, so its spec names
-    // every non-`param` role itself.
-    let migrated = domainator_config::registry::tool_info(&spec.id).is_some_and(|t| t.migrated);
     for f in &mut spec.fields {
         f.param = manifest_param(&spec.manifest, &f.name)
             .cloned()
             .unwrap_or(Value::Null);
-        let derived = if migrated {
-            derived_role(&f.param, !f.file_type.is_empty())
-        } else {
-            "param"
-        };
-        f.role = f
-            .role_override
-            .clone()
-            .unwrap_or_else(|| derived.to_string());
+        f.role = derived_role(&f.param, !f.file_type.is_empty()).to_string();
         f.required |= f.param["required"] == true;
     }
     spec
@@ -299,26 +288,6 @@ mod tests {
             names.sort_unstable();
             names.dedup();
             assert_eq!(n, names.len(), "{}: a field is listed twice", spec.id);
-        }
-    }
-
-    /// The spec may name a role only where the manifest cannot say it: a tool still
-    /// on the old interface, whose `output` is not named `*_out`.
-    #[test]
-    fn migrated_tools_derive_every_role() {
-        for spec in specs() {
-            if !tool_info(&spec.id).is_some_and(|t| t.migrated) {
-                continue;
-            }
-            for f in &spec.fields {
-                assert!(
-                    f.role_override.is_none(),
-                    "{}.{}: drop `role`; the manifest decides it ({})",
-                    spec.id,
-                    f.name,
-                    f.role
-                );
-            }
         }
     }
 

@@ -71,7 +71,6 @@ tools appear in file-name order.
 |---|---|---|---|
 | `name` | all | (required) | The manifest parameter, spelled as `domainatoredux describe` spells it (`max_overlap`, not `max-overlap`). |
 | `label` | all | (required) | The text left of the control. |
-| `role` | tools not yet on the 1.0 interface | `param` | Which control the dialog draws, and how the value is sent. A migrated tool's roles come from the manifest, and setting one is a test failure. See [Roles](#roles). |
 | `required` | all | the manifest's | Adds a red `*` to the label. On an input, removes the "(none)" entry. On a dropdown option, removes the blank "(default)" entry. A spec can make a field required, never optional. A required field cannot be hidden. A required output needs an `output_name`. The dialog doesn't block Run when a required field is blank. The tool refuses instead. |
 | `show` | all | `true` | `false` keeps the option out of the dialog. It is never sent, so the CLI default applies. The one exception is `cpu`, which gets the Preferences thread count when that isn't 0. A program path (`*_path` other than a directory) is never shown. |
 | `help` | shown fields | the manifest's `help` | The hint under the control. See [Help text](#help-text). |
@@ -85,7 +84,7 @@ tools appear in file-name order.
 
 ## Roles
 
-| `role` | Control | Sent to the tool as |
+| Role | Control | Sent to the tool as |
 |---|---|---|
 | `param` | Drawn from the parameter's manifest type (below) | The typed value |
 | `input_file` | A dropdown of databases and files | A string: `"input": "a.gb"` |
@@ -93,13 +92,11 @@ tools appear in file-name order.
 | `output_file` | A file-name box | The name joined onto the current folder |
 | `columns` | A report's column builder: an ordered list of columns and their arguments. See [Column builder](#column-builder). | A list of column tokens, `name:arg:arg`, in list order |
 
-On a tool on the 1.0 interface the role is derived from the manifest parameter: `kind:
+A field's role is derived from its manifest parameter, never written here: `kind:
 columns` is `columns`; `role: input` is `input_files` when the parameter takes several
 values, else `input_file`; `role: output` (a name ending in `_out`) is `output_file`;
 `role: directory` is `input_file` when the field has a `file_type` (the taxonomy
-database), else `param`; everything else is `param`. A tool not yet migrated names its
-non-`param` roles here, and its `input_file`/`input_files` must match the shape its old
-config expects.
+database), else `param`; everything else is `param`.
 
 A `param` is drawn by its manifest type:
 
@@ -289,7 +286,6 @@ description in its old config schema in `crates/domainator-config/src/lib.rs`.
 |---|---|
 | `build.rs` (the build fails) | invalid YAML, a misspelled or unknown key, a bad `select` value |
 | `every_manifest_parameter_is_listed_once` | a manifest parameter missing here, a field that isn't a manifest parameter, a field listed twice |
-| `migrated_tools_derive_every_role` | a `role` on a tool whose manifest decides it |
 | `gui_defaults_fit_their_property` | a `gui_default` of the wrong type, outside its choices or bounds, on a hidden field, or on a file field; for `columns`, a token that does not parse or a hidden column |
 | `input_fields_declare_sources_and_select` | a shown input missing `file_type`/`sources`/`select`; an unknown `file_type`; an unknown or unfitting `database:<id>`; those keys or `prefill_priority` on a non-input; a hidden required field; a shown program path; a hidden or empty `help` |
 | `column_type_overrides_name_real_columns_and_arguments` | a `column_types` column or argument the catalog lacks; a `default` or `choice` that isn't text; `column_types` on a non-`columns` field; every column hidden |

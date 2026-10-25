@@ -1,4 +1,4 @@
-//! The bodies of the migrated tools, one module each: `run(&XArgs)` does the I/O
+//! The bodies of the tools, one module each: `run(&XArgs)` does the I/O
 //! wiring around the core library function.
 
 pub mod build_ssn;

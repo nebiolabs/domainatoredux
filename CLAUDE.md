@@ -56,7 +56,7 @@ don't assume clap's kebab default. Subcommands are snake_case too (`rename_all` 
 tool's interface is one clap `Args` struct, `crates/domainator-config/src/args/<tool>.rs`,
 with upstream's parameter names (`rename_all = "snake_case"`, so id == long flag ==
 config key), `CommonArgs` flattened in (`-v/-q/--config/--print_config`), and a
-`registry.rs` entry with `migrated: true` (category, summary, required outputs, stdio
+`registry.rs` entry (category, summary, required outputs, stdio
 rules). Its body is `crates/domainator-cli/src/commands/<tool>.rs`. `config_file.rs`
 turns a `--config` file (upstream's flat format) into command-line arguments before the
 one clap parse, so CLI flags win and every check applies to files too; `--print_config`
@@ -66,7 +66,7 @@ atomic temp-file writes, `.gz`/`.bgz` = BGZF). Errors print as one line,
 `domainatoredux <tool>: error: ...` (`report_error`, shared with the GUI worker). The
 report tools' `--columns` take upstream's `name:arg:arg` tokens, parsed against the
 catalogs in `columns.rs` (the clap value type, so a bad token fails at parse time).
-An upstream option a migrated tool lacks is listed in its registry entry's
+An upstream option a tool lacks is listed in its registry entry's
 `unsupported`, with upstream's default, so upstream configs that name it still load.
 Every tool but the port-only `inspect` and `convert` (which take no config) is on it.
 
@@ -125,7 +125,7 @@ keep in particular:
   (`scripts/parity/upstream_manifest.json`, refreshed by `refresh_manifest.py`); every
   difference is a row of `scripts/parity/manifest_allowlist.tsv`, enforced both ways
   (`UPDATE_MANIFEST_ALLOWLIST=1` regenerates, keeping classes). `tests/interface.rs`
-  holds the generic rules for migrated tools (registry == subcommands, long == id,
+  holds the generic rules for every tool (registry == subcommands, long == id,
   outputs end `_out`, numbers reject nan/inf, `--print_config` round-trips). Both build
   the CLI's `Command` on a 256 MB-stack thread: the derive overflows a test thread in
   debug builds.
@@ -149,9 +149,9 @@ keep in particular:
   `tool_specs::specs`): it lists **every** manifest parameter but `-v`/`-q`, with labels,
   an optional `gui_default`, and each input's `sources` (databases or workspace first)
   and `select` (its starting entry). Types, choices, defaults, help, the menu category
-  and, for a migrated tool, every field's role come from the manifest.
+  and every field's role come from the manifest.
   `tool_specs.rs`'s tests (`every_manifest_parameter_is_listed_once`,
-  `migrated_tools_derive_every_role`, `gui_defaults_fit_their_property`) catch a new CLI
+  `gui_defaults_fit_their_property`) catch a new CLI
   option the GUI never decided about and a GUI default the CLI would reject. When you
   add a tool, write its spec file too. The report column builders (`columns` role)
   render from the manifest's column catalog, the same `columns.rs` catalog the CLI

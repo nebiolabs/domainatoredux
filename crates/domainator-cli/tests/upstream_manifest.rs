@@ -418,12 +418,12 @@ fn check_against_the_allowlist() {
     );
 }
 
-/// A migrated tool lacks an upstream option only as a registry `unsupported` entry,
+/// A tool lacks an upstream option only as a registry `unsupported` entry,
 /// which accepts upstream's default from a config file; so every `missing` row of a
-/// migrated tool is one, its default is upstream's, and its class is `deferred:`.
+/// tool is one, its default is upstream's, and its class is `deferred:`.
 fn check_unsupported(theirs: &Value, listed: &[(Row, String, String)]) {
     use domainator_config::registry::TOOLS;
-    for info in TOOLS.iter().filter(|t| t.migrated) {
+    for info in TOOLS.iter().filter(|t| t.in_manifest) {
         let upstream: &[Value] = theirs["tools"]
             .as_array()
             .unwrap()

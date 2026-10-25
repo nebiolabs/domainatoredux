@@ -39,13 +39,8 @@ pub struct FieldSpec {
     /// `help` -- the same text `domainatoredux describe` gives agents.
     #[serde(default)]
     pub help: Option<String>,
-    /// The control the dialog draws, one of `cmd_tools::ROLES`. Normally derived from
-    /// the manifest parameter (`tool_specs::derived_role`); the spec may set it only
-    /// for a tool not yet migrated to the 1.0 interface, whose names do not follow
-    /// upstream's rules.
-    #[serde(default, rename = "role")]
-    pub role_override: Option<String>,
-    /// Resolved: `role_override`, else the derived role.
+    /// The control the dialog draws, one of `cmd_tools::ROLES`, derived from the
+    /// manifest parameter (`tool_specs::derived_role`).
     #[serde(skip)]
     pub role: String,
     /// Inputs only: the file types the dropdown offers. Written as one value

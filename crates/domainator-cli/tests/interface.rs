@@ -55,10 +55,10 @@ fn every_subcommand_is_in_the_registry_and_back() {
 }
 
 #[test]
-fn migrated_tools_follow_upstreams_naming_rules() {
+fn tools_follow_upstreams_naming_rules() {
     with_big_stack(|| {
         let cmd = domainator_cli::command();
-        for info in TOOLS.iter().filter(|t| t.migrated) {
+        for info in TOOLS.iter().filter(|t| t.in_manifest) {
             let sub = cmd.find_subcommand(info.name).unwrap();
             for arg in sub.get_arguments() {
                 let id = arg.get_id().as_str();
@@ -92,12 +92,12 @@ fn migrated_tools_follow_upstreams_naming_rules() {
 }
 
 /// Upstream's restricted float types refuse `nan` and `inf`; ours must too, on every
-/// numeric option of a migrated tool.
+/// numeric option.
 #[test]
 fn every_number_option_rejects_nan_and_inf() {
     with_big_stack(|| {
         let cmd = domainator_cli::command();
-        for info in TOOLS.iter().filter(|t| t.migrated) {
+        for info in TOOLS.iter().filter(|t| t.in_manifest) {
             let sub = cmd.find_subcommand(info.name).unwrap();
             for arg in parameters(sub) {
                 let ty = type_info(arg.get_value_parser()).json_type;
@@ -134,7 +134,7 @@ fn print_config_is_a_config_file() {
             std::env::temp_dir().join(format!("domainatoredux-interface-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let cmd = domainator_cli::command();
-        for info in TOOLS.iter().filter(|t| t.migrated) {
+        for info in TOOLS.iter().filter(|t| t.in_manifest) {
             let sub = cmd.find_subcommand(info.name).unwrap();
             let m = sub
                 .clone()

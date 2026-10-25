@@ -271,7 +271,7 @@ where
         .get(1)
         .and_then(|a| a.to_str())
         .and_then(config::registry::tool_info)
-        .filter(|t| t.migrated);
+        .filter(|t| t.in_manifest);
     if let Some(info) = tool {
         let sub = cmd
             .find_subcommand(info.name)
