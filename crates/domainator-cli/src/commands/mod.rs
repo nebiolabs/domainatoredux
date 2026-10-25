@@ -11,6 +11,7 @@ pub mod select_by_cds;
 pub mod select_by_contig;
 pub mod select_by_coord;
 pub mod sort_contigs;
+pub mod trim_contigs;
 
 use anyhow::{Context, Result};
 use domainator_core::io::genbank::read_genbank;

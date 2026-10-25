@@ -135,12 +135,3 @@ summary_report	test_contig_stats_1#0	rust-failed	deferred:html	error: unexpected
 summary_report	test_contig_stats_empty_input#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 summary_report	test_contig_stats_taxonomy_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 summary_report	test_summary_report_database_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
-trim_contigs	test_trim_contigs_cds_both_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--cds_range' found
-trim_contigs	test_trim_contigs_cds_both_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--cds_range' found
-trim_contigs	test_trim_contigs_cds_both_domains_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--cds_range' found
-trim_contigs	test_trim_contigs_domain_expr_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--cds_range' found
-trim_contigs	test_trim_contigs_kb_both_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--kb_range' found
-trim_contigs	test_trim_contigs_kb_both_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--kb_range' found
-trim_contigs	test_trim_contigs_kb_both_peptides_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--kb_range' found
-trim_contigs	test_trim_contigs_no_domain_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--unannotated' found
-trim_contigs	test_trim_contigs_unannotated_alone#0	rust-failed	pending:1.0-cli	error: unexpected argument '--unannotated' found

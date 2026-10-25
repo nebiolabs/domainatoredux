@@ -412,45 +412,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `trim_contigs` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct TrimContigsConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub kb_both: Option<f64>,
-    pub kb_left: Option<f64>,
-    pub kb_right: Option<f64>,
-    pub cds_both: Option<i64>,
-    pub cds_left: Option<i64>,
-    pub cds_right: Option<i64>,
-    pub domains: Vec<String>,
-    pub domains_file: Option<String>,
-    pub domain_expr: Option<String>,
-    pub no_domain: bool,
-    pub contigs: Vec<String>,
-    pub contigs_file: Option<String>,
-}
-
-impl TrimContigsConfig {
-    pub fn merge_cli(&mut self, cli: TrimContigsConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, kb_both);
-        merge_scalar!(self, cli, kb_left);
-        merge_scalar!(self, cli, kb_right);
-        merge_scalar!(self, cli, cds_both);
-        merge_scalar!(self, cli, cds_left);
-        merge_scalar!(self, cli, cds_right);
-        merge_vec!(self, cli, domains);
-        merge_scalar!(self, cli, domains_file);
-        merge_scalar!(self, cli, domain_expr);
-        self.no_domain |= cli.no_domain;
-        merge_vec!(self, cli, contigs);
-        merge_scalar!(self, cli, contigs_file);
-    }
-}
-
 /// `seq_dist` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -971,7 +932,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "gene_call" => gene_call_schema(),
         "color_genbank" => color_genbank_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
-        "trim_contigs" => trim_contigs_schema(),
         "seq_dist" => seq_dist_schema(),
         "compare_contigs" => compare_contigs_schema(),
         "hmmer_compare" => hmmer_compare_schema(),
@@ -1338,32 +1298,6 @@ fn color_table_to_legend_schema() -> serde_json::Value {
             "input": {"type": "array", "items": {"type": "string"}},
             "svg": {"type": ["string", "null"]},
             "title": {"type": ["string", "null"], "default": "Legend"}
-        }
-    })
-}
-
-fn trim_contigs_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "trim_contigs config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "kb_both": {"type": ["number", "null"]},
-            "kb_left": {"type": ["number", "null"]},
-            "kb_right": {"type": ["number", "null"]},
-            "cds_both": {"type": ["integer", "null"]},
-            "cds_left": {"type": ["integer", "null"]},
-            "cds_right": {"type": ["integer", "null"]},
-            "domains": {"type": "array", "items": {"type": "string"}},
-            "domains_file": {"type": ["string", "null"]},
-            "domain_expr": {"type": ["string", "null"]},
-            "no_domain": {"type": "boolean", "default": false},
-            "contigs": {"type": "array", "items": {"type": "string"}},
-            "contigs_file": {"type": ["string", "null"]}
         }
     })
 }
@@ -1741,7 +1675,6 @@ mod tests {
             "gene_call" => GeneCallConfig,
             "color_genbank" => ColorGenbankConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "trim_contigs" => TrimContigsConfig,
             "seq_dist" => SeqDistConfig,
             "compare_contigs" => CompareContigsConfig,
             "transform_matrix" => TransformMatrixConfig,

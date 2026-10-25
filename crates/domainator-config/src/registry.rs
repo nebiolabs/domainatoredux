@@ -183,7 +183,11 @@ pub const TOOLS: &[ToolInfo] = &[
             "Sort contigs by their Domain_Search score.",
         )
     },
-    tool("trim_contigs", "edit", "Trim the ends of contigs."),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        ..tool("trim_contigs", "edit", "Trim the ends of contigs.")
+    },
     // convert
     tool(
         "genbank_to_fasta",

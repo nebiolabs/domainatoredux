@@ -331,12 +331,14 @@ domainatoredux extract_unannotated -i annotated.gb --fasta_out novel.fasta --min
 
 ### `trim_contigs`
 
-Trim contig ends, either by size (`--kb_both`, `--kb_left`, `--kb_right`), by gene count
-(`--cds_both`, `--cds_left`, `--cds_right`), or by stripping end CDSs until one matches a
-domain (`--domains`, `--domain_expr`, `--no_domain`).
+Trim contig ends, either by size (`--kb_range`, `--kb_left`, `--kb_right`), by gene count
+(`--cds_range`, `--cds_left`, `--cds_right`), or by stripping end CDSs that carry a
+domain (`--domains`, `--domain_expr`) or carry none (`--unannotated`); `-e/--evalue` and
+`--databases` decide which annotations count. A contig with fewer CDSs than a CDS trim
+removes is dropped.
 
 ```bash
-domainatoredux trim_contigs -i neighborhoods.gb -o trimmed.gb --cds_both 1
+domainatoredux trim_contigs -i neighborhoods.gb -o trimmed.gb --cds_range 1
 ```
 
 ### `sort_contigs`

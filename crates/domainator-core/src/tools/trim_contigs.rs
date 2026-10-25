@@ -14,6 +14,7 @@ use crate::tools::select_common::{BooleanEvaluator, DomainatorCds};
 type TrimRanges = (Option<(f64, f64)>, Option<(i64, i64)>);
 
 /// Resolved trim options.
+#[derive(Default)]
 pub struct TrimContigsOptions {
     /// `(left_kb, right_kb)` if kb trimming requested.
     pub kb_truncation: Option<(f64, f64)>,
@@ -25,27 +26,31 @@ pub struct TrimContigsOptions {
     pub domain_expr: Option<String>,
     /// Strip end CDSs with no domain annotations.
     pub no_domain: bool,
+    /// Only domain annotations with an e-value at most this count (`None`: all).
+    pub evalue: Option<f64>,
+    /// Only domain annotations from these databases count (`None`: all).
+    pub databases: Option<HashSet<String>>,
 }
 
-/// `validate_range` for trim_contigs (`kb_both/kb_left/kb_right` and
-/// `cds_both/cds_left/cds_right`). Returns `(kb_truncation, cds_truncation)`.
+/// `validate_range` for trim_contigs (`kb_range/kb_left/kb_right` and
+/// `cds_range/cds_left/cds_right`). Returns `(kb_truncation, cds_truncation)`.
 ///
 /// Upstream's trim_contigs imports `select_by_cds.validate_range` itself, passing
-/// both/left/right as range/up/down, so this delegates to the same port rather than
+/// range/left/right as range/up/down, so this delegates to the same port rather than
 /// keeping a copy. A copy once dropped the non-negativity check: a negative
 /// `--kb_left` then reached the slice as a negative index and panicked.
 pub fn validate_range(
-    kb_both: Option<f64>,
+    kb_range: Option<f64>,
     kb_left: Option<f64>,
     kb_right: Option<f64>,
-    cds_both: Option<i64>,
+    cds_range: Option<i64>,
     cds_left: Option<i64>,
     cds_right: Option<i64>,
 ) -> Result<TrimRanges, String> {
     use crate::tools::neighborhood::{validate_range, Range};
     Ok(
         match validate_range(
-            false, kb_both, kb_left, kb_right, cds_both, cds_left, cds_right,
+            false, kb_range, kb_left, kb_right, cds_range, cds_left, cds_right,
         )? {
             Range::Kb(l, r) => (Some((l, r)), None),
             Range::Cds(l, r) => (None, Some((l, r))),
@@ -55,48 +60,44 @@ pub fn validate_range(
 }
 
 /// `strip_domains_from_ends`: advance `left_cds` / retract `right_cds` past end
-/// CDSs that carry a strip domain / match the expression / (with `no_domain`)
-/// carry no domains. Returns `Err` when everything is stripped.
+/// CDSs (given by their domain names, in contig order) that carry a strip domain /
+/// match the expression / (with `no_domain`) carry no domains. Returns `Err` when
+/// everything is stripped.
 fn strip_domains_from_ends(
-    cds_list: &[DomainatorCds],
-    mut left_cds: i64,
-    mut right_cds: i64,
+    cds_domain_names: &[HashSet<String>],
+    mut left_cds: usize,
+    mut right_cds: Option<usize>,
     strip_domains: &HashSet<String>,
     domain_expr: Option<&BooleanEvaluator>,
     no_domain: bool,
-) -> Result<(i64, i64), String> {
-    if strip_domains.is_empty() && domain_expr.is_none() && !no_domain {
-        return Ok((left_cds, right_cds));
-    }
-    let strip = |i: i64| -> bool {
-        let dn = &cds_list[to_index(i)].domain_names;
+) -> Result<(usize, Option<usize>), String> {
+    let strip = |dn: &HashSet<String>| -> bool {
         dn.intersection(strip_domains).next().is_some()
-            || domain_expr.map(|e| e.check_expression(dn)).unwrap_or(false)
+            || domain_expr.is_some_and(|e| e.check_expression(dn))
             || (no_domain && dn.is_empty())
     };
-    while left_cds < cds_list.len() as i64 && strip(left_cds) {
+    while left_cds < cds_domain_names.len() && strip(&cds_domain_names[left_cds]) {
         left_cds += 1;
     }
-    while right_cds >= 0 && strip(right_cds) {
-        right_cds -= 1;
+    while let Some(r) = right_cds.filter(|&r| strip(&cds_domain_names[r])) {
+        right_cds = r.checked_sub(1);
     }
-    if left_cds > right_cds {
+    if right_cds.is_none_or(|r| left_cds > r) {
         return Err("All CDSs in the contig are composed of domains to be stripped.".into());
     }
     Ok((left_cds, right_cds))
 }
 
-/// Trim one contig. Returns `None` when the whole contig is trimmed away.
+/// Trim one contig (upstream `trim_contig`). Returns `None` when the contig is
+/// trimmed away. Domain criteria only count annotations that pass `evalue` and
+/// `databases`.
 fn trim_contig(
     record: &SeqRecord,
     opts: &TrimContigsOptions,
     domain_expr: Option<&BooleanEvaluator>,
 ) -> Option<SeqRecord> {
-    if opts.kb_truncation.is_none()
-        && opts.cds_truncation.is_none()
-        && opts.strip_domains.is_none()
-        && opts.domain_expr.is_none()
-    {
+    let by_domain = opts.strip_domains.is_some() || domain_expr.is_some() || opts.no_domain;
+    if opts.kb_truncation.is_none() && opts.cds_truncation.is_none() && !by_domain {
         return Some(record.clone());
     }
 
@@ -113,28 +114,32 @@ fn trim_contig(
         DomainatorCds::list_from_contig(record, None, f64::NEG_INFINITY, false, None, false);
     cdss.sort_by_key(|c| c.feature.location.start());
 
-    let mut left_cds = 0i64;
-    let mut right_cds = cdss.len() as i64 - 1;
-
-    // Python guard: `len(cdss) > 0 and strip_domains is not None or domain_expr is
-    // not None or cds_truncation is not None or no_domain`. Operator precedence:
-    // (len>0 and strip) or expr or cds or no_domain.
-    let empty_strip = opts.strip_domains.clone();
-    let do_cds_block = (!cdss.is_empty() && opts.strip_domains.is_some())
-        || opts.domain_expr.is_some()
-        || opts.cds_truncation.is_some()
-        || opts.no_domain;
-
-    if do_cds_block {
+    if !cdss.is_empty() && (by_domain || opts.cds_truncation.is_some()) {
+        let n = cdss.len();
+        let mut left_cds = 0usize;
+        let mut right_cds = Some(n - 1);
         if let Some((cl, cr)) = opts.cds_truncation {
-            left_cds = cl;
-            right_cds = (cdss.len() as i64 - 1) - cr;
+            // A contig with fewer CDSs than the trim asks for is trimmed away.
+            let l = usize::try_from(cl).unwrap_or(usize::MAX);
+            let r = usize::try_from(cr)
+                .ok()
+                .and_then(|cr| (n - 1).checked_sub(cr));
+            match r {
+                Some(r) if l <= r => (left_cds, right_cds) = (l, Some(r)),
+                _ => return None,
+            }
         }
-
-        if opts.strip_domains.is_some() || opts.domain_expr.is_some() || opts.no_domain {
-            let strip = empty_strip.unwrap_or_default();
+        if by_domain {
+            let names: Vec<HashSet<String>> = if opts.evalue.is_none() && opts.databases.is_none() {
+                cdss.iter().map(|c| c.domain_names.clone()).collect()
+            } else {
+                cdss.iter()
+                    .map(|c| c.get_domain_names(opts.databases.as_ref(), opts.evalue))
+                    .collect()
+            };
+            let strip = opts.strip_domains.clone().unwrap_or_default();
             match strip_domains_from_ends(
-                &cdss,
+                &names,
                 left_cds,
                 right_cds,
                 &strip,
@@ -142,12 +147,8 @@ fn trim_contig(
                 opts.no_domain,
             ) {
                 Ok((dl, dr)) => {
-                    if dl > left_cds {
-                        left_cds = dl;
-                    }
-                    if dr < right_cds {
-                        right_cds = dr;
-                    }
+                    left_cds = left_cds.max(dl);
+                    right_cds = right_cds.min(dr);
                 }
                 Err(_) => {
                     eprintln!(
@@ -158,25 +159,21 @@ fn trim_contig(
                 }
             }
         }
-
-        // Both ends must name a CDS; an index outside the list (or negative) skips
-        // this adjustment.
-        let at = |i: i64| usize::try_from(i).ok().and_then(|i| cdss.get(i));
-        if let (Some(lc), Some(rc)) = (at(left_cds), at(right_cds)) {
-            let (lc_start, rc_end) = (lc.feature.location.start(), rc.feature.location.end());
-            if lc_start > rc_end {
-                eprintln!(
-                    "WARNING: CDSs in contig {} overlap after trimming. Skipping contig.",
-                    record.id
-                );
-                return None;
-            }
-            if left_cds > 0 && lc_start > left {
-                left = lc_start;
-            }
-            if right_cds < cdss.len() as i64 - 1 && rc_end < right {
-                right = rc_end;
-            }
+        let right_cds = right_cds?;
+        let lc_start = cdss[left_cds].feature.location.start();
+        let rc_end = cdss[right_cds].feature.location.end();
+        if lc_start > rc_end {
+            eprintln!(
+                "WARNING: CDSs in contig {} overlap after trimming. Skipping contig.",
+                record.id
+            );
+            return None;
+        }
+        if left_cds > 0 && lc_start > left {
+            left = lc_start;
+        }
+        if right_cds < n - 1 && rc_end < right {
+            right = rc_end;
         }
     }
 
@@ -295,6 +292,7 @@ mod tests {
             strip_domains: None,
             domain_expr: None,
             no_domain: false,
+            ..Default::default()
         };
         let out = trim_contigs(vec![r], &opts).unwrap();
         assert_eq!(out.len(), 1);
@@ -315,11 +313,66 @@ mod tests {
             strip_domains: None,
             domain_expr: None,
             no_domain: false,
+            ..Default::default()
         };
         let out = trim_contigs(vec![r], &opts).unwrap();
         assert_eq!(out.len(), 1);
         // left becomes start of cds b (300), right becomes end of cds b (400).
         assert_eq!(out[0].seq.len(), 100);
         assert_eq!(out[0].id, "c_301:400");
+    }
+
+    fn dom(cds_id: &str, name: &str, start: i64, end: i64, evalue: &str) -> SeqFeature {
+        let mut f = SeqFeature::new(crate::DOMAIN_FEATURE_NAME, Location::range(start, end, 1));
+        f.set("cds_id", cds_id);
+        f.set("name", name);
+        f.set("database", "db");
+        f.set("evalue", evalue);
+        f.set("score", "50");
+        f
+    }
+
+    /// Upstream 1.0: `--unannotated` trims on its own, and `-e`/`--databases` limit
+    /// which annotations make a CDS "annotated".
+    #[test]
+    fn unannotated_trims_alone_and_evalue_decides_what_counts() {
+        let r = rec(
+            vec![
+                cds("a", 100, 200),
+                cds("b", 300, 400),
+                dom("b", "D", 300, 400, "1e-20"),
+                cds("c", 500, 600),
+                dom("c", "D", 500, 600, "1e-2"),
+            ],
+            700,
+        );
+        let opts = TrimContigsOptions {
+            no_domain: true,
+            ..Default::default()
+        };
+        let out = trim_contigs(vec![r.clone()], &opts).unwrap();
+        assert_eq!(out[0].id, "c_301:700");
+        let strict = TrimContigsOptions {
+            no_domain: true,
+            evalue: Some(1e-10),
+            ..Default::default()
+        };
+        let out = trim_contigs(vec![r], &strict).unwrap();
+        assert_eq!(out[0].id, "c_301:400");
+    }
+
+    /// A contig with fewer CDSs than a CDS trim removes is dropped, and one with no
+    /// CDSs at all is left as it is.
+    #[test]
+    fn a_cds_trim_past_the_last_cds_drops_the_contig() {
+        let opts = TrimContigsOptions {
+            cds_truncation: Some((1, 1)),
+            ..Default::default()
+        };
+        let two = rec(vec![cds("a", 100, 200), cds("b", 300, 400)], 500);
+        assert!(trim_contigs(vec![two], &opts).unwrap().is_empty());
+        let none = rec(vec![], 500);
+        let out = trim_contigs(vec![none], &opts).unwrap();
+        assert_eq!(out[0].seq.len(), 500);
     }
 }

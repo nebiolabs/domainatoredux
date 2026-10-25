@@ -18,6 +18,7 @@ mod select_by_cds;
 mod select_by_contig;
 mod select_by_coord;
 mod sort_contigs;
+mod trim_contigs;
 
 pub use common::CommonArgs;
 pub use enum_report::EnumReportArgs;
@@ -30,6 +31,7 @@ pub use select_by_cds::SelectByCdsArgs;
 pub use select_by_contig::SelectByContigArgs;
 pub use select_by_coord::SelectByCoordArgs;
 pub use sort_contigs::SortContigsArgs;
+pub use trim_contigs::TrimContigsArgs;
 
 /// The `clap::Command` of a migrated tool, built from its args struct alone, for
 /// callers that have no CLI to ask (the GUI's tool dialogs).
@@ -47,6 +49,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "extract_domains" => ExtractDomainsArgs::augment_args(cmd),
         "extract_peptides" => ExtractPeptidesArgs::augment_args(cmd),
         "extract_unannotated" => ExtractUnannotatedArgs::augment_args(cmd),
+        "trim_contigs" => TrimContigsArgs::augment_args(cmd),
         _ => return None,
     })
 }

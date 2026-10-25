@@ -466,54 +466,7 @@ enum Command {
         print_config: bool,
     },
     /// Trim contig ends by kb, CDS count, or by stripping end CDSs by domain.
-    TrimContigs {
-        /// Input GenBank file(s) (stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output GenBank file (stdout if omitted).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// kb to trim from both sides.
-        #[arg(long = "kb_both")]
-        kb_both: Option<f64>,
-        /// kb to trim from the left side.
-        #[arg(long = "kb_left")]
-        kb_left: Option<f64>,
-        /// kb to trim from the right side.
-        #[arg(long = "kb_right")]
-        kb_right: Option<f64>,
-        /// CDSs to trim from both sides.
-        #[arg(long = "cds_both")]
-        cds_both: Option<i64>,
-        /// CDSs to trim from the left side.
-        #[arg(long = "cds_left")]
-        cds_left: Option<i64>,
-        /// CDSs to trim from the right side.
-        #[arg(long = "cds_right")]
-        cds_right: Option<i64>,
-        /// Trim end CDSs containing domains with these names.
-        #[arg(long, num_args = 1..)]
-        domains: Vec<String>,
-        /// File of domain names to trim.
-        #[arg(long = "domains_file")]
-        domains_file: Option<String>,
-        /// Trim end CDSs matching this boolean domain expression.
-        #[arg(long = "domain_expr")]
-        domain_expr: Option<String>,
-        /// Trim end CDSs with no domain annotations.
-        #[arg(long = "no_domain")]
-        no_domain: bool,
-        /// Only process contigs with these names.
-        #[arg(long, num_args = 1..)]
-        contigs: Vec<String>,
-        /// File of contig names to process.
-        #[arg(long = "contigs_file")]
-        contigs_file: Option<String>,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    TrimContigs(config::args::TrimContigsArgs),
     /// Extract domain-annotated regions from annotated contigs.
     #[command(allow_negative_numbers = true)]
     ExtractDomains(config::args::ExtractDomainsArgs),
@@ -2294,73 +2247,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let svg = tools::color_table_to_legend::color_table_to_legend(&table, title);
             std::fs::write(svg_path, svg).with_context(|| format!("writing {svg_path}"))?;
         }
-        Command::TrimContigs {
-            input,
-            output,
-            kb_both,
-            kb_left,
-            kb_right,
-            cds_both,
-            cds_left,
-            cds_right,
-            domains,
-            domains_file,
-            domain_expr,
-            no_domain,
-            contigs,
-            contigs_file,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::TrimContigsConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                kb_both,
-                kb_left,
-                kb_right,
-                cds_both,
-                cds_left,
-                cds_right,
-                domains,
-                domains_file,
-                domain_expr,
-                no_domain,
-                contigs,
-                contigs_file,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::TrimContigsConfig>(p)?,
-                None => config::TrimContigsConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let mut records = load_inputs_str(&cfg.input)?;
-            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let (kb_truncation, cds_truncation) = tools::trim_contigs::validate_range(
-                cfg.kb_both,
-                cfg.kb_left,
-                cfg.kb_right,
-                cfg.cds_both,
-                cfg.cds_left,
-                cfg.cds_right,
-            )
-            .map_err(|e| anyhow::anyhow!(e))?;
-            let strip_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
-            let opts = tools::trim_contigs::TrimContigsOptions {
-                kb_truncation,
-                cds_truncation,
-                strip_domains,
-                domain_expr: cfg.domain_expr.clone(),
-                no_domain: cfg.no_domain,
-            };
-            let out = tools::trim_contigs::trim_contigs(records, &opts)
-                .map_err(|e| anyhow::anyhow!(e))?;
-            write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-        }
+        Command::TrimContigs(args) => commands::trim_contigs::run(&args)?,
         Command::ExtractDomains(args) => commands::extract_domains::run(&args)?,
         Command::ExtractPeptides(args) => commands::extract_peptides::run(&args)?,
         Command::ExtractUnannotated(args) => commands::extract_unannotated::run(&args)?,

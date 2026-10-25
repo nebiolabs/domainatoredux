@@ -5,23 +5,21 @@ description: "Trim the ends of contigs by kb, CDS count, or up to a domain bound
 fields:
   - name: input
     label: "Input sequences"
-    role: input_files
     file_type: sequence
-    required: true
     sources: workspace_first
     select: first
-  - name: output
+  - name: genbank_out
     label: "Output (GenBank)"
-    role: output_file
-    required: true
     output_name: "{stem}.trimmed.gb"
-  - name: kb_both
+  - name: fasta_out
+    label: "Output (FASTA)"
+  - name: kb_range
     label: "kb both ends"
   - name: kb_left
     label: "kb left"
   - name: kb_right
     label: "kb right"
-  - name: cds_both
+  - name: cds_range
     label: "CDS both ends"
   - name: cds_left
     label: "CDS left"
@@ -31,7 +29,11 @@ fields:
     label: "Trim to domains"
   - name: domain_expr
     label: "Domain expr"
-  - name: no_domain
+  - name: evalue
+    label: "E-value"
+  - name: databases
+    label: "Databases"
+  - name: unannotated
     label: "Drop domain-less"
   - name: contigs
     label: "Restrict to contigs"
