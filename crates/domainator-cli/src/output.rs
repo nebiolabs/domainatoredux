@@ -134,10 +134,11 @@ pub fn write_seq_outputs(
 }
 
 /// A `--max_output_gb` budget for [`write_seq_outputs_capped`]: the byte limit, and
-/// the options the error suggests.
+/// the options and any further advice the error gives.
 pub struct OutputCap<'a> {
     pub max_bytes: u64,
     pub mitigation: &'a [&'a str],
+    pub extra_guidance: Option<&'a str>,
 }
 
 /// [`write_seq_outputs`], stopping with upstream's error before a record that would
@@ -176,7 +177,8 @@ pub fn write_seq_outputs_capped(
                     &description(),
                     written,
                     cap.max_bytes,
-                    cap.mitigation
+                    cap.mitigation,
+                    cap.extra_guidance,
                 ));
             }
         }

@@ -77,43 +77,7 @@ compare_contigs	sparse	extra	{"name":"sparse","flags":["--sparse"],"default":nul
 compare_contigs	threshold	missing	null	{"default":0,"flags":["--threshold"],"kind":"value","name":"threshold","required":false,"type":"number"}	todo:1.0-cli	
 compare_contigs	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 db_download	-	tool	false	true	deferred:unported-tool	
-domain_search	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-domain_search	-	required_outputs	null	["genbank_out","fasta_out"]	todo:1.0-cli	
-domain_search	Z	missing	null	{"default":1000,"flags":["-Z"],"kind":"value","name":"Z","required":false,"type":"integer"}	todo:1.0-cli	
-domain_search	alphabet	missing	null	{"choices":["nucleotide","protein"],"default":"protein","flags":["--alphabet"],"kind":"value","name":"alphabet","required":false,"type":"string"}	todo:1.0-cli	
-domain_search	anchor	missing	null	{"choices":["start","end","center"],"default":"start","flags":["--anchor"],"kind":"value","name":"anchor","required":false,"type":"string"}	todo:1.0-cli	
-domain_search	batch_size	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-domain_search	batch_size	default	null	10000	todo:1.0-cli	
-domain_search	both_strands	missing	null	{"default":false,"flags":["--both_strands"],"kind":"flag","name":"both_strands","sets":true,"type":"boolean"}	todo:1.0-cli	
-domain_search	cpu	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-domain_search	cpu	default	null	0	todo:1.0-cli	
-domain_search	deduplicate	missing	null	{"default":false,"flags":["--deduplicate"],"kind":"flag","name":"deduplicate","negative_flags":["--no_deduplicate"],"sets":true,"type":"boolean"}	todo:1.0-cli	
-domain_search	deduplicate_by_sequence	missing	null	{"default":false,"flags":["--deduplicate_by_sequence"],"kind":"flag","name":"deduplicate_by_sequence","sets":true,"type":"boolean"}	todo:1.0-cli	
-domain_search	evalue	bounds	{"min":null,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":0}	todo:1.0-cli	
-domain_search	evalue	default	null	0.001	todo:1.0-cli	
-domain_search	fasta_out	missing	null	{"default":null,"flags":["--fasta_out"],"kind":"path","name":"fasta_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-domain_search	fasta_type	extra	{"name":"fasta_type","flags":["--fasta_type"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-domain_search	genbank_out	missing	null	{"default":null,"flags":["-o","--genbank_out"],"kind":"path","name":"genbank_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-domain_search	input	multiple	false	true	todo:1.0-cli	
-domain_search	input	required	false	true	todo:1.0-cli	
-domain_search	input	stdin	true	false	todo:1.0-cli	
-domain_search	max_hits	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-domain_search	max_hits_per_contig	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-domain_search	max_output_gb	default	null	25	todo:1.0-cli	
-domain_search	max_overlap	default	null	1	todo:1.0-cli	
-domain_search	max_region_overlap	default	null	1	todo:1.0-cli	
-domain_search	min_evalue	bounds	{"min":null,"max":null,"exclusive_min":null}	{"min":0,"max":null,"exclusive_min":null}	todo:1.0-cli	
-domain_search	min_evalue	default	null	0	todo:1.0-cli	
-domain_search	ncbi_taxonomy_path	default_dynamic	false	true	todo:1.0-cli	
-domain_search	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-domain_search	partial	default	null	"include"	todo:1.0-cli	
-domain_search	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-domain_search	reference	missing	null	{"default":null,"flags":["-r","--reference"],"kind":"path","multiple":true,"name":"reference","required":true,"role":"input","type":"string"}	todo:1.0-cli	
-domain_search	references	extra	{"name":"references","flags":["-r","--references"],"default":null,"kind":"value","type":"string","multiple":true,"required":false}	null	todo:1.0-cli	
-domain_search	strand	choices	null	["f","r"]	todo:1.0-cli	
-domain_search	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	todo:1.0-cli	
-domain_search	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
-domain_search	z	extra	{"name":"z","flags":["-Z","--z"],"default":null,"kind":"value","type":"number","required":false}	null	todo:1.0-cli	
+domain_search	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 domainate	esm2_3di_device	missing	null	{"default":"cuda:0","flags":["--esm2_3di_device"],"kind":"value","name":"esm2_3di_device","required":false,"type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs
 domainate	esm2_3di_weights	missing	null	{"default":null,"flags":["--esm2_3di_weights"],"kind":"path","name":"esm2_3di_weights","required":false,"role":"input","type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs
 domainate	foldseek	missing	null	{"default":null,"flags":["--foldseek"],"kind":"path","multiple":true,"name":"foldseek","required":false,"role":"input","type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs

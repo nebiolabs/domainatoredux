@@ -38,17 +38,13 @@ compare_contigs	test_compare_contigs_sort_memory_check_fails_early#2	rust-failed
 compare_contigs	test_compare_contigs_warns_for_slow_optimal_leaf_ordering#0	rust-failed	pending:1.0-cli	error: unexpected argument '--genbank_out' found
 compare_contigs	test_compare_contigs_warns_for_slow_optimal_leaf_ordering#1	rust-failed	pending:1.0-cli	error: unexpected argument '--genbank_out' found
 compare_contigs	test_compare_no_annotations_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found
-domain_search	extra:test_domain_search_gene_annotate_fasta_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--alphabet' found
 domain_search	extra:test_domain_search_keeps_partial_markers#2	differs	pending:1.0-behavior	out.gb: compare_seqfiles failed at helpers.py:44
-domain_search	test_domain_search_nucleotide_multi_hit_max_hits_per_contig#0	rust-failed	gap:feature-order	error: unexpected argument '--alphabet' found
-domain_search	test_domain_search_nucleotide_multi_hit_whole_contig#0	rust-failed	gap:feature-order	error: unexpected argument '--alphabet' found
-domain_search	test_domain_search_nucleotide_query_defaults_to_annotation_span#0	rust-failed	gap:feature-order	error: unexpected argument '--alphabet' found
-domain_search	test_domain_search_nucleotide_query_kb_range_uses_annotation_boundaries#0	rust-failed	gap:feature-order	error: unexpected argument '--alphabet' found
-domain_search	test_domain_search_translate_ignores_nucleotide_annotations#0	rust-failed	pending:1.0-cli	error: unexpected argument '--alphabet' found
-domain_search	test_domain_search_whole_contig_circular_pad_aligns_cds#0	differs	pending:1.0-behavior	out: 284 vs 278 lines
-domain_search	test_domain_search_whole_contig_infernal_query#0	rust-failed	deferred:infernal	error: unexpected argument '--alphabet' found
-domain_search	test_domain_search_whole_contig_nucleotide_query#0	rust-failed	gap:feature-order	error: unexpected argument '--alphabet' found
-domain_search	test_domain_search_whole_contig_nucleotide_query_without_add_annotations#0	rust-failed	pending:1.0-cli	error: unexpected argument '--alphabet' found
+domain_search	test_domain_search_nucleotide_multi_hit_max_hits_per_contig#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
+domain_search	test_domain_search_nucleotide_multi_hit_whole_contig#0	differs	gap:feature-order	out.gb: compare_seqfiles failed at helpers.py:44
+domain_search	test_domain_search_nucleotide_query_defaults_to_annotation_span#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
+domain_search	test_domain_search_nucleotide_query_kb_range_uses_annotation_boundaries#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
+domain_search	test_domain_search_whole_contig_infernal_query#0	rust-failed	deferred:infernal	domainatoredux domain_search: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/t
+domain_search	test_domain_search_whole_contig_nucleotide_query#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
 domainate	test_domainator_infernal_cm_query#0	rust-failed	deferred:infernal	domainatoredux domainate: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/test/
 enum_report	test_enum_report_html_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 enum_report	test_enum_report_html_max_height_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found

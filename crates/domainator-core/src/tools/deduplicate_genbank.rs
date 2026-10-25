@@ -110,6 +110,20 @@ fn hash_key(seq: &[u8]) -> Vec<u8> {
     upper[start..end].to_vec()
 }
 
+/// The keys identifying a sequence for exact-duplicate detection (upstream
+/// `model.sequence_hashes`, with the normalized sequences standing in for their
+/// SHA-256 digests): the [`hash_key`], plus its complement and reverse complement with
+/// `both_strands`. Two sequences are duplicates if their keys share one.
+pub(crate) fn sequence_keys(seq: &[u8], both_strands: bool) -> Vec<Vec<u8>> {
+    let key = hash_key(seq);
+    if both_strands {
+        let (c, rc) = (complement(&key), revcomp(&key));
+        vec![key, c, rc]
+    } else {
+        vec![key]
+    }
+}
+
 fn hash_dedup(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupResult, String> {
     if opts.id != 1.0 {
         return Err(format!(
@@ -126,12 +140,7 @@ fn hash_dedup(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupR
     let mut order: Vec<usize> = Vec::new();
 
     for (i, rec) in records.iter().enumerate() {
-        let key = hash_key(&rec.seq);
-        let mut keys = vec![key.clone()];
-        if opts.both_strands {
-            keys.push(complement(&key));
-            keys.push(revcomp(&key));
-        }
+        let keys = sequence_keys(&rec.seq, opts.both_strands);
         let rep = keys.iter().find_map(|k| seen.get(k).copied());
         let rep = match rep {
             Some(r) => r,

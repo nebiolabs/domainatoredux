@@ -470,12 +470,17 @@ impl SliceLoc {
 
 /// Compute the slice location for the focus CDS at `focus_idx` in the
 /// stranded-start-sorted `cds_list`. Mirrors `get_cds_neighborhood`.
+///
+/// `hit` is the focus's search hit (forward intervals), which a whole circular
+/// contig is centered on instead of the CDS (`_from_domain_search`); the distances
+/// stay to the CDS, so `--pad` still aligns CDSs.
 pub(crate) fn cds_neighborhood(
     rec_len: i64,
     circular: bool,
     cds_list: &[Cds],
     focus_idx: usize,
     range: Range,
+    hit: Option<&[(i64, i64)]>,
 ) -> SliceLoc {
     let focus = &cds_list[focus_idx];
     let strand = focus.strand;
@@ -577,13 +582,36 @@ pub(crate) fn cds_neighborhood(
     };
 
     // Whole contig (or any window covering the full circle): the whole circle,
-    // split at the midpoint of the gap opposite the focus.
+    // split at the midpoint of the gap opposite the focus (or its hit).
     let is_whole = matches!(range, Range::Whole) || (w_hi - w_lo) >= l;
-    if is_whole {
-        let split = ((a + b + l) / 2).rem_euclid(l);
-        return build_slice_from_window(split, split + l, l, strand);
-    }
-    build_slice_from_window(w_lo, w_hi, l, strand)
+    let mut slice = if is_whole {
+        let (ca, cb) = match hit {
+            Some(hit) if matches!(range, Range::Whole) => min_covering_arc(hit, l),
+            _ => (a, b),
+        };
+        let split = ((ca + cb + l) / 2).rem_euclid(l);
+        build_slice_from_window(split, split + l, l, strand)
+    } else {
+        build_slice_from_window(w_lo, w_hi, l, strand)
+    };
+    (slice.dist_to_start, slice.dist_to_end) = circular_focus_distances(&slice, (a, b), l);
+    slice
+}
+
+/// Upstream `circular_focus_distances`: the distances, in the slice's direction,
+/// from the start of a circular slice to the start of the focus arc `[a, b)`, and
+/// from the end of the focus to the end of the slice.
+fn circular_focus_distances(slice: &SliceLoc, (a, b): (i64, i64), l: i64) -> (i64, i64) {
+    let circular_dist = |start: i64, end: i64| (end - start).rem_euclid(l);
+    // `name_start` is the slice's stranded start: a 0-based start forward, an
+    // exclusive end on the reverse strand, as the focus's `b` is.
+    let dist_to_start = if slice.overall_strand == -1 {
+        circular_dist(b, slice.name_start)
+    } else {
+        circular_dist(slice.name_start, a)
+    };
+    let len: i64 = slice.parts.iter().map(|p| p.end - p.start).sum();
+    (dist_to_start, len - dist_to_start - (b - a))
 }
 
 /// Slice `rec` to `slice`, keeping `keep_features` truncated to it, remapping
@@ -934,12 +962,7 @@ pub fn select_by_cds_hits(
             continue;
         }
         let cid = cds_unique_name(f);
-        let intervals: Vec<(i64, i64)> = f
-            .location
-            .parts
-            .iter()
-            .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
-            .collect();
+        let intervals = forward_intervals(f);
         let is_focus = focus_ids.contains(&cid);
         cds_list.push(Cds {
             intervals,
@@ -961,12 +984,7 @@ pub fn select_by_cds_hits(
         if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME && f.get_first("cds_id") == Some(".") {
             let cid = format!("nuc_{nuc_idx}");
             nuc_idx += 1;
-            let intervals: Vec<(i64, i64)> = f
-                .location
-                .parts
-                .iter()
-                .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
-                .collect();
+            let intervals = forward_intervals(f);
             let strand = f.location.strand();
             if let Some(name) = f.get_first("name") {
                 hit_name_by_cid.insert(cid.clone(), name.to_string());
@@ -1033,7 +1051,18 @@ pub fn select_by_cds_hits(
             }
         }
 
-        let slice = cds_neighborhood(rec_len, circular, &cds_list, focus_idx, range);
+        let hit = search_by_cid
+            .iter()
+            .find(|(_, cid)| *cid == focus_cid)
+            .map(|(f, _)| forward_intervals(f));
+        let slice = cds_neighborhood(
+            rec_len,
+            circular,
+            &cds_list,
+            focus_idx,
+            range,
+            hit.as_deref(),
+        );
 
         // Collect features: non-Domainator features, the Domainator features of every
         // CDS, the contig-level (whole-contig nhmmer, `cds_id="."`) Domainator
@@ -1078,8 +1107,7 @@ pub fn select_by_cds_hits(
         }
 
         // The focus position travels with the region so `--pad` can align the focus
-        // CDSs after the whole search completes; it is 0 for circular contigs, where
-        // padding is unsupported. Read before `slice` can be moved into `selected`
+        // CDSs after the whole search completes. Read before `slice` can be moved into `selected`
         // below, and swapped on an un-normalized reverse region, which was flipped
         // back to the original orientation above.
         let flipped = !normalize_direction && strand == -1;
@@ -1113,6 +1141,15 @@ pub fn select_by_cds_hits(
         }
     }
     Ok(out)
+}
+
+/// A feature's parts as `(low, high)` intervals.
+fn forward_intervals(f: &SeqFeature) -> Vec<(i64, i64)> {
+    f.location
+        .parts
+        .iter()
+        .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
+        .collect()
 }
 
 /// CDS display name: first present of `protein_id`/`gene_id`/`locus_tag`/`gene`,
@@ -1322,6 +1359,57 @@ mod tests {
             assert!(validate_range(false, None, None, Some(bad), None, None, None).is_err());
         }
         assert!(validate_range(false, None, None, None, Some(-1), None, None).is_err());
+    }
+
+    fn one_cds(start: i64, end: i64, strand: i32) -> Vec<Cds> {
+        vec![Cds {
+            intervals: vec![(start, end)],
+            strand,
+            cds_id: "c".into(),
+            is_focus: true,
+        }]
+    }
+
+    /// A whole circular contig is split opposite its focus, and the focus distances
+    /// (upstream `circular_focus_distances`) say where the CDS sits in it, so `--pad`
+    /// can align circular regions too.
+    #[test]
+    fn a_whole_circular_slice_records_where_its_focus_is() {
+        for strand in [1, -1] {
+            let slice =
+                cds_neighborhood(100, true, &one_cds(10, 20, strand), 0, Range::Whole, None);
+            assert_eq!(
+                (slice.name_start, slice.name_end),
+                (65, 65),
+                "strand {strand}"
+            );
+            assert_eq!(
+                (slice.dist_to_start, slice.dist_to_end),
+                (45, 45),
+                "strand {strand}"
+            );
+        }
+    }
+
+    /// From `domain_search`, a whole circular contig is centered on the search hit,
+    /// not its CDS, while the distances stay to the CDS.
+    #[test]
+    fn a_whole_circular_hit_region_centers_on_the_hit() {
+        let hit = [(16, 20)];
+        let slice = cds_neighborhood(100, true, &one_cds(10, 20, 1), 0, Range::Whole, Some(&hit));
+        assert_eq!(slice.name_start, 68);
+        assert_eq!((slice.dist_to_start, slice.dist_to_end), (42, 48));
+        // Only the whole contig is centered on the hit; a window stays on the CDS.
+        let window = cds_neighborhood(
+            100,
+            true,
+            &one_cds(10, 20, 1),
+            0,
+            Range::Kb(0.005, 0.005),
+            Some(&hit),
+        );
+        assert_eq!((window.name_start, window.name_end), (5, 25));
+        assert_eq!((window.dist_to_start, window.dist_to_end), (5, 5));
     }
 
     #[test]

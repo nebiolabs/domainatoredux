@@ -101,11 +101,18 @@ pub const TOOLS: &[ToolInfo] = &[
             "Annotate contigs or proteins with hits to HMM, sequence, or CM references.",
         )
     },
-    tool(
-        "domain_search",
-        "annotate",
-        "Search a large database with a few references and extract the hits.",
-    ),
+    ToolInfo {
+        migrated: true,
+        stdin: false,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        dynamic_defaults: &["ncbi_taxonomy_path"],
+        unsupported: &[("taxonomy_update", "false")],
+        ..tool(
+            "domain_search",
+            "annotate",
+            "Search a large database with a few references and extract the hits.",
+        )
+    },
     // edit
     ToolInfo {
         migrated: true,

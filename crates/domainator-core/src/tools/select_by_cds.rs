@@ -158,7 +158,7 @@ fn select_one(
             continue;
         }
 
-        let slice = cds_neighborhood(rec_len, circular, &nb_list, focus_index, opts.range);
+        let slice = cds_neighborhood(rec_len, circular, &nb_list, focus_index, opts.range, None);
 
         // Features: non-Domainator features, and every CDS's Domainator domains and
         // Domain_Search feature. `slice_record` truncates what the region cuts and

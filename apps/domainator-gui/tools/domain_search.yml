@@ -5,30 +5,26 @@ description: "Search sequences with HMM/FASTA references and extract hit CDSs or
 fields:
   - name: input
     label: "Input database"
-    role: input_file
     file_type: sequence
-    required: true
     sources: databases_first
     select: first
-  - name: references
+  - name: reference
     label: "References (HMM/FASTA)"
-    role: input_files
     file_type: reference
-    required: true
     sources: workspace_first
     select: none
     prefill_priority: 1
-  - name: output
+  - name: genbank_out
     label: "Output (GenBank)"
-    role: output_file
-    required: true
     output_name: "{stem}.search.gb"
+  - name: fasta_out
+    label: "Output (FASTA)"
   - name: evalue
     label: "E-value"
   - name: max_hits
     label: "Max hits"
     gui_default: 10000000
-  - name: z
+  - name: Z
     label: "Z (db size)"
   - name: add_annotations
     label: "Add annotations"
@@ -52,13 +48,18 @@ fields:
     label: "Strand (f/r)"
   - name: keep_direction
     label: "Keep direction"
+  - name: deduplicate
+    label: "Deduplicate regions"
+  - name: deduplicate_by_sequence
+    label: "Deduplicate by sequence"
+  - name: both_strands
+    label: "Both strands"
   - name: translate
     label: "Translate"
   - name: decoys
     label: "Decoy refs"
   - name: decoys_file
     label: "Decoys file (.txt)"
-    role: input_file
     file_type: text
     sources: workspace_first
     select: none
@@ -70,7 +71,6 @@ fields:
     label: "Taxonomy expr"
   - name: ncbi_taxonomy_path
     label: "Taxonomy database"
-    role: input_file
     file_type: taxonomy
     sources: databases_first
     select: "database:ncbi_taxonomy"
@@ -95,12 +95,14 @@ fields:
   - name: cpu
     show: false
     label: "Cpu"
-  - name: fasta_type
+  - name: alphabet
     show: false
-    label: "Fasta type"
+    label: "Alphabet"
   - name: pad
     show: false
     label: "Pad"
+  - name: anchor
+    label: "Pad anchor"
   - name: max_region_overlap
     show: false
     label: "Max region overlap"

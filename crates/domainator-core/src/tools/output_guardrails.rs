@@ -48,6 +48,7 @@ pub fn output_limit_message(
     projected_bytes: u64,
     max_bytes: u64,
     mitigation: &[&str],
+    extra_guidance: Option<&str>,
 ) -> String {
     let mut message = format!(
         "Projected {description} size is {}, which exceeds the configured limit of {}. \
@@ -57,6 +58,10 @@ pub fn output_limit_message(
     );
     if !mitigation.is_empty() {
         message.push_str(&format!(" Relevant options: {}.", mitigation.join(", ")));
+    }
+    if let Some(extra) = extra_guidance {
+        message.push(' ');
+        message.push_str(extra);
     }
     message
 }
@@ -71,7 +76,7 @@ mod tests {
         assert_eq!(format_bytes(1500), "1.50 KB");
         assert_eq!(format_bytes(25_000_000_000), "25.00 GB");
         assert_eq!(
-            output_limit_message("GenBank output 'a.gb'", 2000, 1000, &["--hits_only"]),
+            output_limit_message("GenBank output 'a.gb'", 2000, 1000, &["--hits_only"], None),
             "Projected GenBank output 'a.gb' size is 2.00 KB, which exceeds the configured \
              limit of 1.00 KB. Reduce the projected output size or raise the limit with \
              --max_output_gb. Relevant options: --hits_only."

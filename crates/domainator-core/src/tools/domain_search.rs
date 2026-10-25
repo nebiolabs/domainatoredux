@@ -6,17 +6,22 @@
 //! through neighborhood extraction (`--cds_range`/`--kb_range`/`--whole_contig`,
 //! default: the hit CDS), mirroring the Python `select_by_cds` step.
 
+use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 
 use crate::io::partition::partition_seqfile;
 use crate::io::shards::resolve_database_shards;
-use crate::io::{detect_compression, detect_filetype, fasta, genbank::GenbankReader, FileType};
+use crate::io::{
+    detect_compression, detect_filetype, fasta, genbank::GenbankReader, Compression, FileType,
+};
 use crate::search::references::References;
 use crate::seq::partial::Partial;
 use crate::seq::SeqRecord;
+use crate::tools::deduplicate_genbank::sequence_keys;
 use crate::tools::domainate::{domainate, DomainateOptions};
 use crate::tools::gene_call::GeneCall;
 use crate::tools::neighborhood::{select_by_cds_hits, Range, Region};
+use crate::tools::select_by_cds::{pad_records, Anchor};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
 /// Options for [`domain_search`].
@@ -32,7 +37,7 @@ pub struct DomainSearchOptions {
     /// Approximate CDSs per partition (also the partition granularity).
     pub batch_size: u64,
     /// Default molecule type for inputs lacking one (FASTA / unit-less LOCUS).
-    pub fasta_type: String,
+    pub alphabet: String,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
     /// Neighborhood extraction for nucleotide hits (`Whole` = whole contig).
@@ -49,14 +54,23 @@ pub struct DomainSearchOptions {
     /// hmmsearch `--max` (skip heuristic filters for maximum sensitivity).
     pub max_mode: bool,
     /// Precompiled allowed-taxid set (`None` = no taxonomy filtering).
-    pub allowed_taxids: Option<std::collections::HashSet<i64>>,
+    pub allowed_taxids: Option<HashSet<i64>>,
     /// Decoy domain names: if a hit CDS's best hit is a decoy, that hit is dropped.
-    pub decoys: Option<std::collections::HashSet<String>>,
+    pub decoys: Option<HashSet<String>>,
     /// Cap on independent hits emitted per contig (`None` = all).
     pub max_hits_per_contig: Option<usize>,
-    /// `--pad`: left-pad each region so the focus CDSs align, then right-pad to a
-    /// common length. Buffers the whole result and emits it in score order.
+    /// `--pad`: pad each region so the focus CDSs align at `anchor`. Buffers the
+    /// whole result and emits it in score order.
     pub pad: bool,
+    pub anchor: Anchor,
+    /// `--deduplicate`: keep one copy of each region id (a region extracted for
+    /// several hits).
+    pub deduplicate: bool,
+    /// `--deduplicate_by_sequence`: drop a hit whose sequence equals an earlier
+    /// hit's, ignoring case and terminal `*`; with `both_strands`, its complement or
+    /// reverse complement too.
+    pub deduplicate_by_sequence: bool,
+    pub both_strands: bool,
     /// `--partial`: which proteins/CDSs are searched, by fragment status.
     pub partial: Partial,
     /// `--gene_call`: call genes (with Orphos) on each partition's nucleotide
@@ -74,7 +88,7 @@ impl Default for DomainSearchOptions {
             add_annotations: false,
             max_hits: None,
             batch_size: 10000,
-            fasta_type: "protein".to_string(),
+            alphabet: "protein".to_string(),
             cpu: 0,
             range: Range::None,
             normalize_direction: true,
@@ -86,6 +100,10 @@ impl Default for DomainSearchOptions {
             decoys: None,
             max_hits_per_contig: None,
             pad: false,
+            anchor: Anchor::Start,
+            deduplicate: false,
+            deduplicate_by_sequence: false,
+            both_strands: false,
             partial: Partial::Include,
             gene_call: None,
         }
@@ -141,6 +159,55 @@ fn best_score(rec: &SeqRecord) -> f64 {
         .fold(f64::NEG_INFINITY, f64::max)
 }
 
+/// Upstream `_is_new_sequence`: whether `rec`'s sequence is new to `seen`, adding its
+/// keys when it is.
+fn is_new_sequence(rec: &SeqRecord, seen: &mut HashSet<Vec<u8>>, both_strands: bool) -> bool {
+    let keys = sequence_keys(&rec.seq, both_strands);
+    if keys.iter().any(|k| seen.contains(k)) {
+        return false;
+    }
+    seen.extend(keys);
+    true
+}
+
+/// The molecule types of `input_files` (each resolved to its shards), read off the
+/// first record of each: upstream `get_input_molecule_types`.
+pub fn input_molecule_types(
+    input_files: &[String],
+    alphabet: &str,
+) -> std::io::Result<BTreeSet<String>> {
+    let mut types = BTreeSet::new();
+    for input in input_files {
+        for (path, filetype, compression) in shard_files(input)? {
+            let compressed = compression == Compression::Bgzf;
+            let first = read_partition(&path, 0, 1, filetype, compressed, alphabet)?;
+            types.extend(first.into_iter().filter_map(|r| r.molecule_type));
+        }
+    }
+    Ok(types)
+}
+
+/// `input`'s shards, each with its file type and compression.
+fn shard_files(input: &str) -> std::io::Result<Vec<(String, FileType, Compression)>> {
+    let shards = resolve_database_shards(Path::new(input))
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    shards
+        .into_iter()
+        .map(|shard| {
+            let path = shard.to_str().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "non-UTF8 shard path")
+            })?;
+            let filetype = detect_filetype(&shard).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("could not detect file type: {}", shard.display()),
+                )
+            })?;
+            Ok((path.to_string(), filetype, detect_compression(&shard)))
+        })
+        .collect()
+}
+
 /// Read one partition's records (seek-and-read; honors BGZF virtual offsets).
 fn read_partition(
     path: &str,
@@ -173,21 +240,9 @@ pub fn domain_search(
     let mut parts = Vec::new();
     let mut total_cds: u64 = 0;
     for input in input_files {
-        let shards = resolve_database_shards(Path::new(input))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
-        for shard in shards {
-            let shard_str = shard.to_str().ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::InvalidInput, "non-UTF8 shard path")
-            })?;
-            let filetype = detect_filetype(&shard).ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("could not detect file type: {}", shard.display()),
-                )
-            })?;
-            let compression = detect_compression(&shard);
+        for (shard, filetype, compression) in shard_files(input)? {
             let (shard_total, shard_parts) =
-                partition_seqfile(shard_str, filetype, compression, opts.batch_size)?;
+                partition_seqfile(&shard, filetype, compression, opts.batch_size)?;
             total_cds += shard_total;
             parts.extend(shard_parts);
         }
@@ -238,9 +293,13 @@ pub fn domain_search(
                         p.n_records,
                         p.filetype,
                         p.compressed,
-                        &opts.fasta_type,
+                        &opts.alphabet,
                     )?;
                     let mut emitted = Vec::new();
+                    // Sequence dedup runs per partition too, so a partition's
+                    // --max_hits trim below is not crowded out by copies of one
+                    // sequence; the global pass drops copies across partitions.
+                    let mut seen = opts.deduplicate_by_sequence.then(HashSet::new);
                     for rec in domainate(records, refs, &dopts)? {
                         // Protein hits pass through whole; nucleotide hits go through
                         // neighborhood extraction.
@@ -273,6 +332,11 @@ pub fn domain_search(
                             )?);
                         }
                     }
+                    if let Some(seen) = &mut seen {
+                        emitted.retain(|r: &Region| {
+                            is_new_sequence(&r.record, seen, opts.both_strands)
+                        });
+                    }
                     // Bound each worker's result by --max_hits before it reaches the
                     // parent: a single partition can contribute at most `max_hits` to a
                     // global top-N, so this is lossless, and it turns the parent's peak
@@ -294,8 +358,16 @@ pub fn domain_search(
         });
 
     let mut out: Vec<Region> = Vec::new();
+    let mut seen = opts.deduplicate_by_sequence.then(HashSet::new);
     for part_result in per_part {
-        out.extend(part_result?);
+        let part = part_result?;
+        match &mut seen {
+            Some(seen) => out.extend(
+                part.into_iter()
+                    .filter(|r| is_new_sequence(&r.record, seen, opts.both_strands)),
+            ),
+            None => out.extend(part),
+        }
     }
 
     if let Some(max_hits) = opts.max_hits {
@@ -303,17 +375,17 @@ pub fn domain_search(
         out.truncate(max_hits);
     }
 
-    // `--pad` aligns the focus CDSs across every region, so it can only run once the
-    // whole search is in. Python sorts by score descending first whether or not
-    // `--max_hits` is set, so padded output is always in score order.
+    // Upstream `deduplicate_and_pad(best_first=True)`. `--pad` aligns the focus CDSs
+    // across every region, so it can only run once the whole search is in, and
+    // sorts by score first whether or not `--max_hits` is set (a stable sort, so a
+    // `--max_hits` order stands).
+    if opts.deduplicate {
+        let mut ids = HashSet::new();
+        out.retain(|r| ids.insert(r.record.id.clone()));
+    }
     if opts.pad {
-        if opts.max_hits.is_none() {
-            out.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
-        }
-        crate::tools::select_by_cds::pad_records(
-            &mut out,
-            crate::tools::select_by_cds::Anchor::Start,
-        );
+        out.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
+        pad_records(&mut out, opts.anchor);
     }
     Ok(out.into_iter().map(|r| r.record).collect())
 }

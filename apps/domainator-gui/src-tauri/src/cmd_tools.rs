@@ -1010,7 +1010,7 @@ pub(crate) mod tests {
         ("compare_contigs", "input", "genbank"),
         ("deduplicate_genbank", "input", "sequence"),
         ("domain_search", "input", "sequence"),
-        ("domain_search", "references", "reference"),
+        ("domain_search", "reference", "reference"),
         ("domainate", "input", "sequence"),
         ("domainate", "reference", "reference"),
         ("gene_call", "input", "sequence"),

@@ -107,89 +107,6 @@ macro_rules! merge_vec {
 // domainate / domain_search / seq_dist / compare_contigs / hmmer_compare
 // ---------------------------------------------------------------------------
 
-/// `domain_search` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct DomainSearchConfig {
-    pub input: Option<String>,
-    pub references: Vec<String>,
-    pub output: Option<String>,
-    pub evalue: Option<f64>,
-    pub min_evalue: Option<f64>,
-    pub z: Option<f64>,
-    pub add_annotations: bool,
-    pub max_hits: Option<usize>,
-    pub max_hits_per_contig: Option<usize>,
-    pub max_overlap: Option<f64>,
-    pub max_mode: bool,
-    pub batch_size: Option<u64>,
-    pub cpu: Option<usize>,
-    pub fasta_type: Option<String>,
-    pub whole_contig: bool,
-    pub cds_range: Option<i64>,
-    pub cds_up: Option<i64>,
-    pub cds_down: Option<i64>,
-    pub kb_range: Option<f64>,
-    pub kb_up: Option<f64>,
-    pub kb_down: Option<f64>,
-    pub strand: Option<String>,
-    pub keep_direction: bool,
-    pub translate: bool,
-    pub pad: bool,
-    pub max_region_overlap: Option<f64>,
-    pub decoys: Vec<String>,
-    pub decoys_file: Option<String>,
-    pub include_taxids: Vec<i64>,
-    pub exclude_taxids: Vec<i64>,
-    pub taxonomy_expr: Option<String>,
-    pub ncbi_taxonomy_path: Option<String>,
-    pub max_output_gb: Option<f64>,
-    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
-    pub partial: Option<String>,
-    /// `--gene_call`: `all` | `unannotated` (Orphos, meta mode); unset = no calling.
-    pub gene_call: Option<String>,
-}
-
-impl DomainSearchConfig {
-    pub fn merge_cli(&mut self, cli: DomainSearchConfig) {
-        merge_scalar!(self, cli, input);
-        merge_vec!(self, cli, references);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, evalue);
-        merge_scalar!(self, cli, min_evalue);
-        merge_scalar!(self, cli, z);
-        self.add_annotations |= cli.add_annotations;
-        merge_scalar!(self, cli, max_hits);
-        merge_scalar!(self, cli, max_hits_per_contig);
-        merge_scalar!(self, cli, max_overlap);
-        self.max_mode |= cli.max_mode;
-        merge_scalar!(self, cli, batch_size);
-        merge_scalar!(self, cli, cpu);
-        merge_scalar!(self, cli, fasta_type);
-        self.whole_contig |= cli.whole_contig;
-        merge_scalar!(self, cli, cds_range);
-        merge_scalar!(self, cli, cds_up);
-        merge_scalar!(self, cli, cds_down);
-        merge_scalar!(self, cli, kb_range);
-        merge_scalar!(self, cli, kb_up);
-        merge_scalar!(self, cli, kb_down);
-        merge_scalar!(self, cli, strand);
-        self.keep_direction |= cli.keep_direction;
-        self.translate |= cli.translate;
-        self.pad |= cli.pad;
-        merge_scalar!(self, cli, max_region_overlap);
-        merge_vec!(self, cli, decoys);
-        merge_scalar!(self, cli, decoys_file);
-        merge_vec!(self, cli, include_taxids);
-        merge_vec!(self, cli, exclude_taxids);
-        merge_scalar!(self, cli, taxonomy_expr);
-        merge_scalar!(self, cli, ncbi_taxonomy_path);
-        merge_scalar!(self, cli, max_output_gb);
-        merge_scalar!(self, cli, partial);
-        merge_scalar!(self, cli, gene_call);
-    }
-}
-
 /// `gene_call` parameters (a port-only tool: Prodigal-style gene calling through the
 /// external Orphos binary).
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -753,7 +670,6 @@ fn legacy_parameter(name: &str, prop: &serde_json::Value) -> serde_json::Value {
 /// its tool is migrated.
 fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
-        "domain_search" => domain_search_schema(),
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "seq_dist" => seq_dist_schema(),
@@ -919,56 +835,6 @@ fn common_help(name: &str) -> Option<&'static str> {
         "unannotated" => "Select CDSs/contigs with no domain annotation.",
         "z" => "Effective database size (Z) used for E-value calculation.",
         _ => return None,
-    })
-}
-
-/// `--gene_call` help, shared by `domainate` and `domain_search`.
-const GENE_CALL_HELP: &str = "Call genes with Orphos (Prodigal's metagenomic mode) before searching: 'all' deletes every existing CDS (and its Domainator annotations) and re-calls every nucleotide contig; 'unannotated' calls only contigs with no CDS. Needs the orphos binary. Give -Z too: the database size is fixed before genes are called.";
-
-fn domain_search_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "domain_search config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
-            "input": {"type": ["string", "null"], "description": "Input database (GenBank/FASTA; logical shard name)"},
-            "references": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "evalue": {"type": "number", "default": 0.001},
-            "min_evalue": {"type": "number", "default": 0.0},
-            "z": {"type": "number", "default": 1000.0},
-            "add_annotations": {"type": "boolean", "default": false},
-            "max_hits": {"type": ["integer", "null"]},
-            "max_hits_per_contig": {"type": ["integer", "null"]},
-            "max_overlap": {"type": "number", "default": 1.0},
-            "max_mode": {"type": "boolean", "default": false},
-            "batch_size": {"type": "integer", "default": 10000},
-            "cpu": {"type": "integer", "default": 0},
-            "fasta_type": {"enum": ["protein", "nucleotide", null]},
-            "whole_contig": {"type": "boolean", "default": false},
-            "cds_range": {"type": ["integer", "null"]},
-            "cds_up": {"type": ["integer", "null"]},
-            "cds_down": {"type": ["integer", "null"]},
-            "kb_range": {"type": ["number", "null"]},
-            "kb_up": {"type": ["number", "null"]},
-            "kb_down": {"type": ["number", "null"]},
-            "strand": {"enum": ["f", "r", null]},
-            "keep_direction": {"type": "boolean", "default": false},
-            "translate": {"type": "boolean", "default": false},
-            "pad": {"type": "boolean", "default": false},
-            "max_region_overlap": {"type": "number", "default": 1.0},
-            "decoys": {"type": "array", "items": {"type": "string"}},
-            "decoys_file": {"type": ["string", "null"]},
-            "include_taxids": {"type": "array", "items": {"type": "integer"}},
-            "exclude_taxids": {"type": "array", "items": {"type": "integer"}},
-            "taxonomy_expr": {"type": ["string", "null"]},
-            "ncbi_taxonomy_path": {"type": ["string", "null"]},
-            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if projected uncompressed GenBank output exceeds this many GB (0 disables)"},
-            "gene_call": {"enum": ["all", "unannotated", null], "description": GENE_CALL_HELP}
-        }
     })
 }
 
@@ -1374,7 +1240,6 @@ mod tests {
 
     fn every_tool() -> Vec<(&'static str, serde_json::Value)> {
         tools![
-            "domain_search" => DomainSearchConfig,
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
             "seq_dist" => SeqDistConfig,
@@ -1521,10 +1386,5 @@ mod tests {
             serde_json::to_value(&merged).unwrap(),
             serde_json::to_value(&cli).unwrap()
         );
-        let mut cfg = serde_json::to_value(DomainSearchConfig::default()).unwrap();
-        cfg["gene_call"] = "all".into();
-        let mut m = DomainSearchConfig::default();
-        m.merge_cli(serde_json::from_value(cfg).unwrap());
-        assert_eq!(m.gene_call.as_deref(), Some("all"));
     }
 }

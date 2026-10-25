@@ -91,6 +91,7 @@ pub fn run(args: &DomainateArgs) -> Result<()> {
         max_bytes.map(|max_bytes| OutputCap {
             max_bytes,
             mitigation: &["--hits_only", "--max_hits_per_cds", "--evalue"],
+            extra_guidance: None,
         }),
     )
 }

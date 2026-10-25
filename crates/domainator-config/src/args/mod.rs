@@ -11,6 +11,7 @@ mod clean_sequences;
 mod color_genbank;
 mod common;
 mod deduplicate_genbank;
+mod domain_search;
 mod domainate;
 mod enum_report;
 mod extract_domains;
@@ -29,6 +30,7 @@ pub use clean_sequences::CleanSequencesArgs;
 pub use color_genbank::ColorGenbankArgs;
 pub use common::CommonArgs;
 pub use deduplicate_genbank::DeduplicateGenbankArgs;
+pub use domain_search::DomainSearchArgs;
 pub use domainate::DomainateArgs;
 pub use enum_report::EnumReportArgs;
 pub use extract_domains::ExtractDomainsArgs;
@@ -65,6 +67,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "genbank_to_fasta" => GenbankToFastaArgs::augment_args(cmd),
         "deduplicate_genbank" => DeduplicateGenbankArgs::augment_args(cmd),
         "domainate" => DomainateArgs::augment_args(cmd),
+        "domain_search" => DomainSearchArgs::augment_args(cmd),
         _ => return None,
     })
 }

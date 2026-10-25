@@ -188,20 +188,29 @@ domainatoredux domainate -i contigs.gb -r pfam-A.hmm rebase_gold.fasta \
 **Keep the records (or the neighborhoods) that hit a reference.** Where `domainate`
 annotates everything, `domain_search` selects. It reads possibly sharded, BGZF-compressed
 and `.didx`-indexed databases (see [`format_db`](#format_db)), so it is the tool for
-searching something large.
+searching something large. Give `-i` several inputs to search them together; they cannot
+come from standard input, and at least one of `-o/--genbank_out` and `--fasta_out` is
+required.
 
 It also does **neighborhood extraction**: rather than the hit CDS alone, emit the
-surrounding region. `--whole_contig` for the entire contig; `--cds_range`/`--cds_up`/
+surrounding region. `--whole_contig` for the entire contig (a circular contig stays circular, rotated so the
+hit is in the middle); `--cds_range`/`--cds_up`/
 `--cds_down` for a window measured in genes; `--kb_range`/`--kb_up`/`--kb_down` for a
 window in kilobases. `--strand f|r` restricts by strand, `--keep_direction` preserves
-orientation, `--pad` pads to equal lengths, `--translate` emits protein instead of
-nucleotide, and `--max_region_overlap` deduplicates overlapping windows.
+orientation, `--pad` pads with `N` so the focus CDSs line up at `--anchor start|end|center`
+(padded records are linear), `--translate` emits protein instead of nucleotide, and
+`--max_region_overlap` deduplicates overlapping windows. `--deduplicate` keeps one copy of
+a region extracted for several hits (by record id); `--deduplicate_by_sequence` drops a
+hit whose sequence (ignoring case and terminal `*`) matches an earlier one, with
+`--both_strands` counting complements and reverse complements as matches.
 
 Other key flags: `--add_annotations` to also write `Domainator` features (not just the
 `Domain_Search` best hit); `--max_hits` and `--max_hits_per_contig` to cap results
 (ranked by the focus CDS's own hit score); `--decoys`/`--decoys_file` to reject hits that
-score better against a decoy; `--batch_size` (default 10000); taxonomy filters;
-`--gene_call all|unannotated`, as on `domainate`.
+score better against a decoy; `-e/--evalue` (at most 10) and `-Z` (`0` counts the
+input's proteins and CDSs); `--alphabet` for FASTA input; `--batch_size` (default 10000);
+taxonomy filters; `--max_output_gb` (default 25); `--gene_call all|unannotated`, as on
+`domainate`.
 
 ```bash
 # every gene within 10 kb of a Cas9 hit, across a formatted database
