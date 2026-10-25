@@ -75,15 +75,6 @@ domainatoredux enum_report -i in.gb --columns domains length -o table.tsv
 The same applies to `matrix_report` and `summary_report`. For the visual version, the
 [desktop app](gui.md#viewers) has live Enum Report, Summary, and Matrix Report tabs.
 
-## "sparse distance matrices not implemented"
-
-`transform_matrix --mode score_dist` cannot write `--sparse`, because a distance matrix's
-zeros are meaningful and the sparse representation cannot express them. Write it dense:
-
-```bash
-domainatoredux transform_matrix -i in.hdf5 --dense out.hdf5 --mode score_dist
-```
-
 ## A `.gz` file is rejected
 
 Domainator's indexed I/O needs to seek into a compressed file, which plain gzip cannot do.
@@ -159,7 +150,7 @@ If a network is too dense to lay out, prune it rather than raising the cutoff un
 fragments:
 
 ```bash
-domainatoredux transform_matrix -i dist.hdf5 --dense pruned.hdf5 --mst_knn 5
+domainatoredux transform_matrix -i dist.hdf5 -o pruned.hdf5 --mst --knn 5
 ```
 
 ## The desktop app won't launch (macOS / Linux)

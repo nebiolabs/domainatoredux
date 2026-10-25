@@ -9,31 +9,15 @@
 
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{bail, Result};
 use domainator_core::tools::build_ssn::BuildSsnOptions;
 use domainator_core::tools::build_ssn_viewer::BuildSsnViewerOptions;
 use domainator_core::tools::ssn_navigator::{NavMode, SsnNavigatorOptions};
-use domainator_core::tools::transform_matrix::{TransformMatrixOptions, MODES};
 
-use crate::{BuildSsnConfig, BuildSsnViewerConfig, SsnNavigatorConfig, TransformMatrixConfig};
+use crate::{BuildSsnConfig, BuildSsnViewerConfig, SsnNavigatorConfig};
 
 /// Default lower bound / merge-event / metric constants (shared defaults).
 pub const DEFAULT_MERGE_IMPACT_METRIC: &str = "min_child";
 pub const DEFAULT_MAX_MERGE_EVENTS: usize = 500;
-
-pub fn resolve_transform_matrix(cfg: &TransformMatrixConfig) -> Result<TransformMatrixOptions> {
-    let mode = cfg.mode.clone().unwrap_or_else(|| "none".into());
-    if !MODES.contains(&mode.as_str()) {
-        bail!("invalid --mode {mode:?}; choose one of {MODES:?}");
-    }
-    Ok(TransformMatrixOptions {
-        mode,
-        input_type: cfg.input_type.clone(),
-        lb: cfg.lb,
-        mst_knn: cfg.mst_knn,
-        knn: cfg.knn,
-    })
-}
 
 /// Map a `BuildSsnConfig` to options. `subset_labels`/`color_table` are the
 /// caller-resolved file inputs (from `--subset`/`--subset_file`/`--color_table`).

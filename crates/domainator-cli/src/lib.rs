@@ -22,7 +22,7 @@ pub mod output;
 use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
 use domainator_core::io::{detect_filetype, fasta, FileType};
-use domainator_core::matrix::{hdf5_io, read_matrix, text};
+use domainator_core::matrix::read_matrix;
 use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
 use domainator_core::seq::SeqRecord;
@@ -37,7 +37,6 @@ use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json}
 use domainator_core::tools::select_common::parse_name_list;
 use domainator_core::tools::ssn_bundle;
 use domainator_core::tools::ssn_navigator::ssn_navigator;
-use domainator_core::tools::transform_matrix::transform_matrix;
 
 #[derive(Parser)]
 #[command(name = "domainatoredux", version, long_version = domainator_core::version::LONG_VERSION, about = "Domainatoredux: protein-domain / SSN analysis (a Rust port of domainator)")]
@@ -153,47 +152,7 @@ enum Command {
     /// Pairwise contig similarity (Jaccard + Adjacency) from annotated GenBank.
     CompareContigs(config::args::CompareContigsArgs),
     /// Normalize / convert / sparsify a score matrix (dense<->sparse, --mode, --mst_knn).
-    TransformMatrix {
-        /// Input matrix file (HDF5 or dense TSV).
-        #[arg(short, long)]
-        input: Option<PathBuf>,
-        /// Write a dense HDF5 matrix here.
-        #[arg(long)]
-        dense: Option<PathBuf>,
-        /// Write a dense TSV matrix here.
-        #[arg(long = "dense_text")]
-        dense_text: Option<PathBuf>,
-        /// Write a sparse (CSR) HDF5 matrix here.
-        #[arg(long)]
-        sparse: Option<PathBuf>,
-        /// Output value type (default: none = pass-through). Transforms only apply
-        /// to a `score` input: score, bool, norm_score, row_norm_score, score_dist,
-        /// efi_score, efi_score_dist.
-        #[arg(long)]
-        mode: Option<String>,
-        /// Override the input matrix's declared data type.
-        #[arg(long = "input_type")]
-        input_type: Option<String>,
-        /// Zero out all values <= this after the mode transform.
-        #[arg(long)]
-        lb: Option<f64>,
-        /// Keep only MST + OR-symmetric kNN edges (integer >= 0, 0 = spanning tree only).
-        #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
-        mst_knn: Option<usize>,
-        /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
-        /// does not preserve connected components.
-        #[arg(long = "knn", value_parser = parse_knn)]
-        knn: Option<usize>,
-        /// Fail if a projected matrix output exceeds this many GB (default 25; 0 disables).
-        #[arg(long = "max_output_gb")]
-        max_output_gb: Option<f64>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    TransformMatrix(config::args::TransformMatrixArgs),
     /// Build a Cytoscape XGMML sequence-similarity network from a score matrix.
     BuildSsn {
         /// Input matrix file (HDF5 or dense TSV).
@@ -742,21 +701,6 @@ fn enforce_bytes_gb(
     Ok(())
 }
 
-/// Fail when the estimated size of writing `matrix` as `output_type` (`"dense"`,
-/// `"sparse"`, `"dense_text"`) to `path` exceeds the byte budget for `max_gb`.
-/// Uses the core matrix estimator (mirrors `DataMatrix.estimate_write_size`).
-fn enforce_matrix_gb(
-    matrix: &domainator_core::matrix::DataMatrix,
-    output_type: &str,
-    path: &str,
-    max_gb: f64,
-    mitigation: &str,
-) -> Result<()> {
-    let projected = domainator_core::matrix::estimate::estimate_write_size(output_type, matrix);
-    let description = format!("{output_type} matrix output '{path}'");
-    enforce_bytes_gb(projected, max_gb, &description, mitigation)
-}
-
 /// Write records as GenBank to a file, or to stdout when `output` is None.
 fn write_genbank_out(records: &[SeqRecord], output: Option<&PathBuf>) -> Result<()> {
     match output {
@@ -1174,89 +1118,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::ExtractUnannotated(args) => commands::extract_unannotated::run(&args)?,
         Command::SeqDist(args) => commands::seq_dist::run(&args)?,
         Command::CompareContigs(args) => commands::compare_contigs::run(&args)?,
-        Command::TransformMatrix {
-            input,
-            dense,
-            dense_text,
-            sparse,
-            mode,
-            input_type,
-            lb,
-            mst_knn,
-            knn,
-            max_output_gb,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::TransformMatrixConfig {
-                input: opt_path(&input)?,
-                dense: opt_path(&dense)?,
-                dense_text: opt_path(&dense_text)?,
-                sparse: opt_path(&sparse)?,
-                mode,
-                input_type,
-                lb,
-                mst_knn,
-                knn,
-                max_output_gb,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::TransformMatrixConfig>(p)?,
-                None => config::TransformMatrixConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let input = cfg
-                .input
-                .clone()
-                .context("missing required `input` (-i / --input or config)")?;
-            // Shared config->Options resolution (used by the GUI too, so they can't drift).
-            let opts = config::resolve::resolve_transform_matrix(&cfg)?;
-            let mode = opts.mode.clone();
-            if cfg.dense.is_none() && cfg.dense_text.is_none() && cfg.sparse.is_none() {
-                anyhow::bail!(
-                    "no output specified: pass at least one of --dense, --dense_text, --sparse"
-                );
-            }
-            if cfg.sparse.is_some() && mode == "score_dist" {
-                anyhow::bail!(
-                    "sparse distance matrices not implemented (--mode score_dist with --sparse)"
-                );
-            }
-            let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
-            let matrix = transform_matrix(matrix, &opts).context("running transform_matrix")?;
-            // Output-size guardrails: estimate each requested output before writing.
-            let max_gb = cfg.max_output_gb.unwrap_or(25.0);
-            if let Some(p) = &cfg.dense {
-                enforce_matrix_gb(&matrix, "dense", p, max_gb, "--sparse, --lb, --mst_knn")?;
-            }
-            if let Some(p) = &cfg.dense_text {
-                enforce_matrix_gb(
-                    &matrix,
-                    "dense_text",
-                    p,
-                    max_gb,
-                    "--sparse, --lb, --mst_knn",
-                )?;
-            }
-            if let Some(p) = &cfg.sparse {
-                enforce_matrix_gb(&matrix, "sparse", p, max_gb, "--lb, --mst_knn")?;
-            }
-            if let Some(p) = &cfg.dense {
-                hdf5_io::write_dense(p, &matrix)?;
-            }
-            if let Some(p) = &cfg.dense_text {
-                text::write_dense_text(p, &matrix)?;
-            }
-            if let Some(p) = &cfg.sparse {
-                hdf5_io::write_sparse(p, &matrix)?;
-            }
-            println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
-        }
+        Command::TransformMatrix(args) => commands::transform_matrix::run(&args)?,
         Command::BuildSsn {
             input,
             xgmml,

@@ -19,6 +19,7 @@ pub mod select_by_contig;
 pub mod select_by_coord;
 pub mod seq_dist;
 pub mod sort_contigs;
+pub mod transform_matrix;
 pub mod trim_contigs;
 
 use anyhow::{Context, Result};

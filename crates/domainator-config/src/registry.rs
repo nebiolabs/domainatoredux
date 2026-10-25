@@ -285,11 +285,17 @@ pub const TOOLS: &[ToolInfo] = &[
             "Compute similarities between gene neighborhoods from their domain content and order.",
         )
     },
-    tool(
-        "transform_matrix",
-        "compare",
-        "Convert score matrices into normalized scores or distances.",
-    ),
+    ToolInfo {
+        migrated: true,
+        stdin: false,
+        required_outputs: Some(&["hdf_out", "dense_text_out"]),
+        no_stdout: &["hdf_out"],
+        ..tool(
+            "transform_matrix",
+            "compare",
+            "Convert score matrices into normalized scores or distances.",
+        )
+    },
     // network
     tool(
         "build_ssn",

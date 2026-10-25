@@ -26,6 +26,7 @@ mod select_by_contig;
 mod select_by_coord;
 mod seq_dist;
 mod sort_contigs;
+mod transform_matrix;
 mod trim_contigs;
 
 pub use clean_sequences::CleanSequencesArgs;
@@ -47,6 +48,7 @@ pub use select_by_contig::SelectByContigArgs;
 pub use select_by_coord::SelectByCoordArgs;
 pub use seq_dist::SeqDistArgs;
 pub use sort_contigs::SortContigsArgs;
+pub use transform_matrix::TransformMatrixArgs;
 pub use trim_contigs::TrimContigsArgs;
 
 /// The `clap::Command` of a migrated tool, built from its args struct alone, for
@@ -74,6 +76,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "domain_search" => DomainSearchArgs::augment_args(cmd),
         "seq_dist" => SeqDistArgs::augment_args(cmd),
         "compare_contigs" => CompareContigsArgs::augment_args(cmd),
+        "transform_matrix" => TransformMatrixArgs::augment_args(cmd),
         _ => return None,
     })
 }

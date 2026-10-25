@@ -88,7 +88,7 @@ On a large dataset, swap in DIAMOND and normalize the scores:
 
 ```bash
 domainatoredux seq_dist -i proteins.fasta -o raw.hdf5 --algorithm diamond_us --cpu 0
-domainatoredux transform_matrix -i raw.hdf5 --dense efi.hdf5 --mode efi_score
+domainatoredux transform_matrix -i raw.hdf5 -o efi.hdf5 --mode efi_score
 domainatoredux build_ssn_viewer -i efi.hdf5 -o network.dsnv --html network.html --embed_data
 ```
 
@@ -97,7 +97,7 @@ across protein families of different lengths. If the network is too dense to lay
 prune it while keeping it connected:
 
 ```bash
-domainatoredux transform_matrix -i efi.hdf5 --dense pruned.hdf5 --mst_knn 5
+domainatoredux transform_matrix -i efi.hdf5 -o pruned.hdf5 --mst --knn 5
 ```
 
 ## 3. A similarity network of HMM profiles

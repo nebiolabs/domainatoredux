@@ -469,14 +469,17 @@ domainatoredux compare_contigs -i neighborhoods.gb -o similarity.hdf5 --ji 0.5 -
 
 ### `transform_matrix`
 
-Normalize, convert or sparsify an existing matrix. `--mode` is one of `none`, `score`,
-`bool`, `norm_score`, `row_norm_score`, `score_dist`, `efi_score`, `efi_score_dist`.
-Convert between representations by choosing a different output flag from the input's.
-`--lb` applies a lower bound; `--mst_knn` and `--knn` prune.
+Normalize, convert or sparsify an existing matrix. `--mode` is one of `none` (the
+default: keep the values), `score`, `bool`, `norm_score`, `row_norm_score`, `score_dist`,
+`efi_score`, `efi_score_dist`, and converts only from a `score` matrix; `--value_type`
+says what the input holds when the file does not. `--symmetrize max|min|mean` reconciles
+the two directions of each pair first; `--mst` and `--knn K` prune (not a distance
+matrix); `--threshold` zeroes values at or below it after the transform. Writes
+`-o/--hdf_out` and/or `--dense_text_out`, so reading a TSV and writing HDF5 converts.
 
 ```bash
-domainatoredux transform_matrix -i dist.hdf5 --dense normalized.hdf5 --mode efi_score
-domainatoredux transform_matrix -i dense.hdf5 --sparse sparse.hdf5 --lb 50
+domainatoredux transform_matrix -i dist.hdf5 -o normalized.hdf5 --mode efi_score
+domainatoredux transform_matrix -i scores.tsv -o pruned.hdf5 --mst --knn 5 --threshold 50
 ```
 
 ### `build_ssn`

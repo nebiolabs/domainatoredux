@@ -158,37 +158,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `transform_matrix` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct TransformMatrixConfig {
-    pub input: Option<String>,
-    pub dense: Option<String>,
-    pub dense_text: Option<String>,
-    pub sparse: Option<String>,
-    pub mode: Option<String>,
-    pub input_type: Option<String>,
-    pub lb: Option<f64>,
-    pub mst_knn: Option<usize>,
-    pub knn: Option<usize>,
-    pub max_output_gb: Option<f64>,
-}
-
-impl TransformMatrixConfig {
-    pub fn merge_cli(&mut self, cli: TransformMatrixConfig) {
-        merge_scalar!(self, cli, input);
-        merge_scalar!(self, cli, dense);
-        merge_scalar!(self, cli, dense_text);
-        merge_scalar!(self, cli, sparse);
-        merge_scalar!(self, cli, mode);
-        merge_scalar!(self, cli, input_type);
-        merge_scalar!(self, cli, lb);
-        merge_scalar!(self, cli, mst_knn);
-        merge_scalar!(self, cli, knn);
-        merge_scalar!(self, cli, max_output_gb);
-    }
-}
-
 /// `build_ssn` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -597,7 +566,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "hmmer_compare" => hmmer_compare_schema(),
-        "transform_matrix" => transform_matrix_schema(),
         "build_ssn" => build_ssn_schema(),
         "build_ssn_viewer" => build_ssn_viewer_schema(),
         "matrix_report" => matrix_report_schema(),
@@ -910,30 +878,6 @@ fn build_ssn_schema() -> serde_json::Value {
     })
 }
 
-fn transform_matrix_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "transform_matrix config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": ["string", "null"], "description": "Input matrix (HDF5 or dense TSV)"},
-            "dense": {"type": ["string", "null"], "description": "Dense HDF5 output path"},
-            "dense_text": {"type": ["string", "null"], "description": "Dense TSV output path"},
-            "sparse": {"type": ["string", "null"], "description": "Sparse CSR HDF5 output path"},
-            "mode": {"enum": [
-                "none","score","bool","norm_score","row_norm_score","score_dist","efi_score","efi_score_dist"
-            ], "default": "none"},
-            "input_type": {"type": ["string", "null"], "description": "Override the input matrix data type"},
-            "lb": {"type": ["number", "null"], "description": "Zero out values <= lb after the transform"},
-            "mst_knn": {"type": ["integer", "null"], "description": "MST + OR-symmetric kNN; integer >= 0 (0 reduces to the MST alone). Mutually exclusive with knn"},
-            "knn": {"type": ["integer", "null"], "description": "OR-symmetric kNN without the spanning tree; integer >= 1. Unlike mst_knn this does not preserve connected components"},
-            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if a projected matrix output exceeds this many GB (0 disables)"}
-        }
-    })
-}
-
 fn hmmer_compare_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -1108,7 +1052,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "transform_matrix" => TransformMatrixConfig,
             "build_ssn" => BuildSsnConfig,
             "build_ssn_viewer" => BuildSsnViewerConfig,
             "matrix_report" => MatrixReportConfig,

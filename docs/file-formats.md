@@ -159,21 +159,23 @@ A pairwise matrix of scores between sequences, profiles or contigs, produced by
 [`compare_contigs`](cli-reference.md#compare_contigs) and
 [`transform_matrix`](cli-reference.md#transform_matrix).
 
-Three representations, chosen by which output flag you pass:
+Two outputs, chosen by which flag you pass (the tools that still take the older
+`--dense`/`--sparse`/`--dense_text` flags write the same files):
 
 | Flag | Form | Use when |
 | --- | --- | --- |
-| `--dense` | dense HDF5 | the usual choice |
-| `--sparse` | CSR (sparse) HDF5 | most pairs score zero, so the dense form would be huge |
-| `--dense_text` | TSV | you want to read it in R, Excel or by eye |
+| `-o/--hdf_out` | CSR (sparse) HDF5 | the usual choice; most pairs score zero |
+| `--dense_text_out` | TSV, every cell | you want to read it in R, Excel or by eye |
+
+Dense HDF5 files, which older versions wrote, are still read.
 
 The format is the Python suite's: same HDF5 layout and attributes, readable by its
 `DataMatrix.from_file`, and the file extension selects the reader. Row and column labels
 are stored with the data; a matrix with column labels is asymmetric (query × reference),
 one without is symmetric (all-vs-all).
 
-`transform_matrix` converts freely between the three, so `--dense` in and `--sparse` out
-is a conversion.
+`transform_matrix` reads any of them, so `transform_matrix -i m.tsv -o m.hdf5` is a
+conversion.
 
 ## Networks
 
