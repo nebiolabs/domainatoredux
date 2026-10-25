@@ -27,6 +27,7 @@ build_ssn	xgmml	extra	{"name":"xgmml","flags":["--xgmml"],"default":null,"kind":
 build_ssn	xgmml_out	missing	null	{"default":null,"flags":["-o","--xgmml_out"],"kind":"path","name":"xgmml_out","required":true,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
 build_ssn_viewer	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
 build_ssn_viewer	-	required_outputs	null	["dsnv_out","html_out"]	todo:1.0-cli	
+build_ssn_viewer	color_table	missing	null	{"default":null,"flags":["--color_table"],"kind":"path","name":"color_table","required":false,"role":"input","type":"string"}	todo:1.0-cli	
 build_ssn_viewer	dsnv_out	missing	null	{"default":null,"flags":["-o","--dsnv_out"],"kind":"path","name":"dsnv_out","required":false,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
 build_ssn_viewer	html	extra	{"name":"html","flags":["--html"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
 build_ssn_viewer	html_out	missing	null	{"default":null,"flags":["--html_out"],"kind":"path","name":"html_out","required":false,"role":"output","stdout":false,"type":"string"}	deferred:html	

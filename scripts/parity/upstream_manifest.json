@@ -7351,6 +7351,17 @@
     {
      "default": null,
      "flags": [
+      "--color_table"
+     ],
+     "kind": "path",
+     "name": "color_table",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
       "--label_by"
      ],
      "kind": "value",
