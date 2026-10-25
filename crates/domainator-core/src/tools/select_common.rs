@@ -255,6 +255,12 @@ fn feature_evalue(f: &SeqFeature) -> f64 {
         .unwrap_or(f64::INFINITY)
 }
 
+/// Whether an annotation's e-value is at most `evalue` (`None`: no cutoff), upstream
+/// `model.evalue_passes`, which every `-e/--evalue` filter uses.
+pub fn evalue_passes(f: &SeqFeature, evalue: Option<f64>) -> bool {
+    evalue.is_none_or(|e| feature_evalue(f) <= e)
+}
+
 fn feature_score(f: &SeqFeature) -> f64 {
     f.get_first("score")
         .and_then(|v| v.parse().ok())

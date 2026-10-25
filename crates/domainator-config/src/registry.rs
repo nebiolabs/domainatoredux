@@ -133,11 +133,17 @@ pub const TOOLS: &[ToolInfo] = &[
         "edit",
         "Extract contigs or neighborhoods around selected CDSs.",
     ),
-    tool(
-        "select_by_contig",
-        "edit",
-        "Select whole contigs by their domain content and other properties.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        dynamic_defaults: &["ncbi_taxonomy_path"],
+        unsupported: &[("taxonomy_update", "false")],
+        ..tool(
+            "select_by_contig",
+            "edit",
+            "Select whole contigs by their domain content and other properties.",
+        )
+    },
     tool(
         "select_by_coord",
         "edit",

@@ -68,7 +68,7 @@ report tools' `--columns` take upstream's `name:arg:arg` tokens, parsed against 
 catalogs in `columns.rs` (the clap value type, so a bad token fails at parse time).
 An upstream option a migrated tool lacks is listed in its registry entry's
 `unsupported`, with upstream's default, so upstream configs that name it still load.
-Migrated so far: `sort_contigs`, `enum_report`, `hmmer_report`; the rest still use the
+Migrated so far: `sort_contigs`, `enum_report`, `hmmer_report`, `select_by_contig`; the rest still use the
 old layer below.
 
 **Config files / agent interface, unmigrated tools** (the `crates/domainator-config` crate — *not* a

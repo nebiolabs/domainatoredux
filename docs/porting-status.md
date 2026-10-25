@@ -82,7 +82,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | partition_seqfile.py | deferred | — |
 | select_by_cds.py | finished | Tools menu ("Select by CDS") — name/domain/`domain_expr`/`search_hits`/`unannotated` + neighborhood extraction + pad/dedup/strand/invert |
 | select_by_coord.py | finished (parity-verified) | Tools menu ("Select by coordinate") — coordinate table is a `table` file (`.tsv`/`.csv`) |
-| select_by_contig.py | finished | Tools menu ("Select by contig") — name/regex, domain content, taxonomy, length/CDS-count filters; `fasta_out` toggles FASTA vs GenBank |
+| select_by_contig.py | finished | Tools menu ("Select by contig") — name/regex, domain content, taxonomy, length/CDS-count filters; GenBank and/or FASTA output |
 | seq_dist.py | finished (`--progress` intentionally not ported) | Tools menu ("Sequence distance") — `diamond_*` algorithms need the `diamond` binary, **auto-downloadable** from the External tools panel |
 | sort_contigs.py | finished (parity; ties may reorder) | Tools menu ("Sort contigs") |
 | summary_report.py | finished: `--json` (upstream's agent contract) + text; HTML deferred (matplotlib/seaborn), as is the ASCII length histogram | **Summary dashboard** tab (pure-data stats + length histogram + taxonomy icicle) — GUI-only, sidesteps the matplotlib CLI tool |

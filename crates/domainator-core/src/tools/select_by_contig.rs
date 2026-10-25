@@ -18,14 +18,41 @@ use crate::seq::partial::{contig_has_fragment, Partial};
 use crate::seq::taxid::record_taxid;
 use crate::seq::taxonomy::NCBITaxonomy;
 use crate::seq::SeqRecord;
-use crate::tools::select_common::BooleanEvaluator;
+use crate::tools::select_common::{evalue_passes, BooleanEvaluator};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
+
+/// Which annotations name a contig's domains (`--annotation_type`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AnnotationType {
+    /// `Domainator` features, from domainate.
+    #[default]
+    Domainator,
+    /// `Domain_Search` best-hit features, from domain_search.
+    DomainSearch,
+    /// Both.
+    All,
+}
+
+impl std::str::FromStr for AnnotationType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "domainator" => Ok(AnnotationType::Domainator),
+            "domain_search" => Ok(AnnotationType::DomainSearch),
+            "all" => Ok(AnnotationType::All),
+            _ => Err(format!(
+                "invalid annotation type {s:?}: expected domainator, domain_search or all"
+            )),
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct SelectByContigOptions {
     pub target_domains: Option<HashSet<String>>,
     pub domain_expr: Option<String>,
-    pub domain_evalue: f64,
+    /// Only annotations with an e-value at most this count (`None`: no cutoff).
+    pub domain_evalue: Option<f64>,
     pub first: Option<usize>,
     pub length_lb: Option<i64>,
     pub length_ub: Option<i64>,
@@ -43,7 +70,7 @@ pub struct SelectByContigOptions {
     pub unannotated: bool,
     pub search_score_lb: Option<f64>,
     pub search_score_ub: Option<f64>,
-    pub domain_type: String,
+    pub annotation_type: AnnotationType,
     /// `--partial`: contigs by fragment status ([`contig_has_fragment`]); never
     /// inverted by `invert`.
     pub partial: Partial,
@@ -68,12 +95,6 @@ fn db_ok(databases: Option<&HashSet<String>>, f: &crate::seq::SeqFeature) -> boo
     }
 }
 
-fn feat_evalue(f: &crate::seq::SeqFeature) -> f64 {
-    f.get_first("evalue")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(f64::INFINITY)
-}
-
 /// Run the selection. `ncbi_taxonomy` is required iff a taxonomy filter is set.
 pub fn select_by_contig(
     records: Vec<SeqRecord>,
@@ -84,11 +105,6 @@ pub fn select_by_contig(
     let def_re = compile(opts.definition_regex.as_deref())?;
     let seq_re = compile(opts.sequence_regex.as_deref())?;
     let name_re = compile(opts.contigs_regex.as_deref())?;
-    let domain_type = if opts.domain_type.is_empty() {
-        "domain"
-    } else {
-        opts.domain_type.as_str()
-    };
 
     // Taxonomy filter compiled to an allowed-taxid set (O(1) membership).
     let allowed: Option<HashSet<i64>> = {
@@ -205,12 +221,12 @@ pub fn select_by_contig(
             at_least_one_test = true;
             let mut domains: HashSet<String> = HashSet::new();
             let mut search_feature: Option<&crate::seq::SeqFeature> = None;
-            // Loop-invariant: which feature kinds `--domain_type` draws names from.
-            let want_domain = domain_type == "domain" || domain_type == "both";
-            let want_search = domain_type == "search" || domain_type == "both";
+            // Loop-invariant: which feature kinds `--annotation_type` draws names from.
+            let want_domain = opts.annotation_type != AnnotationType::DomainSearch;
+            let want_search = opts.annotation_type != AnnotationType::Domainator;
             for f in &contig.features {
                 if f.kind == DOMAIN_FEATURE_NAME
-                    && feat_evalue(f) < opts.domain_evalue
+                    && evalue_passes(f, opts.domain_evalue)
                     && db_ok(opts.databases.as_ref(), f)
                     && want_domain
                 {
@@ -219,7 +235,7 @@ pub fn select_by_contig(
                     }
                 }
                 if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME
-                    && feat_evalue(f) < opts.domain_evalue
+                    && evalue_passes(f, opts.domain_evalue)
                     && db_ok(opts.databases.as_ref(), f)
                 {
                     search_feature = Some(f);

@@ -120,15 +120,6 @@ select_by_cds	test_select_by_cds_circular_cds_range_2#0	differs	pending:1.0-beha
 select_by_cds	test_select_by_cds_circular_kb_range_2#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:55
 select_by_cds	test_select_by_cds_circular_whole_contig_stays_circular#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:55
 select_by_cds	test_select_by_cds_invert_1#0	differs	pending:1.0-behavior	extraction.gb: 2 feature location/type, 0 LOCUS name
-select_by_contig	test_select_by_contig_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--max_records' found
-select_by_contig	test_select_by_contig_3#0	rust-failed	pending:1.0-cli	error: unexpected argument '--max_records' found
-select_by_contig	test_select_by_contig_6#0	rust-failed	pending:1.0-cli	error: unexpected argument '--min_length' found
-select_by_contig	test_select_by_contig_cds_count_lb_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--min_cds' found
-select_by_contig	test_select_by_contig_cds_count_ub_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--max_cds' found
-select_by_contig	test_select_by_contig_fasta_io_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '/tmp/tmpdk2ohd_l/rs/extraction_pept.fasta' found
-select_by_contig	test_select_by_contig_search_name_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--annotation_type' found
-select_by_contig	test_select_by_contig_search_name_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--annotation_type' found
-select_by_contig	test_select_by_contig_search_score_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--min_search_score' found
 seq_dist	test_hmm_compare_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--dense_text_out' found
 seq_dist	test_seq_dist_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hdf_out' found
 seq_dist	test_seq_dist_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hdf_out' found

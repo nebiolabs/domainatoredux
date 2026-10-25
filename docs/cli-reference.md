@@ -273,14 +273,14 @@ domainatoredux select_by_cds -i annotated.gb -o operons.gb \
 
 Select whole contigs, no extraction. Filter by name (`--contigs`, `--contigs_file`,
 `--contigs_regex`), description (`--definition_regex`), sequence (`--sequence_regex`),
-domain content (`--domains`, `--domain_expr`, `--domain_type domain|search|both`),
-taxonomy, size (`--length_lb`/`--length_ub`, `--cds_count_lb`/`--cds_count_ub`), or search
-score (`--search_score_lb`/`--search_score_ub`). `--first` takes the first N,
-`--invert` complements, `--fasta_out` writes FASTA.
+domain content (`--domains`, `--domain_expr`, `--annotation_type domainator|domain_search|all`),
+taxonomy, size (`--min_length`/`--max_length`, `--min_cds`/`--max_cds`), or search
+score (`--min_search_score`/`--max_search_score`). `--max_records` takes the first N,
+`--invert` complements; `-o/--genbank_out` and `--fasta_out` choose the outputs.
 
 ```bash
 domainatoredux select_by_contig -i all.gb -o big_hits.gb \
-  --domains Cas9 --length_lb 5000 --cds_count_lb 3
+  --domains Cas9 --min_length 5000 --min_cds 3
 ```
 
 ### `select_by_coord`

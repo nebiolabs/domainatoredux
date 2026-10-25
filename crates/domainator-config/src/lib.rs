@@ -85,7 +85,7 @@ pub fn parse_partial(value: Option<&str>) -> Result<domainator_core::seq::partia
 }
 
 // ---------------------------------------------------------------------------
-// select_by_contig / select_by_cds
+// Old config structs of the unmigrated tools, merged with their CLI flags
 // ---------------------------------------------------------------------------
 
 macro_rules! merge_scalar {
@@ -101,75 +101,6 @@ macro_rules! merge_vec {
             $self.$field = $cli.$field;
         }
     };
-}
-
-/// `select_by_contig` parameters (config-file shape). Defaulted scalars are
-/// `Option` so a config value is not clobbered by a CLI default.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct SelectByContigConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub contigs: Vec<String>,
-    pub contigs_file: Option<String>,
-    pub contigs_regex: Option<String>,
-    pub definition_regex: Option<String>,
-    pub sequence_regex: Option<String>,
-    pub domains: Vec<String>,
-    pub domains_file: Option<String>,
-    pub domain_expr: Option<String>,
-    pub domain_type: Option<String>,
-    pub databases: Vec<String>,
-    pub unannotated: bool,
-    pub evalue: Option<f64>,
-    pub fasta_out: bool,
-    pub include_taxids: Vec<i64>,
-    pub exclude_taxids: Vec<i64>,
-    pub taxonomy_expr: Option<String>,
-    pub ncbi_taxonomy_path: Option<String>,
-    pub first: Option<usize>,
-    pub length_lb: Option<i64>,
-    pub length_ub: Option<i64>,
-    pub cds_count_lb: Option<i64>,
-    pub cds_count_ub: Option<i64>,
-    pub search_score_lb: Option<f64>,
-    pub search_score_ub: Option<f64>,
-    pub invert: bool,
-    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
-    pub partial: Option<String>,
-}
-
-impl SelectByContigConfig {
-    pub fn merge_cli(&mut self, cli: SelectByContigConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_vec!(self, cli, contigs);
-        merge_scalar!(self, cli, contigs_file);
-        merge_scalar!(self, cli, contigs_regex);
-        merge_scalar!(self, cli, definition_regex);
-        merge_scalar!(self, cli, sequence_regex);
-        merge_vec!(self, cli, domains);
-        merge_scalar!(self, cli, domains_file);
-        merge_scalar!(self, cli, domain_expr);
-        merge_scalar!(self, cli, domain_type);
-        merge_vec!(self, cli, databases);
-        self.unannotated |= cli.unannotated;
-        merge_scalar!(self, cli, evalue);
-        self.fasta_out |= cli.fasta_out;
-        merge_vec!(self, cli, include_taxids);
-        merge_vec!(self, cli, exclude_taxids);
-        merge_scalar!(self, cli, taxonomy_expr);
-        merge_scalar!(self, cli, ncbi_taxonomy_path);
-        merge_scalar!(self, cli, first);
-        merge_scalar!(self, cli, length_lb);
-        merge_scalar!(self, cli, length_ub);
-        merge_scalar!(self, cli, cds_count_lb);
-        merge_scalar!(self, cli, cds_count_ub);
-        merge_scalar!(self, cli, search_score_lb);
-        merge_scalar!(self, cli, search_score_ub);
-        self.invert |= cli.invert;
-        merge_scalar!(self, cli, partial);
-    }
 }
 
 /// `select_by_cds` parameters (config-file shape).
@@ -1283,7 +1214,6 @@ fn legacy_parameter(name: &str, prop: &serde_json::Value) -> serde_json::Value {
 /// its tool is migrated.
 fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
-        "select_by_contig" => select_by_contig_schema(),
         "select_by_cds" => select_by_cds_schema(),
         "domainate" => domainate_schema(),
         "domain_search" => domain_search_schema(),
@@ -1462,46 +1392,6 @@ fn common_help(name: &str) -> Option<&'static str> {
         "unannotated" => "Select CDSs/contigs with no domain annotation.",
         "z" => "Effective database size (Z) used for E-value calculation.",
         _ => return None,
-    })
-}
-
-fn select_by_contig_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "select_by_contig config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
-            "input": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "contigs": {"type": "array", "items": {"type": "string"}},
-            "contigs_file": {"type": ["string", "null"]},
-            "contigs_regex": {"type": ["string", "null"]},
-            "definition_regex": {"type": ["string", "null"]},
-            "sequence_regex": {"type": ["string", "null"]},
-            "domains": {"type": "array", "items": {"type": "string"}},
-            "domains_file": {"type": ["string", "null"]},
-            "domain_expr": {"type": ["string", "null"], "description": "Boolean expr (& AND, | OR, ~ NOT)"},
-            "domain_type": {"enum": ["domain", "search", "both"], "default": "domain"},
-            "databases": {"type": "array", "items": {"type": "string"}},
-            "unannotated": {"type": "boolean", "default": false},
-            "evalue": {"type": "number", "default": 100000000.0},
-            "fasta_out": {"type": "boolean", "default": false},
-            "include_taxids": {"type": "array", "items": {"type": "integer"}},
-            "exclude_taxids": {"type": "array", "items": {"type": "integer"}},
-            "taxonomy_expr": {"type": ["string", "null"]},
-            "ncbi_taxonomy_path": {"type": ["string", "null"]},
-            "first": {"type": ["integer", "null"]},
-            "length_lb": {"type": ["integer", "null"]},
-            "length_ub": {"type": ["integer", "null"]},
-            "cds_count_lb": {"type": ["integer", "null"]},
-            "cds_count_ub": {"type": ["integer", "null"]},
-            "search_score_lb": {"type": ["number", "null"]},
-            "search_score_ub": {"type": ["number", "null"]},
-            "invert": {"type": "boolean", "default": false}
-        }
     })
 }
 
@@ -2263,7 +2153,6 @@ mod tests {
 
     fn every_tool() -> Vec<(&'static str, serde_json::Value)> {
         tools![
-            "select_by_contig" => SelectByContigConfig,
             "select_by_cds" => SelectByCdsConfig,
             "domainate" => DomainateConfig,
             "domain_search" => DomainSearchConfig,
@@ -2386,7 +2275,7 @@ mod tests {
     /// The GUI reads an unmigrated tool's dialog from its old schema, converted.
     #[test]
     fn a_legacy_schema_converts_to_manifest_parameters() {
-        let m = tool_manifest("select_by_contig").unwrap();
+        let m = tool_manifest("format_db").unwrap();
         let param = |name: &str| {
             m["parameters"]
                 .as_array()
@@ -2398,7 +2287,7 @@ mod tests {
         };
         assert_eq!(param("input")["multiple"], true);
         assert_eq!(param("input")["role"], "input");
-        assert_eq!(param("invert")["kind"], "flag");
+        assert_eq!(param("force")["kind"], "flag");
     }
 
     /// A field `merge_cli` forgets is a CLI flag that silently does nothing: every
