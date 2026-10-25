@@ -5,30 +5,26 @@ description: "Annotate sequences with domains from HMM/FASTA references (step 2)
 fields:
   - name: input
     label: "Input sequences"
-    role: input_file
     file_type: sequence
-    required: true
     sources: workspace_first
     select: first
-  - name: references
+  - name: reference
     label: "References (HMM/FASTA)"
-    role: input_files
     file_type: reference
-    required: true
     sources: databases_first
     select: "database:pfam"
     prefill_priority: 1
-  - name: output
+  - name: genbank_out
     label: "Output (GenBank)"
-    role: output_file
-    required: true
     output_name: "{stem}.annotated.gb"
+  - name: fasta_out
+    label: "Output (FASTA)"
   - name: evalue
     label: "E-value"
-  - name: z
+  - name: Z
     label: "Z (db size)"
-  - name: max_domains
-    label: "Max domains"
+  - name: max_hits_per_cds
+    label: "Max hits per CDS"
   - name: max_overlap
     label: "Max overlap"
     gui_default: 0.6
@@ -44,7 +40,6 @@ fields:
     label: "Taxonomy expr"
   - name: ncbi_taxonomy_path
     label: "Taxonomy database"
-    role: input_file
     file_type: taxonomy
     sources: databases_first
     select: "database:ncbi_taxonomy"
@@ -66,6 +61,12 @@ fields:
   - name: cpu
     show: false
     label: "Cpu"
-  - name: fasta_type
+  - name: alphabet
     show: false
-    label: "Fasta type"
+    label: "Alphabet"
+  - name: batch_size
+    show: false
+    label: "Batch size"
+  - name: max_output_gb
+    show: false
+    label: "Max output (GB)"

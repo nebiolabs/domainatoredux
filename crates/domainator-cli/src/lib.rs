@@ -66,78 +66,7 @@ enum Command {
         output: PathBuf,
     },
     /// Annotate sequences with hits to reference HMMs (protein hmmsearch path).
-    Domainate {
-        /// Input sequence file (GenBank or FASTA).
-        #[arg(short, long)]
-        input: Option<PathBuf>,
-        /// Reference `.hmm` file(s).
-        #[arg(short, long, num_args = 1..)]
-        references: Vec<PathBuf>,
-        /// Output GenBank file.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// E-value threshold (default: 0.001).
-        #[arg(short = 'e', long)]
-        evalue: Option<f64>,
-        /// Drop hits with i-evalue below this (default: 0.0).
-        #[arg(long = "min_evalue")]
-        min_evalue: Option<f64>,
-        /// E-value search space size (-Z) (default: 1000).
-        #[arg(short = 'Z', long = "z")]
-        z: Option<f64>,
-        /// Maximum fractional domain overlap before filtering (>=1 disables; default 1.0).
-        #[arg(long = "max_overlap")]
-        max_overlap: Option<f64>,
-        /// Per-CDS domain cap (0 = unlimited).
-        #[arg(long = "max_domains")]
-        max_domains: Option<usize>,
-        /// hmmsearch --max (skip heuristic filters for maximum sensitivity).
-        #[arg(long = "max_mode")]
-        max_mode: bool,
-        /// Apply the overlap filter independently per database.
-        #[arg(long = "overlap_by_db")]
-        overlap_by_db: bool,
-        /// Output only contigs that had at least one hit.
-        #[arg(long = "hits_only")]
-        hits_only: bool,
-        /// Do not add Domainator annotations (keep only inputs).
-        #[arg(long = "no_annotations")]
-        no_annotations: bool,
-        /// Worker threads (0 = all cores).
-        #[arg(long)]
-        cpu: Option<usize>,
-        /// Treat FASTA input as this molecule type (protein/nucleotide).
-        #[arg(long = "fasta_type")]
-        fasta_type: Option<String>,
-        /// Only keep contigs with a taxid in this list (lineage-aware).
-        #[arg(long = "include_taxids", num_args = 1..)]
-        include_taxids: Vec<i64>,
-        /// Drop contigs with a taxid in this list (lineage-aware).
-        #[arg(long = "exclude_taxids", num_args = 1..)]
-        exclude_taxids: Vec<i64>,
-        /// Boolean taxid expression (& | ~), e.g. "2 & ~1224".
-        #[arg(long = "taxonomy_expr")]
-        taxonomy_expr: Option<String>,
-        /// Path to the NCBI taxonomy directory (default: /tmp/ncbi_taxonomy_$USER).
-        #[arg(long = "ncbi_taxonomy_path")]
-        ncbi_taxonomy_path: Option<String>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-        /// Which CDSs/proteins to search, by fragment status: include (all), exclude (skip fragments) or
-        /// only (only fragments). Default: include.
-        #[arg(long = "partial", value_parser = ["include", "exclude", "only"])]
-        partial: Option<String>,
-        /// Call genes with Orphos (Prodigal's metagenomic mode) before searching: 'all'
-        /// deletes every CDS and re-calls every nucleotide contig; 'unannotated' calls
-        /// only contigs with no CDS. Needs the orphos binary. Supply -Z too: the
-        /// database size is fixed before genes are called.
-        #[arg(long = "gene_call", value_parser = ["all", "unannotated"])]
-        gene_call: Option<String>,
-    },
+    Domainate(config::args::DomainateArgs),
     /// Search references against a (possibly sharded/BGZF/indexed) database.
     DomainSearch {
         /// Input database (GenBank or FASTA; logical name resolves shards).
@@ -1037,7 +966,7 @@ fn enforce_output_limit_gb(records: &[SeqRecord], max_gb: f64) -> Result<()> {
 
 /// `output_guardrails.max_output_gb_to_bytes` (the core port): negative or
 /// non-finite is an error, `0` disables (returns `None`).
-fn max_output_gb_to_bytes(max_gb: f64) -> Result<Option<u64>> {
+pub(crate) fn max_output_gb_to_bytes(max_gb: f64) -> Result<Option<u64>> {
     tools::output_guardrails::max_output_gb_to_bytes(max_gb).map_err(anyhow::Error::msg)
 }
 
@@ -1124,7 +1053,10 @@ fn parse_choice<T: std::str::FromStr<Err = String>>(s: &str) -> Result<T> {
 
 /// The `--gene_call` request for `domainate`/`domain_search`: Orphos in meta mode
 /// (upstream's only mode) with its default genetic code, or `None` when unset.
-fn gene_call_request(scope: Option<&str>, cpu: usize) -> Result<Option<gene_call::GeneCall>> {
+pub(crate) fn gene_call_request(
+    scope: Option<&str>,
+    cpu: usize,
+) -> Result<Option<gene_call::GeneCall>> {
     scope
         .map(|scope| {
             Ok(gene_call::GeneCall {
@@ -1141,7 +1073,7 @@ fn gene_call_request(scope: Option<&str>, cpu: usize) -> Result<Option<gene_call
 /// Compile `--include_taxids`/`--exclude_taxids`/`--taxonomy_expr` into an
 /// allowed-taxid set, loading the taxonomy from `path` when a filter is active.
 /// Returns `None` when no taxonomy filtering was requested.
-fn compile_allowed_taxids(
+pub(crate) fn compile_allowed_taxids(
     include: &[i64],
     exclude: &[i64],
     expr: Option<&str>,
@@ -1359,109 +1291,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             write_genbank(out, &records).context("writing GenBank")?;
             println!("wrote {} records to {}", records.len(), output.display());
         }
-        Command::Domainate {
-            input,
-            references,
-            output,
-            evalue,
-            min_evalue,
-            z,
-            max_overlap,
-            max_domains,
-            max_mode,
-            overlap_by_db,
-            hits_only,
-            no_annotations,
-            cpu,
-            fasta_type,
-            include_taxids,
-            exclude_taxids,
-            taxonomy_expr,
-            ncbi_taxonomy_path,
-            partial,
-            gene_call,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::DomainateConfig {
-                input: opt_path(&input)?,
-                references: paths_to_strings(&references)?,
-                output: opt_path(&output)?,
-                evalue,
-                min_evalue,
-                z,
-                max_overlap,
-                max_domains,
-                max_mode,
-                overlap_by_db,
-                hits_only,
-                no_annotations,
-                cpu,
-                fasta_type,
-                include_taxids,
-                exclude_taxids,
-                taxonomy_expr,
-                ncbi_taxonomy_path,
-                partial,
-                gene_call,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::DomainateConfig>(p)?,
-                None => config::DomainateConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let input = cfg
-                .input
-                .context("missing required `input` (-i / --input or config)")?;
-            let output = cfg
-                .output
-                .context("missing required `output` (-o / --output or config)")?;
-            let fasta_type = cfg.fasta_type.as_deref().unwrap_or("protein");
-            let records = load_typed(&PathBuf::from(&input), fasta_type)?;
-            let allowed_taxids = compile_allowed_taxids(
-                &cfg.include_taxids,
-                &cfg.exclude_taxids,
-                cfg.taxonomy_expr.as_deref(),
-                cfg.ncbi_taxonomy_path.as_deref(),
-            )?;
-            let dbs =
-                domainate::read_hmm_references(&cfg.references).context("reading references")?;
-            // Protein input cannot be searched with nucleotide references
-            // (mirrors validate_input_molecule_types).
-            if dbs.has_nucleotide() && records.iter().any(|r| r.is_protein()) {
-                anyhow::bail!("Cannot search protein inputs with a nucleotide reference.");
-            }
-            // Python `--max_domains 0` means unlimited.
-            let max_domains = match cfg.max_domains {
-                Some(0) | None => usize::MAX,
-                Some(n) => n,
-            };
-            let opts = domainate::DomainateOptions {
-                z: cfg.z.unwrap_or(1000.0),
-                evalue: cfg.evalue.unwrap_or(0.001),
-                min_evalue: cfg.min_evalue.unwrap_or(0.0),
-                max_hits: max_domains,
-                max_overlap: cfg.max_overlap.unwrap_or(1.0),
-                no_annotations: cfg.no_annotations,
-                hits_only: cfg.hits_only,
-                overlap_by_db: cfg.overlap_by_db,
-                max_mode: cfg.max_mode,
-                allowed_taxids,
-                cpu: cfg.cpu.unwrap_or(0),
-                partial: config::parse_partial(cfg.partial.as_deref())?,
-                gene_call: gene_call_request(cfg.gene_call.as_deref(), cfg.cpu.unwrap_or(0))?,
-                ..Default::default()
-            };
-            let annotated =
-                domainate::domainate(records, &dbs, &opts).context("running domainate")?;
-            write_genbank(&output, &annotated).context("writing GenBank")?;
-            println!("wrote {} records to {}", annotated.len(), output);
-        }
+        Command::Domainate(args) => commands::domainate::run(&args)?,
         Command::DomainSearch {
             input,
             references,

@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 use domainator_core::io::fasta;
 use domainator_core::io::genbank::writer::write_record;
 use domainator_core::seq::SeqRecord;
+use domainator_core::tools::output_guardrails::output_limit_message;
 
 /// Paths that mean standard output.
 pub const STDOUT_PATHS: [&str; 2] = ["-", "/dev/stdout"];
@@ -129,15 +130,62 @@ pub fn write_seq_outputs(
     genbank: Option<&str>,
     fasta_out: Option<&str>,
 ) -> Result<()> {
+    write_seq_outputs_capped(records, genbank, fasta_out, None)
+}
+
+/// A `--max_output_gb` budget for [`write_seq_outputs_capped`]: the byte limit, and
+/// the options the error suggests.
+pub struct OutputCap<'a> {
+    pub max_bytes: u64,
+    pub mitigation: &'a [&'a str],
+}
+
+/// [`write_seq_outputs`], stopping with upstream's error before a record that would
+/// take the two outputs together past `cap` (upstream `SeqOutputs.write`).
+pub fn write_seq_outputs_capped(
+    records: &[SeqRecord],
+    genbank: Option<&str>,
+    fasta_out: Option<&str>,
+    cap: Option<OutputCap<'_>>,
+) -> Result<()> {
     let mut gb = genbank.map(Output::create).transpose()?;
     let mut fa = fasta_out.map(Output::create).transpose()?;
-    if let Some(w) = gb.as_mut() {
-        for rec in records {
-            write_record(w, rec).context("writing GenBank")?;
+    let description = || {
+        [("GenBank", genbank), ("FASTA", fasta_out)]
+            .iter()
+            .filter_map(|(kind, path)| path.map(|p| format!("{kind} output '{p}'")))
+            .collect::<Vec<_>>()
+            .join(" and ")
+    };
+    let mut written: u64 = 0;
+    let (mut gb_buf, mut fa_buf) = (Vec::new(), Vec::new());
+    for rec in records {
+        gb_buf.clear();
+        fa_buf.clear();
+        if gb.is_some() {
+            write_record(&mut gb_buf, rec).context("writing GenBank")?;
         }
-    }
-    if let Some(w) = fa.as_mut() {
-        fasta::write_fasta_bp(w, records).context("writing FASTA")?;
+        if fa.is_some() {
+            fasta::write_fasta_bp(&mut fa_buf, std::slice::from_ref(rec))
+                .context("writing FASTA")?;
+        }
+        written += (gb_buf.len() + fa_buf.len()) as u64;
+        if let Some(cap) = &cap {
+            if written > cap.max_bytes {
+                anyhow::bail!(output_limit_message(
+                    &description(),
+                    written,
+                    cap.max_bytes,
+                    cap.mitigation
+                ));
+            }
+        }
+        if let Some(w) = gb.as_mut() {
+            w.write_all(&gb_buf).context("writing GenBank")?;
+        }
+        if let Some(w) = fa.as_mut() {
+            w.write_all(&fa_buf).context("writing FASTA")?;
+        }
     }
     gb.map(Output::finish).transpose()?;
     fa.map(Output::finish).transpose()?;

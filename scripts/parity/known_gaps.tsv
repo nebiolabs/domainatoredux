@@ -49,14 +49,7 @@ domain_search	test_domain_search_whole_contig_circular_pad_aligns_cds#0	differs	
 domain_search	test_domain_search_whole_contig_infernal_query#0	rust-failed	deferred:infernal	error: unexpected argument '--alphabet' found
 domain_search	test_domain_search_whole_contig_nucleotide_query#0	rust-failed	gap:feature-order	error: unexpected argument '--alphabet' found
 domain_search	test_domain_search_whole_contig_nucleotide_query_without_add_annotations#0	rust-failed	pending:1.0-cli	error: unexpected argument '--alphabet' found
-domainate	extra:test_domainator_gene_annotate_fasta_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--alphabet' found
-domainate	test_annotate_peptides#0	rust-failed	pending:1.0-cli	error: unexpected argument '--genbank_out' found
-domainate	test_annotate_peptides_fasta#0	rust-failed	pending:1.0-cli	error: unexpected argument '--genbank_out' found
-domainate	test_domainator_evalue_cutoff_filters_hits#0	rust-failed	pending:1.0-cli	error: unexpected argument '--max_hits_per_cds' found
-domainate	test_domainator_evalue_cutoff_filters_hits#1	rust-failed	upstream:hmmer-pure-rs	error: unexpected argument '--max_hits_per_cds' found
-domainate	test_domainator_infernal_cm_query#0	rust-failed	deferred:infernal	error: unexpected argument '--alphabet' found
-domainate	test_domainator_nucleotide_fasta_query_uses_nhmmer#0	rust-failed	pending:1.0-cli	error: unexpected argument '--alphabet' found
-domainate	test_domainator_nucleotide_multi_hit_annotations#0	rust-failed	pending:1.0-cli	error: unexpected argument '--alphabet' found
+domainate	test_domainator_infernal_cm_query#0	rust-failed	deferred:infernal	domainatoredux domainate: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/test/
 enum_report	test_enum_report_html_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 enum_report	test_enum_report_html_max_height_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 enum_report	test_enum_report_html_quote_escape_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found

@@ -82,11 +82,25 @@ const fn tool(name: &'static str, category: &'static str, summary: &'static str)
 /// `schema`), in upstream's order, then the port-only ones.
 pub const TOOLS: &[ToolInfo] = &[
     // annotate
-    tool(
-        "domainate",
-        "annotate",
-        "Annotate contigs or proteins with hits to HMM, sequence, or CM references.",
-    ),
+    ToolInfo {
+        migrated: true,
+        stdin: false,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        dynamic_defaults: &["ncbi_taxonomy_path"],
+        unsupported: &[
+            ("foldseek", "null"),
+            ("esm2_3di_weights", "null"),
+            ("esm2_3di_device", "\"cuda:0\""),
+            ("foldseek_device", "\"cpu\""),
+            ("foldseek_path", "null"),
+            ("taxonomy_update", "false"),
+        ],
+        ..tool(
+            "domainate",
+            "annotate",
+            "Annotate contigs or proteins with hits to HMM, sequence, or CM references.",
+        )
+    },
     tool(
         "domain_search",
         "annotate",

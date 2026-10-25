@@ -159,22 +159,27 @@ domainatoredux completion bash > ~/.local/share/bash-completion/completions/doma
 **Annotate sequences with hits to references, keeping every input record.** The workhorse
 annotator: protein HMMs and protein FASTA are searched against CDSs (or against protein
 records directly), nucleotide FASTA and nucleotide HMMs against whole contigs on both
-strands, wrapping the origin on circular contigs. Pass `-r` more than once to annotate
-against several databases in one pass.
+strands, wrapping the origin on circular contigs. Give `-r` several files to annotate
+against several databases in one pass. Writes `-o/--genbank_out` and/or `--fasta_out`
+(at least one; `-` is standard output). The input is read twice, so it cannot come from
+standard input.
 
-Key flags: `-e/--evalue` (default 0.001) and `--min_evalue`; `-Z/--z` (database size for
-E-value calculation, default 1000); `--max_overlap` (default 1.0, i.e. disabled) to drop
+Key flags: `-e/--evalue` (default 0.001, at most 10) and `--min_evalue`; `-Z` (database
+size for E-value calculation, default 1000; `0` counts the proteins and CDSs in the
+input, before any taxonomy filter); `--max_overlap` (default 1, i.e. disabled) to drop
 annotations overlapping a better hit, with `--overlap_by_db` to apply that per database;
-`--max_domains` and `--max_mode` to cap annotations per CDS; `--hits_only` to keep only
-records that hit something; `--no_annotations` to score without writing features;
-`--fasta_type` (default `protein`) to say how to read FASTA input; `--cpu` to
-parallelize independent reference profiles, including profiles in one HMM file;
-taxonomy filters. `--gene_call all|unannotated` calls genes first, exactly as
-[`gene_call`](#gene_call) does in its default meta mode, so a bare genome can be annotated
-in one step; give `-Z` with it, since the database size is fixed before genes are called.
+`--max_hits_per_cds` (default: all) and `--max_mode`; `--hits_only` to keep only
+records that hit something; `--no_annotations` (with `--hits_only`) to select records
+without writing features; `--alphabet` (default `protein`) to say how to read FASTA
+input; `--cpu` to parallelize independent reference profiles, including profiles in one
+HMM file; taxonomy filters; `--max_output_gb` (default 25, `0` disables) to stop before
+the outputs grow past that size. `--gene_call all|unannotated` calls genes first, exactly
+as [`gene_call`](#gene_call) does in its default meta mode, so a bare genome can be
+annotated in one step; give a nonzero `-Z` with it, since the database size is fixed
+before genes are called.
 
 ```bash
-domainatoredux domainate -i contigs.gb -r pfam-A.hmm -r rebase_gold.fasta \
+domainatoredux domainate -i contigs.gb -r pfam-A.hmm rebase_gold.fasta \
   -o annotated.gb -e 1e-5 --cpu 0
 ```
 

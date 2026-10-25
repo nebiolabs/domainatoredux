@@ -26,9 +26,57 @@ pub fn max_output_gb_to_bytes(max_gb: f64) -> Result<Option<u64>, String> {
     Ok(Some((max_gb * BYTES_PER_GB) as u64))
 }
 
+/// `format_bytes`: a decimal byte count for people (`999 B`, `1.50 KB`, `2.00 GB`).
+pub fn format_bytes(bytes: u64) -> String {
+    if bytes < 1000 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64;
+    for unit in ["KB", "MB", "GB", "TB", "PB"] {
+        value /= 1000.0;
+        if value < 1000.0 || unit == "PB" {
+            return format!("{value:.2} {unit}");
+        }
+    }
+    unreachable!("PB ends the loop")
+}
+
+/// `build_output_limit_message`: why a run stopped at `--max_output_gb`, and which of
+/// its options would shrink the output.
+pub fn output_limit_message(
+    description: &str,
+    projected_bytes: u64,
+    max_bytes: u64,
+    mitigation: &[&str],
+) -> String {
+    let mut message = format!(
+        "Projected {description} size is {}, which exceeds the configured limit of {}. \
+         Reduce the projected output size or raise the limit with --max_output_gb.",
+        format_bytes(projected_bytes),
+        format_bytes(max_bytes)
+    );
+    if !mitigation.is_empty() {
+        message.push_str(&format!(" Relevant options: {}.", mitigation.join(", ")));
+    }
+    message
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bytes_read_like_upstreams() {
+        assert_eq!(format_bytes(999), "999 B");
+        assert_eq!(format_bytes(1500), "1.50 KB");
+        assert_eq!(format_bytes(25_000_000_000), "25.00 GB");
+        assert_eq!(
+            output_limit_message("GenBank output 'a.gb'", 2000, 1000, &["--hits_only"]),
+            "Projected GenBank output 'a.gb' size is 2.00 KB, which exceeds the configured \
+             limit of 1.00 KB. Reduce the projected output size or raise the limit with \
+             --max_output_gb. Relevant options: --hits_only."
+        );
+    }
 
     #[test]
     fn converts_disables_and_rejects() {

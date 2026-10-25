@@ -4,6 +4,7 @@
 pub mod clean_sequences;
 pub mod color_genbank;
 pub mod deduplicate_genbank;
+pub mod domainate;
 pub mod enum_report;
 pub mod extract_domains;
 pub mod extract_peptides;

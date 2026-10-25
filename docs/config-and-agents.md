@@ -15,11 +15,12 @@ domainatoredux domainate --config annotate.yml
 
 ```yaml
 # annotate.yml
-input: contigs.gb
-references:
+input:
+  - contigs.gb
+reference:
   - pfam-A.hmm
   - rebase_gold.fasta
-output: annotated.gb
+genbank_out: annotated.gb
 evalue: 1.0e-5
 cpu: 0
 ```
@@ -27,10 +28,10 @@ cpu: 0
 The key names are the long flag names without the dashes.
 
 The tools are moving, one at a time, to the Domainator 1.0 interface, whose config files
-are **interchangeable with the Python suite's**; so far that is `sort_contigs`,
-`enum_report` and `hmmer_report`. The rest of
-this section describes the older, native format of the tools not yet moved, which is *not*
-compatible with the Python suite's files. See
+are **interchangeable with the Python suite's** (`domainate` and the selection,
+extraction and editing tools have moved; [porting status](porting-status.md) has the
+list). The rest of this section describes the older, native format of the tools not yet
+moved, which is *not* compatible with the Python suite's files. See
 [Tools on the 1.0 interface](#tools-on-the-10-interface) for the new one.
 
 ### How a config file and the command line combine
@@ -39,13 +40,13 @@ The config file is the base, and command-line flags override it:
 
 | Kind of option | Behavior |
 | --- | --- |
-| scalars (`evalue`, `cpu`, `output`) | the CLI value replaces the file's |
+| scalars (`algorithm`, `cpu`, `dense`) | the CLI value replaces the file's |
 | lists (`references`, `domains`) | the CLI value replaces the file's, when non-empty |
 | booleans (`hits_only`, `max_mode`) | **OR'd together** |
 
 ```bash
-# override just the E-value, keep everything else from the file
-domainatoredux domainate --config annotate.yml -e 1e-10
+# override just the algorithm, keep everything else from the file
+domainatoredux seq_dist --config dist.yml --algorithm hmmer_compare
 ```
 
 Two things to watch:
@@ -64,18 +65,17 @@ Because inputs may legitimately come from the file, required arguments are valid
 `--print_config` dumps the merged parameter set as YAML and exits without doing any work:
 
 ```bash
-domainatoredux domainate -i contigs.gb -r pfam-A.hmm -o out.gb --print_config
+domainatoredux seq_dist -i a.gb -r b.gb --dense d.hdf5 --print_config
 ```
 
 ```yaml
-input: contigs.gb
-references:
-- pfam-A.hmm
-output: out.gb
-evalue: null
-min_evalue: null
-z: null
-max_overlap: null
+input: a.gb
+reference: b.gb
+dense: d.hdf5
+dense_text: null
+sparse: null
+algorithm: null
+mode: null
 ...
 ```
 
@@ -86,7 +86,7 @@ and `--help` to see what each default actually is.
 The output is a valid config file, so this is also how you capture a working invocation:
 
 ```bash
-domainatoredux domainate -i contigs.gb -r pfam-A.hmm -o out.gb --print_config > annotate.yml
+domainatoredux seq_dist -i a.gb -r b.gb --dense d.hdf5 --print_config > dist.yml
 ```
 
 ### Tools on the 1.0 interface

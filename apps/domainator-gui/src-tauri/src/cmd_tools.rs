@@ -1012,7 +1012,7 @@ pub(crate) mod tests {
         ("domain_search", "input", "sequence"),
         ("domain_search", "references", "reference"),
         ("domainate", "input", "sequence"),
-        ("domainate", "references", "reference"),
+        ("domainate", "reference", "reference"),
         ("gene_call", "input", "sequence"),
         ("enum_report", "input", "sequence"),
         ("extract_domains", "input", "sequence"),
@@ -1082,7 +1082,7 @@ pub(crate) mod tests {
             .unwrap();
         let io = job_io::declared_inputs(
             spec,
-            &serde_json::json!({"input": "contigs.gb", "references": ["a.hmm", "b.hmm"], "output": "o.gb"}),
+            &serde_json::json!({"input": "contigs.gb", "reference": ["a.hmm", "b.hmm"], "genbank_out": "o.gb"}),
         );
         let roles: Vec<(&str, &str)> = io
             .iter()
@@ -1097,7 +1097,7 @@ pub(crate) mod tests {
             ]
         );
         assert_eq!(
-            job_io::declared_outputs(spec, &serde_json::json!({"output": "o.gb"})),
+            job_io::declared_outputs(spec, &serde_json::json!({"genbank_out": "o.gb"})),
             vec!["o.gb"]
         );
     }
@@ -1220,11 +1220,14 @@ pub(crate) mod tests {
     #[test]
     fn a_missing_required_input_is_refused_before_launch() {
         let root = scratch("missing-input");
-        let err =
-            match run_in_process_job("domainate", serde_json::json!({"output": "o.gb"}), &root) {
-                Err(JobFailure::Failed(e)) => e,
-                other => panic!("a job with no input must not run: {other:?}"),
-            };
+        let err = match run_in_process_job(
+            "domainate",
+            serde_json::json!({"genbank_out": "o.gb"}),
+            &root,
+        ) {
+            Err(JobFailure::Failed(e)) => e,
+            other => panic!("a job with no input must not run: {other:?}"),
+        };
         assert!(
             err.contains("missing required input") && err.contains("Input sequences"),
             "{err}"

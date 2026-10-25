@@ -107,59 +107,6 @@ macro_rules! merge_vec {
 // domainate / domain_search / seq_dist / compare_contigs / hmmer_compare
 // ---------------------------------------------------------------------------
 
-/// `domainate` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct DomainateConfig {
-    pub input: Option<String>,
-    pub references: Vec<String>,
-    pub output: Option<String>,
-    pub evalue: Option<f64>,
-    pub min_evalue: Option<f64>,
-    pub z: Option<f64>,
-    pub max_overlap: Option<f64>,
-    pub max_domains: Option<usize>,
-    pub max_mode: bool,
-    pub overlap_by_db: bool,
-    pub hits_only: bool,
-    pub no_annotations: bool,
-    pub cpu: Option<usize>,
-    pub fasta_type: Option<String>,
-    pub include_taxids: Vec<i64>,
-    pub exclude_taxids: Vec<i64>,
-    pub taxonomy_expr: Option<String>,
-    pub ncbi_taxonomy_path: Option<String>,
-    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
-    pub partial: Option<String>,
-    /// `--gene_call`: `all` | `unannotated` (Orphos, meta mode); unset = no calling.
-    pub gene_call: Option<String>,
-}
-
-impl DomainateConfig {
-    pub fn merge_cli(&mut self, cli: DomainateConfig) {
-        merge_scalar!(self, cli, input);
-        merge_vec!(self, cli, references);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, evalue);
-        merge_scalar!(self, cli, min_evalue);
-        merge_scalar!(self, cli, z);
-        merge_scalar!(self, cli, max_overlap);
-        merge_scalar!(self, cli, max_domains);
-        self.max_mode |= cli.max_mode;
-        self.overlap_by_db |= cli.overlap_by_db;
-        self.hits_only |= cli.hits_only;
-        self.no_annotations |= cli.no_annotations;
-        merge_scalar!(self, cli, cpu);
-        merge_scalar!(self, cli, fasta_type);
-        merge_vec!(self, cli, include_taxids);
-        merge_vec!(self, cli, exclude_taxids);
-        merge_scalar!(self, cli, taxonomy_expr);
-        merge_scalar!(self, cli, ncbi_taxonomy_path);
-        merge_scalar!(self, cli, partial);
-        merge_scalar!(self, cli, gene_call);
-    }
-}
-
 /// `domain_search` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -806,7 +753,6 @@ fn legacy_parameter(name: &str, prop: &serde_json::Value) -> serde_json::Value {
 /// its tool is migrated.
 fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
-        "domainate" => domainate_schema(),
         "domain_search" => domain_search_schema(),
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
@@ -973,38 +919,6 @@ fn common_help(name: &str) -> Option<&'static str> {
         "unannotated" => "Select CDSs/contigs with no domain annotation.",
         "z" => "Effective database size (Z) used for E-value calculation.",
         _ => return None,
-    })
-}
-
-fn domainate_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "domainate config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
-            "input": {"type": ["string", "null"], "description": "Sequence file (GenBank/FASTA)"},
-            "references": {"type": "array", "items": {"type": "string"}, "description": ".hmm reference files"},
-            "output": {"type": ["string", "null"]},
-            "evalue": {"type": "number", "default": 0.001},
-            "min_evalue": {"type": "number", "default": 0.0, "description": "Drop hits with i-evalue below this"},
-            "z": {"type": "number", "default": 1000.0, "description": "E-value search space size (-Z)"},
-            "max_overlap": {"type": "number", "default": 1.0},
-            "max_domains": {"type": ["integer", "null"], "description": "Per-CDS domain cap (0/unset = unlimited)"},
-            "max_mode": {"type": "boolean", "default": false, "description": "hmmsearch --max (max sensitivity)"},
-            "overlap_by_db": {"type": "boolean", "default": false},
-            "hits_only": {"type": "boolean", "default": false, "description": "Output only contigs with a hit"},
-            "no_annotations": {"type": "boolean", "default": false},
-            "cpu": {"type": ["integer", "null"], "description": "Worker threads (0 = all cores)"},
-            "fasta_type": {"enum": ["protein", "nucleotide", null]},
-            "include_taxids": {"type": "array", "items": {"type": "integer"}},
-            "exclude_taxids": {"type": "array", "items": {"type": "integer"}},
-            "taxonomy_expr": {"type": ["string", "null"]},
-            "ncbi_taxonomy_path": {"type": ["string", "null"]},
-            "gene_call": {"enum": ["all", "unannotated", null], "description": GENE_CALL_HELP}
-        }
     })
 }
 
@@ -1460,7 +1374,6 @@ mod tests {
 
     fn every_tool() -> Vec<(&'static str, serde_json::Value)> {
         tools![
-            "domainate" => DomainateConfig,
             "domain_search" => DomainSearchConfig,
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
@@ -1608,30 +1521,10 @@ mod tests {
             serde_json::to_value(&merged).unwrap(),
             serde_json::to_value(&cli).unwrap()
         );
-        for (tool, mut cfg) in [
-            (
-                "domainate",
-                serde_json::to_value(DomainateConfig::default()).unwrap(),
-            ),
-            (
-                "domain_search",
-                serde_json::to_value(DomainSearchConfig::default()).unwrap(),
-            ),
-        ] {
-            cfg["gene_call"] = "all".into();
-            let merged = match tool {
-                "domainate" => {
-                    let mut m = DomainateConfig::default();
-                    m.merge_cli(serde_json::from_value(cfg).unwrap());
-                    m.gene_call
-                }
-                _ => {
-                    let mut m = DomainSearchConfig::default();
-                    m.merge_cli(serde_json::from_value(cfg).unwrap());
-                    m.gene_call
-                }
-            };
-            assert_eq!(merged.as_deref(), Some("all"), "{tool}");
-        }
+        let mut cfg = serde_json::to_value(DomainSearchConfig::default()).unwrap();
+        cfg["gene_call"] = "all".into();
+        let mut m = DomainSearchConfig::default();
+        m.merge_cli(serde_json::from_value(cfg).unwrap());
+        assert_eq!(m.gene_call.as_deref(), Some("all"));
     }
 }

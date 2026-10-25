@@ -104,20 +104,20 @@ fn every_number_option_rejects_nan_and_inf() {
                 if !matches!(ty, "number" | "integer") {
                     continue;
                 }
-                let long = arg.get_long().unwrap();
+                // `-Z` has no long flag.
+                let flag = match arg.get_long() {
+                    Some(long) => format!("--{long}"),
+                    None => format!("-{}", arg.get_short().unwrap()),
+                };
                 for bad in ["nan", "inf"] {
-                    let argv: Vec<OsString> = [
-                        "domainatoredux",
-                        info.name,
-                        &format!("--{long}={bad}"),
-                        "--print_config",
-                    ]
-                    .iter()
-                    .map(OsString::from)
-                    .collect();
+                    let argv: Vec<OsString> =
+                        ["domainatoredux", info.name, &flag, bad, "--print_config"]
+                            .iter()
+                            .map(OsString::from)
+                            .collect();
                     assert!(
                         domainator_cli::run(argv).is_err(),
-                        "{} --{long} accepted {bad}",
+                        "{} {flag} accepted {bad}",
                         info.name
                     );
                 }

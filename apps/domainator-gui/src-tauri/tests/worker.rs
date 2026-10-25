@@ -232,9 +232,9 @@ fn a_worker_run_matches_the_cli() {
     let (via_worker, via_cli) = (d.join("worker.gb"), d.join("cli.gb"));
     let config = d.join("worker-config.json");
     let params = serde_json::json!({
-        "input": data.join("FeSOD_20.fasta"),
-        "references": [data.join("FeSOD_pfam.hmm")],
-        "output": via_worker,
+        "input": [data.join("FeSOD_20.fasta")],
+        "reference": [data.join("FeSOD_pfam.hmm")],
+        "genbank_out": via_worker,
         "cpu": 2,
     });
     std::fs::write(&config, serde_json::to_vec(&params).unwrap()).unwrap();
@@ -253,7 +253,8 @@ fn a_worker_run_matches_the_cli() {
     .wait()
     .unwrap();
     assert!(exit.status.success(), "{}", exit.stderr);
-    assert!(exit.stdout.contains("wrote 20 records"), "{}", exit.stdout);
+    // Standard output may be carrying an output (`-`), so the tool says nothing there.
+    assert!(exit.stdout.is_empty(), "{}", exit.stdout);
 
     let cli: Vec<OsString> = vec![
         "domainatoredux".into(),
