@@ -184,9 +184,129 @@ fn efi_logs(m: &DataMatrix, nr: usize, nc: usize) -> (Vec<f64>, Vec<f64>) {
     (rl, cl)
 }
 
+/// The `--symmetrize` choices (upstream `SYMMETRIZE_CHOICES`).
+pub const SYMMETRIZE_CHOICES: [&str; 4] = ["none", "min", "max", "mean"];
+
+/// Reconcile the two directions of every pair of a square matrix (upstream
+/// `symmetrize_matrix`): both cells of a pair get the `max`, `min` or `mean` of the
+/// two; `none` leaves `m` alone. Apply it to raw values, before any `--mode`
+/// transform. A pair stored in one direction only has a zero in the other, so `min`
+/// deletes it and `mean` halves it. A sparse matrix stays sparse, zeros dropped.
+pub fn symmetrize(m: &mut DataMatrix, how: &str) -> Result<(), String> {
+    let combine: fn(f64, f64) -> f64 = match how {
+        "none" => return Ok(()),
+        "max" => f64::max,
+        "min" => f64::min,
+        "mean" => |a, b| (a + b) / 2.0,
+        other => {
+            return Err(format!(
+                "Unknown symmetrize method: {other:?}, expected one of {SYMMETRIZE_CHOICES:?}"
+            ))
+        }
+    };
+    let n = m.nrows();
+    if n != m.ncols() {
+        return Err("Only a square matrix can be symmetrized.".into());
+    }
+    match &mut m.storage {
+        Storage::Dense(d) => {
+            for r in 0..n {
+                for c in r..n {
+                    let v = combine(d[r * n + c], d[c * n + r]);
+                    d[r * n + c] = v;
+                    d[c * n + r] = v;
+                }
+            }
+        }
+        Storage::Sparse {
+            values,
+            indices,
+            indptr,
+        } => {
+            let mut cells = std::collections::BTreeMap::new();
+            for r in 0..n {
+                for k in csr_row(indptr, r) {
+                    cells.insert((r, super::csr_index(indices[k])), values[k]);
+                }
+            }
+            let mut out = std::collections::BTreeMap::new();
+            for (&(r, c), &v) in &cells {
+                let t = cells.get(&(c, r)).copied().unwrap_or(0.0);
+                out.insert((r, c), combine(v, t));
+                out.insert((c, r), combine(t, v));
+            }
+            let (mut vals, mut idx, mut ptr) = (Vec::new(), Vec::new(), vec![0i32; n + 1]);
+            for ((r, c), v) in out {
+                if v != 0.0 {
+                    vals.push(v);
+                    idx.push(i32::try_from(c).map_err(|e| e.to_string())?);
+                    ptr[r + 1] += 1;
+                }
+            }
+            for r in 0..n {
+                ptr[r + 1] += ptr[r];
+            }
+            (*values, *indices, *indptr) = (vals, idx, ptr);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sparse(n: usize, cells: &[(usize, usize, f64)]) -> DataMatrix {
+        let mut m = mat(vec![0.0; n * n]);
+        m.rows = (0..n).map(|i| i.to_string()).collect();
+        m.cols = m.rows.clone();
+        let mut d = vec![0.0; n * n];
+        for &(r, c, v) in cells {
+            d[r * n + c] = v;
+        }
+        let (mut values, mut indices, mut indptr) = (Vec::new(), Vec::new(), vec![0i32]);
+        for r in 0..n {
+            for c in 0..n {
+                if d[r * n + c] != 0.0 {
+                    values.push(d[r * n + c]);
+                    indices.push(c as i32);
+                }
+            }
+            indptr.push(values.len() as i32);
+        }
+        m.storage = Storage::Sparse {
+            values,
+            indices,
+            indptr,
+        };
+        m
+    }
+
+    /// A pair found one way only is kept by max, deleted by min and halved by mean
+    /// (upstream's documented `--symmetrize` behavior), sparse and dense alike.
+    #[test]
+    fn symmetrize_reconciles_both_directions() {
+        let cells = [(0, 1, 4.0), (1, 0, 2.0), (0, 2, 6.0), (2, 2, 5.0)];
+        for (how, want) in [
+            ("max", [0.0, 4.0, 6.0, 4.0, 0.0, 0.0, 6.0, 0.0, 5.0]),
+            ("min", [0.0, 2.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 5.0]),
+            ("mean", [0.0, 3.0, 3.0, 3.0, 0.0, 0.0, 3.0, 0.0, 5.0]),
+        ] {
+            let mut m = sparse(3, &cells);
+            symmetrize(&mut m, how).unwrap();
+            assert_eq!(m.densify(), want, "{how} (sparse)");
+            if let Storage::Sparse { values, .. } = &m.storage {
+                assert!(values.iter().all(|&v| v != 0.0), "{how}: zeros stored");
+            }
+            let mut d = sparse(3, &cells).to_dense();
+            symmetrize(&mut d, how).unwrap();
+            assert_eq!(d.densify(), want, "{how} (dense)");
+        }
+        let mut m = sparse(3, &cells);
+        symmetrize(&mut m, "none").unwrap();
+        assert_eq!(m.densify()[1], 4.0);
+        assert_eq!(m.densify()[3], 2.0);
+    }
 
     fn mat(d: Vec<f64>) -> DataMatrix {
         DataMatrix {

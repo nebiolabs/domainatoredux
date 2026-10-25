@@ -257,11 +257,17 @@ pub const TOOLS: &[ToolInfo] = &[
         "Score and align pairs of HMM profiles.",
     ),
     // compare
-    tool(
-        "seq_dist",
-        "compare",
-        "Compute similarity scores between sequences or profiles.",
-    ),
+    ToolInfo {
+        migrated: true,
+        stdin: false,
+        required_outputs: Some(&["hdf_out", "dense_text_out"]),
+        no_stdout: &["hdf_out"],
+        ..tool(
+            "seq_dist",
+            "compare",
+            "Compute similarity scores between sequences or profiles.",
+        )
+    },
     tool(
         "compare_contigs",
         "compare",

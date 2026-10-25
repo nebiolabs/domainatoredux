@@ -176,37 +176,6 @@ matrix_report	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"
 plot_contigs	-	tool	false	true	deferred:unported-tool	
 rotate_contigs	-	tool	false	true	todo:new-tool	phase 6 of the 1.0 sync
 select_by_contig	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
-seq_dist	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-seq_dist	-	required_outputs	null	["hdf_out","dense_text_out"]	todo:1.0-cli	
-seq_dist	algorithm	default	null	"diamond_us"	todo:1.0-cli	
-seq_dist	cpu	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-seq_dist	cpu	default	null	0	todo:1.0-cli	
-seq_dist	dense	extra	{"name":"dense","flags":["--dense"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-seq_dist	dense_text	extra	{"name":"dense_text","flags":["--dense_text"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-seq_dist	dense_text_out	missing	null	{"default":null,"flags":["--dense_text_out"],"kind":"path","name":"dense_text_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-seq_dist	diamond_args	missing	null	{"default":null,"flags":["--diamond_args"],"kind":"value","name":"diamond_args","required":false,"type":"string"}	todo:1.0-cli	
-seq_dist	diamond_path	missing	null	{"default":null,"flags":["--diamond_path"],"kind":"path","name":"diamond_path","required":false,"role":"program","type":"string"}	todo:1.0-cli	
-seq_dist	hdf_out	missing	null	{"default":null,"flags":["-o","--hdf_out"],"kind":"path","name":"hdf_out","required":false,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
-seq_dist	input	required	false	true	todo:1.0-cli	
-seq_dist	input	stdin	true	false	todo:1.0-cli	
-seq_dist	input_format	missing	null	{"choices":["fasta","genbank","hmm"],"default":null,"flags":["--input_format"],"kind":"value","name":"input_format","required":false,"type":"string"}	todo:1.0-cli	
-seq_dist	k	extra	{"name":"k","flags":["-k","--k"],"default":null,"kind":"value","type":"integer","min":0,"required":false}	null	todo:1.0-cli	
-seq_dist	knn	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":1,"max":null,"exclusive_min":null}	todo:1.0-cli	
-seq_dist	lb	extra	{"name":"lb","flags":["--lb"],"default":null,"kind":"value","type":"number","required":false}	null	todo:1.0-cli	
-seq_dist	max_hits_per_query	missing	null	{"default":null,"flags":["--max_hits_per_query"],"kind":"value","name":"max_hits_per_query","required":false,"type":"integer"}	todo:1.0-cli	
-seq_dist	max_output_gb	default	null	25	todo:1.0-cli	
-seq_dist	mode	choices	null	["bool","efi_score","efi_score_dist","norm_score","row_norm_score","score","score_dist"]	todo:1.0-cli	
-seq_dist	mode	default	null	"score"	todo:1.0-cli	
-seq_dist	mst	missing	null	{"default":false,"flags":["--mst"],"kind":"flag","name":"mst","sets":true,"type":"boolean"}	todo:1.0-cli	
-seq_dist	mst_knn	extra	{"name":"mst_knn","flags":["--mst_knn"],"default":null,"kind":"value","type":"integer","min":0,"required":false}	null	todo:1.0-cli	
-seq_dist	params	extra	{"name":"params","flags":["--params"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-seq_dist	progress	missing	null	{"default":false,"flags":["--progress"],"kind":"flag","name":"progress","sets":true,"type":"boolean"}	todo:1.0-cli	
-seq_dist	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-seq_dist	reference_format	missing	null	{"choices":["fasta","genbank","hmm"],"default":null,"flags":["--reference_format"],"kind":"value","name":"reference_format","required":false,"type":"string"}	todo:1.0-cli	
-seq_dist	sparse	extra	{"name":"sparse","flags":["--sparse"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-seq_dist	symmetrize	missing	null	{"choices":["none","min","max","mean"],"default":"none","flags":["--symmetrize"],"kind":"value","name":"symmetrize","required":false,"type":"string"}	todo:1.0-cli	
-seq_dist	threshold	missing	null	{"default":0,"flags":["--threshold"],"kind":"value","name":"threshold","required":false,"type":"number"}	todo:1.0-cli	
-seq_dist	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 split_by_cluster	-	tool	false	true	deferred:unported-tool	
 ssn_navigator	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
 ssn_navigator	-	required_outputs	null	["json_out"]	todo:1.0-cli	

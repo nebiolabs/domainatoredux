@@ -89,7 +89,8 @@ alignment or gene-calling program, and **only** if you ask for that algorithm:
 
 Each is found by the first of these that works:
 
-1. the tool's own `--bin_path` flag;
+1. the tool's own path option (`--diamond_path`, `--cdhit_path`, `--usearch_path`;
+   `gene_call --bin_path`);
 2. the environment variable `$DOMAINATOREDUX_DIAMOND`, `$DOMAINATOREDUX_CDHIT`,
    `$DOMAINATOREDUX_USEARCH` or `$DOMAINATOREDUX_ORPHOS`;
 3. a bundled copy at `external/<program>/` next to the executable;

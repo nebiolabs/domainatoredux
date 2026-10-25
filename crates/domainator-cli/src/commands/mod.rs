@@ -16,6 +16,7 @@ pub mod hmmer_report;
 pub mod select_by_cds;
 pub mod select_by_contig;
 pub mod select_by_coord;
+pub mod seq_dist;
 pub mod sort_contigs;
 pub mod trim_contigs;
 

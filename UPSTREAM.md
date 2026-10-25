@@ -165,7 +165,12 @@ Tracked so a later sync does not mistake them for oversights:
 - **The ward-clustered GenBank report** `compare_contigs -o`, and its `--mst_knn`
   projections. (`deferred:ward-report`.)
 - **Infernal `.cm` references** in `domainate`/`domain_search`. (`deferred:infernal`.)
-- **`--progress`** on `seq_dist` and `compare_contigs`. (`deferred:progress`.)
+- **`--progress`** draws no progress bar: `seq_dist` accepts and ignores it,
+  `compare_contigs` does not have it yet. (`deferred:progress`.)
+- **`seq_dist`'s diamond diagnostics**: the advisory before a large all-vs-all diamond
+  search (`build_diamond_preflight_warning`) and the explained failures (out of disk or
+  memory, a rejected `--diamond_args` option, unreadable input:
+  `build_diamond_failure_message`). A failed run reports diamond's own stderr instead.
 - **`--partial` on `find_features` and `domainator_db_download`** (`bdc74bb`). Neither tool
   is ported. The GUI's managed UniProt download could take the same filter later.
 
@@ -173,16 +178,16 @@ Tracked so a later sync does not mistake them for oversights:
 
 `scripts/parity/known_gaps.tsv` holds every upstream invocation that does not reproduce,
 machine-checked on each sweep so none can be quietly forgotten. One open `gap:` row remains
-(five invocations of it); everything else is a deliberate deferral or a dependency issue:
+(five invocations of it); everything else is a deliberate deferral, or `pending:` while the
+1.0 migration runs:
 
 | class | rows | |
 |---|---|---|
 | `deferred:html` | 9 | `--html` for `enum_report`, `matrix_report`, `summary_report`; `--json` is offered instead |
 | `gap:feature-order` | 5 | `domain_search` emits tied-coordinate features in the other order, below |
 | `deferred:ward-report` | 4 | `compare_contigs -o`, the ward-clustered GenBank report |
-| `deferred:progress` | 3 | `seq_dist` / `compare_contigs` `--progress`; intentionally not ported |
 | `deferred:infernal` | 2 | `.cm` references |
-| `upstream:hmmer-pure-rs` | 1 | a `domainate --evalue 1e-40` hit that lands on the other side of the cutoff |
+| `deferred:progress` | 1 | `compare_contigs --progress` |
 
 A `tolerated` row is one where the semantic comparator passed but the **bytes differ**, so
 the gap list structurally cannot hold it. Diffing those bytes is the single most productive

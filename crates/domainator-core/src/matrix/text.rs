@@ -93,10 +93,14 @@ pub fn read_dense_text(path: &str) -> io::Result<DataMatrix> {
 
 /// Write `m` as a dense tab-separated matrix to `path`.
 pub fn write_dense_text(path: &str, m: &DataMatrix) -> io::Result<()> {
+    let file = std::fs::File::create(path)?;
+    write_dense_text_to(&mut io::BufWriter::new(file), m)
+}
+
+/// [`write_dense_text`] to any writer.
+pub fn write_dense_text_to(w: &mut impl Write, m: &DataMatrix) -> io::Result<()> {
     let (nr, nc) = (m.nrows(), m.ncols());
     let dense = m.densify();
-    let file = std::fs::File::create(path)?;
-    let mut w = io::BufWriter::new(file);
 
     // Header: empty first cell, then column labels.
     w.write_all(b"\t")?;

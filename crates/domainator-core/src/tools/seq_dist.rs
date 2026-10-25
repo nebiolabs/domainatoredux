@@ -13,13 +13,13 @@ use std::process::{Command, Stdio};
 
 use crate::io::{detect_filetype, fasta, genbank::read_genbank, FileType};
 use crate::matrix::mst_knn::apply_mst_knn;
-use crate::matrix::transform::apply_mode;
+use crate::matrix::transform::{apply_mode, symmetrize, transform_values};
 use crate::matrix::{build_sparse_max, DataMatrix};
 
 /// `--mode` values whose post-transform value is computable per edge (no global
-/// matrix maxima), and therefore compatible with `--mst_knn`. Mirrors
-/// `seq_dist.MST_KNN_STREAMABLE_MODES`.
-pub const MST_KNN_STREAMABLE_MODES: [&str; 3] = ["score", "bool", "efi_score"];
+/// matrix maxima), and therefore compatible with `--mst`/`--knn`. Mirrors
+/// `seq_dist.SPARSIFY_STREAMABLE_MODES`, in the sorted order its errors print.
+pub const SPARSIFY_STREAMABLE_MODES: [&str; 3] = ["bool", "efi_score", "score"];
 use crate::search::hmm_compare::hmm_compare_scores;
 use crate::search::seq_compare::{hmmsearch_scores, phmmer_scores, CmpResult};
 
@@ -176,20 +176,24 @@ pub struct SeqDistOptions {
     pub algorithm: String,
     /// Matrix value type / `--mode` (`"score"`, `"bool"`, `"norm_score"`, ...).
     pub mode: String,
-    /// Round raw scores `<= lb` down to zero (applies before any mode transform).
-    pub lb: f64,
-    /// Keep at most this many non-zero entries per input row (top-N by score).
-    pub k: Option<usize>,
-    /// Prune the output to MST ∪ OR-symmetric kNN edges (integer > 1). Requires a
-    /// square symmetric comparison (reference == input) and a streamable `--mode`.
-    /// When set, `k` is ignored. Mirrors `seq_dist --mst_knn`.
-    pub mst_knn: Option<usize>,
-    /// Pure OR-symmetric kNN (`--knn`), without the spanning tree. Mutually exclusive
-    /// with `mst_knn`.
+    /// `--threshold`: drop raw scores `<= threshold` (before any mode transform).
+    pub threshold: f64,
+    /// `--max_hits_per_query`: keep each input row's best hits only. Caps the search
+    /// itself, before `--mst`/`--knn` and `--symmetrize`.
+    pub max_hits_per_query: Option<usize>,
+    /// `--mst`: keep the maximum spanning forest's edges (with `knn`, the union).
+    /// Requires a square comparison (reference == input) and a streamable `--mode`.
+    pub mst: bool,
+    /// `--knn`: keep the OR-symmetric k-nearest-neighbor edges.
     pub knn: Option<usize>,
-    /// Extra `(flag, value)` options forwarded verbatim to `diamond blastp`
-    /// (`--params`). A `None` value means a bare flag. See [`RESERVED_DIAMOND_PARAMS`].
-    pub params: Vec<(String, Option<String>)>,
+    /// `--symmetrize`: `none`, `max`, `min` or `mean` (see
+    /// [`crate::matrix::transform::symmetrize`]).
+    pub symmetrize: String,
+    /// Extra `(flag, value)` options for `diamond blastp` (`--diamond_args`, from
+    /// [`parse_diamond_args`]). A `None` value means a bare flag.
+    pub diamond_args: Vec<(String, Option<String>)>,
+    /// `--diamond_path`: the diamond executable, instead of locating it.
+    pub diamond_path: Option<String>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
 }
@@ -199,14 +203,29 @@ impl Default for SeqDistOptions {
         SeqDistOptions {
             algorithm: "diamond_us".to_string(),
             mode: "score".to_string(),
-            lb: 0.0,
-            k: None,
-            mst_knn: None,
+            threshold: 0.0,
+            max_hits_per_query: None,
+            mst: false,
             knn: None,
-            params: Vec::new(),
+            symmetrize: "none".to_string(),
+            diamond_args: Vec::new(),
+            diamond_path: None,
             cpu: 0,
         }
     }
+}
+
+/// `--mst`/`--knn` as the user typed them, e.g. `--mst --knn 5`, for error messages
+/// (upstream `sparsify_option_label`).
+pub fn sparsify_option_label(mst: bool, knn: Option<usize>) -> String {
+    let mut parts = Vec::new();
+    if mst {
+        parts.push("--mst".to_string());
+    }
+    if let Some(k) = knn {
+        parts.push(format!("--knn {k}"));
+    }
+    parts.join(" ")
 }
 
 /// Compute the similarity matrix. `input`/`reference` are paths; when `reference`
@@ -222,43 +241,41 @@ pub fn seq_dist(
     let ref_kind = reference_kind.unwrap_or(input_kind);
     let same = ref_path == input;
 
-    if opts.mst_knn.is_some() && opts.knn.is_some() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "--mst_knn and --knn are mutually exclusive (--mst_knn k == --mst --knn k).",
-        ));
-    }
-    if opts.mst_knn.is_some() || opts.knn.is_some() {
-        if !MST_KNN_STREAMABLE_MODES.contains(&opts.mode.as_str()) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "{} is only supported with --mode {:?} (modes that normalize \
-                     against global matrix maxima cannot be pruned per edge); got '{}'",
-                    if opts.knn.is_some() {
-                        "--knn"
-                    } else {
-                        "--mst_knn"
-                    },
-                    MST_KNN_STREAMABLE_MODES,
-                    opts.mode
-                ),
-            ));
+    let invalid = |msg: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, msg);
+    let sparsify = opts.mst || opts.knn.is_some();
+    if sparsify {
+        let option = sparsify_option_label(opts.mst, opts.knn);
+        let mode = &opts.mode;
+        // Python's rendering of the list, as upstream prints it.
+        let modes = format!("['{}']", SPARSIFY_STREAMABLE_MODES.join("', '"));
+        if !SPARSIFY_STREAMABLE_MODES.contains(&mode.as_str()) {
+            return Err(invalid(format!(
+                "{option} is only supported with --mode {modes} (modes that \
+                 normalize against global matrix maxima cannot be streamed). For '{mode}', run \
+                 'seq_dist --mode score --hdf_out out.hdf5' then 'transform_matrix -i out.hdf5 \
+                 --mode {mode} {option} --hdf_out pruned.hdf5'."
+            )));
         }
         if !same {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "{} requires a square, symmetric comparison (reference must be the \
-                     same file as input)",
-                    if opts.knn.is_some() {
-                        "--knn"
-                    } else {
-                        "--mst_knn"
-                    }
-                ),
-            ));
+            return Err(invalid(format!(
+                "{option} requires a square, symmetric comparison (reference must be the same \
+                 file as input)."
+            )));
         }
+        if opts.symmetrize != "none" {
+            return Err(invalid(format!(
+                "{option} output is always max-symmetric, so --symmetrize {} cannot be applied \
+                 on top of it.",
+                opts.symmetrize
+            )));
+        }
+    }
+    if opts.symmetrize != "none" && !same {
+        return Err(invalid(
+            "--symmetrize requires a square, symmetric comparison (reference must be the same \
+             file as input)."
+                .into(),
+        ));
     }
 
     // Resolve the algorithm. An HMM-vs-HMM comparison is always hmmer_compare
@@ -305,8 +322,6 @@ pub fn seq_dist(
         }
     }
 
-    let bool_mode = opts.mode == "bool";
-
     // Score every (input, reference) pair and reduce to one max value per cell,
     // keyed by (row, col) index. The diamond path streams the subprocess output
     // straight into the cell map (no large intermediate table); the hmmer paths
@@ -321,7 +336,6 @@ pub fn seq_dist(
                 same,
                 sensitivity,
                 opts,
-                bool_mode,
             )?,
             _ => crate::parallel::with_threads(opts.cpu, || -> std::io::Result<_> {
                 let (results, row_index, col_index): (Vec<CmpResult>, NameIndex, NameIndex) =
@@ -329,29 +343,36 @@ pub fn seq_dist(
                         // hmmer_compare: profile-vs-profile Viterbi alignment.
                         let (q_hmms, row_index) = load_hmms(input)?;
                         if same {
-                            let results = hmm_compare_scores(&q_hmms, &q_hmms, opts.lb);
+                            let results = hmm_compare_scores(&q_hmms, &q_hmms, opts.threshold);
                             let col_index = clone_index(&row_index);
                             (results, row_index, col_index)
                         } else {
                             let (r_hmms, col_index) = load_hmms(ref_path)?;
-                            let results = hmm_compare_scores(&q_hmms, &r_hmms, opts.lb);
+                            let results = hmm_compare_scores(&q_hmms, &r_hmms, opts.threshold);
                             (results, row_index, col_index)
                         }
                     } else {
                         let input_seqs = load_seqs(input, input_kind)?;
                         if ref_kind == InputKind::Hmm {
                             let (hmms, col_index) = load_hmms(ref_path)?;
-                            let results = hmmsearch_scores(&input_seqs.records, &hmms, opts.lb);
+                            let results =
+                                hmmsearch_scores(&input_seqs.records, &hmms, opts.threshold);
                             (results, input_seqs.index, col_index)
                         } else if same {
                             let col_index = clone_index(&input_seqs.index);
-                            let results =
-                                phmmer_scores(&input_seqs.records, &input_seqs.records, opts.lb);
+                            let results = phmmer_scores(
+                                &input_seqs.records,
+                                &input_seqs.records,
+                                opts.threshold,
+                            );
                             (results, input_seqs.index, col_index)
                         } else {
                             let ref_seqs = load_seqs(ref_path, ref_kind)?;
-                            let results =
-                                phmmer_scores(&input_seqs.records, &ref_seqs.records, opts.lb);
+                            let results = phmmer_scores(
+                                &input_seqs.records,
+                                &ref_seqs.records,
+                                opts.threshold,
+                            );
                             (results, input_seqs.index, ref_seqs.index)
                         }
                     };
@@ -364,7 +385,7 @@ pub fn seq_dist(
                     else {
                         continue;
                     };
-                    let v = if bool_mode { 1.0 } else { r.score };
+                    let v = r.score;
                     let e = cells
                         .entry((ri as i64, ci as i64))
                         .or_insert(f64::NEG_INFINITY);
@@ -379,19 +400,13 @@ pub fn seq_dist(
     let nrows = row_index.names.len();
     let ncols = col_index.names.len();
 
-    // Optional top-k per row (by score desc, then column asc — matches the
-    // Python `(-score, reference)` ordering with column index standing in for
-    // the reference name order).
-    // `--mst_knn` bypasses per-row top-k so the pruning sees the full candidate
-    // set (matching the Python streaming path's `k=None`). The diamond path
-    // already capped targets per query via `--max-target-seqs`.
-    let k = if opts.mst_knn.is_some()
-        || opts.knn.is_some()
-        || matches!(algorithm, Algorithm::Diamond(_))
-    {
-        None
-    } else {
-        opts.k
+    // `--max_hits_per_query`: each row's best hits. Upstream keeps the largest
+    // `(score, input, reference)` results on a heap, so of tied scores the
+    // reference names that sort last stay. The diamond path already capped targets
+    // per query via `--max-target-seqs`.
+    let k = match algorithm {
+        Algorithm::Diamond(_) => None,
+        _ => opts.max_hits_per_query,
     };
     let mut rows_v: Vec<i64> = Vec::new();
     let mut cols_v: Vec<i64> = Vec::new();
@@ -402,7 +417,8 @@ pub fn seq_dist(
             by_row.entry(ri).or_default().push((ci, v));
         }
         for (ri, mut entries) in by_row {
-            entries.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+            let name = |c: i64| &col_index.names[usize::try_from(c).expect("a name index")];
+            entries.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| name(b.0).cmp(name(a.0))));
             entries.truncate(k);
             for (ci, v) in entries {
                 rows_v.push(ri);
@@ -428,25 +444,34 @@ pub fn seq_dist(
         storage,
     };
 
-    apply_mode(&mut matrix, &opts.mode);
-
-    // Prune to MST ∪ OR-symmetric kNN. The raw-score lower bound was already
-    // applied during scoring (`opts.lb`), so the pruning runs at lower_bound=0
-    // on the post-mode values (matching the Python streaming path).
-    if let Some((k, include_mst)) = opts
-        .mst_knn
-        .map(|k| (k, true))
-        .or_else(|| opts.knn.map(|k| (k, false)))
-    {
-        matrix = apply_mst_knn(&matrix, k, 0.0, include_mst);
+    if !sparsify {
+        // `bool` cells are 1 before `--symmetrize`, which reconciles raw values.
+        if opts.mode == "bool" {
+            transform_values(&mut matrix, "bool");
+        }
+        symmetrize(&mut matrix, &opts.symmetrize).map_err(invalid)?;
+        apply_mode(&mut matrix, &opts.mode);
+        return Ok(matrix);
+    }
+    // Prune to MST ∪ OR-symmetric kNN. The raw-score `--threshold` was already
+    // applied during scoring, so the pruning runs at lower_bound=0 on the per-edge
+    // values (matching the Python streaming path). `bool` selects on the raw scores
+    // and keeps the selected cells as 1.
+    if opts.mode != "bool" {
+        apply_mode(&mut matrix, &opts.mode);
+    }
+    let include_mst = opts.mst;
+    matrix = apply_mst_knn(&matrix, opts.knn.unwrap_or(0), 0.0, include_mst);
+    if opts.mode == "bool" {
+        apply_mode(&mut matrix, "bool");
     }
     Ok(matrix)
 }
 
-/// diamond options `seq_dist` sets itself. Overriding one through `--params` would
+/// diamond options `seq_dist` sets itself. Overriding one through `--diamond_args` would
 /// either break parsing of the result stream or silently contradict a `seq_dist` option,
 /// so each is rejected with a pointer to the option that does control it.
-pub const RESERVED_DIAMOND_PARAMS: [(&str, &str); 21] = [
+pub const RESERVED_DIAMOND_PARAMS: [(&str, &str); 19] = [
     ("-q", "-i/--input"),
     ("--query", "-i/--input"),
     ("-d", "-r/--reference"),
@@ -464,7 +489,7 @@ pub const RESERVED_DIAMOND_PARAMS: [(&str, &str); 21] = [
     ("-k", "-k"),
     ("--max-target-seqs", "-k"),
     ("--max-hsps", "seq_dist (fixed at 1)"),
-    ("--min-score", "--lb"),
+    ("--min-score", "--threshold"),
     ("--verbose", "seq_dist (required for progress reporting)"),
     ("--fast", "--algorithm"),
     ("--mid-sensitive", "--algorithm"),
@@ -472,59 +497,53 @@ pub const RESERVED_DIAMOND_PARAMS: [(&str, &str); 21] = [
     ("--more-sensitive", "--algorithm"),
     ("--very-sensitive", "--algorithm"),
     ("--ultra-sensitive", "--algorithm"),
-    (
-        "--algo",
-        "seq_dist (overridable: pass it in --params to replace the default)",
-    ),
-    (
-        "--tmpdir",
-        "seq_dist (overridable: pass it in --params to replace the default)",
-    ),
 ];
 
-/// Parse a `--params` string into ordered `(flag, value)` pairs.
-///
-/// The string is a JSON dict body *without* the enclosing braces, matching
-/// `deduplicate_genbank --params`: `'"-c":4, "-b":0.4'`. A `null` value means the flag
-/// takes no argument: `'"--target-indexed":null'`.
-pub fn parse_diamond_params(params_str: &str) -> Result<Vec<(String, Option<String>)>, String> {
-    if params_str.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-    let wrapped = format!("{{{params_str}}}");
-    let parsed: serde_json::Value = serde_json::from_str(&wrapped).map_err(|e| {
-        format!(
-            "Could not parse --params as a json dict: {e}\nExpected a json dict body \
-             without the outer braces, such as: --params '\"-c\":4, \"-b\":0.4'"
-        )
-    })?;
-    let serde_json::Value::Object(map) = parsed else {
-        return Err(
-            "--params must be a json dict of diamond options, such as: --params '\"-c\":4'"
-                .to_string(),
-        );
-    };
-
-    let mut out = Vec::with_capacity(map.len());
-    for (flag, value) in map {
-        // Only the two overridable defaults may be named; everything else in the
-        // reserved table is something seq_dist must control.
-        if let Some((_, owner)) = RESERVED_DIAMOND_PARAMS
-            .iter()
-            .find(|(f, _)| *f == flag && !matches!(flag.as_str(), "--algo" | "--tmpdir"))
-        {
+/// Turn `--diamond_args`, already split like a shell command line, into ordered
+/// `(flag, value)` pairs (upstream `parse_diamond_args`). A flag followed by another
+/// flag, or by nothing, takes no value. A negative number is a value, not a flag.
+pub fn parse_diamond_args(tokens: &[String]) -> Result<Vec<(String, Option<String>)>, String> {
+    let is_flag = |t: &str| t.starts_with('-') && !is_number(t);
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        let flag = &tokens[i];
+        if !is_flag(flag) {
             return Err(format!(
-                "--params may not set '{flag}': seq_dist controls it via {owner}."
+                "--diamond_args must be diamond options starting with '-', but got: '{flag}'"
             ));
         }
-        let rendered = match value {
-            serde_json::Value::Null => None,
-            serde_json::Value::String(s) => Some(s),
-            other => Some(other.to_string()),
-        };
-        out.push((flag, rendered));
+        if let Some((_, owner)) = RESERVED_DIAMOND_PARAMS.iter().find(|(f, _)| f == flag) {
+            return Err(format!(
+                "--diamond_args may not set '{flag}', because seq_dist controls it via {owner}."
+            ));
+        }
+        match tokens.get(i + 1) {
+            Some(value) if !is_flag(value) => {
+                out.push((flag.clone(), Some(value.clone())));
+                i += 2;
+            }
+            _ => {
+                out.push((flag.clone(), None));
+                i += 1;
+            }
+        }
     }
     Ok(out)
+}
+
+/// Upstream's `_NUMBER_RE` (`-?\d+(\.\d*)?([eE][-+]?\d+)?`), matched whole.
+fn is_number(t: &str) -> bool {
+    let t = t.strip_prefix('-').unwrap_or(t);
+    let (mantissa, exponent) = match t.find(['e', 'E']) {
+        Some(i) => (&t[..i], Some(&t[i + 1..])),
+        None => (t, None),
+    };
+    let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    digits(int)
+        && (frac.is_empty() || frac.bytes().all(|b| b.is_ascii_digit()))
+        && exponent.is_none_or(|e| digits(e.strip_prefix(['-', '+']).unwrap_or(e)))
 }
 
 /// Run DIAMOND `blastp` for the diamond algorithms and reduce the streamed hit
@@ -541,9 +560,11 @@ fn run_diamond(
     same: bool,
     sensitivity: Sensitivity,
     opts: &SeqDistOptions,
-    bool_mode: bool,
 ) -> std::io::Result<DiamondCells> {
-    let diamond_bin = find_diamond();
+    let diamond_bin = opts
+        .diamond_path
+        .as_ref()
+        .map_or_else(find_diamond, PathBuf::from);
     let tmp = TempDir::new("domainatoredux_diamond")?;
 
     // Normalize input/reference to FASTA whose header first token is the record
@@ -591,14 +612,8 @@ fn run_diamond(
             .map(|n| n.get())
             .unwrap_or(1)
     };
-    // `--mst_knn` prunes after scoring, so it must see every candidate edge (-k is
-    // ignored, matching the hmmer path); otherwise cap targets per query at -k.
     // `--max-target-seqs 0` means "report all targets".
-    let max_target_seqs = if opts.mst_knn.is_some() {
-        0
-    } else {
-        opts.k.unwrap_or(0)
-    };
+    let max_target_seqs = opts.max_hits_per_query.unwrap_or(0);
 
     let mut cmd = Command::new(&diamond_bin);
     super::external::hide_console(&mut cmd);
@@ -618,24 +633,24 @@ fn run_diamond(
         .arg("1")
         .arg("--max-target-seqs")
         .arg(max_target_seqs.to_string());
-    if opts.lb > 0.0 {
-        cmd.arg("--min-score").arg(format!("{}", opts.lb));
+    if opts.threshold > 0.0 {
+        cmd.arg("--min-score").arg(format!("{}", opts.threshold));
     }
     for a in sensitivity_args(sensitivity) {
         cmd.arg(a);
     }
-    // Defaults --params may replace. --tmpdir defaults into the managed temp dir so
+    // Defaults --diamond_args may replace. --tmpdir defaults into the managed temp dir so
     // diamond's unlinked scratch lands beside the db rather than in the cwd.
     let tmpdir = dbpath.parent().map(|p| p.to_path_buf()).unwrap_or_default();
     for (flag, default) in [
         ("--algo", "0".to_string()),
         ("--tmpdir", tmpdir.to_string_lossy().into_owned()),
     ] {
-        if !opts.params.iter().any(|(f, _)| f == flag) {
+        if !opts.diamond_args.iter().any(|(f, _)| f == flag) {
             cmd.arg(flag).arg(default);
         }
     }
-    for (flag, value) in &opts.params {
+    for (flag, value) in &opts.diamond_args {
         cmd.arg(flag);
         if let Some(v) = value {
             cmd.arg(v);
@@ -678,13 +693,13 @@ fn run_diamond(
         let Ok(score) = b.trim().parse::<f64>() else {
             continue;
         };
-        if score <= opts.lb {
+        if score <= opts.threshold {
             continue;
         }
         let (Some(&ri), Some(&ci)) = (row_index.idx.get(q), col_index.idx.get(s)) else {
             continue;
         };
-        let v = if bool_mode { 1.0 } else { score };
+        let v = score;
         let e = cells
             .entry((ri as i64, ci as i64))
             .or_insert(f64::NEG_INFINITY);
@@ -736,7 +751,46 @@ type DiamondCells = (HashMap<(i64, i64), f64>, NameIndex, NameIndex);
 
 #[cfg(test)]
 mod tests {
-    use super::{load_seqs, InputKind};
+    use super::{load_seqs, parse_diamond_args, InputKind};
+
+    fn words(s: &str) -> Vec<String> {
+        s.split_whitespace().map(String::from).collect()
+    }
+
+    /// Upstream's `test_parse_diamond_args_*`: a value follows its flag unless it is
+    /// itself a flag, a negative number is a value, and options seq_dist sets itself
+    /// are refused.
+    #[test]
+    fn diamond_args_parse_like_upstreams() {
+        let parsed = parse_diamond_args(&words("-c 4 -b 0.4 --target-indexed --min-orf -1"));
+        let some = |s: &str| Some(s.to_string());
+        assert_eq!(
+            parsed.unwrap(),
+            [
+                ("-c".to_string(), some("4")),
+                ("-b".to_string(), some("0.4")),
+                ("--target-indexed".to_string(), None),
+                ("--min-orf".to_string(), some("-1")),
+            ]
+        );
+        assert_eq!(parse_diamond_args(&[]).unwrap(), []);
+        assert!(
+            parse_diamond_args(&words("--block-size -1.5e3")).unwrap()[0]
+                .1
+                .is_some()
+        );
+        for reserved in [
+            "--outfmt 6",
+            "-p 4",
+            "--max-target-seqs 10",
+            "--ultra-sensitive",
+        ] {
+            let err = parse_diamond_args(&words(reserved)).unwrap_err();
+            assert!(err.contains("may not set"), "{reserved}: {err}");
+        }
+        let err = parse_diamond_args(&words("4 -c")).unwrap_err();
+        assert!(err.contains("starting with '-'"), "{err}");
+    }
     use crate::matrix::{DataMatrix, Storage};
     use crate::tools::build_ssn_viewer::{build_ssn_viewer_bundle, BuildSsnViewerOptions};
 

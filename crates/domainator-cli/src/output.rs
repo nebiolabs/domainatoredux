@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use domainator_core::io::fasta;
 use domainator_core::io::genbank::writer::write_record;
+use domainator_core::matrix::estimate::estimate_write_size;
+use domainator_core::matrix::{hdf5_io, text, DataMatrix};
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools::output_guardrails::output_limit_message;
 
@@ -191,6 +193,68 @@ pub fn write_seq_outputs_capped(
     }
     gb.map(Output::finish).transpose()?;
     fa.map(Output::finish).transpose()?;
+    Ok(())
+}
+
+/// `--hdf_out` must name an hdf5 file (upstream `resolve_matrix_outputs`).
+pub fn check_hdf_out(hdf: Option<&str>) -> Result<()> {
+    let is_hdf5 = hdf.is_none_or(|p| {
+        Path::new(p)
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| ["hdf5", "hdf", "h5"].contains(&e.to_ascii_lowercase().as_str()))
+    });
+    anyhow::ensure!(
+        is_hdf5,
+        "Please use an hdf5 related extension for the --hdf_out output, such as .h5, .hdf5, or \
+         .hdf."
+    );
+    Ok(())
+}
+
+/// Write a matrix to `--hdf_out` and/or `--dense_text_out` (upstream
+/// `write_matrix_outputs`), each checked against `max_bytes` (`--max_output_gb`)
+/// before it is written. The hdf5 file is renamed into place once complete.
+pub fn write_matrix_outputs(
+    matrix: &DataMatrix,
+    hdf: Option<&str>,
+    dense_text: Option<&str>,
+    max_bytes: Option<u64>,
+    mitigation: &[&str],
+) -> Result<()> {
+    let check = |output_type: &str, estimate: &str, path: &str, mitigation: &[&str]| {
+        let projected = estimate_write_size(estimate, matrix);
+        match max_bytes {
+            Some(max) if projected > max => Err(anyhow::anyhow!(output_limit_message(
+                &format!("{output_type} matrix output '{path}'"),
+                projected,
+                max,
+                mitigation,
+                None,
+            ))),
+            _ => Ok(()),
+        }
+    };
+    if let Some(path) = hdf {
+        check("hdf", "sparse", path, mitigation)?;
+        let target = PathBuf::from(path);
+        let temp = temp_path(&target);
+        let written = hdf5_io::write_sparse(&temp.to_string_lossy(), matrix)
+            .and_then(|()| std::fs::rename(&temp, &target));
+        if written.is_err() {
+            let _ = std::fs::remove_file(&temp);
+        }
+        written.with_context(|| format!("writing {path}"))?;
+    }
+    if let Some(path) = dense_text {
+        let mitigation: Vec<&str> = std::iter::once("--hdf_out")
+            .chain(mitigation.iter().copied())
+            .collect();
+        check("dense_text", "dense_text", path, &mitigation)?;
+        let mut out = Output::create(path)?;
+        text::write_dense_text_to(&mut out, matrix).with_context(|| format!("writing {path}"))?;
+        out.finish()?;
+    }
     Ok(())
 }
 

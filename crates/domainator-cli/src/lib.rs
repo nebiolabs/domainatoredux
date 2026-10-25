@@ -36,7 +36,6 @@ use domainator_core::tools::gene_call;
 use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
 use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
 use domainator_core::tools::select_common::parse_name_list;
-use domainator_core::tools::seq_dist::{detect_kind, seq_dist, SeqDistOptions};
 use domainator_core::tools::ssn_bundle;
 use domainator_core::tools::ssn_navigator::ssn_navigator;
 use domainator_core::tools::transform_matrix::transform_matrix;
@@ -151,66 +150,7 @@ enum Command {
     #[command(allow_negative_numbers = true)]
     ExtractUnannotated(config::args::ExtractUnannotatedArgs),
     /// Compute a similarity matrix between input and reference sequences/profiles.
-    SeqDist {
-        /// Input query file (FASTA/GenBank/HMM; two HMM files select --algorithm hmmer_compare).
-        #[arg(short, long)]
-        input: Option<PathBuf>,
-        /// Reference file (FASTA/GenBank/HMM). Defaults to the input (all-vs-all).
-        #[arg(short, long)]
-        reference: Option<PathBuf>,
-        /// Write a dense HDF5 matrix here.
-        #[arg(long)]
-        dense: Option<PathBuf>,
-        /// Write a dense TSV matrix here.
-        #[arg(long = "dense_text")]
-        dense_text: Option<PathBuf>,
-        /// Write a sparse (CSR) HDF5 matrix here.
-        #[arg(long)]
-        sparse: Option<PathBuf>,
-        /// Distance metric (default: diamond_us). diamond_*: f=fast, d=default,
-        /// mids=mid-sensitive, s=sensitive, mors=more-sensitive, vs=very-sensitive,
-        /// us=ultra-sensitive (needs the external diamond binary). hmmer:
-        /// phmmer/hmmsearch. hmmer_compare: HMM-vs-HMM (auto for two HMM files).
-        #[arg(long, value_parser = [
-            "diamond_f", "diamond_d", "diamond_mids", "diamond_s", "diamond_mors",
-            "diamond_vs", "diamond_us", "hmmer", "hmmer_compare",
-        ])]
-        algorithm: Option<String>,
-        /// Matrix value type (default: score).
-        #[arg(long)]
-        mode: Option<String>,
-        /// Round raw scores <= this down to zero (default: 0).
-        #[arg(long)]
-        lb: Option<f64>,
-        /// Keep at most this many non-zero entries per input row.
-        #[arg(short = 'k', long)]
-        k: Option<usize>,
-        /// Extra options forwarded to `diamond blastp`, as a JSON dict body without the
-        /// outer braces, e.g. --params '"-c":4, "-b":0.4'. A null value is a bare flag.
-        #[arg(long)]
-        params: Option<String>,
-        /// Prune to MST + OR-symmetric kNN edges (integer >= 0, 0 = spanning tree only;
-        /// requires reference == input and --mode score/bool/efi_score). When set, -k
-        /// is ignored.
-        #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
-        mst_knn: Option<usize>,
-        /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
-        /// does not preserve connected components.
-        #[arg(long = "knn", value_parser = parse_knn)]
-        knn: Option<usize>,
-        /// Worker threads (0 = all cores).
-        #[arg(long)]
-        cpu: Option<usize>,
-        /// Fail if a projected matrix output exceeds this many GB (default 25; 0 disables).
-        #[arg(long = "max_output_gb")]
-        max_output_gb: Option<f64>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    SeqDist(config::args::SeqDistArgs),
     /// Pairwise contig similarity (Jaccard + Adjacency) from annotated GenBank.
     CompareContigs {
         /// Annotated GenBank file(s).
@@ -1281,109 +1221,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::ExtractDomains(args) => commands::extract_domains::run(&args)?,
         Command::ExtractPeptides(args) => commands::extract_peptides::run(&args)?,
         Command::ExtractUnannotated(args) => commands::extract_unannotated::run(&args)?,
-        Command::SeqDist {
-            input,
-            reference,
-            dense,
-            dense_text,
-            sparse,
-            algorithm,
-            mode,
-            lb,
-            k,
-            params,
-            mst_knn,
-            knn,
-            cpu,
-            max_output_gb,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::SeqDistConfig {
-                input: opt_path(&input)?,
-                reference: opt_path(&reference)?,
-                dense: opt_path(&dense)?,
-                dense_text: opt_path(&dense_text)?,
-                sparse: opt_path(&sparse)?,
-                algorithm,
-                mode,
-                lb,
-                k,
-                params,
-                mst_knn,
-                knn,
-                cpu,
-                max_output_gb,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::SeqDistConfig>(p)?,
-                None => config::SeqDistConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            if cfg.dense.is_none() && cfg.dense_text.is_none() && cfg.sparse.is_none() {
-                anyhow::bail!(
-                    "no output specified: pass at least one of --dense, --dense_text, --sparse"
-                );
-            }
-            let input = cfg
-                .input
-                .context("missing required `input` (-i / --input or config)")?;
-            let input_pb = PathBuf::from(&input);
-            let input_kind = detect_kind(&input_pb)
-                .with_context(|| format!("could not detect input kind: {input}"))?;
-            let ref_pb = cfg.reference.as_ref().map(PathBuf::from);
-            let ref_kind = match &ref_pb {
-                Some(p) => Some(detect_kind(p).with_context(|| {
-                    format!("could not detect reference kind: {}", p.display())
-                })?),
-                None => None,
-            };
-            let opts = SeqDistOptions {
-                algorithm: cfg.algorithm.unwrap_or_else(|| "diamond_us".into()),
-                mode: cfg.mode.unwrap_or_else(|| "score".into()),
-                lb: cfg.lb.unwrap_or(0.0),
-                k: cfg.k,
-                mst_knn: cfg.mst_knn,
-                knn: cfg.knn,
-                params: tools::seq_dist::parse_diamond_params(cfg.params.as_deref().unwrap_or(""))
-                    .map_err(|e| anyhow::anyhow!(e))?,
-                cpu: cfg.cpu.unwrap_or(0),
-            };
-            let matrix = seq_dist(
-                &input,
-                input_kind,
-                cfg.reference.as_deref(),
-                ref_kind,
-                &opts,
-            )
-            .context("running seq_dist")?;
-            // Output-size guardrails: estimate each requested output before writing.
-            let max_gb = cfg.max_output_gb.unwrap_or(25.0);
-            if let Some(p) = &cfg.dense {
-                enforce_matrix_gb(&matrix, "dense", p, max_gb, "--sparse, -k, --lb")?;
-            }
-            if let Some(p) = &cfg.dense_text {
-                enforce_matrix_gb(&matrix, "dense_text", p, max_gb, "--sparse, -k, --lb")?;
-            }
-            if let Some(p) = &cfg.sparse {
-                enforce_matrix_gb(&matrix, "sparse", p, max_gb, "-k, --lb")?;
-            }
-            if let Some(p) = &cfg.dense {
-                hdf5_io::write_dense(p, &matrix)?;
-            }
-            if let Some(p) = &cfg.dense_text {
-                text::write_dense_text(p, &matrix)?;
-            }
-            if let Some(p) = &cfg.sparse {
-                hdf5_io::write_sparse(p, &matrix)?;
-            }
-            println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
-        }
+        Command::SeqDist(args) => commands::seq_dist::run(&args)?,
         Command::CompareContigs {
             input,
             dense,

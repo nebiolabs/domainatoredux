@@ -158,45 +158,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `seq_dist` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct SeqDistConfig {
-    pub input: Option<String>,
-    pub reference: Option<String>,
-    pub dense: Option<String>,
-    pub dense_text: Option<String>,
-    pub sparse: Option<String>,
-    pub algorithm: Option<String>,
-    pub mode: Option<String>,
-    pub lb: Option<f64>,
-    pub k: Option<usize>,
-    pub mst_knn: Option<usize>,
-    pub knn: Option<usize>,
-    pub params: Option<String>,
-    pub cpu: Option<usize>,
-    pub max_output_gb: Option<f64>,
-}
-
-impl SeqDistConfig {
-    pub fn merge_cli(&mut self, cli: SeqDistConfig) {
-        merge_scalar!(self, cli, input);
-        merge_scalar!(self, cli, reference);
-        merge_scalar!(self, cli, dense);
-        merge_scalar!(self, cli, dense_text);
-        merge_scalar!(self, cli, sparse);
-        merge_scalar!(self, cli, algorithm);
-        merge_scalar!(self, cli, mode);
-        merge_scalar!(self, cli, lb);
-        merge_scalar!(self, cli, k);
-        merge_scalar!(self, cli, mst_knn);
-        merge_scalar!(self, cli, knn);
-        merge_scalar!(self, cli, params);
-        merge_scalar!(self, cli, cpu);
-        merge_scalar!(self, cli, max_output_gb);
-    }
-}
-
 /// `compare_contigs` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -672,7 +633,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
-        "seq_dist" => seq_dist_schema(),
         "compare_contigs" => compare_contigs_schema(),
         "hmmer_compare" => hmmer_compare_schema(),
         "transform_matrix" => transform_matrix_schema(),
@@ -871,37 +831,6 @@ fn color_table_to_legend_schema() -> serde_json::Value {
             "input": {"type": "array", "items": {"type": "string"}},
             "svg": {"type": ["string", "null"]},
             "title": {"type": ["string", "null"], "default": "Legend"}
-        }
-    })
-}
-
-fn seq_dist_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "seq_dist config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": ["string", "null"]},
-            "reference": {"type": ["string", "null"], "description": "Defaults to input (all-vs-all)"},
-            "dense": {"type": ["string", "null"], "description": "Dense HDF5 output path"},
-            "dense_text": {"type": ["string", "null"], "description": "Dense TSV output path"},
-            "sparse": {"type": ["string", "null"], "description": "Sparse CSR HDF5 output path"},
-            "algorithm": {"enum": [
-                "diamond_f","diamond_d","diamond_mids","diamond_s","diamond_mors","diamond_vs",
-                "diamond_us","hmmer","hmmer_compare"
-            ], "default": "diamond_us"},
-            "mode": {"enum": [
-                "none","score","bool","norm_score","row_norm_score","score_dist","efi_score","efi_score_dist"
-            ], "default": "score", "description": "Matrix value transform (mst_knn requires score/bool/efi_score)"},
-            "lb": {"type": "number", "default": 0.0},
-            "k": {"type": ["integer", "null"]},
-            "mst_knn": {"type": ["integer", "null"], "description": "MST + OR-symmetric kNN; integer >= 0 (0 reduces to the MST alone). Mutually exclusive with knn"},
-            "params": {"type": ["string", "null"], "description": "Extra diamond blastp options as a json dict body without the outer braces, e.g. '\"-c\":4'"},
-            "knn": {"type": ["integer", "null"], "description": "OR-symmetric kNN without the spanning tree; integer >= 1. Unlike mst_knn this does not preserve connected components"},
-            "cpu": {"type": "integer", "default": 0},
-            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if a projected matrix output exceeds this many GB (0 disables)"}
         }
     })
 }
@@ -1242,7 +1171,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "seq_dist" => SeqDistConfig,
             "compare_contigs" => CompareContigsConfig,
             "transform_matrix" => TransformMatrixConfig,
             "build_ssn" => BuildSsnConfig,

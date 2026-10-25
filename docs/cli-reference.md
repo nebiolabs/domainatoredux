@@ -432,19 +432,25 @@ domainatoredux color_table_to_legend -i colors.tsv --svg legend.svg --title "Dom
 ### `seq_dist`
 
 **Pairwise similarity by local alignment.** Omit `-r` for all-vs-all. Write the matrix with
-`--dense` (HDF5), `--sparse` (CSR HDF5) or `--dense_text` (TSV) — at least one is
-required.
+`-o/--hdf_out` (sparse HDF5; the name must end `.h5`, `.hdf5` or `.hdf`) and/or
+`--dense_text_out` (TSV, `-` for standard output) — at least one is required. Formats
+come from the file names unless `--input_format`/`--reference_format` say otherwise.
 
 `--algorithm` picks the engine: `diamond_f`, `diamond_d`, `diamond_mids`, `diamond_s`,
 `diamond_mors`, `diamond_vs`, `diamond_us` (the default, ultra-sensitive) all need the
 external `diamond` binary; **`hmmer`** (phmmer/hmmsearch) and `hmmer_compare` (HMM-vs-HMM,
 selected automatically for two HMM inputs) are built in. `--mode` sets what the cells
-contain (`score` by default); `--lb` zeroes small scores; `-k` caps entries per row;
-`--mst_knn`/`--knn` prune the graph; `--params` forwards DIAMOND options.
+contain (`score` by default); `--threshold` drops raw scores at or below it;
+`--max_hits_per_query` keeps each input's best hits (diamond's `--max-target-seqs`, or the
+hmmer hit list); `--mst` and `--knn K` prune the graph to the maximum spanning forest, the
+OR-symmetric K nearest neighbors, or both (all-vs-all only, `--mode score`, `bool` or
+`efi_score`); `--symmetrize max|min|mean` reconciles the two directions of each pair before
+`--mode`; `--diamond_args="-b 0.4 -c 4"` forwards DIAMOND options and `--diamond_path`
+names the binary; `--max_output_gb` (default 25) caps each output.
 
 ```bash
-domainatoredux seq_dist -i proteins.fasta --dense dist.hdf5 --mode score
-domainatoredux seq_dist -i proteins.fasta --dense dist.hdf5 --algorithm hmmer --cpu 8
+domainatoredux seq_dist -i proteins.fasta -o dist.hdf5 --mode score
+domainatoredux seq_dist -i proteins.fasta -o dist.hdf5 --algorithm hmmer --cpu 8
 ```
 
 ### `compare_contigs`

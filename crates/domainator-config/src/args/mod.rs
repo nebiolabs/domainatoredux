@@ -23,6 +23,7 @@ mod hmmer_report;
 mod select_by_cds;
 mod select_by_contig;
 mod select_by_coord;
+mod seq_dist;
 mod sort_contigs;
 mod trim_contigs;
 
@@ -42,6 +43,7 @@ pub use hmmer_report::HmmerReportArgs;
 pub use select_by_cds::SelectByCdsArgs;
 pub use select_by_contig::SelectByContigArgs;
 pub use select_by_coord::SelectByCoordArgs;
+pub use seq_dist::SeqDistArgs;
 pub use sort_contigs::SortContigsArgs;
 pub use trim_contigs::TrimContigsArgs;
 
@@ -68,6 +70,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "deduplicate_genbank" => DeduplicateGenbankArgs::augment_args(cmd),
         "domainate" => DomainateArgs::augment_args(cmd),
         "domain_search" => DomainSearchArgs::augment_args(cmd),
+        "seq_dist" => SeqDistArgs::augment_args(cmd),
         _ => return None,
     })
 }

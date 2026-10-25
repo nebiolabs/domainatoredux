@@ -88,7 +88,7 @@ this on annotated genome contigs and you get CDS and domain frequency tables too
 `seq_dist` builds a similarity matrix. Leaving `-r` off means all-vs-all:
 
 ```bash
-domainatoredux seq_dist -i annotated.gb --dense dist.hdf5 --algorithm hmmer --mode score
+domainatoredux seq_dist -i annotated.gb -o dist.hdf5 --algorithm hmmer --mode score
 ```
 
 ```

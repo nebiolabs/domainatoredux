@@ -74,7 +74,7 @@ distribution, then build a viewer.
 ```bash
 domainatoredux domainate -i FeSOD_20.gb -r FeSOD_pfam.hmm -o annotated.gb
 
-domainatoredux seq_dist -i annotated.gb --dense dist.hdf5 --algorithm hmmer --mode score
+domainatoredux seq_dist -i annotated.gb -o dist.hdf5 --algorithm hmmer --mode score
 #> wrote 20x20 matrix
 
 # look before you choose a cutoff
@@ -87,7 +87,7 @@ domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv \
 On a large dataset, swap in DIAMOND and normalize the scores:
 
 ```bash
-domainatoredux seq_dist -i proteins.fasta --dense raw.hdf5 --algorithm diamond_us --cpu 0
+domainatoredux seq_dist -i proteins.fasta -o raw.hdf5 --algorithm diamond_us --cpu 0
 domainatoredux transform_matrix -i raw.hdf5 --dense efi.hdf5 --mode efi_score
 domainatoredux build_ssn_viewer -i efi.hdf5 -o network.dsnv --html network.html --embed_data
 ```
@@ -107,9 +107,8 @@ domain family is organized. Two HMM inputs select the profile-vs-profile engine
 automatically:
 
 ```bash
-domainatoredux seq_dist -i pdonr_hmms.hmm --dense hmm_dist.hdf5 --mode score
+domainatoredux seq_dist -i pdonr_hmms.hmm -o hmm_dist.hdf5 --mode score
 #> Warning: input and reference are both HMM files; using --algorithm hmmer_compare.
-#> wrote 7x7 matrix
 
 domainatoredux build_ssn_viewer -i hmm_dist.hdf5 -o profiles.dsnv \
   --html profiles.html --embed_data

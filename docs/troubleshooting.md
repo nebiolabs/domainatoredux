@@ -6,7 +6,7 @@
 call an external program. Either install it, or switch to an algorithm that needs nothing:
 
 ```bash
-domainatoredux seq_dist -i in.fasta --dense out.hdf5 --algorithm hmmer
+domainatoredux seq_dist -i in.fasta -o out.hdf5 --algorithm hmmer
 domainatoredux deduplicate_genbank -i in.fasta --fasta_out out.fasta --algorithm hash --identity 1
 ```
 
@@ -19,11 +19,11 @@ To install the binaries, the easiest route is the **External tools** panel in th
 at it explicitly:
 
 ```bash
-domainatoredux seq_dist ... --bin_path /opt/diamond/diamond      # per run
+domainatoredux seq_dist ... --diamond_path /opt/diamond/diamond  # per run
 export DOMAINATOREDUX_DIAMOND=/opt/diamond/diamond               # for the session
 ```
 
-The search order is `--bin_path` → `$DOMAINATOREDUX_DIAMOND` / `$DOMAINATOREDUX_CDHIT` /
+The search order is the tool's `--diamond_path`/`--cdhit_path`/`--usearch_path` → `$DOMAINATOREDUX_DIAMOND` / `$DOMAINATOREDUX_CDHIT` /
 `$DOMAINATOREDUX_USEARCH` → a bundled copy under `external/` → the bare name on `PATH`.
 
 **On Windows you need a Windows binary.** A `diamond` built for Linux under WSL2 will not

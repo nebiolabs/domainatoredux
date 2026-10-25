@@ -40,13 +40,13 @@ The config file is the base, and command-line flags override it:
 
 | Kind of option | Behavior |
 | --- | --- |
-| scalars (`algorithm`, `cpu`, `dense`) | the CLI value replaces the file's |
+| scalars (`ji`, `cpu`, `sparse`) | the CLI value replaces the file's |
 | lists (`references`, `domains`) | the CLI value replaces the file's, when non-empty |
 | booleans (`hits_only`, `max_mode`) | **OR'd together** |
 
 ```bash
-# override just the algorithm, keep everything else from the file
-domainatoredux seq_dist --config dist.yml --algorithm hmmer_compare
+# override just the output, keep everything else from the file
+domainatoredux compare_contigs --config compare.yml --sparse other.hdf5
 ```
 
 Two things to watch:
@@ -65,17 +65,17 @@ Because inputs may legitimately come from the file, required arguments are valid
 `--print_config` dumps the merged parameter set as YAML and exits without doing any work:
 
 ```bash
-domainatoredux seq_dist -i a.gb -r b.gb --dense d.hdf5 --print_config
+domainatoredux compare_contigs -i a.gb --sparse d.hdf5 --print_config
 ```
 
 ```yaml
-input: a.gb
-reference: b.gb
-dense: d.hdf5
+input:
+- a.gb
+dense: null
 dense_text: null
-sparse: null
-algorithm: null
-mode: null
+sparse: d.hdf5
+ji: null
+ai: null
 ...
 ```
 
@@ -86,7 +86,7 @@ and `--help` to see what each default actually is.
 The output is a valid config file, so this is also how you capture a working invocation:
 
 ```bash
-domainatoredux seq_dist -i a.gb -r b.gb --dense d.hdf5 --print_config > dist.yml
+domainatoredux compare_contigs -i a.gb --sparse d.hdf5 --print_config > compare.yml
 ```
 
 ### Tools on the 1.0 interface
@@ -213,7 +213,7 @@ domainatoredux summary_report -i hits.gb --json - > summary.json
 domainatoredux enum_report -i hits.gb --by cds --columns domains score --json_out rows.ndjson
 
 # 4. build a network and explore it without a GUI
-domainatoredux seq_dist -i hits.gb --dense dist.hdf5 --algorithm hmmer
+domainatoredux seq_dist -i hits.gb -o dist.hdf5 --algorithm hmmer
 domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv
 domainatoredux ssn_navigator -i network.dsnv --mode thresholds
 ```

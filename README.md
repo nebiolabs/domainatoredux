@@ -44,7 +44,7 @@ network — using two files from `test/data/`:
 domainatoredux domainate -i FeSOD_20.gb -r FeSOD_pfam.hmm -o annotated.gb
 #> wrote 20 records to annotated.gb
 
-domainatoredux seq_dist -i annotated.gb --dense dist.hdf5 --algorithm hmmer --mode score
+domainatoredux seq_dist -i annotated.gb -o dist.hdf5 --algorithm hmmer --mode score
 #> wrote 20x20 matrix
 
 domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html network.html --embed_data
