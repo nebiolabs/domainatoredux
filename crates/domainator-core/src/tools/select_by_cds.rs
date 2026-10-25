@@ -10,8 +10,8 @@ use crate::seq::location::to_index;
 use crate::seq::partial::{cds_fragment_status, Partial};
 use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::tools::neighborhood::{
-    cds_neighborhood, neighborhood_record, overlap_size, reverse_complement_record, Cds, Range,
-    SliceLoc,
+    cds_neighborhood, neighborhood_record, overlap_size, region_id, reverse_complement_record, Cds,
+    Range, SliceLoc,
 };
 use crate::tools::select_common::{get_non_domainator_features, BooleanEvaluator, DomainatorCds};
 
@@ -174,15 +174,6 @@ fn select_one(
 
         let mut region = neighborhood_record(rec, &slice, &features);
 
-        // Coordinate suffix + reverse-complement handling (mirrors
-        // get_cds_neighborhood; the suffix/`rc` go on the LOCUS name).
-        let (start, end) = (slice.name_start, slice.name_end);
-        let whole_fwd = start == 0 && end == rec_len && strand != -1;
-        let whole_rev = end == 0 && start == rec_len && strand == -1;
-        if !whole_fwd && !whole_rev {
-            let (ls, le) = slice.name_label();
-            region.id = format!("{}_{}:{}", region.id, ls, le);
-        }
         let flipped = !opts.normalize_direction && strand == -1;
         let (dist_to_start, dist_to_end) = if flipped {
             (slice.dist_to_end, slice.dist_to_start)
@@ -191,9 +182,8 @@ fn select_one(
         };
         if flipped {
             region = reverse_complement_record(&region);
-        } else if strand == -1 {
-            region.id.push_str("rc");
         }
+        region.id = region_id(rec, &slice.parts, flipped);
 
         if opts.max_region_overlap < 1.0 {
             let loc_len: i64 = slice.parts.iter().map(|p| p.end - p.start).sum();

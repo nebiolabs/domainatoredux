@@ -432,8 +432,6 @@ fn slice_loc_from(loc: &Location) -> SliceLoc {
         .collect();
     SliceLoc {
         parts,
-        name_start: 0,
-        name_end: 0,
         overall_strand: loc.strand(),
         dist_to_start: 0,
         dist_to_end: 0,

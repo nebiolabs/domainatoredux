@@ -13,8 +13,19 @@ use crate::seq::{Location, SeqFeature, SeqRecord, Topology};
 
 /// Format one location part as a 1-based inclusive GenBank span (`start..end`),
 /// honoring the `<`/`>` fuzzy markers. Strand is handled by the caller.
-fn fmt_part(part: &Part) -> String {
+///
+/// A zero-length part is the point between two bases, `n^n+1` (Biopython's
+/// rule, so a slice that leaves one behind writes it the way upstream does), and
+/// `N^1` at the end of a length-`N` record.
+fn fmt_part(part: &Part, rec_len: i64) -> String {
     let (start, end, _strand, before, after) = *part;
+    if start == end && !before && !after {
+        return if end == rec_len {
+            format!("{rec_len}^1")
+        } else {
+            format!("{end}^{}", end + 1)
+        };
+    }
     let lo = start + 1;
     let lt = if before { "<" } else { "" };
     let gt = if after { ">" } else { "" };
@@ -25,20 +36,15 @@ fn fmt_part(part: &Part) -> String {
     }
 }
 
-/// Render a location to a GenBank location string.
-fn fmt_location(loc: &Location) -> String {
-    if loc.between {
-        if let Some(p) = loc.parts.first() {
-            return format!("{}^{}", p.0, p.0 + 1);
-        }
-    }
+/// Render a location on a length-`rec_len` record to a GenBank location string.
+fn fmt_location(loc: &Location, rec_len: i64) -> String {
     match loc.operator {
         None => {
             let p = match loc.parts.first() {
                 Some(p) => p,
                 None => return String::new(),
             };
-            let body = fmt_part(p);
+            let body = fmt_part(p, rec_len);
             if p.2 == -1 {
                 format!("complement({body})")
             } else {
@@ -53,7 +59,7 @@ fn fmt_location(loc: &Location) -> String {
             if all_minus {
                 parts.reverse();
             }
-            let inner: Vec<String> = parts.iter().map(|p| fmt_part(p)).collect();
+            let inner: Vec<String> = parts.iter().map(|p| fmt_part(p, rec_len)).collect();
             let joined = format!("{}({})", op.as_str(), inner.join(","));
             if all_minus {
                 format!("complement({joined})")
@@ -282,12 +288,12 @@ fn write_qualifier<W: Write>(w: &mut W, key: &str, value: &str, has_value: bool)
     Ok(())
 }
 
-fn write_feature<W: Write>(w: &mut W, feature: &SeqFeature) -> io::Result<()> {
+fn write_feature<W: Write>(w: &mut W, feature: &SeqFeature, rec_len: i64) -> io::Result<()> {
     writeln!(
         w,
         "     {:<15} {}",
         feature.kind,
-        fmt_location(&feature.location)
+        fmt_location(&feature.location, rec_len)
     )?;
     for (key, values) in &feature.qualifiers {
         if values.is_empty() {
@@ -528,7 +534,7 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
     regenerate_domain_rollups(&mut feats);
     feats.sort_by_key(|f| f.location.start());
     for f in &feats {
-        write_feature(w, f)?;
+        write_feature(w, f, rec.seq.len() as i64)?;
     }
     write_sequence(w, &rec.seq)?;
     Ok(())
@@ -553,6 +559,24 @@ mod tests {
         let mut out = Vec::new();
         write_qualifier(&mut out, key, value, true).unwrap();
         String::from_utf8(out).unwrap()
+    }
+
+    /// Biopython writes any exact zero-length part as a between position, whether or
+    /// not it was read as one: slicing a feature can leave one behind.
+    #[test]
+    fn zero_length_parts_are_between_positions() {
+        let at = |start, end, strand| Location {
+            operator: None,
+            between: false,
+            parts: vec![(start, end, strand, false, false)],
+        };
+        assert_eq!(fmt_location(&at(2645, 2645, 1), 4000), "2645^2646");
+        assert_eq!(
+            fmt_location(&at(2645, 2645, -1), 4000),
+            "complement(2645^2646)"
+        );
+        assert_eq!(fmt_location(&at(4000, 4000, 1), 4000), "4000^1");
+        assert_eq!(fmt_location(&at(2644, 2645, 1), 4000), "2645");
     }
 
     #[test]

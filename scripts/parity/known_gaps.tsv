@@ -13,9 +13,6 @@
 #   gap        a real missing feature -- the tracked to-do list
 #   upstream   the divergence is in a dependency, not in this port
 #   harness    an artifact of how the invocation is replayed, not a divergence
-#   pending    transient, during the upstream 1.0 migration: `pending:1.0-cli` rows fail on
-#              an option this port has not renamed yet, `pending:1.0-behavior` rows on a
-#              1.0 behavior change not ported yet. None may remain once the migration ends.
 #
 # Columns: <python module> <test_fn#n> <outcome> <class> <note>
 compare_contigs	test_compare_contigs_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
@@ -26,9 +23,8 @@ compare_contigs	test_compare_contigs_sort_memory_check_fails_early#2	rust-failed
 compare_contigs	test_compare_contigs_warns_for_slow_optimal_leaf_ordering#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
 compare_contigs	test_compare_contigs_warns_for_slow_optimal_leaf_ordering#1	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
 compare_contigs	test_compare_no_annotations_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
-domain_search	extra:test_domain_search_keeps_partial_markers#2	differs	pending:1.0-behavior	out.gb: compare_seqfiles failed at helpers.py:44
 domain_search	test_domain_search_nucleotide_multi_hit_max_hits_per_contig#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
-domain_search	test_domain_search_nucleotide_multi_hit_whole_contig#0	differs	gap:feature-order	out.gb: compare_seqfiles failed at helpers.py:44
+domain_search	test_domain_search_nucleotide_multi_hit_whole_contig#0	differs	gap:feature-order	out.gb: compare_seqfiles failed at helpers.py:67
 domain_search	test_domain_search_nucleotide_query_defaults_to_annotation_span#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
 domain_search	test_domain_search_nucleotide_query_kb_range_uses_annotation_boundaries#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
 domain_search	test_domain_search_whole_contig_infernal_query#0	rust-failed	deferred:infernal	domainatoredux domain_search: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/t
@@ -37,17 +33,8 @@ domainate	test_domainator_infernal_cm_query#0	rust-failed	deferred:infernal	doma
 enum_report	test_enum_report_html_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 enum_report	test_enum_report_html_max_height_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 enum_report	test_enum_report_html_quote_escape_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
-extract_domains	test_extract_domains_keep_direction_1#0	differs	pending:1.0-behavior	domains.gb: compare_seqfiles failed at helpers.py:44
-extract_domains	test_extract_domains_origin_non_spanning_domain_1#0	differs	pending:1.0-behavior	domains.gb: compare_seqfiles failed at helpers.py:44
-extract_domains	test_extract_domains_origin_non_spanning_domain_2#0	differs	pending:1.0-behavior	domains.gb: compare_seqfiles failed at helpers.py:44
-extract_domains	test_extract_domains_origin_spanning_domain_2#0	differs	pending:1.0-behavior	domains.gb: compare_seqfiles failed at helpers.py:44
-extract_domains	test_extract_domains_origin_spanning_domain_3#0	differs	pending:1.0-behavior	domains.gb: compare_seqfiles failed at helpers.py:44
 matrix_report	test_matrix_report_default_excludes_mst_knn#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 matrix_report	test_matrix_report_text_includes_mst_knn_projection#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
-select_by_cds	test_select_by_cds_3#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:44
-select_by_cds	test_select_by_cds_4#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:44
-select_by_cds	test_select_by_cds_align_1#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:44
-select_by_cds	test_select_by_cds_invert_1#0	differs	pending:1.0-behavior	extraction.gb: 2 feature location/type, 0 LOCUS name
 summary_report	test_contig_stats_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 summary_report	test_contig_stats_empty_input#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 summary_report	test_contig_stats_taxonomy_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found

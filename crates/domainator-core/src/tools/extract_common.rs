@@ -4,7 +4,9 @@
 //! human-readable coordinate naming used by both tools.
 
 use crate::seq::{SeqFeature, SeqRecord, Topology};
-use crate::tools::neighborhood::{reverse_complement_record, slice_record, Env, SliceLoc};
+use crate::tools::neighborhood::{
+    region_id, reverse_complement_record, slice_record, Env, SliceLoc,
+};
 
 /// A location as an ordered list of forward sub-parts (each `[start,end)`) with a
 /// single overall strand — enough to represent the FeatureLocation /
@@ -37,6 +39,19 @@ impl Loc {
     }
     pub fn is_empty(&self) -> bool {
         self.parts.is_empty()
+    }
+    /// Upstream `model.region_id` of the region this location slices out of `parent`.
+    pub fn region_id(&self, parent: &SeqRecord, flip: bool) -> String {
+        let parts: Vec<Env> = self
+            .parts
+            .iter()
+            .map(|&(start, end)| Env {
+                start,
+                end,
+                strand: self.strand,
+            })
+            .collect();
+        region_id(parent, &parts, flip)
     }
     /// `stranded_start_human_readable`: `parts[0].end` if reverse, else `parts[0].start + 1`.
     pub fn stranded_start_hr(&self) -> i64 {
@@ -409,16 +424,19 @@ pub fn slice_from_location(rec: &SeqRecord, loc: &Loc, keep_features: &[SeqFeatu
             strand: loc.strand,
         })
         .collect();
-    let (ns, ne) = if loc.strand == -1 {
-        (parts.last().unwrap().end, parts[0].start)
-    } else {
-        (parts[0].start, parts.last().unwrap().end)
-    };
+    slice_from_parts(rec, parts, keep_features)
+}
+
+/// [`slice_from_location`] for parts that each carry their own strand, in reading
+/// order (a `--splice` of domains on both strands).
+pub(crate) fn slice_from_parts(
+    rec: &SeqRecord,
+    parts: Vec<Env>,
+    keep_features: &[SeqFeature],
+) -> SeqRecord {
     let slice = SliceLoc {
+        overall_strand: parts[0].strand,
         parts,
-        name_start: ns,
-        name_end: ne,
-        overall_strand: loc.strand,
         dist_to_start: 0,
         dist_to_end: 0,
     };

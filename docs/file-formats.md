@@ -44,9 +44,13 @@ Two conventions that matter if you compare output between implementations:
 - **Circular contigs.** A feature or an extracted window may cross the origin, in which
   case its location has several parts, listed in the order the bases are read rather than
   in ascending coordinate order.
-- **Extracted records are renamed** for the region they came from — `contig_1391:2` — with
-  an `rc` suffix when the slice is reverse-complemented. The suffix goes on the LOCUS
-  name.
+- **Extracted records are renamed** for the region they came from, the way every
+  Domainator tool names them: `contig_{first}:{last}`, where `first` and `last` are the
+  1-based contig positions of the region's first and last bases as written, plus `rc`
+  when the region reads the contig's reverse strand. So `contig_1391:2rc` reads from 1391
+  down to 2, and `contig_4000:120` (first > last without `rc`) wraps the origin of a
+  circular contig. The whole contig is `contig`, or `contig_rc` reverse complemented.
+  The name goes on the LOCUS line; ACCESSION/VERSION keep the contig's.
 
 A record with no date is stamped with today's date when written, matching the Python
 suite's behavior (ours in UTC, theirs in local time).

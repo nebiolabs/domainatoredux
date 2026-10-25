@@ -176,8 +176,7 @@ fn ordered_circular_envelope(parts: &[(i64, i64)], l: i64) -> (i64, i64) {
 }
 
 /// Turn an unwrapped window `[w_lo, w_hi)` (length `<= l`) into a [`SliceLoc`]:
-/// forward sub-parts within `[0, l)`, tagged `strand`, with the stranded
-/// `(name_start, name_end)` for the coordinate suffix.
+/// forward sub-parts within `[0, l)`, tagged `strand`, in reading order.
 fn build_slice_from_window(w_lo: i64, w_hi: i64, l: i64, strand: i32) -> SliceLoc {
     let len = (w_hi - w_lo).min(l);
     let lo0 = w_lo.rem_euclid(l);
@@ -210,17 +209,8 @@ fn build_slice_from_window(w_lo: i64, w_hi: i64, l: i64, strand: i32) -> SliceLo
     if !wrapped_forward {
         parts.sort_by_key(|p| p.start);
     }
-    let first = parts[0];
-    let last = *parts.last().unwrap();
-    let (ns, ne) = if strand == -1 {
-        (first.end, last.start)
-    } else {
-        (first.start, last.end)
-    };
     SliceLoc {
         parts,
-        name_start: ns,
-        name_end: ne,
         overall_strand: strand,
         dist_to_start: 0,
         dist_to_end: 0,
@@ -409,8 +399,6 @@ pub fn validate_range(
 #[derive(Clone)]
 pub(crate) struct SliceLoc {
     pub(crate) parts: Vec<Env>,
-    pub(crate) name_start: i64,
-    pub(crate) name_end: i64,
     pub(crate) overall_strand: i32,
     /// Upstream / downstream extension sizes (bp) of the focus CDS within the
     /// region, for `--pad` alignment. Only computed for linear contigs (0 for
@@ -446,24 +434,58 @@ impl Region {
     }
 }
 
-impl SliceLoc {
-    /// The 1-based `(start, end)` for the `_start:end` coordinate suffix —
-    /// `stranded_start_human_readable` / `stranded_end_human_readable` of the slice.
-    ///
-    /// Forward that is `(name_start + 1, name_end)`. On a **reverse** slice the roles
-    /// invert: `name_start` is already an exclusive end so it takes no `+1`, and
-    /// `name_end` is a 0-based start so it does. Applying the forward rule to both
-    /// (as upstream's `get_cds_neighborhood` did until `f0741bc`) leaves a reverse
-    /// label off by one in each direction — a 306 bp region named `1265:958`, which
-    /// spans 308.
-    ///
-    /// The whole-contig no-rename checks use the raw 0-based `name_start`/`name_end`,
-    /// not this.
-    pub(crate) fn name_label(&self) -> (i64, i64) {
-        if self.overall_strand == -1 {
-            (self.name_start, self.name_end + 1)
+/// Upstream `model.region_id`: the id of the region of `parent` that `parts` slices
+/// out, reverse complemented afterwards if `flip`. Every tool that extracts a region
+/// names it this way: `{id}_{first}:{last}`, plus `rc` when the region reads the
+/// parent's reverse strand. `first`/`last` are the 1-based parent coordinates of the
+/// region's first and last bases as written, so `first > last` means reversed or
+/// wrapping the origin. The whole contig from its own origin drops the coordinates:
+/// `{id}` forward, `{id}_rc` reverse. Protein regions are never reversed.
+pub(crate) fn region_id(parent: &SeqRecord, parts: &[Env], flip: bool) -> String {
+    let (head, tail) = (parts[0], parts[parts.len() - 1]);
+    let mut first = if head.strand == -1 {
+        head.end
+    } else {
+        head.start + 1
+    };
+    let mut last = if tail.strand == -1 {
+        tail.start + 1
+    } else {
+        tail.end
+    };
+    let mut reverse = parent.molecule_type.as_deref() != Some("protein") && head.strand == -1;
+    if flip {
+        std::mem::swap(&mut first, &mut last);
+        reverse = !reverse;
+    }
+    let contig_length = parent.seq.len() as i64;
+    let length: i64 = parts.iter().map(|p| p.end - p.start).sum();
+    let whole = if reverse {
+        (contig_length, 1)
+    } else {
+        (1, contig_length)
+    };
+    let rc = if reverse { "rc" } else { "" };
+    if length == contig_length && (first, last) == whole {
+        if reverse {
+            format!("{}_rc", parent.id)
         } else {
-            (self.name_start + 1, self.name_end)
+            parent.id.clone()
+        }
+    } else {
+        format!("{}_{first}:{last}{rc}", parent.id)
+    }
+}
+
+impl SliceLoc {
+    /// Upstream `stranded_start` (0-based): where reading the slice begins, the first
+    /// part's start forward and its exclusive end on the reverse strand.
+    fn stranded_start(&self) -> i64 {
+        let head = self.parts[0];
+        if head.strand == -1 {
+            head.end
+        } else {
+            head.start
         }
     }
 }
@@ -529,15 +551,8 @@ pub(crate) fn cds_neighborhood(
             Range::None => {}
         }
         let (padded, (up_ext, down_ext)) = pad_linear(envelope, rec_len, up, down);
-        let (ns, ne) = if padded.strand == -1 {
-            (padded.end, padded.start)
-        } else {
-            (padded.start, padded.end)
-        };
         return SliceLoc {
             parts: vec![padded],
-            name_start: ns,
-            name_end: ne,
             overall_strand: strand,
             dist_to_start: up_ext,
             dist_to_end: down_ext,
@@ -603,12 +618,12 @@ pub(crate) fn cds_neighborhood(
 /// from the end of the focus to the end of the slice.
 fn circular_focus_distances(slice: &SliceLoc, (a, b): (i64, i64), l: i64) -> (i64, i64) {
     let circular_dist = |start: i64, end: i64| (end - start).rem_euclid(l);
-    // `name_start` is the slice's stranded start: a 0-based start forward, an
-    // exclusive end on the reverse strand, as the focus's `b` is.
+    // The slice's stranded start is a 0-based start forward and an exclusive end on
+    // the reverse strand, as the focus's `b` is.
     let dist_to_start = if slice.overall_strand == -1 {
-        circular_dist(b, slice.name_start)
+        circular_dist(b, slice.stranded_start())
     } else {
-        circular_dist(slice.name_start, a)
+        circular_dist(slice.stranded_start(), a)
     };
     let len: i64 = slice.parts.iter().map(|p| p.end - p.start).sum();
     (dist_to_start, len - dist_to_start - (b - a))
@@ -1088,30 +1103,20 @@ pub fn select_by_cds_hits(
 
         let mut region = neighborhood_record(rec, &slice, &keep);
 
-        // Coordinate renaming and reverse-complement handling.
-        let (start, end) = (slice.name_start, slice.name_end);
         let strand = slice.overall_strand;
-        // The coordinate suffix and `rc` marker belong to the LOCUS identifier;
-        // ACCESSION/VERSION remain unchanged.
-        let whole_fwd = start == 0 && end == rec_len && strand != -1;
-        let whole_rev = end == 0 && start == rec_len && strand == -1;
-        if !whole_fwd && !whole_rev {
-            let (ls, le) = slice.name_label();
-            region.id = format!("{}_{}:{}", region.id, ls, le);
-        }
-        if !normalize_direction && strand == -1 {
+        let flip = !normalize_direction && strand == -1;
+        if flip {
             // Flip back to the original orientation.
             region = reverse_complement_record(&region);
-        } else if strand == -1 {
-            region.id.push_str("rc");
         }
+        // The id names the region; ACCESSION/VERSION keep the contig's.
+        region.id = region_id(rec, &slice.parts, flip);
 
         // The focus position travels with the region so `--pad` can align the focus
         // CDSs after the whole search completes. Read before `slice` can be moved into `selected`
         // below, and swapped on an un-normalized reverse region, which was flipped
         // back to the original orientation above.
-        let flipped = !normalize_direction && strand == -1;
-        let (dist_to_start, dist_to_end) = if flipped {
+        let (dist_to_start, dist_to_end) = if flip {
             (slice.dist_to_end, slice.dist_to_start)
         } else {
             (slice.dist_to_start, slice.dist_to_end)
@@ -1134,7 +1139,7 @@ pub fn select_by_cds_hits(
             record: region,
             dist_to_start,
             dist_to_end,
-            focus_strand: if flipped { -1 } else { 1 },
+            focus_strand: if flip { -1 } else { 1 },
         });
         if max_hits_per_contig.is_some_and(|m| out.len() >= m) {
             break;
@@ -1221,8 +1226,6 @@ pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<Se
             .collect();
         let slice = SliceLoc {
             parts,
-            name_start: 0,
-            name_end: 0,
             overall_strand: strand,
             dist_to_start: 0,
             dist_to_end: 0,
@@ -1378,11 +1381,8 @@ mod tests {
         for strand in [1, -1] {
             let slice =
                 cds_neighborhood(100, true, &one_cds(10, 20, strand), 0, Range::Whole, None);
-            assert_eq!(
-                (slice.name_start, slice.name_end),
-                (65, 65),
-                "strand {strand}"
-            );
+            let expected = if strand == 1 { "c_66:65" } else { "c_65:66rc" };
+            assert_eq!(id_of(&slice, 100), expected);
             assert_eq!(
                 (slice.dist_to_start, slice.dist_to_end),
                 (45, 45),
@@ -1397,7 +1397,7 @@ mod tests {
     fn a_whole_circular_hit_region_centers_on_the_hit() {
         let hit = [(16, 20)];
         let slice = cds_neighborhood(100, true, &one_cds(10, 20, 1), 0, Range::Whole, Some(&hit));
-        assert_eq!(slice.name_start, 68);
+        assert_eq!(id_of(&slice, 100), "c_69:68");
         assert_eq!((slice.dist_to_start, slice.dist_to_end), (42, 48));
         // Only the whole contig is centered on the hit; a window stays on the CDS.
         let window = cds_neighborhood(
@@ -1408,7 +1408,7 @@ mod tests {
             Range::Kb(0.005, 0.005),
             Some(&hit),
         );
-        assert_eq!((window.name_start, window.name_end), (5, 25));
+        assert_eq!(id_of(&window, 100), "c_6:25");
         assert_eq!((window.dist_to_start, window.dist_to_end), (5, 5));
     }
 
@@ -1440,8 +1440,6 @@ mod tests {
     fn slice1(start: i64, end: i64, strand: i32) -> SliceLoc {
         SliceLoc {
             parts: vec![Env { start, end, strand }],
-            name_start: 0,
-            name_end: 0,
             overall_strand: strand,
             dist_to_start: 0,
             dist_to_end: 0,
@@ -1464,8 +1462,6 @@ mod tests {
                     strand: 1,
                 },
             ],
-            name_start: 14,
-            name_end: 4,
             overall_strand: 1,
             dist_to_start: 0,
             dist_to_end: 0,
@@ -1483,26 +1479,36 @@ mod tests {
         }
     }
 
-    #[test]
-    fn name_label_inverts_on_the_reverse_strand() {
-        // Forward: the plain 1-based conversion.
-        let f = build_slice_from_window(4, 10, 20, 1);
-        assert_eq!((f.name_start, f.name_end), (4, 10));
-        assert_eq!(f.name_label(), (5, 10));
+    /// The id of the region `slice` cuts from a length-`l` test contig.
+    fn id_of(slice: &SliceLoc, l: i64) -> String {
+        region_id(
+            &test_rec(&vec![b'A'; to_index(l)], vec![]),
+            &slice.parts,
+            false,
+        )
+    }
 
-        // Reverse: `name_start` is already an exclusive end and `name_end` a 0-based
-        // start, so the `+1` moves to the other coordinate. Applying the forward rule
-        // here (upstream did until f0741bc) gives a label spanning two more bases than
-        // the region: upstream's own fixture named a 306 bp slice `1265:958`.
+    /// Upstream `model.region_id`.
+    #[test]
+    fn region_ids_name_the_bases_as_written() {
+        // Forward: the plain 1-based conversion.
+        assert_eq!(id_of(&build_slice_from_window(4, 10, 20, 1), 20), "c_5:10");
+        // Reverse: the first base written is the highest. Applying the forward rule
+        // (upstream did until f0741bc) names a label two bases longer than the region:
+        // upstream's own fixture named a 306 bp slice `1265:958`.
         let r = build_slice_from_window(4, 10, 20, -1);
-        assert_eq!((r.name_start, r.name_end), (10, 4));
-        assert_eq!(r.name_label(), (10, 5));
-        // 10 down to 5 inclusive is 6 bases -- the length of the slice.
-        let (ls, le) = r.name_label();
-        assert_eq!(
-            ls - le + 1,
-            r.parts.iter().map(|p| p.end - p.start).sum::<i64>()
-        );
+        assert_eq!(id_of(&r, 20), "c_10:5rc");
+        // Flipped back to the parent's direction, the region reads forward.
+        let rec = test_rec(&[b'A'; 20], vec![]);
+        assert_eq!(region_id(&rec, &r.parts, true), "c_5:10");
+        // The whole contig from its own origin has no coordinates.
+        assert_eq!(id_of(&slice1(0, 20, 1), 20), "c");
+        assert_eq!(id_of(&slice1(0, 20, -1), 20), "c_rc");
+        assert_eq!(region_id(&rec, &slice1(0, 20, -1).parts, true), "c");
+        // A protein is never reverse complemented.
+        let mut protein = rec.clone();
+        protein.molecule_type = Some("protein".into());
+        assert_eq!(region_id(&protein, &r.parts, false), "c_10:5");
     }
 
     #[test]
@@ -1518,7 +1524,7 @@ mod tests {
         // `stranded_start`/`stranded_end` come off the first and last listed part, so
         // they name the new origin. Sorting the parts ascending would give (0, 20),
         // which reads as "the whole contig" and suppresses the coordinate suffix.
-        assert_eq!((f.name_start, f.name_end), (14, 4));
+        assert_eq!(id_of(&f, 20), "c_15:4");
 
         // Reverse is the mirror image: each part is reverse-complemented before being
         // concatenated, so reading the arc backwards needs ascending order.
@@ -1527,7 +1533,7 @@ mod tests {
             r.parts.iter().map(|p| (p.start, p.end)).collect::<Vec<_>>(),
             vec![(0, 4), (14, 20)]
         );
-        assert_eq!((r.name_start, r.name_end), (4, 14));
+        assert_eq!(id_of(&r, 20), "c_4:15rc");
 
         // A window that does not wrap is a single part either way.
         let n = build_slice_from_window(4, 10, 20, 1);
@@ -1535,15 +1541,15 @@ mod tests {
             n.parts.iter().map(|p| (p.start, p.end)).collect::<Vec<_>>(),
             vec![(4, 10)]
         );
-        assert_eq!((n.name_start, n.name_end), (4, 10));
+        assert_eq!(id_of(&n, 20), "c_5:10");
 
-        // A full circle stays rotated to its split point (Python names it `15:14`).
+        // A full circle stays rotated to its split point.
         let w = build_slice_from_window(14, 34, 20, 1);
         assert_eq!(
             w.parts.iter().map(|p| (p.start, p.end)).collect::<Vec<_>>(),
             vec![(14, 20), (0, 14)]
         );
-        assert_eq!((w.name_start, w.name_end), (14, 14));
+        assert_eq!(id_of(&w, 20), "c_15:14");
     }
 
     #[test]

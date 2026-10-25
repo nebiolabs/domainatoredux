@@ -277,9 +277,6 @@ BASELINE_HEADER = """\
 #   gap        a real missing feature -- the tracked to-do list
 #   upstream   the divergence is in a dependency, not in this port
 #   harness    an artifact of how the invocation is replayed, not a divergence
-#   pending    transient, during the upstream 1.0 migration: `pending:1.0-cli` rows fail on
-#              an option this port has not renamed yet, `pending:1.0-behavior` rows on a
-#              1.0 behavior change not ported yet. None may remain once the migration ends.
 #
 # Columns: <python module> <test_fn#n> <outcome> <class> <note>
 """

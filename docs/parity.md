@@ -138,7 +138,6 @@ deliberate deferral from a bug:
 | `gap:<tag>` | a real missing feature — the actual to-do list |
 | `upstream:<tag>` | the divergence is in a dependency, not in this port |
 | `harness:<tag>` | an artifact of how the invocation is replayed |
-| `pending:1.0-cli`, `pending:1.0-behavior` | transient, during the move to upstream 1.0: an option not renamed yet, or a 1.0 behavior change not ported yet. None may remain once that is done |
 
 A newly-appearing row arrives with an empty `class`; `--update_baseline` says how
 many need triage. Group several rows under one tag when they share a root cause —

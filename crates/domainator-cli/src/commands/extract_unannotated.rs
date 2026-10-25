@@ -9,7 +9,6 @@ pub fn run(args: &ExtractUnannotatedArgs) -> Result<()> {
     let opts = ExtractUnannotatedOptions {
         evalue: args.evalue.map(|e| e.0),
         score: args.min_score.map(|s| s.0),
-        keep_direction: args.keep_direction,
         keep_name: args.keep_name,
         search_hits: args.annotation_type == "domain_search",
         databases: args.databases.as_ref().map(|d| d.iter().cloned().collect()),

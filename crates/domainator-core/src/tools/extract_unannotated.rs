@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use crate::seq::{SeqFeature, SeqRecord};
-use crate::tools::extract_common::{revcomp_record, slice_from_location, Loc};
+use crate::tools::extract_common::{slice_from_location, Loc};
 use crate::tools::select_common::evalue_passes;
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
@@ -14,7 +14,6 @@ use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 pub struct ExtractUnannotatedOptions {
     pub evalue: Option<f64>,
     pub score: Option<f64>,
-    pub keep_direction: bool,
     pub keep_name: bool,
     pub search_hits: bool,
     pub databases: Option<HashSet<String>>,
@@ -156,33 +155,10 @@ pub fn extract_unannotated(
         for (s, e, st) in regions {
             let loc = Loc::single(s, e, st);
             let mut slice = slice_from_location(rec, &loc, &rec.features);
-            let mut new_name = rec.id.clone();
-            if slice.seq.len() as i64 != rec_len {
-                new_name = format!(
-                    "{}_{}:{}",
-                    rec.id,
-                    loc.stranded_start_hr(),
-                    loc.stranded_end_hr()
-                );
-            }
-            // Protein: never reverse-complement (molecule_type == protein).
-            let protein = rec.molecule_type.as_deref() == Some("protein");
-            if !protein && opts.keep_direction && st == -1 {
-                slice = revcomp_record(&slice);
-                slice.name = rec.name.clone();
-                slice.id = rec.id.clone();
-                if !opts.keep_name {
-                    slice.name = new_name.clone();
-                    slice.id = new_name.clone();
-                }
-                out.push(slice);
-                continue;
-            } else if !protein && st == -1 {
-                new_name.push_str("rc");
-            }
+            // Only proteins are supported, so nothing is reverse complemented and
+            // `--keep_direction` has no effect.
             if !opts.keep_name {
-                slice.name = new_name.clone();
-                slice.id = new_name;
+                slice.id = loc.region_id(rec, false);
             }
             out.push(slice);
         }

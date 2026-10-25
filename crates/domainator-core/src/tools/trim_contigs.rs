@@ -6,7 +6,7 @@ use std::collections::HashSet;
 
 use crate::seq::location::to_index;
 use crate::seq::{SeqRecord, Topology};
-use crate::tools::neighborhood::{slice_annotations, slice_linear_features};
+use crate::tools::neighborhood::{region_id, slice_annotations, slice_linear_features, Env};
 use crate::tools::select_common::{BooleanEvaluator, DomainatorCds};
 
 /// A validated trim window: `(kb (left, right), cds (left, right))`, each
@@ -186,8 +186,13 @@ fn trim_contig(
 
     if left > 0 || right < rec_len {
         let mut sliced = slice_forward(record, left, right);
-        // Keep ACCESSION/VERSION unchanged when suffixing the LOCUS identifier.
-        sliced.id = format!("{}_{}:{}", sliced.id, left + 1, right);
+        // ACCESSION/VERSION keep the contig's.
+        let part = Env {
+            start: left,
+            end: right,
+            strand: 1,
+        };
+        sliced.id = region_id(record, &[part], false);
         Some(sliced)
     } else {
         Some(record.clone())

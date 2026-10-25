@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use crate::seq::{SeqRecord, Topology};
-use crate::tools::neighborhood::{slice_record, Env, SliceLoc};
+use crate::tools::neighborhood::{region_id, slice_record, Env, SliceLoc};
 
 /// One row of the coordinate table.
 #[derive(Clone, Debug, PartialEq)]
@@ -218,30 +218,15 @@ pub fn extract_coordinate_region(
         }
     };
 
-    // name_start/name_end are unused here (naming uses the table coordinates).
-    let (ns, ne) = (start, end);
+    let id = region_id(contig, &parts, false);
     let slice = SliceLoc {
         parts,
-        name_start: ns,
-        name_end: ne,
         overall_strand: strand,
         dist_to_start: 0,
         dist_to_end: 0,
     };
-
-    let features: Vec<crate::seq::SeqFeature> = contig.features.clone();
-    let mut record = slice_record(contig, &slice, &features);
-
-    // Rename to the original coordinates (from the table, not the slice).
-    let mut new_name = format!("{}_{}:{}", record.id, selection.start, selection.end);
-    if strand == -1 {
-        new_name.push_str("rc");
-    }
-    // This tool sets both LOCUS and ACCESSION/VERSION to the suffixed value.
-    record.name = new_name.clone();
-    record.id = new_name.clone();
-    record.annotations.accessions = vec![new_name];
-    record.annotations.sequence_version = None;
+    let mut record = slice_record(contig, &slice, &contig.features);
+    record.id = id;
     Ok(record)
 }
 
@@ -348,7 +333,7 @@ mod tests {
         };
         let out = extract_coordinate_region(&r, &sel).unwrap();
         assert_eq!(out.seq, b"ACCGG");
-        assert_eq!(out.name, "c_2:6");
+        assert_eq!(out.id, "c_2:6");
     }
 
     #[test]
@@ -364,7 +349,8 @@ mod tests {
         let out = extract_coordinate_region(&r, &sel).unwrap();
         // seq[0:4] = "AACC"; revcomp -> "GGTT"
         assert_eq!(out.seq, b"GGTT");
-        assert_eq!(out.name, "c_1:4rc");
+        // The first base written is position 4.
+        assert_eq!(out.id, "c_4:1rc");
     }
 
     #[test]
@@ -380,7 +366,7 @@ mod tests {
         };
         let out = extract_coordinate_region(&r, &sel).unwrap();
         assert_eq!(out.seq, b"TTAA");
-        assert_eq!(out.name, "c_7:2");
+        assert_eq!(out.id, "c_7:2");
     }
 
     #[test]

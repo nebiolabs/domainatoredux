@@ -54,9 +54,9 @@ The extracted records are named for the region they came from:
 LOCUS       pDONR201_1_1391:2rc     1390 bp    DNA
 ```
 
-`_1391:2` is the coordinate window and `rc` marks a reverse-complemented,
-origin-crossing slice — these are circular plasmids, so a window around a gene near
-position 1 wraps the origin. See [Concepts](concepts.md).
+`_1391:2` gives the first and last bases of the region, and `rc` marks a region read
+from the reverse strand, from position 1391 down to 2. See
+[File formats](file-formats.md) for the naming rule.
 
 Use [`compare_contigs`](cli-reference.md#compare_contigs) rather than
 [`seq_dist`](cli-reference.md#seq_dist) whenever the unit of comparison is a

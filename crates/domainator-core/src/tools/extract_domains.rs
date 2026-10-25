@@ -6,7 +6,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::seq::partial::{cds_fragment_status, Partial};
 use crate::seq::{SeqFeature, SeqRecord, Topology};
-use crate::tools::extract_common::{pad_location, revcomp_record, slice_from_location, Loc};
+use crate::tools::extract_common::{
+    pad_location, revcomp_record, slice_from_location, slice_from_parts, Loc,
+};
+use crate::tools::neighborhood::{region_id, Env};
 use crate::tools::select_common::get_cds_unique_name;
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
@@ -174,66 +177,64 @@ pub fn extract_domains(
             }
             let loc = Loc::single(start, end, new_strand);
             let mut slice = slice_from_location(rec, &loc, &rec.features);
-            let mut new_name = rec.id.clone();
-            if slice.seq.len() as i64 != rec_len {
-                new_name = format!(
-                    "{}_{}:{}",
-                    rec.id,
-                    loc.stranded_start_hr(),
-                    loc.stranded_end_hr()
-                );
-            }
-            if !protein && new_strand == -1 {
-                new_name.push_str("rc");
-            }
-            // The name/rc marker goes on the LOCUS name (Python's record.id, which
-            // the writer puts on LOCUS); ACCESSION/VERSION are left unchanged.
+            // The region id goes on the LOCUS name (Python's record.id);
+            // ACCESSION/VERSION are left unchanged.
             if !opts.keep_name {
-                slice.id = new_name;
+                slice.id = loc.region_id(rec, false);
             }
             out.push(slice);
         } else if opts.splice {
-            // Merge padded parts of all hit domains; delete intervening sequence.
-            let mut splice_parts: Vec<(i64, i64, i32)> = Vec::new();
-            for domain in &hits {
+            // Glue the padded domains together, deleting the sequence between them.
+            // As for --combine, the domain with the lowest start decides the direction,
+            // and the domains are glued in the order they are read: right to left on
+            // the reverse strand. A domain's own parts are already in reading order,
+            // which keeps one spanning the origin of a circular contig intact.
+            let first_strand = hits
+                .iter()
+                .min_by_key(|f| feature_loc(f).start())
+                .map(|f| feature_loc(f).strand)
+                .unwrap_or(1);
+            let reverse = !opts.keep_direction && first_strand == -1;
+            let mut ordered = hits.clone();
+            if reverse {
+                ordered.sort_by_key(|f| std::cmp::Reverse(feature_loc(f).parts[0].1));
+            } else {
+                ordered.sort_by_key(|f| feature_loc(f).parts[0].0);
+            }
+            let mut splice_parts: Vec<Env> = Vec::new();
+            for domain in &ordered {
                 let padded = pad_location(rec, &feature_loc(domain), opts.pad_up, opts.pad_down);
-                for &(s, e) in &padded.parts {
-                    let mut st = padded.strand;
-                    if opts.keep_direction && (st == -1 || st == 0) {
-                        st = 1;
+                let mut parts: Vec<Env> = padded
+                    .parts
+                    .iter()
+                    .map(|&(start, end)| Env {
+                        start,
+                        end,
+                        strand: padded.strand,
+                    })
+                    .collect();
+                if opts.keep_direction {
+                    // Reverse-strand parts are read right to left, so read them left
+                    // to right on the forward strand.
+                    if padded.strand == -1 {
+                        parts.reverse();
                     }
-                    splice_parts.push((s, e, st));
+                    for p in &mut parts {
+                        p.strand = 1;
+                    }
                 }
+                splice_parts.extend(parts);
             }
             if splice_parts.is_empty() {
                 continue;
             }
             let merged = merge_parts(&splice_parts);
-            let strand = merged[0].2;
-            let loc = Loc {
-                parts: merged.iter().map(|&(s, e, _)| (s, e)).collect(),
-                strand,
-            };
-            let mut slice = slice_from_location(rec, &loc, &rec.features);
+            let mut slice = slice_from_parts(rec, merged.clone(), &rec.features);
             if rec.topology == Topology::Circular {
                 slice.topology = Topology::Circular;
             }
             if !opts.keep_name {
-                let mut new_name = rec.id.clone();
-                if slice.seq.len() as i64 != rec_len {
-                    let min_start = merged.iter().map(|p| p.0).min().unwrap();
-                    let max_end = merged.iter().map(|p| p.1).max().unwrap();
-                    let (start_label, end_label) = if strand == -1 {
-                        (max_end, min_start + 1)
-                    } else {
-                        (min_start + 1, max_end)
-                    };
-                    new_name = format!("{}_{}:{}", rec.id, start_label, end_label);
-                    if !protein && strand == -1 && !opts.keep_direction {
-                        new_name.push_str("rc");
-                    }
-                }
-                slice.id = new_name;
+                slice.id = region_id(rec, &merged, false);
             }
             out.push(slice);
         } else {
@@ -242,28 +243,14 @@ pub fn extract_domains(
                 let strand = domain.location.parts.first().map(|p| p.2).unwrap_or(1);
                 let loc = pad_location(rec, &feature_loc(domain), opts.pad_up, opts.pad_down);
                 let mut slice = slice_from_location(rec, &loc, &rec.features);
-                let mut new_name = rec.id.clone();
-                if slice.seq.len() as i64 != rec_len {
-                    new_name = format!(
-                        "{}_{}:{}",
-                        rec.id,
-                        loc.stranded_start_hr(),
-                        loc.stranded_end_hr()
-                    );
-                }
-                if !protein && opts.keep_direction && strand == -1 {
-                    // slice already flipped to forward; flip back to original.
+                // The slice reads a reverse-strand domain forward; flip it back to keep
+                // the original direction.
+                let flip = !protein && opts.keep_direction && strand == -1;
+                if flip {
                     slice = revcomp_record(&slice);
-                    if !opts.keep_name {
-                        slice.id = new_name;
-                    }
-                    out.push(slice);
-                    continue;
-                } else if !protein && strand == -1 {
-                    new_name.push_str("rc");
                 }
                 if !opts.keep_name {
-                    slice.id = new_name;
+                    slice.id = loc.region_id(rec, flip);
                 }
                 out.push(slice);
             }
@@ -272,20 +259,19 @@ pub fn extract_domains(
     Ok(out)
 }
 
-/// `CompoundLocation.merge_parts`: sort by start, merge overlapping/adjacent
-/// intervals (keeping strand of the first).
-fn merge_parts(parts: &[(i64, i64, i32)]) -> Vec<(i64, i64, i32)> {
-    let mut sorted = parts.to_vec();
-    sorted.sort_by_key(|p| (p.0, p.1));
-    let mut merged: Vec<(i64, i64, i32)> = Vec::new();
-    for (s, e, st) in sorted {
+/// `location_ops.merge_parts`: merge consecutive parts on the same strand that
+/// touch or overlap. Parts are not sorted, which would scramble a join.
+fn merge_parts(parts: &[Env]) -> Vec<Env> {
+    let mut merged: Vec<Env> = Vec::new();
+    for &part in parts {
         if let Some(last) = merged.last_mut() {
-            if s <= last.1 {
-                last.1 = last.1.max(e);
+            if part.strand == last.strand && part.start <= last.end && last.start <= part.end {
+                last.start = last.start.min(part.start);
+                last.end = last.end.max(part.end);
                 continue;
             }
         }
-        merged.push((s, e, st));
+        merged.push(part);
     }
     merged
 }
@@ -360,7 +346,8 @@ mod tests {
         let out = extract_domains(&[r], &opts).unwrap();
         // keep_direction flips back to forward orientation "AAACCC"
         assert_eq!(out[0].seq, b"AAACCC");
-        assert_eq!(out[0].id, "c_6:1"); // no rc suffix
+        // Named in the parent's direction, with no rc suffix.
+        assert_eq!(out[0].id, "c_1:6");
     }
 
     #[test]
