@@ -10,6 +10,7 @@
 mod common;
 mod enum_report;
 mod extract_domains;
+mod extract_peptides;
 mod filter_domains;
 mod hmmer_report;
 mod select_by_cds;
@@ -20,6 +21,7 @@ mod sort_contigs;
 pub use common::CommonArgs;
 pub use enum_report::EnumReportArgs;
 pub use extract_domains::ExtractDomainsArgs;
+pub use extract_peptides::ExtractPeptidesArgs;
 pub use filter_domains::FilterDomainsArgs;
 pub use hmmer_report::HmmerReportArgs;
 pub use select_by_cds::SelectByCdsArgs;
@@ -41,6 +43,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "select_by_coord" => SelectByCoordArgs::augment_args(cmd),
         "filter_domains" => FilterDomainsArgs::augment_args(cmd),
         "extract_domains" => ExtractDomainsArgs::augment_args(cmd),
+        "extract_peptides" => ExtractPeptidesArgs::augment_args(cmd),
         _ => return None,
     })
 }

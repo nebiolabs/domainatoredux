@@ -941,7 +941,7 @@ fn extract_selection_blocking(
     let ts = target.to_string_lossy().into_owned();
     if translate {
         let opts = ExtractPeptidesOptions {
-            evalue: 100_000_000.0,
+            evalue: None,
             target_domains: None,
             target_cdss: None,
             search_hits: false,

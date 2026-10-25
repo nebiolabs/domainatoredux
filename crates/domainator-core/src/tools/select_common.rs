@@ -386,8 +386,7 @@ impl DomainatorCds {
     }
 
     /// `DomainatorCDS.get_domain_names`: domain names, optionally restricted to
-    /// `databases` (and, mirroring the original's quirky `< evalue` test, an
-    /// optional evalue filter).
+    /// `databases` and to e-values at most `evalue`.
     pub fn get_domain_names(
         &self,
         databases: Option<&HashSet<String>>,
@@ -405,10 +404,8 @@ impl DomainatorCds {
                     keep = false;
                 }
             }
-            if let Some(ev) = evalue {
-                if feature_evalue(f) < ev {
-                    keep = false;
-                }
+            if !evalue_passes(f, evalue) {
+                keep = false;
             }
             if keep {
                 if let Some(n) = f.get_first("name") {

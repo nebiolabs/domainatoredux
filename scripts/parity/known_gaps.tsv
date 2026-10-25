@@ -81,8 +81,6 @@ extract_domains	test_extract_domains_origin_non_spanning_domain_1#0	differs	pend
 extract_domains	test_extract_domains_origin_non_spanning_domain_2#0	differs	pending:1.0-behavior	domains.gb: compare_seqfiles failed at helpers.py:44
 extract_domains	test_extract_domains_origin_spanning_domain_2#0	differs	pending:1.0-behavior	domains.gb: compare_seqfiles failed at helpers.py:44
 extract_domains	test_extract_domains_origin_spanning_domain_3#0	differs	pending:1.0-behavior	domains.gb: compare_seqfiles failed at helpers.py:44
-extract_peptides	test_domain_search_hit_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--annotation_type' found
-extract_peptides	test_extract_peptides_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--cds' found
 extract_unannotated	test_extract_unannotated_lb_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--min_length' found
 hmmer_compare	test_hmmer_compare_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--alignments_out' found
 hmmer_compare	test_hmmer_compare_cpu_zero_uses_all_cores#0	rust-failed	pending:1.0-cli	error: unexpected argument '--min_score' found

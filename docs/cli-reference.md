@@ -310,12 +310,12 @@ domainatoredux extract_domains -i annotated.gb --fasta_out domains.fasta \
 
 ### `extract_peptides`
 
-Extract the peptide sequence of selected CDSs. Select with `--cdss`/`--cdss_file` (note
-the double `s`, unlike `select_by_cds`), `--domains`, `--databases`, `--search_hits`,
+Extract the peptide sequence of selected CDSs. Select with `--cds`/`--cds_file`,
+`--domains`, `--databases`, `--annotation_type domain_search` (the search hits),
 `--unannotated` or `--strand`; `--name_field` chooses the qualifier used for names.
 
 ```bash
-domainatoredux extract_peptides -i annotated.gb -o proteins.fasta --domains Cas9 --fasta_out
+domainatoredux extract_peptides -i annotated.gb --fasta_out proteins.fasta --domains Cas9
 ```
 
 ### `extract_unannotated`

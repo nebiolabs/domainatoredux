@@ -16,7 +16,8 @@ use crate::tools::select_common::DomainatorCds;
 #[derive(Default)]
 pub struct ExtractPeptidesOptions {
     /// E-value cutoff for the domain annotations kept on the output.
-    pub evalue: f64,
+    /// Only annotations with an e-value at most this count (`None`: no cutoff).
+    pub evalue: Option<f64>,
     pub target_domains: Option<HashSet<String>>,
     pub target_cdss: Option<HashSet<String>>,
     pub search_hits: bool,
@@ -47,7 +48,7 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
     for contig in records {
         let cdss = DomainatorCds::list_from_contig(
             contig,
-            Some(opts.evalue),
+            opts.evalue,
             f64::NEG_INFINITY,
             true, // skip_pseudo
             Some(&prec_owned),
@@ -213,7 +214,7 @@ mod tests {
         // 6 nt CDS -> 2 aa. ATG GCT -> M A
         let r = contig(b"ATGGCT", vec![cds("C1", "geneA", 0, 6, 1)]);
         let opts = ExtractPeptidesOptions {
-            evalue: 1e8,
+            evalue: None,
             extract_all: true,
             ..Default::default()
         };
@@ -232,7 +233,7 @@ mod tests {
             vec![cds("C1", "geneA", 0, 9, 1), dom("C1", "D1", 0, 6)],
         );
         let opts = ExtractPeptidesOptions {
-            evalue: 1e8,
+            evalue: None,
             target_domains: Some(["D1".to_string()].into_iter().collect()),
             ..Default::default()
         };
@@ -248,7 +249,7 @@ mod tests {
         assert_eq!(dfeat.location.parts[0].1, 2);
         // no match for a different domain
         let opts2 = ExtractPeptidesOptions {
-            evalue: 1e8,
+            evalue: None,
             target_domains: Some(["OTHER".to_string()].into_iter().collect()),
             ..Default::default()
         };
@@ -270,7 +271,7 @@ mod tests {
             vec![cds("C1", "fwd", 0, 6, 1), cds("C2", "rev", 6, 12, -1)],
         );
         let opts = ExtractPeptidesOptions {
-            evalue: 1e8,
+            evalue: None,
             extract_all: true,
             strand: Some("f".into()),
             ..Default::default()
@@ -284,7 +285,7 @@ mod tests {
     fn keep_name_uses_contig() {
         let r = contig(b"ATGGCT", vec![cds("C1", "geneA", 0, 6, 1)]);
         let opts = ExtractPeptidesOptions {
-            evalue: 1e8,
+            evalue: None,
             extract_all: true,
             keep_name: true,
             ..Default::default()
