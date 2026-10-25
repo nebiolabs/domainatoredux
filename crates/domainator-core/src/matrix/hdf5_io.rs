@@ -371,7 +371,13 @@ pub fn write(path: &str, m: &DataMatrix) -> io::Result<()> {
         AttrValue::VarLenUtf8(MATRIX_FILE_VERSION.into()),
     );
     builder.set_attr(ARRAY_TYPE_ATTR, AttrValue::VarLenUtf8(array_type.into()));
-    builder.create_dataset(SPARSE_VALUES).with_f64_data(&values);
+    if m.is_integer_bool() {
+        // Upstream's bool matrices are int8.
+        let flags: Vec<i8> = values.iter().map(|&v| i8::from(v == 1.0)).collect();
+        builder.create_dataset(SPARSE_VALUES).with_i8_data(&flags);
+    } else {
+        builder.create_dataset(SPARSE_VALUES).with_f64_data(&values);
+    }
     builder
         .create_dataset(SPARSE_CSR_INDICES)
         .with_i32_data(&indices);
@@ -463,6 +469,27 @@ mod tests {
         write(&path, &m).unwrap();
         assert_eq!(stored_values(&path), 1);
         assert_eq!(read(&path).unwrap().densify()[2], 3.0);
+    }
+
+    /// Upstream's bool matrices are int8, in the file and in dense text.
+    #[test]
+    fn a_bool_matrix_is_written_as_integers() {
+        let mut m = matrix(
+            &["x", "y", "z"],
+            vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        );
+        m.data_type = "bool".into();
+        let path = scratch("bool.hdf5");
+        write(&path, &m).unwrap();
+        let back = read(&path).unwrap();
+        assert_eq!(back.densify(), m.densify());
+        assert!(back.is_integer_bool());
+        let mut text = Vec::new();
+        super::super::text::write_dense_text_to(&mut text, &back).unwrap();
+        assert!(String::from_utf8(text).unwrap().contains("\na\t1\t0\t1\n"));
+        // A bool matrix holding other values keeps them.
+        m.storage = Storage::Dense(vec![0.5; 9]);
+        assert!(!m.is_integer_bool());
     }
 
     #[test]

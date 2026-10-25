@@ -107,13 +107,20 @@ pub fn write_dense_text_to(w: &mut impl Write, m: &DataMatrix) -> io::Result<()>
     w.write_all(m.cols.join("\t").as_bytes())?;
     w.write_all(b"\n")?;
 
+    // Upstream's bool matrices are int8, which numpy prints without a decimal point.
+    let integers = m.is_integer_bool();
     let mut line = String::new();
     for r in 0..nr {
         line.clear();
         line.push_str(&m.rows[r]);
         for c in 0..nc {
             line.push('\t');
-            line.push_str(&py_float_str(dense[r * nc + c]));
+            let v = dense[r * nc + c];
+            if integers {
+                line.push(if v == 1.0 { '1' } else { '0' });
+            } else {
+                line.push_str(&py_float_str(v));
+            }
         }
         line.push('\n');
         w.write_all(line.as_bytes())?;

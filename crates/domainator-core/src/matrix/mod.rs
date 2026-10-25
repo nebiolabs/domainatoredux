@@ -137,6 +137,17 @@ impl DataMatrix {
         self.rows == self.cols && self.row_lengths == self.col_lengths
     }
 
+    /// True for a `bool` matrix whose every value is 0 or 1: upstream holds those as
+    /// int8 (`transform_matrix --mode bool`), so they are written as integers.
+    pub fn is_integer_bool(&self) -> bool {
+        let is_01 = |v: &f64| *v == 0.0 || *v == 1.0;
+        self.data_type == "bool"
+            && match &self.storage {
+                Storage::Dense(d) => d.iter().all(is_01),
+                Storage::Sparse { values, .. } => values.iter().all(is_01),
+            }
+    }
+
     /// Materialize the matrix as a row-major dense `Vec<f64>` (`nrows * ncols`).
     pub fn densify(&self) -> Vec<f64> {
         let (nr, nc) = (self.nrows(), self.ncols());
