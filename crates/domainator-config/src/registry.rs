@@ -199,11 +199,15 @@ pub const TOOLS: &[ToolInfo] = &[
         ..tool("trim_contigs", "edit", "Trim the ends of contigs.")
     },
     // convert
-    tool(
-        "genbank_to_fasta",
-        "convert",
-        "Convert GenBank files to FASTA.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["fasta_out"]),
+        ..tool(
+            "genbank_to_fasta",
+            "convert",
+            "Convert GenBank files to FASTA.",
+        )
+    },
     // profile
     tool(
         "hmmer_build",

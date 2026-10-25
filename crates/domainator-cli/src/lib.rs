@@ -314,18 +314,7 @@ enum Command {
         print_config: bool,
     },
     /// Convert GenBank record(s) to FASTA.
-    GenbankToFasta {
-        /// Input GenBank file(s) (stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output FASTA file (stdout if omitted).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    GenbankToFasta(config::args::GenbankToFastaArgs),
     /// Clean/filter sequences: newick-safe names, dedup names, strip/filter residues.
     CleanSequences(config::args::CleanSequencesArgs),
     /// Call genes (Prodigal-style CDS features) on nucleotide contigs with the
@@ -1040,12 +1029,6 @@ pub(crate) fn filter_contigs(
         records.retain(|r| set.contains(&r.id));
     }
     Ok(())
-}
-
-/// Like [`load_inputs`] but over string paths (config-file shape).
-fn load_inputs_str(inputs: &[String]) -> Result<Vec<SeqRecord>> {
-    let paths: Vec<PathBuf> = inputs.iter().map(PathBuf::from).collect();
-    load_inputs(&paths)
 }
 
 /// Convert paths to UTF-8 strings.
@@ -1863,29 +1846,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => eprint!("{log_msg}"),
             }
         }
-        Command::GenbankToFasta {
-            input,
-            output,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::GenbankToFastaConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::GenbankToFastaConfig>(p)?,
-                None => config::GenbankToFastaConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let records = load_inputs_str(&cfg.input)?;
-            write_fasta_bp_out(&records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-        }
+        Command::GenbankToFasta(args) => commands::genbank_to_fasta::run(&args)?,
         Command::CleanSequences(args) => commands::clean_sequences::run(&args)?,
         Command::GeneCall {
             input,

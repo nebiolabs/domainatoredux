@@ -15,6 +15,7 @@ mod extract_domains;
 mod extract_peptides;
 mod extract_unannotated;
 mod filter_domains;
+mod genbank_to_fasta;
 mod hmmer_report;
 mod select_by_cds;
 mod select_by_contig;
@@ -30,6 +31,7 @@ pub use extract_domains::ExtractDomainsArgs;
 pub use extract_peptides::ExtractPeptidesArgs;
 pub use extract_unannotated::ExtractUnannotatedArgs;
 pub use filter_domains::FilterDomainsArgs;
+pub use genbank_to_fasta::GenbankToFastaArgs;
 pub use hmmer_report::HmmerReportArgs;
 pub use select_by_cds::SelectByCdsArgs;
 pub use select_by_contig::SelectByContigArgs;
@@ -56,6 +58,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "trim_contigs" => TrimContigsArgs::augment_args(cmd),
         "color_genbank" => ColorGenbankArgs::augment_args(cmd),
         "clean_sequences" => CleanSequencesArgs::augment_args(cmd),
+        "genbank_to_fasta" => GenbankToFastaArgs::augment_args(cmd),
         _ => return None,
     })
 }

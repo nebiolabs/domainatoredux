@@ -8,6 +8,7 @@ pub mod extract_domains;
 pub mod extract_peptides;
 pub mod extract_unannotated;
 pub mod filter_domains;
+pub mod genbank_to_fasta;
 pub mod hmmer_report;
 pub mod select_by_cds;
 pub mod select_by_contig;

@@ -5,13 +5,9 @@ description: "Convert sequence records to FASTA."
 fields:
   - name: input
     label: "Input sequences"
-    role: input_files
     file_type: sequence
-    required: true
     sources: workspace_first
     select: first
-  - name: output
+  - name: fasta_out
     label: "Output (FASTA)"
-    role: output_file
-    required: true
     output_name: "{stem}.fasta"

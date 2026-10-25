@@ -201,13 +201,6 @@ format_db	log_out	missing	null	{"default":null,"flags":["--log_out"],"kind":"pat
 format_db	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
 format_db	shards	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
 format_db	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
-genbank_to_fasta	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-genbank_to_fasta	-	required_outputs	null	["fasta_out"]	todo:1.0-cli	
-genbank_to_fasta	fasta_out	missing	null	{"default":null,"flags":["-o","--fasta_out"],"kind":"path","name":"fasta_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-genbank_to_fasta	input	required	false	true	todo:1.0-cli	
-genbank_to_fasta	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-genbank_to_fasta	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-genbank_to_fasta	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 gene_call	-	tool	true	false	port-only:	
 hmmer_build	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
 hmmer_build	-	required_outputs	null	["hmm_out"]	todo:1.0-cli	

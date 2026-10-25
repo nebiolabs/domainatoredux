@@ -284,21 +284,6 @@ impl DeduplicateConfig {
     }
 }
 
-/// `genbank_to_fasta` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct GenbankToFastaConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-}
-
-impl GenbankToFastaConfig {
-    pub fn merge_cli(&mut self, cli: GenbankToFastaConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-    }
-}
-
 /// `gene_call` parameters (a port-only tool: Prodigal-style gene calling through the
 /// external Orphos binary).
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -865,7 +850,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "domainate" => domainate_schema(),
         "domain_search" => domain_search_schema(),
         "deduplicate_genbank" => deduplicate_schema(),
-        "genbank_to_fasta" => genbank_to_fasta_schema(),
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "seq_dist" => seq_dist_schema(),
@@ -1139,20 +1123,6 @@ fn deduplicate_schema() -> serde_json::Value {
             "both_strands": {"type": "boolean", "default": false, "description": "Nucleotide only"},
             "cluster_table": {"type": ["string", "null"], "description": "Write representative/contigs TSV"},
             "cluster_sep": {"type": ["string", "null"], "description": "Separator in the cluster table (default ' ; ')"}
-        }
-    })
-}
-
-fn genbank_to_fasta_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "genbank_to_fasta config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}, "description": "GenBank inputs (stdin if empty)"},
-            "output": {"type": ["string", "null"], "description": "Output FASTA (stdout if omitted)"}
         }
     })
 }
@@ -1562,7 +1532,6 @@ mod tests {
             "domainate" => DomainateConfig,
             "domain_search" => DomainSearchConfig,
             "deduplicate_genbank" => DeduplicateConfig,
-            "genbank_to_fasta" => GenbankToFastaConfig,
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
             "seq_dist" => SeqDistConfig,
