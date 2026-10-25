@@ -140,23 +140,6 @@ impl GeneCallConfig {
     }
 }
 
-/// `color_table_to_legend` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct ColorTableToLegendConfig {
-    pub input: Vec<String>,
-    pub svg: Option<String>,
-    pub title: Option<String>,
-}
-
-impl ColorTableToLegendConfig {
-    pub fn merge_cli(&mut self, cli: ColorTableToLegendConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, svg);
-        merge_scalar!(self, cli, title);
-    }
-}
-
 /// A tool's manifest entry, as `domainatoredux describe` gives it: what the GUI renders
 /// its dialogs from. A migrated tool's comes from its clap arguments. An unmigrated
 /// tool's is converted from its old config schema, whose property names are its
@@ -264,7 +247,6 @@ fn legacy_parameter(name: &str, prop: &serde_json::Value) -> serde_json::Value {
 fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
         "gene_call" => gene_call_schema(),
-        "color_table_to_legend" => color_table_to_legend_schema(),
         other => {
             anyhow::bail!("no schema for tool {other:?} (`domainatoredux --help` lists the tools)")
         }
@@ -440,21 +422,6 @@ fn gene_call_schema() -> serde_json::Value {
     })
 }
 
-fn color_table_to_legend_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "color_table_to_legend config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}},
-            "svg": {"type": ["string", "null"]},
-            "title": {"type": ["string", "null"], "default": "Legend"}
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -528,7 +495,6 @@ mod tests {
     fn every_tool() -> Vec<(&'static str, serde_json::Value)> {
         tools![
             "gene_call" => GeneCallConfig,
-            "color_table_to_legend" => ColorTableToLegendConfig,
         ]
     }
 

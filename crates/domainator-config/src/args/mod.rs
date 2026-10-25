@@ -11,6 +11,7 @@ mod build_ssn;
 mod build_ssn_viewer;
 mod clean_sequences;
 mod color_genbank;
+mod color_table_to_legend;
 mod common;
 mod compare_contigs;
 mod deduplicate_genbank;
@@ -43,6 +44,7 @@ pub use build_ssn::BuildSsnArgs;
 pub use build_ssn_viewer::BuildSsnViewerArgs;
 pub use clean_sequences::CleanSequencesArgs;
 pub use color_genbank::ColorGenbankArgs;
+pub use color_table_to_legend::ColorTableToLegendArgs;
 pub use common::CommonArgs;
 pub use compare_contigs::CompareContigsArgs;
 pub use deduplicate_genbank::DeduplicateGenbankArgs;
@@ -107,6 +109,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "hmmer_build" => HmmerBuildArgs::augment_args(cmd),
         "hmmer_search" => HmmerSearchArgs::augment_args(cmd),
         "format_db" => FormatDbArgs::augment_args(cmd),
+        "color_table_to_legend" => ColorTableToLegendArgs::augment_args(cmd),
         _ => return None,
     })
 }

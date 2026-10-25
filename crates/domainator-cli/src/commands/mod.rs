@@ -5,6 +5,7 @@ pub mod build_ssn;
 pub mod build_ssn_viewer;
 pub mod clean_sequences;
 pub mod color_genbank;
+pub mod color_table_to_legend;
 pub mod compare_contigs;
 pub mod deduplicate_genbank;
 pub mod domain_search;

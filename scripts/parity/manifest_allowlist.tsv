@@ -8,14 +8,6 @@
 tool	parameter	aspect	ours	upstream	class	note
 build_projection	-	tool	false	true	deferred:unported-tool	
 build_tree	-	tool	false	true	deferred:unported-tool	
-color_table_to_legend	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-color_table_to_legend	-	required_outputs	null	["svg_out"]	todo:1.0-cli	
-color_table_to_legend	input	required	false	true	todo:1.0-cli	
-color_table_to_legend	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-color_table_to_legend	svg	extra	{"name":"svg","flags":["--svg"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-color_table_to_legend	svg_out	missing	null	{"default":null,"flags":["-o","--svg_out"],"kind":"path","name":"svg_out","required":true,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-color_table_to_legend	title	default	null	"Legend"	todo:1.0-cli	
-color_table_to_legend	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 compare_contigs	-	required_outputs	["hdf_out","dense_text_out"]	["hdf_out","dense_text_out","genbank_out"]	deferred:ward-report	the sorted --genbank_out is not ported yet (sync phase 6); its options are accepted at their defaults in configs
 compare_contigs	genbank_out	missing	null	{"default":null,"flags":["--genbank_out"],"kind":"path","name":"genbank_out","required":false,"role":"output","stdout":true,"type":"string"}	deferred:ward-report	the sorted --genbank_out is not ported yet (sync phase 6); its options are accepted at their defaults in configs
 compare_contigs	leaf_ordering	missing	null	{"choices":["greedy","optimal","none"],"default":"greedy","flags":["--leaf_ordering"],"kind":"value","name":"leaf_ordering","required":false,"type":"string"}	deferred:ward-report	the sorted --genbank_out is not ported yet (sync phase 6); its options are accepted at their defaults in configs

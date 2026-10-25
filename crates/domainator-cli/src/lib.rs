@@ -112,21 +112,7 @@ enum Command {
     /// Assign hex colors to domain and/or CDS features (Color qualifier).
     ColorGenbank(config::args::ColorGenbankArgs),
     /// Generate an SVG legend from a color table.
-    ColorTableToLegend {
-        /// Color table file(s) (TSV: key, hex; stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output SVG file (required).
-        #[arg(long)]
-        svg: Option<String>,
-        /// Legend title (default: "Legend").
-        #[arg(long)]
-        title: Option<String>,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    ColorTableToLegend(config::args::ColorTableToLegendArgs),
     /// Trim contig ends by kb, CDS count, or by stripping end CDSs by domain.
     TrimContigs(config::args::TrimContigsArgs),
     /// Extract domain-annotated regions from annotated contigs.
@@ -618,65 +604,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::SelectByCoord(args) => commands::select_by_coord::run(&args)?,
         Command::FilterDomains(args) => commands::filter_domains::run(&args)?,
         Command::ColorGenbank(args) => commands::color_genbank::run(&args)?,
-        Command::ColorTableToLegend {
-            input,
-            svg,
-            title,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::ColorTableToLegendConfig {
-                input: paths_to_strings(&input)?,
-                svg,
-                title,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::ColorTableToLegendConfig>(p)?,
-                None => config::ColorTableToLegendConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let svg_path = cfg.svg.as_deref().context("--svg is required")?;
-
-            // Read color table(s), merging in order (later files override keys).
-            let mut table: Vec<(String, String)> = Vec::new();
-            let mut index: std::collections::HashMap<String, usize> =
-                std::collections::HashMap::new();
-            let texts: Vec<String> = if cfg.input.is_empty() {
-                use std::io::Read;
-                let mut buf = String::new();
-                std::io::stdin()
-                    .read_to_string(&mut buf)
-                    .context("reading stdin")?;
-                vec![buf]
-            } else {
-                let mut v = Vec::new();
-                for p in &cfg.input {
-                    v.push(std::fs::read_to_string(p).with_context(|| format!("reading {p}"))?);
-                }
-                v
-            };
-            for text in &texts {
-                let entries =
-                    tools::color_genbank::read_color_table(text).map_err(|e| anyhow::anyhow!(e))?;
-                for (k, v) in entries {
-                    if let Some(&i) = index.get(&k) {
-                        table[i].1 = v;
-                    } else {
-                        index.insert(k.clone(), table.len());
-                        table.push((k, v));
-                    }
-                }
-            }
-
-            let title = cfg.title.as_deref().unwrap_or("Legend");
-            let svg = tools::color_table_to_legend::color_table_to_legend(&table, title);
-            std::fs::write(svg_path, svg).with_context(|| format!("writing {svg_path}"))?;
-        }
+        Command::ColorTableToLegend(args) => commands::color_table_to_legend::run(&args)?,
         Command::TrimContigs(args) => commands::trim_contigs::run(&args)?,
         Command::ExtractDomains(args) => commands::extract_domains::run(&args)?,
         Command::ExtractPeptides(args) => commands::extract_peptides::run(&args)?,

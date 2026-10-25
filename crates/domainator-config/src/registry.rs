@@ -407,11 +407,15 @@ pub const TOOLS: &[ToolInfo] = &[
         ..tool("matrix_report", "report", "Summarize a similarity matrix.")
     },
     // plot
-    tool(
-        "color_table_to_legend",
-        "plot",
-        "Draw an SVG legend from a color table.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["svg_out"]),
+        ..tool(
+            "color_table_to_legend",
+            "plot",
+            "Draw an SVG legend from a color table.",
+        )
+    },
     // database
     ToolInfo {
         migrated: true,

@@ -5,15 +5,11 @@ description: "Render a color table as an SVG legend."
 fields:
   - name: input
     label: "Color table(s)"
-    role: input_files
     file_type: table
-    required: true
     sources: workspace_first
     select: first
-  - name: svg
+  - name: svg_out
     label: "Output (SVG)"
-    role: output_file
-    required: true
     output_name: "{stem}.legend.svg"
   - name: title
     label: "Title"

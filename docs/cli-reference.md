@@ -422,7 +422,7 @@ domainatoredux color_genbank -i annotated.gb -o colored.gb \
 Render a color table as an SVG legend to accompany a figure.
 
 ```bash
-domainatoredux color_table_to_legend -i colors.tsv --svg legend.svg --title "Domains"
+domainatoredux color_table_to_legend -i colors.tsv -o legend.svg --title "Domains"
 ```
 
 ---
