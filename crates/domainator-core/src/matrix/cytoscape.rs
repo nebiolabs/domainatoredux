@@ -48,8 +48,28 @@ pub struct NodeTable {
     pub cells: Vec<Vec<Cell>>,
 }
 
-/// Escape a string for use in an XML attribute value.
+/// Escape a string for an element's attribute value, once, the way upstream's
+/// `ElementTree` serializer does: `'` stays, and the whitespace an XML parser would
+/// normalize away is written as a character reference.
 fn xml_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\n' => out.push_str("&#10;"),
+            '\t' => out.push_str("&#09;"),
+            '\r' => out.push_str("&#13;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Escape the graph label, which upstream writes with `html.escape(quote=True)`.
+fn html_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
@@ -107,7 +127,7 @@ pub fn write_xgmml_to<W: Write>(
     writeln!(
         w,
         "<graph label=\"{}\" xmlns=\"http://www.cs.rpi.edu/XGMML\">",
-        xml_escape(name)
+        html_escape(name)
     )?;
 
     for (i, node_name) in table.names.iter().enumerate() {
@@ -165,4 +185,30 @@ pub fn write_xgmml_to<W: Write>(
 
     w.write_all(b"</graph>\n")?;
     w.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Upstream writes each att through `ElementTree` (escaped once, `'` kept,
+    /// whitespace as character references) and the graph label through
+    /// `html.escape`.
+    #[test]
+    fn values_are_escaped_once_like_upstream() {
+        let table = NodeTable {
+            names: vec!["a'b\"c<d>e&f\ng\th\ri".into()],
+            columns: vec![],
+            coltypes: vec![],
+            cells: vec![vec![]],
+        };
+        let mut out = Vec::new();
+        write_xgmml_to(&mut out, "x'&y", &table, &[], None, None).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("<graph label=\"x&#x27;&amp;y\""), "{text}");
+        assert!(
+            text.contains("value=\"a'b&quot;c&lt;d&gt;e&amp;f&#10;g&#09;h&#13;i\""),
+            "{text}"
+        );
+    }
 }
