@@ -5,20 +5,16 @@ description: "Extract sub-regions listed in a coordinate table (contig, start, e
 fields:
   - name: input
     label: "Input sequences"
-    role: input_files
     file_type: sequence
-    required: true
     sources: workspace_first
     select: first
   - name: coords
     label: "Coordinate table"
-    role: input_file
     file_type: table
-    required: true
     sources: workspace_first
     select: first
-  - name: output
+  - name: genbank_out
     label: "Output (GenBank)"
-    role: output_file
-    required: true
     output_name: "{stem}.bycoord.gb"
+  - name: fasta_out
+    label: "Output (FASTA)"

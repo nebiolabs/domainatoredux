@@ -395,16 +395,6 @@ matrix_report	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"
 plot_contigs	-	tool	false	true	deferred:unported-tool	
 rotate_contigs	-	tool	false	true	todo:new-tool	phase 6 of the 1.0 sync
 select_by_contig	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
-select_by_coord	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-select_by_coord	-	required_outputs	null	["genbank_out","fasta_out"]	todo:1.0-cli	
-select_by_coord	coords	flags	["-c","--coords"]	["--coords"]	todo:1.0-cli	
-select_by_coord	coords	required	false	true	todo:1.0-cli	
-select_by_coord	fasta_out	missing	null	{"default":null,"flags":["--fasta_out"],"kind":"path","name":"fasta_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-select_by_coord	genbank_out	missing	null	{"default":null,"flags":["-o","--genbank_out"],"kind":"path","name":"genbank_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-select_by_coord	input	required	false	true	todo:1.0-cli	
-select_by_coord	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-select_by_coord	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-select_by_coord	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 seq_dist	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
 seq_dist	-	required_outputs	null	["hdf_out","dense_text_out"]	todo:1.0-cli	
 seq_dist	algorithm	default	null	"diamond_us"	todo:1.0-cli	

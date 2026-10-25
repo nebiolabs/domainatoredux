@@ -5,6 +5,7 @@ pub mod enum_report;
 pub mod hmmer_report;
 pub mod select_by_cds;
 pub mod select_by_contig;
+pub mod select_by_coord;
 pub mod sort_contigs;
 
 use anyhow::{Context, Result};

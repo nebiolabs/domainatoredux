@@ -149,11 +149,15 @@ pub const TOOLS: &[ToolInfo] = &[
             "Select whole contigs by their domain content and other properties.",
         )
     },
-    tool(
-        "select_by_coord",
-        "edit",
-        "Extract contig regions listed in a coordinate table.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        ..tool(
+            "select_by_coord",
+            "edit",
+            "Extract contig regions listed in a coordinate table.",
+        )
+    },
     ToolInfo {
         migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),

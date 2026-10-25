@@ -362,23 +362,6 @@ impl GeneCallConfig {
     }
 }
 
-/// `select_by_coord` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct SelectByCoordConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub coords: Option<String>,
-}
-
-impl SelectByCoordConfig {
-    pub fn merge_cli(&mut self, cli: SelectByCoordConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, coords);
-    }
-}
-
 /// `filter_domains` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -1152,7 +1135,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "genbank_to_fasta" => genbank_to_fasta_schema(),
         "clean_sequences" => clean_sequences_schema(),
         "gene_call" => gene_call_schema(),
-        "select_by_coord" => select_by_coord_schema(),
         "filter_domains" => filter_domains_schema(),
         "color_genbank" => color_genbank_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
@@ -1488,21 +1470,6 @@ fn gene_call_schema() -> serde_json::Value {
             "mask": {"type": "boolean", "default": false, "description": "No genes across runs of N"},
             "cpu": {"type": ["integer", "null"], "description": "Orphos threads (0 = all cores)"},
             "bin_path": {"type": ["string", "null"], "description": "Path to the orphos binary (else $DOMAINATOREDUX_ORPHOS, then PATH)"}
-        }
-    })
-}
-
-fn select_by_coord_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "select_by_coord config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "coords": {"type": ["string", "null"], "description": "Labeled coordinate table (contig,start,end,strand?,file?)"}
         }
     })
 }
@@ -2050,7 +2017,6 @@ mod tests {
             "genbank_to_fasta" => GenbankToFastaConfig,
             "clean_sequences" => CleanSequencesConfig,
             "gene_call" => GeneCallConfig,
-            "select_by_coord" => SelectByCoordConfig,
             "filter_domains" => FilterDomainsConfig,
             "color_genbank" => ColorGenbankConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,

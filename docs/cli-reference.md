@@ -290,7 +290,7 @@ domainatoredux select_by_contig -i all.gb -o big_hits.gb \
 Extract regions at explicit 1-based coordinates listed in a TSV/CSV table.
 
 ```bash
-domainatoredux select_by_coord -i contigs.gb -c regions.tsv -o regions.gb
+domainatoredux select_by_coord -i contigs.gb --coords regions.tsv -o regions.gb
 ```
 
 ### `extract_domains`

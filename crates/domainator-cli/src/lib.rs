@@ -405,21 +405,7 @@ enum Command {
     },
     SortContigs(config::args::SortContigsArgs),
     /// Extract contig regions using explicit 1-based coordinate ranges from a table.
-    SelectByCoord {
-        /// Input GenBank file(s) (stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output GenBank file (stdout if omitted).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Labeled coordinate table (columns: contig, start, end, strand?, file?).
-        #[arg(short = 'c', long)]
-        coords: Option<PathBuf>,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    SelectByCoord(config::args::SelectByCoordArgs),
     /// Filter Domainator/Domain_Search annotations by evalue, overlap, database, name.
     #[command(allow_negative_numbers = true)]
     FilterDomains {
@@ -2356,53 +2342,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             eprintln!("called {added} genes on {} records", records.len());
         }
         Command::SortContigs(args) => commands::sort_contigs::run(&args)?,
-        Command::SelectByCoord {
-            input,
-            output,
-            coords,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::SelectByCoordConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                coords: opt_path(&coords)?,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::SelectByCoordConfig>(p)?,
-                None => config::SelectByCoordConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let coords_path = cfg
-                .coords
-                .clone()
-                .context("missing required `--coords` (-c)")?;
-            let table =
-                std::fs::read_to_string(&coords_path).context("reading coordinate table")?;
-            let selections = tools::select_by_coord::parse_coordinate_table(&table)
-                .map_err(|e| anyhow::anyhow!(e))?;
-            // Load each input file keeping its basename for the file-column filter.
-            let mut records: Vec<(String, SeqRecord)> = Vec::new();
-            for p in &cfg.input {
-                let path = PathBuf::from(p);
-                let base = path
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(p)
-                    .to_string();
-                for rec in load_inputs(std::slice::from_ref(&path))? {
-                    records.push((base.clone(), rec));
-                }
-            }
-            let out = tools::select_by_coord::select_by_coord(&records, &selections)
-                .map_err(|e| anyhow::anyhow!(e))?;
-            write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-        }
+        Command::SelectByCoord(args) => commands::select_by_coord::run(&args)?,
         Command::FilterDomains {
             input,
             output,

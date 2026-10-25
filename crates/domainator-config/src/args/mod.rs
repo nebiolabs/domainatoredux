@@ -12,6 +12,7 @@ mod enum_report;
 mod hmmer_report;
 mod select_by_cds;
 mod select_by_contig;
+mod select_by_coord;
 mod sort_contigs;
 
 pub use common::CommonArgs;
@@ -19,6 +20,7 @@ pub use enum_report::EnumReportArgs;
 pub use hmmer_report::HmmerReportArgs;
 pub use select_by_cds::SelectByCdsArgs;
 pub use select_by_contig::SelectByContigArgs;
+pub use select_by_coord::SelectByCoordArgs;
 pub use sort_contigs::SortContigsArgs;
 
 /// The `clap::Command` of a migrated tool, built from its args struct alone, for
@@ -32,6 +34,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "hmmer_report" => HmmerReportArgs::augment_args(cmd),
         "select_by_contig" => SelectByContigArgs::augment_args(cmd),
         "select_by_cds" => SelectByCdsArgs::augment_args(cmd),
+        "select_by_coord" => SelectByCoordArgs::augment_args(cmd),
         _ => return None,
     })
 }
