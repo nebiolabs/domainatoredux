@@ -158,27 +158,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `matrix_report` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct MatrixReportConfig {
-    pub input: Option<String>,
-    pub output: Option<String>,
-    pub json: Option<String>,
-    pub merge_impact_metric: Option<String>,
-    pub max_merge_events: Option<usize>,
-}
-
-impl MatrixReportConfig {
-    pub fn merge_cli(&mut self, cli: MatrixReportConfig) {
-        merge_scalar!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, json);
-        merge_scalar!(self, cli, merge_impact_metric);
-        merge_scalar!(self, cli, max_merge_events);
-    }
-}
-
 /// `summary_report` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -484,7 +463,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "hmmer_compare" => hmmer_compare_schema(),
-        "matrix_report" => matrix_report_schema(),
         "ssn_navigator" => ssn_navigator_schema(),
         "summary_report" => summary_report_schema(),
         "hmmer_select" => hmmer_select_schema(),
@@ -677,23 +655,6 @@ fn color_table_to_legend_schema() -> serde_json::Value {
             "input": {"type": "array", "items": {"type": "string"}},
             "svg": {"type": ["string", "null"]},
             "title": {"type": ["string", "null"], "default": "Legend"}
-        }
-    })
-}
-
-fn matrix_report_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "matrix_report config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": ["string", "null"], "description": "Input matrix (HDF5 or dense TSV)"},
-            "output": {"type": ["string", "null"], "description": "Text report output path"},
-            "json": {"type": ["string", "null"], "description": "Agent-friendly JSON report output path"},
-            "merge_impact_metric": {"enum": ["min_child", "product"], "default": "min_child"},
-            "max_merge_events": {"type": ["integer", "null"], "default": 500}
         }
     })
 }
@@ -914,7 +875,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "matrix_report" => MatrixReportConfig,
             "ssn_navigator" => SsnNavigatorConfig,
             "summary_report" => SummaryReportConfig,
             "hmmer_compare" => HmmerCompareConfig,

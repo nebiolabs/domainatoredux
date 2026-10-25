@@ -580,14 +580,17 @@ Summarize a similarity matrix: node and edge counts, score statistics, a histogr
 **suggested clustering thresholds** — the score values where the network structure
 changes. Run this before choosing `build_ssn --threshold`.
 
-`--max_merge_events` (default 500, `0` = all) caps the merge-event table;
+`--max_merge_events` (default 500, `0` = all) caps the split-event series in the JSON
+report; the text report always lists the 25 strongest events.
 `--merge_impact_metric min_child|product` changes how an event's significance is scored.
-`--json` writes the whole report as one object. At least one of `-o` and `--json` is
-required.
+`--json_out` writes the summary as one compact JSON object (`schema_version` 1). At
+least one of `-o/--text_out` and `--json_out` is required, and either may be `-`. The
+input must be a similarity matrix, not a `_dist` one. Upstream's HTML report
+(`--html_out`, `--knn_projection`) is not ported.
 
 ```bash
 domainatoredux matrix_report -i dist.hdf5 -o report.txt
-domainatoredux matrix_report -i dist.hdf5 --json report.json
+domainatoredux matrix_report -i dist.hdf5 --json_out report.json
 ```
 
 ### `ssn_navigator`

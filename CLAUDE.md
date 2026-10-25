@@ -68,7 +68,7 @@ report tools' `--columns` take upstream's `name:arg:arg` tokens, parsed against 
 catalogs in `columns.rs` (the clap value type, so a bad token fails at parse time).
 An upstream option a migrated tool lacks is listed in its registry entry's
 `unsupported`, with upstream's default, so upstream configs that name it still load.
-Migrated so far: `sort_contigs`, `enum_report`, `hmmer_report`, `select_by_contig`, `select_by_cds`, `select_by_coord`, `filter_domains`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `color_genbank`, `clean_sequences`, `genbank_to_fasta`, `deduplicate_genbank`, `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer`; the rest still use the
+Migrated so far: `sort_contigs`, `enum_report`, `hmmer_report`, `select_by_contig`, `select_by_cds`, `select_by_coord`, `filter_domains`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `color_genbank`, `clean_sequences`, `genbank_to_fasta`, `deduplicate_genbank`, `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer`, `matrix_report`; the rest still use the
 old layer below.
 
 **Config files / agent interface, unmigrated tools** (the `crates/domainator-config` crate — *not* a
@@ -86,8 +86,9 @@ validated post-merge so they can come from the config file).
 
 **Agent-facing JSON** (upstream's documented contract, see its `AGENTS.md`):
 `enum_report` and `hmmer_report` write **streaming NDJSON** with `--json_out`, one
-compact object per row; `matrix_report` and `summary_report` write **one JSON object**
-with a stable shape with `--json`; `ssn_navigator` always writes JSON. In every case the
+compact object per row; `matrix_report` (`--json_out`) and `summary_report` (`--json`)
+write **one JSON object** with a stable shape, compact and ASCII-escaped like Python's
+`json.dump` (`io::python_json`); `ssn_navigator` always writes JSON. In every case the
 option takes a path (`-` = stdout) and is **independent of `-o`**, so a run can produce
 TSV/text and JSON together.
 
@@ -342,7 +343,7 @@ dense↔sparse, `--mst`/`--knn`; `np.allclose` + byte-identical `dense_text`), `
 (XGMML byte-identical for default/`--mst`/`--knn`/`--mark_mst`/`--cluster`/metadata/coloring,
 as are `--cluster_tsv_out` and `--color_table_out`), `build_ssn_viewer` (`.dsnv` bundle field-for-field
 identical after gunzip, and accepted by Python's own
-`ssn_bundle.load_bundle`), `matrix_report` (`--json` identical to Python's payload; text report
+`ssn_bundle.load_bundle`), `matrix_report` (`--json_out` byte-identical to Python's; text report
 line-for-line identical apart from the histogram), `ssn_navigator` (all five modes, against both
 implementations' bundles), and `summary_report` (`--json` identical incl. co-occurrence and
 `--databases`). The SSN core is cross-checked field for field by
@@ -357,5 +358,5 @@ Deferred (per plan / no clean path, all tracked in `UPSTREAM.md`): the ward-clus
 report (`compare_contigs --genbank_out`), Infernal/ESM, the
 `structure_*` subsystem (portable — foldseek/reseek subprocess, no torch — but out of scope;
 `SearchResult` already carries its four optional metrics), HTML output for `enum_report` /
-`hmmer_report` / `matrix_report` / `summary_report` (`--json` offered instead), `matrix_report`'s
-`--include_mst_knn` projections, and `hmmer_build --window_beta`.
+`hmmer_report` / `matrix_report` / `summary_report` (JSON offered instead), `matrix_report`'s
+`--knn_projection` (it only feeds the HTML report), and `hmmer_build --window_beta`.

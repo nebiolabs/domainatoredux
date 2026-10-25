@@ -6,6 +6,7 @@ pub mod didx;
 pub mod fasta;
 pub mod genbank;
 pub mod partition;
+pub mod python_json;
 pub mod shards;
 
 use std::path::Path;

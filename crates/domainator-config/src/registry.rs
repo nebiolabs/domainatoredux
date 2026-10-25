@@ -357,7 +357,13 @@ pub const TOOLS: &[ToolInfo] = &[
         "report",
         "Summarize the domain and taxonomy content of a dataset.",
     ),
-    tool("matrix_report", "report", "Summarize a similarity matrix."),
+    ToolInfo {
+        migrated: true,
+        stdin: false,
+        required_outputs: Some(&["text_out", "json_out"]),
+        unsupported: &[("html_out", "null"), ("knn_projection", "false")],
+        ..tool("matrix_report", "report", "Summarize a similarity matrix.")
+    },
     // plot
     tool(
         "color_table_to_legend",

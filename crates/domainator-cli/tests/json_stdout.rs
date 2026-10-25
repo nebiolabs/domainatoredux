@@ -1,4 +1,4 @@
-//! `--json -` is the agent contract (CLAUDE.md, "Agent-facing `--json`"): the JSON goes
+//! `--json_out -` is the agent contract (CLAUDE.md, "Agent-facing JSON"): the JSON goes
 //! to stdout and stdout carries nothing else, so a caller can parse it directly.
 
 use std::process::Command;
@@ -24,7 +24,7 @@ fn matrix_report_json_dash_is_parseable_stdout() {
             "matrix_report",
             "-i",
             matrix.to_str().unwrap(),
-            "--json",
+            "--json_out",
             "-",
         ])
         .output()
@@ -40,6 +40,7 @@ fn matrix_report_json_dash_is_parseable_stdout() {
             String::from_utf8_lossy(&out.stdout)
         )
     });
+    assert_eq!(json["schema_version"], 1);
     assert_eq!(json["nodes"], 3);
     assert!(
         !dir.join("-").exists(),

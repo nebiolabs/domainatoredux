@@ -35,6 +35,10 @@ pub struct MatrixReport {
     pub merge_event_total: usize,
     /// The cap that was applied; `0` means none.
     pub max_merge_events: usize,
+    /// The text report's "strongest split events" table: the top
+    /// [`STRONGEST_TABLE_ROWS`] of **all** split events (not of the capped selection),
+    /// in descending threshold order (upstream `merge_event_table_rows`).
+    pub strongest_merge_events: Vec<MergeEvent>,
     /// Centered moving sum of `merge_impact`, derived from the **uncapped** rows.
     pub merge_moving_sum: MovingSum,
     /// Threshold cuts the report's slider offers, ending at a reachable floor.
@@ -43,6 +47,33 @@ pub struct MatrixReport {
     /// Distinct thresholds, descending — lets a consumer map a threshold back to its
     /// row in the tables above without holding the whole `MaxTree`.
     pub thresholds: Vec<f64>,
+}
+
+/// Rows in the text report's strongest-split-events table.
+pub const STRONGEST_TABLE_ROWS: usize = 25;
+
+/// Upstream `merge_event_table_rows`: rank every split event by impact (then the two
+/// tie-breaks `summarize_merge_events` uses), keep the strongest
+/// [`STRONGEST_TABLE_ROWS`], and list them from the highest threshold down. Both sorts
+/// are stable, as Python's are.
+fn strongest_merge_events(events: &[MergeEvent]) -> Vec<MergeEvent> {
+    let mut ranked: Vec<&MergeEvent> = events.iter().collect();
+    ranked.sort_by(|a, b| {
+        b.merge_impact
+            .total_cmp(&a.merge_impact)
+            .then(b.delta_largest.total_cmp(&a.delta_largest))
+            .then(
+                b.delta_avg_non_singleton
+                    .total_cmp(&a.delta_avg_non_singleton),
+            )
+    });
+    ranked.truncate(STRONGEST_TABLE_ROWS);
+    ranked.sort_by(|a, b| {
+        b.threshold_from_value
+            .total_cmp(&a.threshold_from_value)
+            .then(b.threshold_value.total_cmp(&a.threshold_value))
+    });
+    ranked.into_iter().cloned().collect()
 }
 
 /// Build the report. `merge_impact_metric` is `min_child`/`product`;
@@ -83,6 +114,7 @@ pub fn matrix_report(
     );
     let merge_event_total = all_merge_events.len();
     let merge_events = filter_merge_event_rows(&all_merge_events, max_merge_events);
+    let strongest_merge_events = strongest_merge_events(&all_merge_events);
     // `true`: this report, unlike a `.dsnv` bundle, carries the threshold tables and
     // reads each cut's edge count out of them.
     let slider_stops = threshold_slider_stops(&merge_events, Some(&tree), true);
@@ -102,6 +134,7 @@ pub fn matrix_report(
         merge_events,
         merge_event_total,
         max_merge_events,
+        strongest_merge_events,
         merge_moving_sum,
         slider_stops,
         mst_edges: tree.export_mst_edges(),
@@ -181,7 +214,9 @@ pub fn render_text(r: &MatrixReport) -> String {
         }
     }
     if !r.edges_by_threshold.is_empty() {
-        s.push_str("\nEdges kept at key thresholds (equivalent to build_ssn --lb <threshold>):\n");
+        s.push_str(
+            "\nEdges kept at key thresholds (equivalent to build_ssn --threshold <threshold>):\n",
+        );
         for i in sample_indices(r.edges_by_threshold.len()) {
             let (e, t) = r.edges_by_threshold[i];
             s.push_str(&format!("  Threshold: {t:.2} → Edges: {}\n", e as i64));
@@ -192,25 +227,11 @@ pub fn render_text(r: &MatrixReport) -> String {
         "\nStrongest MST split events (metric={}):\n",
         r.merge_impact_metric
     ));
-    // Rank by impact for the "strongest" table (top 25), like Python.
-    let mut ranked: Vec<&MergeEvent> = r.merge_events.iter().collect();
-    // Python's summarize_merge_events ranks on three terms, not two.
-    ranked.sort_by(|a, b| {
-        b.merge_impact
-            .total_cmp(&a.merge_impact)
-            .then(b.delta_largest.total_cmp(&a.delta_largest))
-            .then(
-                b.delta_avg_non_singleton
-                    .total_cmp(&a.delta_avg_non_singleton),
-            )
-    });
-    ranked.truncate(25);
-    ranked.sort_by(|a, b| b.threshold_from_value.total_cmp(&a.threshold_from_value));
-    if ranked.is_empty() {
+    if r.strongest_merge_events.is_empty() {
         s.push_str("  No split events found.\n");
     } else {
         s.push_str(&format!("  {:>8}  {:>8}  {:>8}\n", "From", "To", "Impact"));
-        for e in ranked {
+        for e in &r.strongest_merge_events {
             s.push_str(&format!(
                 "  {:>8}  {:>8}  {:>8}\n",
                 e.threshold_from,
@@ -344,7 +365,10 @@ fn merge_size_counts_json(counts: &[(f64, u64)]) -> Value {
     Value::Object(map)
 }
 
-/// The agent-facing `--json` payload, matching Python's `SummaryJSONWriter` field for
+/// The version of the `--json_out` document (upstream `JSON_SCHEMA_VERSION`).
+pub const JSON_SCHEMA_VERSION: i64 = 1;
+
+/// The agent-facing `--json_out` payload, matching Python's `SummaryJSONWriter` field for
 /// field. Edge-score stats, the connected-component count, and the bounded
 /// strongest-split-event series; deliberately omits the bulky per-node arrays the HTML
 /// report embeds for the browser.
@@ -354,6 +378,7 @@ fn merge_size_counts_json(counts: &[(f64, u64)]) -> Value {
 /// `scripts/json_parity.py` compares parsed JSON and ignores key order.
 pub fn to_json(r: &MatrixReport) -> Value {
     let mut payload = serde_json::Map::new();
+    payload.insert("schema_version".into(), json!(JSON_SCHEMA_VERSION));
     payload.insert("nodes".into(), json!(r.n_nodes));
     payload.insert("non_zero_edges".into(), json!(r.n_edges));
     // `null`, not an object of zeros, when the matrix has no non-zero edge.

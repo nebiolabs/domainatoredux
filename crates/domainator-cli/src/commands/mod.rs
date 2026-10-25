@@ -16,6 +16,7 @@ pub mod extract_unannotated;
 pub mod filter_domains;
 pub mod genbank_to_fasta;
 pub mod hmmer_report;
+pub mod matrix_report;
 pub mod select_by_cds;
 pub mod select_by_contig;
 pub mod select_by_coord;

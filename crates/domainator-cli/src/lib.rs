@@ -22,14 +22,12 @@ pub mod output;
 use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
 use domainator_core::io::{detect_filetype, fasta, FileType};
-use domainator_core::matrix::read_matrix;
 use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools;
 use domainator_core::tools::gene_call;
 use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
-use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
 use domainator_core::tools::select_common::parse_name_list;
 use domainator_core::tools::ssn_bundle;
 use domainator_core::tools::ssn_navigator::ssn_navigator;
@@ -154,29 +152,7 @@ enum Command {
     /// Build a compact `.dsnv` bundle (+ standalone HTML) for the interactive SSN viewer.
     BuildSsnViewer(config::args::BuildSsnViewerArgs),
     /// Summarize a similarity matrix (stats, cluster-vs-threshold, merge events) as text or JSON.
-    MatrixReport {
-        /// Input matrix file (HDF5 or dense TSV).
-        #[arg(short, long)]
-        input: Option<PathBuf>,
-        /// Write the human-readable text report here.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Write the agent-friendly JSON report here.
-        #[arg(long)]
-        json: Option<PathBuf>,
-        /// Merge-impact metric for split events (min_child or product).
-        #[arg(long = "merge_impact_metric", value_parser = ["min_child", "product"])]
-        merge_impact_metric: Option<String>,
-        /// Max strongest merge events to report (0 = all; default 500).
-        #[arg(long = "max_merge_events")]
-        max_merge_events: Option<usize>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    MatrixReport(config::args::MatrixReportArgs),
     /// Dataset-level statistics: contig/CDS counts, domain frequency, taxonomy.
     SummaryReport {
         /// Input GenBank file(s).
@@ -955,65 +931,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::TransformMatrix(args) => commands::transform_matrix::run(&args)?,
         Command::BuildSsn(args) => commands::build_ssn::run(&args)?,
         Command::BuildSsnViewer(args) => commands::build_ssn_viewer::run(&args)?,
-        Command::MatrixReport {
-            input,
-            output,
-            json,
-            merge_impact_metric,
-            max_merge_events,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::MatrixReportConfig {
-                input: opt_path(&input)?,
-                output: opt_path(&output)?,
-                json: opt_path(&json)?,
-                merge_impact_metric,
-                max_merge_events,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::MatrixReportConfig>(p)?,
-                None => config::MatrixReportConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let input = cfg
-                .input
-                .context("missing required `input` (-i / --input or config)")?;
-            if cfg.output.is_none() && cfg.json.is_none() {
-                anyhow::bail!("no output specified: pass --output (text) and/or --json");
-            }
-            let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
-            let metric = cfg
-                .merge_impact_metric
-                .clone()
-                .unwrap_or_else(|| "min_child".into());
-            let max_events = cfg
-                .max_merge_events
-                .unwrap_or(config::resolve::DEFAULT_MAX_MERGE_EVENTS);
-            let report = matrix_report(&matrix, &metric, max_events);
-            if let Some(p) = &cfg.output {
-                std::fs::write(p, render_text(&report))?;
-            }
-            if let Some(p) = &cfg.json {
-                let text = serde_json::to_string_pretty(&to_json(&report))?;
-                // `--json -` is stdout, as upstream; only `--json` has that spelling.
-                if p == "-" {
-                    println!("{text}");
-                } else {
-                    std::fs::write(p, text)?;
-                }
-            }
-            // A status line, so stderr: stdout may be carrying the JSON.
-            eprintln!(
-                "matrix report: {} nodes, {} edges",
-                report.n_nodes, report.n_edges
-            );
-        }
+        Command::MatrixReport(args) => commands::matrix_report::run(&args)?,
         Command::SummaryReport {
             input,
             output,

@@ -23,6 +23,7 @@ mod extract_unannotated;
 mod filter_domains;
 mod genbank_to_fasta;
 mod hmmer_report;
+mod matrix_report;
 mod select_by_cds;
 mod select_by_contig;
 mod select_by_coord;
@@ -47,6 +48,7 @@ pub use extract_unannotated::ExtractUnannotatedArgs;
 pub use filter_domains::FilterDomainsArgs;
 pub use genbank_to_fasta::GenbankToFastaArgs;
 pub use hmmer_report::HmmerReportArgs;
+pub use matrix_report::MatrixReportArgs;
 pub use select_by_cds::SelectByCdsArgs;
 pub use select_by_contig::SelectByContigArgs;
 pub use select_by_coord::SelectByCoordArgs;
@@ -83,6 +85,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "transform_matrix" => TransformMatrixArgs::augment_args(cmd),
         "build_ssn" => BuildSsnArgs::augment_args(cmd),
         "build_ssn_viewer" => BuildSsnViewerArgs::augment_args(cmd),
+        "matrix_report" => MatrixReportArgs::augment_args(cmd),
         _ => return None,
     })
 }
