@@ -319,11 +319,16 @@ pub const TOOLS: &[ToolInfo] = &[
             "Build a Domainator Similarity Network Viewer bundle and HTML page.",
         )
     },
-    tool(
-        "ssn_navigator",
-        "network",
-        "Query a similarity network bundle: clusters, members, and metadata.",
-    ),
+    ToolInfo {
+        migrated: true,
+        stdin: false,
+        required_outputs: Some(&["json_out"]),
+        ..tool(
+            "ssn_navigator",
+            "network",
+            "Query a similarity network bundle: clusters, members, and metadata.",
+        )
+    },
     // report
     ToolInfo {
         migrated: true,

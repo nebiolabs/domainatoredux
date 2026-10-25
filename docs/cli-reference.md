@@ -596,21 +596,22 @@ domainatoredux matrix_report -i dist.hdf5 --json_out report.json
 ### `ssn_navigator`
 
 Query a built `.dsnv` bundle from a script — the non-interactive counterpart to the viewer.
-Output is always compact JSON, to `-o` or stdout.
+Output is always one compact JSON object, starting with `schema_version` and `query`, to
+`-o/--json_out` (required; `-` is stdout).
 
-`--mode` selects the question: `overview` (default) for the shape of the network,
+`--query` selects the question: `overview` (default) for the shape of the network,
 `thresholds` for the cluster-count-versus-cutoff table, `clusters` for the clusters at a
-given `--threshold`, `cluster` for one cluster's contents (`--id`, `--members`), and
+given `--threshold`, `cluster` for one cluster's contents (`--cluster`, `--members`), and
 `node` for one node's context (`--node`). `--min_size` and `--top_n` filter and cap
 cluster listings.
 
 `--node` must match a node's label exactly, as it appears in the bundle — usually the full
-sequence id, not a prefix. `--mode overview` lists some to copy from.
+sequence id, not a prefix.
 
 ```bash
-domainatoredux ssn_navigator -i network.dsnv --mode overview
-domainatoredux ssn_navigator -i network.dsnv --mode clusters --threshold 120 --min_size 3
-domainatoredux ssn_navigator -i network.dsnv --mode node \
+domainatoredux ssn_navigator -i network.dsnv -o - --query overview
+domainatoredux ssn_navigator -i network.dsnv -o - --query clusters --threshold 120 --min_size 3
+domainatoredux ssn_navigator -i network.dsnv -o - --query node \
   --node "FeSOD_A0A1F4ZT98|unreviewed|Superoxide"
 ```
 

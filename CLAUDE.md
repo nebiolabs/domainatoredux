@@ -68,7 +68,7 @@ report tools' `--columns` take upstream's `name:arg:arg` tokens, parsed against 
 catalogs in `columns.rs` (the clap value type, so a bad token fails at parse time).
 An upstream option a migrated tool lacks is listed in its registry entry's
 `unsupported`, with upstream's default, so upstream configs that name it still load.
-Migrated so far: `sort_contigs`, `enum_report`, `hmmer_report`, `select_by_contig`, `select_by_cds`, `select_by_coord`, `filter_domains`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `color_genbank`, `clean_sequences`, `genbank_to_fasta`, `deduplicate_genbank`, `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer`, `matrix_report`; the rest still use the
+Migrated so far: `sort_contigs`, `enum_report`, `hmmer_report`, `select_by_contig`, `select_by_cds`, `select_by_coord`, `filter_domains`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `color_genbank`, `clean_sequences`, `genbank_to_fasta`, `deduplicate_genbank`, `domainate`, `domain_search`, `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer`, `matrix_report`, `ssn_navigator`; the rest still use the
 old layer below.
 
 **Config files / agent interface, unmigrated tools** (the `crates/domainator-config` crate — *not* a
@@ -77,8 +77,8 @@ serde schema, *not* byte-compatible with Python's jsonargparse files) and `--pri
 (dump resolved params as YAML). Merge order is config = base, CLI flags override (scalars
 replace, lists replace when non-empty, bools OR). Each has a draft-07 JSON Schema
 (`legacy_schema`), no longer a command, which `tool_manifest` converts into manifest
-parameters for the GUI until the tool is migrated. `resolve.rs` maps each `*Config` to
-the core's `*Options` and is shared by the CLI **and** the GUI, so the two cannot drift.
+parameters for the GUI until the tool is migrated. The GUI runs every tool through the
+CLI (a worker process), so there is no second resolver to drift from it.
 
 To make merge correct, **defaulted scalar and required-path flags are `Option` in clap**
 (defaults applied via `unwrap_or` after merge; required paths like `-i`/`-o`/`-r` are
@@ -255,7 +255,7 @@ Virtual Cargo workspace: three library/binary crates plus two Tauri apps and one
 WASM app.
 
 - **`crates/domainator-core/`** — the data model, all I/O, and all tool logic as library functions (GUI-reusable; mirrors the Python convention that every tool is also a library function). Also holds `app_support/` — the GUI-facing seam (workspace file classification, provenance/job DAG, contig view + edit, HMM logo, summary stats).
-- **`crates/domainator-config/`** — the interface: the 1.0 layer (`args/`, `registry.rs`, `manifest.rs`, `config_file.rs`, `columns.rs`, `tool_manifest`) and, for unmigrated tools, per-tool serde config structs, `merge_cli`, `--print_config`, the legacy config schemas, and `resolve.rs` (config → `*Options`), shared by the CLI and the GUI.
+- **`crates/domainator-config/`** — the interface: the 1.0 layer (`args/`, `registry.rs`, `manifest.rs`, `config_file.rs`, `columns.rs`, `tool_manifest`) and, for unmigrated tools, per-tool serde config structs, `merge_cli`, `--print_config`, and the legacy config schemas.
 - **`crates/domainator-cli/`** — thin clap front-end; arg parsing + I/O wiring only, calls into core. Binary name `domainatoredux` (upstream's is `domainator`; the subcommand names are identical).
 - **`apps/domainator-gui/`** — the Tauri v2 + Svelte 5 desktop app: manifest-driven tool dialogs, a workspace/job model, and a dozen viewers (contig, SSN, matrix report, enum report, HMM logo, summary dashboard, …). Its Rust side is a thin `#[tauri::command]` layer over `app_support`.
 - **`apps/genbank-summary/`** and **`wasm_apps/genbank-summary/`** — a small standalone Tauri app and its browser/WASM twin.

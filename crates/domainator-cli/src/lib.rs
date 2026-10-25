@@ -29,8 +29,6 @@ use domainator_core::tools;
 use domainator_core::tools::gene_call;
 use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
 use domainator_core::tools::select_common::parse_name_list;
-use domainator_core::tools::ssn_bundle;
-use domainator_core::tools::ssn_navigator::ssn_navigator;
 
 #[derive(Parser)]
 #[command(name = "domainatoredux", version, long_version = domainator_core::version::LONG_VERSION, about = "Domainatoredux: protein-domain / SSN analysis (a Rust port of domainator)")]
@@ -188,49 +186,7 @@ enum Command {
         partial: Option<String>,
     },
     /// Navigate a `.dsnv` bundle: clusters, cluster contents, and metadata, as JSON.
-    SsnNavigator {
-        /// Input `.dsnv` bundle (gzip JSON, or plain JSON).
-        #[arg(short, long)]
-        input: Option<PathBuf>,
-        /// Write the JSON here (default: stdout).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Query to answer.
-        #[arg(long, value_parser = ["overview", "thresholds", "clusters", "cluster", "node"])]
-        mode: Option<String>,
-        /// Similarity cut: a number, or `inf`. Omit for the floor (one cluster per
-        /// connected component); higher thresholds give finer clusters.
-        #[arg(long)]
-        threshold: Option<String>,
-        /// Cluster id, for `--mode cluster`.
-        #[arg(long)]
-        id: Option<usize>,
-        /// Node id, for `--mode cluster` or `--mode node`.
-        #[arg(long)]
-        node: Option<String>,
-        /// Ignore clusters smaller than this (`--mode clusters`).
-        #[arg(long = "min_size")]
-        min_size: Option<usize>,
-        /// Bound every list in the output (default 50).
-        #[arg(long = "top_n")]
-        top_n: Option<usize>,
-        /// Include the full member id list in `--mode cluster`.
-        #[arg(long)]
-        members: bool,
-        /// How many split events the `--mode thresholds`/`node` cut-points are drawn
-        /// from: the strongest this many by impact, plus a few so that no 5% band of
-        /// the threshold range with an event to offer is left without one. 0 offers a
-        /// cut-point at every split event. The series is derived from the bundle's
-        /// merge order, so any value works on any bundle. (default 500)
-        #[arg(long = "max_merge_events")]
-        max_merge_events: Option<usize>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    SsnNavigator(config::args::SsnNavigatorArgs),
     /// Print a JSON description of every command and its options (the tool manifest).
     Describe {
         /// Describe only these commands.
@@ -1008,57 +964,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             }
         }
-        Command::SsnNavigator {
-            input,
-            output,
-            mode,
-            threshold,
-            id,
-            node,
-            min_size,
-            top_n,
-            members,
-            max_merge_events,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::SsnNavigatorConfig {
-                input: opt_path(&input)?,
-                output: opt_path(&output)?,
-                mode,
-                threshold,
-                id,
-                node,
-                min_size,
-                top_n,
-                members,
-                max_merge_events,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::SsnNavigatorConfig>(p)?,
-                None => config::SsnNavigatorConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let input = cfg
-                .input
-                .clone()
-                .context("missing required `input` (-i / --input or config)")?;
-            let bundle = ssn_bundle::load_bundle(Path::new(&input))
-                .with_context(|| format!("reading bundle {input}"))?;
-            let opts = config::resolve::resolve_ssn_navigator(&cfg);
-            let result = ssn_navigator(&bundle, &opts).map_err(anyhow::Error::msg)?;
-            // Compact, single-line JSON on one line, matching Python's separators.
-            let text = format!("{}\n", serde_json::to_string(&result)?);
-            match &cfg.output {
-                Some(p) => std::fs::write(p, text)?,
-                None => print!("{text}"),
-            }
-        }
+        Command::SsnNavigator(args) => commands::ssn_navigator::run(&args)?,
         Command::Describe { tool, indent } => {
             for t in &tool {
                 if !config::registry::tool_info(t).is_some_and(|i| i.in_manifest) {

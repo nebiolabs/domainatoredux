@@ -14,7 +14,6 @@ pub mod columns;
 pub mod config_file;
 pub mod manifest;
 pub mod registry;
-pub mod resolve;
 pub mod types;
 
 /// Load a JSON or YAML config file into `T`, choosing the parser by extension
@@ -183,39 +182,6 @@ impl SummaryReportConfig {
         self.taxonomy |= cli.taxonomy;
         merge_scalar!(self, cli, ncbi_taxonomy_path);
         merge_scalar!(self, cli, partial);
-    }
-}
-
-/// `ssn_navigator` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct SsnNavigatorConfig {
-    pub input: Option<String>,
-    pub output: Option<String>,
-    pub mode: Option<String>,
-    /// A number or `inf`; kept as a string so `inf` round-trips through JSON/YAML,
-    /// which have no infinity literal.
-    pub threshold: Option<String>,
-    pub id: Option<usize>,
-    pub node: Option<String>,
-    pub min_size: Option<usize>,
-    pub top_n: Option<usize>,
-    pub members: bool,
-    pub max_merge_events: Option<usize>,
-}
-
-impl SsnNavigatorConfig {
-    pub fn merge_cli(&mut self, cli: SsnNavigatorConfig) {
-        merge_scalar!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, mode);
-        merge_scalar!(self, cli, threshold);
-        merge_scalar!(self, cli, id);
-        merge_scalar!(self, cli, node);
-        merge_scalar!(self, cli, min_size);
-        merge_scalar!(self, cli, top_n);
-        merge_scalar!(self, cli, max_merge_events);
-        self.members |= cli.members;
     }
 }
 
@@ -463,7 +429,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "hmmer_compare" => hmmer_compare_schema(),
-        "ssn_navigator" => ssn_navigator_schema(),
         "summary_report" => summary_report_schema(),
         "hmmer_select" => hmmer_select_schema(),
         "hmmer_build" => hmmer_build_schema(),
@@ -679,28 +644,6 @@ fn summary_report_schema() -> serde_json::Value {
     })
 }
 
-fn ssn_navigator_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "ssn_navigator parameters",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": ["string", "null"], "description": "Input .dsnv bundle (gzip JSON, or plain JSON)"},
-            "output": {"type": ["string", "null"], "description": "Write the JSON here (default: stdout)"},
-            "mode": {"enum": ["overview", "thresholds", "clusters", "cluster", "node"], "default": "overview"},
-            "threshold": {"type": ["string", "null"], "description": "Similarity cut: a number, or 'inf'. Omit for the floor (one cluster per connected component); higher thresholds give finer clusters"},
-            "id": {"type": ["integer", "null"], "description": "Cluster id, for mode 'cluster'"},
-            "node": {"type": ["string", "null"], "description": "Node id, for mode 'cluster' or 'node'"},
-            "min_size": {"type": ["integer", "null"], "default": 1, "description": "Ignore clusters smaller than this (mode 'clusters')"},
-            "top_n": {"type": ["integer", "null"], "default": 50, "description": "Bound every list in the output"},
-            "members": {"type": "boolean", "default": false, "description": "Include the full member id list in mode 'cluster'"},
-            "max_merge_events": {"type": ["integer", "null"], "default": 500, "description": "How many split events the mode 'thresholds'/'node' cut-points are drawn from; 0 offers one per split event"}
-        }
-    })
-}
-
 fn hmmer_compare_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -861,7 +804,7 @@ mod tests {
         }
     }
 
-    /// Every tool, paired with the config struct `resolve.rs` deserializes into.
+    /// Every tool, paired with the config struct its `--config` file deserializes into.
     ///
     /// Adding a tool here is the point: a new tool with no entry is a tool whose
     /// schema nothing checks.
@@ -875,7 +818,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "ssn_navigator" => SsnNavigatorConfig,
             "summary_report" => SummaryReportConfig,
             "hmmer_compare" => HmmerCompareConfig,
             "hmmer_select" => HmmerSelectConfig,

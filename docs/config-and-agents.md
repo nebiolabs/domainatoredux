@@ -177,19 +177,19 @@ viewer — it answers questions about a `.dsnv` bundle as JSON, with no display:
 
 ```bash
 # how is the network shaped?
-domainatoredux ssn_navigator -i network.dsnv --mode overview
+domainatoredux ssn_navigator -i network.dsnv -o - --query overview
 
 # where are the interesting cutoffs?
-domainatoredux ssn_navigator -i network.dsnv --mode thresholds
+domainatoredux ssn_navigator -i network.dsnv -o - --query thresholds
 
 # what clusters exist at a cutoff, biggest first?
-domainatoredux ssn_navigator -i network.dsnv --mode clusters --threshold 120 --min_size 3
+domainatoredux ssn_navigator -i network.dsnv -o - --query clusters --threshold 120 --min_size 3
 
 # what's in one cluster?
-domainatoredux ssn_navigator -i network.dsnv --mode cluster --id 4 --members
+domainatoredux ssn_navigator -i network.dsnv -o - --query cluster --cluster 4 --members
 
 # what's around one node?
-domainatoredux ssn_navigator -i network.dsnv --mode node \
+domainatoredux ssn_navigator -i network.dsnv -o - --query node \
   --node "FeSOD_A0A1F4ZT98|unreviewed|Superoxide"
 ```
 
@@ -214,7 +214,7 @@ domainatoredux enum_report -i hits.gb --by cds --columns domains score --json_ou
 # 4. build a network and explore it without a GUI
 domainatoredux seq_dist -i hits.gb -o dist.hdf5 --algorithm hmmer
 domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv
-domainatoredux ssn_navigator -i network.dsnv --mode thresholds
+domainatoredux ssn_navigator -i network.dsnv -o - --query thresholds
 ```
 
 Every step is deterministic: tools that use multiple threads still produce identical

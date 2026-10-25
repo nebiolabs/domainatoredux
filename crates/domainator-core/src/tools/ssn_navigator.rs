@@ -27,6 +27,9 @@ use super::ssn_bundle::{
 /// The query modes, in the order the CLI lists them.
 pub const MODES: [&str; 5] = ["overview", "thresholds", "clusters", "cluster", "node"];
 
+/// The version of the `--json_out` document (upstream `JSON_SCHEMA_VERSION`).
+pub const JSON_SCHEMA_VERSION: i64 = 1;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NavMode {
     Overview,
@@ -44,17 +47,18 @@ impl NavMode {
             "clusters" => Ok(NavMode::Clusters),
             "cluster" => Ok(NavMode::Cluster),
             "node" => Ok(NavMode::Node),
-            other => Err(format!("Unknown mode '{other}'. Choose one of {MODES:?}.")),
+            other => Err(format!("Unknown query '{other}'. Choose one of {MODES:?}.")),
         }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct SsnNavigatorOptions {
-    pub mode: NavMode,
+    pub query: NavMode,
     /// `None` means the floor (one cluster per component), **not** ∞.
     pub threshold: Option<String>,
-    pub cluster_id: Option<usize>,
+    /// Signed as upstream's `--cluster` is: a negative id is never active.
+    pub cluster_id: Option<i64>,
     pub node: Option<String>,
     pub min_size: usize,
     pub top_n: usize,
@@ -69,7 +73,7 @@ pub struct SsnNavigatorOptions {
 impl Default for SsnNavigatorOptions {
     fn default() -> Self {
         SsnNavigatorOptions {
-            mode: NavMode::Overview,
+            query: NavMode::Overview,
             threshold: None,
             cluster_id: None,
             node: None,
@@ -247,7 +251,7 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
     let threshold = resolve_threshold(opts.threshold.as_deref(), hierarchy)?;
     let mut derived = Derived::default();
 
-    match opts.mode {
+    match opts.query {
         NavMode::Overview => {
             let mut out = Map::new();
             out.insert(
@@ -371,15 +375,17 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
                 cluster_for_node(hierarchy, idx, threshold)
                     .ok_or_else(|| format!("No active cluster found for node '{name}'."))?
             } else if let Some(id) = opts.cluster_id {
-                if !active.contains(&id) {
-                    return Err(format!(
-                        "Cluster id {id} is not an active cluster at threshold {threshold}; \
-                         use --mode clusters to list valid ids."
-                    ));
+                match usize::try_from(id).ok().filter(|id| active.contains(id)) {
+                    Some(id) => id,
+                    None => {
+                        return Err(format!(
+                            "Cluster id {id} is not an active cluster at threshold \
+                             {threshold:?}; use --query clusters to list valid ids."
+                        ))
+                    }
                 }
-                id
             } else {
-                return Err("cluster mode requires either --id or --node.".into());
+                return Err("--query cluster requires either --cluster or --node.".into());
             };
 
             let member_indices = component_members(hierarchy, cluster_id);
@@ -411,7 +417,7 @@ pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value
         }
 
         NavMode::Node => {
-            let name = opts.node.as_ref().ok_or("node mode requires --node.")?;
+            let name = opts.node.as_ref().ok_or("--query node requires --node.")?;
             let by_name = node_index_by_name(bundle);
             let node_index = *by_name
                 .get(name.as_str())
@@ -516,14 +522,14 @@ mod tests {
 
     #[test]
     fn node_membership_matches_the_full_partition_at_every_cut() {
-        // `--mode node` walks up from the leaf instead of rebuilding the partition at
+        // `--query node` walks up from the leaf instead of rebuilding the partition at
         // each cut-point. The two must agree everywhere, or the cheap path is a lie.
         let bundle = six_node_bundle();
         let hierarchy = &bundle["graph"]["hierarchy"];
         let out = run(
             &bundle,
             SsnNavigatorOptions {
-                mode: NavMode::Node,
+                query: NavMode::Node,
                 node: Some("n0".into()),
                 max_merge_events: 0,
                 ..Default::default()
@@ -559,7 +565,7 @@ mod tests {
             run(
                 &bundle,
                 SsnNavigatorOptions {
-                    mode: NavMode::Thresholds,
+                    query: NavMode::Thresholds,
                     max_merge_events: max,
                     ..Default::default()
                 },
@@ -585,7 +591,7 @@ mod tests {
             let out = run(
                 &bundle,
                 SsnNavigatorOptions {
-                    mode: NavMode::Overview,
+                    query: NavMode::Overview,
                     max_merge_events: 2,
                     ..Default::default()
                 },

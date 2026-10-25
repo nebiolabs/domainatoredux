@@ -194,8 +194,8 @@ network without a GUI:
 ```bash
 domainatoredux summary_report -i annotated.gb --json - | jq .domain_counts
 domainatoredux enum_report -i annotated.gb --by cds --columns domains --json_out - | head -1
-domainatoredux ssn_navigator -i network.dsnv --mode overview
-domainatoredux ssn_navigator -i network.dsnv --mode clusters --threshold 120 --min_size 3
+domainatoredux ssn_navigator -i network.dsnv -o - --query overview
+domainatoredux ssn_navigator -i network.dsnv -o - --query clusters --threshold 120 --min_size 3
 ```
 
 See [Config files and agent output](config-and-agents.md) for the exact contracts and for

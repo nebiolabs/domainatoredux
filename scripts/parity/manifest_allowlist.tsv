@@ -109,24 +109,6 @@ plot_contigs	-	tool	false	true	deferred:unported-tool
 rotate_contigs	-	tool	false	true	todo:new-tool	phase 6 of the 1.0 sync
 select_by_contig	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 split_by_cluster	-	tool	false	true	deferred:unported-tool	
-ssn_navigator	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-ssn_navigator	-	required_outputs	null	["json_out"]	todo:1.0-cli	
-ssn_navigator	cluster	missing	null	{"default":null,"flags":["--cluster"],"kind":"value","name":"cluster","required":false,"type":"integer"}	todo:1.0-cli	
-ssn_navigator	id	extra	{"name":"id","flags":["--id"],"default":null,"kind":"value","type":"integer","min":0,"required":false}	null	todo:1.0-cli	
-ssn_navigator	input	required	false	true	todo:1.0-cli	
-ssn_navigator	input	stdin	true	false	todo:1.0-cli	
-ssn_navigator	json_out	missing	null	{"default":null,"flags":["-o","--json_out"],"kind":"path","name":"json_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-ssn_navigator	max_merge_events	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-ssn_navigator	max_merge_events	default	null	500	todo:1.0-cli	
-ssn_navigator	min_size	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-ssn_navigator	min_size	default	null	1	todo:1.0-cli	
-ssn_navigator	mode	extra	{"name":"mode","flags":["--mode"],"choices":["overview","thresholds","clusters","cluster","node"],"kind":"value","type":"string","required":false,"default":null}	null	todo:1.0-cli	
-ssn_navigator	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-ssn_navigator	query	missing	null	{"choices":["overview","thresholds","clusters","cluster","node"],"default":"overview","flags":["--query"],"kind":"value","name":"query","required":false,"type":"string"}	todo:1.0-cli	
-ssn_navigator	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-ssn_navigator	top_n	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-ssn_navigator	top_n	default	null	50	todo:1.0-cli	
-ssn_navigator	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 structure_dist	-	tool	false	true	deferred:structure	
 structure_domainate	-	tool	false	true	deferred:structure	
 structure_search	-	tool	false	true	deferred:structure	
