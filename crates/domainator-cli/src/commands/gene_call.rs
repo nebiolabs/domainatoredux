@@ -20,8 +20,9 @@ pub fn run(args: &GeneCallArgs) -> Result<()> {
     let mut records = load_typed_inputs(&args.input, &args.alphabet)?;
     let added = gene_call(&mut records, &request).context("calling genes")?;
     write_seq_outputs(&records, Some(&args.genbank_out), None)?;
-    if !args.common.quiet {
-        eprintln!("called {added} genes on {} records", records.len());
-    }
+    domainator_core::log::info(format_args!(
+        "called {added} genes on {} records",
+        records.len()
+    ));
     Ok(())
 }

@@ -129,7 +129,9 @@ impl NameIndex {
     }
     fn push(&mut self, name: String, len: i64) {
         if self.idx.contains_key(&name) {
-            eprintln!("Warning: duplicate name found in seq_dist input: {name}");
+            crate::log::warn(format_args!(
+                "duplicate name found in seq_dist input: {name}"
+            ));
             return;
         }
         self.idx.insert(name.clone(), self.names.len());
@@ -273,8 +275,9 @@ pub fn seq_dist(
         && ref_kind == InputKind::Hmm
         && algorithm != Algorithm::HmmerCompare
     {
-        eprintln!(
-            "Warning: input and reference are both HMM files; using --algorithm hmmer_compare."
+        crate::log::warn(
+            "Input and reference are both hmm files, but algorithm is not hmmer_compare. \
+             Changing algorithm to hmmer_compare.",
         );
         algorithm = Algorithm::HmmerCompare;
     }
@@ -539,6 +542,64 @@ fn is_number(t: &str) -> bool {
         && exponent.is_none_or(|e| digits(e.strip_prefix(['-', '+']).unwrap_or(e)))
 }
 
+/// All-vs-all searches of at least this many sequences get [`diamond_preflight_warning`].
+const PREFLIGHT_SEQUENCE_THRESHOLD: usize = 50_000;
+
+/// Upstream `build_diamond_preflight_warning`: advice for a large all-vs-all diamond
+/// search at a sensitivity where diamond uses a single index chunk, whose scratch
+/// space can run to terabytes. It only advises; nothing is tuned automatically.
+fn diamond_preflight_warning(
+    sensitivity: Sensitivity,
+    n_sequences: usize,
+    total_letters: i64,
+    square: bool,
+    tmpdir: &Path,
+    diamond_args: &[(String, Option<String>)],
+) -> Option<String> {
+    let (mode, single_chunk) = match sensitivity {
+        Sensitivity::VerySensitive => ("vs", true),
+        Sensitivity::UltraSensitive => ("us", true),
+        _ => ("", false),
+    };
+    let tuned = diamond_args
+        .iter()
+        .any(|(f, _)| matches!(f.as_str(), "-b" | "--block-size" | "-c" | "--index-chunks"));
+    if !square || n_sequences < PREFLIGHT_SEQUENCE_THRESHOLD || !single_chunk || tuned {
+        return None;
+    }
+    let thousands = |n: u64| {
+        let digits = n.to_string();
+        let mut out = String::new();
+        for (i, c) in digits.chars().enumerate() {
+            if i > 0 && (digits.len() - i).is_multiple_of(3) {
+                out.push(',');
+            }
+            out.push(c);
+        }
+        out
+    };
+    Some(format!(
+        "large all-vs-all diamond search; this can exhaust scratch space.
+  {} sequences ({} aa) compared against themselves,
+  at --algorithm diamond_{mode}, where diamond uses a single index chunk.
+  Scratch directory: {}
+  Set TMPDIR to place it on another filesystem. diamond unlinks this
+  scratch while holding it open, so `du` and `ls` will not show it;
+  only the filesystem's free space reflects it.
+  Peak scratch can reach the terabyte range for a redundant input, and is
+  not tuned automatically because it cannot be predicted from input size.
+  To bound it, pass block/index-chunk options through --diamond_args, e.g.:
+      --diamond_args=\"-b 0.07 -c 4\"
+  A smaller -b lowers peak scratch further; -c splits the reference index
+  into that many passes. Neither changes the resulting matrix.
+  Lowering --algorithm (diamond_s, diamond_mids) reduces the work most, but
+  does change which hits are found.",
+        thousands(n_sequences as u64),
+        thousands(u64::try_from(total_letters).unwrap_or(0)),
+        tmpdir.display()
+    ))
+}
+
 /// Run DIAMOND `blastp` for the diamond algorithms and reduce the streamed hit
 /// table into one max score per (row, col) cell. Mirrors `seq_dist.diamond`:
 /// build a DIAMOND db from the reference, then `blastp` the input against it with
@@ -566,6 +627,17 @@ fn run_diamond(
     let input_fasta = tmp.path().join("input.fasta");
     write_diamond_fasta(&input_seqs.records, &input_fasta)?;
     let row_index = input_seqs.index;
+
+    if let Some(advice) = diamond_preflight_warning(
+        sensitivity,
+        row_index.names.len(),
+        row_index.lens.iter().sum(),
+        same,
+        tmp.path(),
+        &opts.diamond_args,
+    ) {
+        crate::log::warn(advice);
+    }
 
     let (ref_fasta, col_index) = if same {
         (input_fasta.clone(), clone_index(&row_index))
@@ -644,14 +716,14 @@ fn run_diamond(
         }
     }
     // Echo the command, as Python does, so a failing run can be reproduced by hand.
-    eprintln!(
-        "diamond command: {} {}",
+    crate::log::info(format_args!(
+        "Running diamond:\n  {} {}",
         diamond_bin.display(),
         cmd.get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect::<Vec<_>>()
             .join(" ")
-    );
+    ));
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let mut child = cmd
@@ -742,6 +814,28 @@ mod tests {
 
     fn words(s: &str) -> Vec<String> {
         s.split_whitespace().map(String::from).collect()
+    }
+
+    /// Upstream `build_diamond_preflight_warning`: only a large square search at a
+    /// single-index-chunk sensitivity, with no scratch tuning of its own, is warned.
+    #[test]
+    fn large_all_vs_all_diamond_searches_get_scratch_advice() {
+        use super::{diamond_preflight_warning, Sensitivity};
+        let dir = std::path::Path::new("/scratch");
+        let warn = |s, n, square, args: &[(String, Option<String>)]| {
+            diamond_preflight_warning(s, n, 12_345_678, square, dir, args)
+        };
+        let advice = warn(Sensitivity::UltraSensitive, 50_000, true, &[]).unwrap();
+        assert!(
+            advice.contains("50,000 sequences (12,345,678 aa)"),
+            "{advice}"
+        );
+        assert!(advice.contains("--algorithm diamond_us"), "{advice}");
+        assert!(warn(Sensitivity::UltraSensitive, 49_999, true, &[]).is_none());
+        assert!(warn(Sensitivity::UltraSensitive, 50_000, false, &[]).is_none());
+        assert!(warn(Sensitivity::Sensitive, 50_000, true, &[]).is_none());
+        let tuned = [("-b".to_string(), Some("0.07".to_string()))];
+        assert!(warn(Sensitivity::VerySensitive, 50_000, true, &tuned).is_none());
     }
 
     /// Upstream's `test_parse_diamond_args_*`: a value follows its flag unless it is

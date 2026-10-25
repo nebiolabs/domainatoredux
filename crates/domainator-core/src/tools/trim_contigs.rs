@@ -151,10 +151,11 @@ fn trim_contig(
                     right_cds = right_cds.min(dr);
                 }
                 Err(_) => {
-                    eprintln!(
-                        "WARNING: All CDSs in contig {} are composed of domains to be stripped. Skipping contig.",
+                    crate::log::warn(format_args!(
+                        "All CDSs in contig {} are composed of domains to be stripped. Skipping \
+                         contig.",
                         record.id
-                    );
+                    ));
                     return None;
                 }
             }
@@ -163,10 +164,10 @@ fn trim_contig(
         let lc_start = cdss[left_cds].feature.location.start();
         let rc_end = cdss[right_cds].feature.location.end();
         if lc_start > rc_end {
-            eprintln!(
-                "WARNING: CDSs in contig {} overlap after trimming. Skipping contig.",
+            crate::log::warn(format_args!(
+                "CDSs in contig {} overlap after trimming. Skipping contig.",
                 record.id
-            );
+            ));
             return None;
         }
         if left_cds > 0 && lc_start > left {

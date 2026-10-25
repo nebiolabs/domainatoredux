@@ -84,11 +84,11 @@ pub fn transform_matrix(
 ) -> io::Result<DataMatrix> {
     if let Some(value_type) = &opts.value_type {
         if !m.data_type.is_empty() && m.data_type != *value_type {
-            eprintln!(
-                "Warning: Input matrix format is '{}', but --value_type is '{value_type}'. The \
-                 input matrix format is overridden.",
+            crate::log::warn(format_args!(
+                "Input matrix format is '{}', but --value_type is '{value_type}'. The input \
+                 matrix format is overridden.",
                 m.data_type
-            );
+            ));
         }
         m.data_type = value_type.clone();
     }
@@ -121,7 +121,7 @@ pub fn transform_matrix(
 
     if let Some(mode) = requested_mode {
         if m.data_type.is_empty() {
-            eprintln!("Warning: Input matrix format not specified, assuming 'score'");
+            crate::log::warn("Input matrix format not specified, assuming 'score'");
             m.data_type = "score".to_string();
         }
         if m.data_type != "score" && m.data_type != mode {

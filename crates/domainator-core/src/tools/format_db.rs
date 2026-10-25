@@ -354,15 +354,13 @@ fn plan_input(
             }
             let boundaries = record_boundaries(num_records, shards);
             if boundaries.len() < shards {
-                writeln!(
-                    log,
-                    "warning: '{}' has only {} records; producing {} shard(s) instead of {}.",
+                crate::log::warn(format_args!(
+                    "'{}' has only {} records; producing {} shard(s) instead of {}.",
                     input_path.display(),
                     num_records,
                     boundaries.len(),
                     shards
-                )
-                .ok();
+                ));
             }
             for (i, (start_idx, count)) in boundaries.iter().enumerate() {
                 let b_start = offsets[*start_idx];
@@ -397,13 +395,12 @@ fn plan_input(
                 in_dir
             };
             if same_name && out_dir == in_dir && input_path.exists() {
-                writeln!(
-                    log,
-                    "warning: wrote shards alongside the original '{}'. Remove the original (or use \
-                     output_dir) so domain_search does not see both the unsharded file and its shards.",
+                crate::log::warn(format_args!(
+                    "Wrote shards alongside the original '{}'. Remove the original (or use \
+                     --output_dir) so domain_search does not see both the unsharded file and its \
+                     shards.",
                     input_path.display()
-                )
-                .ok();
+                ));
             }
         }
     }
@@ -468,12 +465,11 @@ pub fn format_db(
             );
         }
         if opts.shards.is_none() && !opts.compress {
-            writeln!(
-                log,
-                "warning: name on an index-only run copies the input to the new name before indexing; \
-                 name is intended for shards/compress."
-            )
-            .ok();
+            crate::log::warn(
+                "--name on an index-only run copies the input to the new name before indexing \
+                 (an index alone cannot rename a database); --name is intended for \
+                 --shards/--compress.",
+            );
         }
     }
 

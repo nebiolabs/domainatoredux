@@ -1,5 +1,6 @@
 use anyhow::Result;
 use domainator_config::args::HmmerSearchArgs;
+use domainator_core::log;
 use domainator_core::search::hmm_compare::common_file_alphabet;
 use domainator_core::tools::hmmer_search::{
     default_min_score, hmmer_search, py_g, HmmerSearchOptions,
@@ -28,15 +29,14 @@ pub fn run(args: &HmmerSearchArgs) -> Result<()> {
         output_description: format!("hmmer_search HMM output '{path}'"),
     };
     let references = read_hmm_inputs(&args.reference)?;
-    if opts.min_score.is_none() && !args.common.quiet {
-        // Upstream logs this at INFO, which it shows unless -q.
+    if opts.min_score.is_none() && log::enabled(log::Level::Info) {
         let alphabet =
             common_file_alphabet(&references, "reference").map_err(anyhow::Error::msg)?;
         let (min_score, name) = default_min_score(alphabet);
-        eprintln!(
+        log::info(format_args!(
             "Using --min_score {} (the default for {name} profiles).",
             py_g(min_score)
-        );
+        ));
     }
     let queries = read_hmm_inputs(&args.input)?;
     write_hmm_out(path, |mut out| {

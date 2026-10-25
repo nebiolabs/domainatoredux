@@ -146,10 +146,12 @@ pub fn resolve_database_shards(db_path: &Path) -> Result<Vec<PathBuf>, String> {
     if !shards_by_num.is_empty() {
         let nums: Vec<u64> = shards_by_num.keys().copied().collect();
         if nums[0] != 0 || nums[nums.len() - 1] != nums.len() as u64 - 1 {
-            eprintln!(
-                "warning: database shards for '{}' are not a contiguous 0..N sequence (found {:?}); proceeding.",
-                db_path.display(), nums
-            );
+            crate::log::warn(format_args!(
+                "database shards for '{}' are not a contiguous 0..N sequence (found {:?}); \
+                 proceeding.",
+                db_path.display(),
+                nums
+            ));
         }
         return Ok(shards_by_num.into_values().collect());
     }

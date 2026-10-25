@@ -294,6 +294,10 @@ where
             print!("{}", config::config_file::print_config(sub, sub_m, info)?);
             return Ok(());
         }
+        domainator_core::log::set_level(domainator_core::log::level_for(
+            sub_m.get_flag("verbose"),
+            sub_m.get_flag("quiet"),
+        ));
         check_io(sub, sub_m, info)?;
     }
     dispatch(Cli::from_arg_matches(&matches)?)

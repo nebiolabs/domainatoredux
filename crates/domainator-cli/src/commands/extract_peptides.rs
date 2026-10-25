@@ -21,7 +21,9 @@ pub fn run(args: &ExtractPeptidesArgs) -> Result<()> {
         target_domains.is_none() && target_cdss.is_none() && !args.unannotated && !search_hits;
     let mut invert = args.invert;
     if extract_all && invert {
-        eprintln!("Invert supplied with no selection criteria. Invert will be ignored.");
+        domainator_core::log::warn(
+            "Invert supplied with no selection criteria. Invert will be ignored.",
+        );
         invert = false;
     }
     let opts = ExtractPeptidesOptions {

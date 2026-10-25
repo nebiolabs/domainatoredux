@@ -23,6 +23,9 @@ use crate::seq::Topology;
 use crate::seq::{Location, SeqFeature, SeqRecord};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
+/// The longest protein upstream searches (`domainate.MAX_PROTEIN_SIZE`); a longer one
+/// is skipped with a warning.
+const MAX_PROTEIN_SIZE: usize = 100_000;
 /// `cds_id` for a CDS feature: keep an existing one, else generate from the
 /// location parts using Biopython's strand-aware human-readable coordinates
 /// (`utils.get_cds_unique_name`; plan risk E6). Per part: `-1` strand ->
@@ -61,10 +64,10 @@ fn clean_rec_nucleotide(rec: &mut SeqRecord) -> usize {
             count += 1;
             let (translation, both_ends_partial) = on_contig_cds_translation(feature, &seq);
             if both_ends_partial {
-                eprintln!(
-                    "Warning: Translation of partial CDS {cds_id} is longer than its location, \
-                     and both ends are partial. Re-translating from the contig."
-                );
+                crate::log::warn(format_args!(
+                    "Translation of partial CDS {cds_id} is longer than its location, and both \
+                     ends are partial. Re-translating from the contig."
+                ));
             }
             feature.set("translation", translation);
         }
@@ -147,10 +150,10 @@ fn add_nucleic_acid_annotations(
         let place = |hit: &SearchResult, ftype: &str| -> Option<SeqFeature> {
             let annot_len = (hit.end - hit.start) * 3;
             let Some(loc) = overlay(&cds_loc, frame + hit.start * 3, annot_len) else {
-                eprintln!(
-                    "Warning: Could not overlay location for {} on {}, {cds_id}. Skipping annotation.",
+                crate::log::warn(format_args!(
+                    "Could not overlay location for {} on {}, {cds_id}. Skipping annotation.",
                     hit.name, contig_name
-                );
+                ));
                 return None;
             };
             let mut f = hit.to_feature(ftype, &cds_id);
@@ -545,6 +548,17 @@ pub fn domainate(
     // Protein search (hmmsearch + phmmer). Collect peptides across contigs.
     // Protein record: "{i},0". Nucleotide record's CDSs: "{i},{feature_index}".
     let mut peptides: Vec<(String, Vec<u8>)> = Vec::new();
+    // Upstream skips a protein too long to search, with a warning.
+    let mut add = |name: String, pep: Vec<u8>, rec: &SeqRecord| {
+        if pep.len() > MAX_PROTEIN_SIZE {
+            crate::log::warn(format_args!(
+                "Skipping protein longer than {MAX_PROTEIN_SIZE} aa: {}",
+                rec.id
+            ));
+        } else {
+            peptides.push((name, pep));
+        }
+    };
     for (i, rec) in records.iter().enumerate() {
         if rec.is_protein() {
             if !opts.partial.allows(record_fragment_status(rec)) {
@@ -556,7 +570,7 @@ pub fn domainate(
                 .copied()
                 .filter(|b| b.is_ascii_alphanumeric())
                 .collect();
-            peptides.push((format!("{i},0"), pep));
+            add(format!("{i},0"), pep, rec);
         } else {
             for (j, pep) in rec.cds_peptides(&empty_dropped) {
                 if !opts
@@ -565,7 +579,7 @@ pub fn domainate(
                 {
                     continue;
                 }
-                peptides.push((format!("{i},{j}"), pep.into_bytes()));
+                add(format!("{i},{j}"), pep.into_bytes(), rec);
             }
         }
     }

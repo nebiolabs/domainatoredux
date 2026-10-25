@@ -265,7 +265,7 @@ pub fn compare_contigs(
         if seen.insert(rec.id.clone()) {
             recs.push(rec);
         } else {
-            eprintln!("Warning: Duplicate contig names !!! :{}", rec.id);
+            crate::log::warn(format_args!("Duplicate contig names !!! :{}", rec.id));
         }
     }
 

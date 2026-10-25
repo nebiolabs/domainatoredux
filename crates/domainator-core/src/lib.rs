@@ -6,6 +6,7 @@
 
 pub mod app_support;
 pub mod io;
+pub mod log;
 pub mod matrix;
 pub mod palette;
 pub mod parallel;

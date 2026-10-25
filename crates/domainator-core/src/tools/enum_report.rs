@@ -611,12 +611,12 @@ impl Analysis {
                         .collect();
                     if cdss.len() != 1 {
                         if !warned.swap(true, Ordering::Relaxed) {
-                            eprintln!(
-                                "Warning: --fragment is only reported for rows that are a single \
+                            crate::log::warn(format_args!(
+                                "--fragment is only reported for rows that are a single \
                                  protein or CDS, so it is empty for {} and any others like it. \
                                  Use --partial_count instead.",
                                 rec.id
-                            );
+                            ));
                         }
                         return vec![Value::Null];
                     }

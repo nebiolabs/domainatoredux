@@ -28,7 +28,8 @@ output its own `--<content>_out` option; every tool here follows it. In particul
   appears only once the run has succeeded.
 - `-i -` reads GenBank from stdin, except on the tools that read their input more than
   once, which say so. Leaving out `-i` is an error.
-- `-v/--verbose` and `-q/--quiet` are accepted.
+- Progress messages and warnings go to stderr. `-q/--quiet` shows errors only, and
+  `-v/--verbose` adds detail.
 - `--config` takes upstream's format: an object keyed by option name, as `--print_config`
   writes it. See [Config files](config-and-agents.md).
 
