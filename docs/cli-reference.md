@@ -357,10 +357,11 @@ domainatoredux sort_contigs -i hits.gb -o sorted.gb --max_hits 100
 
 Housekeeping before phylogenetics or alignment: `--clean_name` makes names newick-safe,
 `--deduplicate_names` disambiguates collisions, `--strip` removes unwanted residues and
-`--filter_by_aa` drops records containing them.
+`--filter_by_aa` drops records containing them. `--alphabet nucleotide` reads FASTA input
+as DNA (default `protein`); the counts go to standard error, or to `--log_out`.
 
 ```bash
-domainatoredux clean_sequences -i proteins.fasta -o clean.fasta --clean_name --deduplicate_names
+domainatoredux clean_sequences -i proteins.fasta --fasta_out clean.fasta --clean_name --deduplicate_names
 ```
 
 ### `deduplicate_genbank`

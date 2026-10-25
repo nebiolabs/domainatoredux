@@ -93,11 +93,16 @@ pub const TOOLS: &[ToolInfo] = &[
         "Search a large database with a few references and extract the hits.",
     ),
     // edit
-    tool(
-        "clean_sequences",
-        "edit",
-        "Clean sequence names and residues, and filter out sequences with non-canonical residues.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        no_stdout: &["log_out"],
+        ..tool(
+            "clean_sequences",
+            "edit",
+            "Clean sequence names and residues, and filter out sequences with non-canonical residues.",
+        )
+    },
     ToolInfo {
         migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),

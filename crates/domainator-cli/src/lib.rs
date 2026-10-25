@@ -31,7 +31,6 @@ use domainator_core::tools::build_ssn::build_ssn;
 use domainator_core::tools::build_ssn_viewer::{
     build_ssn_viewer_bundle, gzip, render_html, serialize_bundle,
 };
-use domainator_core::tools::clean_sequences;
 use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
 use domainator_core::tools::deduplicate_genbank;
 use domainator_core::tools::gene_call;
@@ -328,39 +327,7 @@ enum Command {
         print_config: bool,
     },
     /// Clean/filter sequences: newick-safe names, dedup names, strip/filter residues.
-    CleanSequences {
-        /// Input GenBank/FASTA file(s) (stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output file (stdout if omitted).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Log file (default: stderr).
-        #[arg(long)]
-        log: Option<String>,
-        /// Molecule type for FASTA input (protein/nucleotide).
-        #[arg(long = "fasta_type")]
-        fasta_type: Option<String>,
-        /// Write output as FASTA instead of GenBank.
-        #[arg(long = "fasta_out")]
-        fasta_out: bool,
-        /// Make names newick-compatible (bad chars -> '_').
-        #[arg(long = "clean_name")]
-        clean_name: bool,
-        /// Ensure unique sequence names.
-        #[arg(long = "deduplicate_names")]
-        deduplicate_names: bool,
-        /// Strip non-canonical residues (and '*') from sequence ends.
-        #[arg(long)]
-        strip: bool,
-        /// Drop sequences containing non-canonical residues (after strip).
-        #[arg(long = "filter_by_aa")]
-        filter_by_aa: bool,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    CleanSequences(config::args::CleanSequencesArgs),
     /// Call genes (Prodigal-style CDS features) on nucleotide contigs with the
     /// external Orphos binary.
     GeneCall {
@@ -1230,7 +1197,7 @@ fn load_taxonomy(path: &str) -> Result<NCBITaxonomy> {
 }
 
 /// Load a sequence file, treating FASTA as `fasta_type` (protein/nucleotide).
-fn load_typed(input: &Path, fasta_type: &str) -> Result<Vec<SeqRecord>> {
+pub(crate) fn load_typed(input: &Path, fasta_type: &str) -> Result<Vec<SeqRecord>> {
     let path = input.to_str().context("non-UTF8 path")?;
     match detect_filetype(input) {
         Some(FileType::Genbank) => read_genbank(path).context("reading GenBank"),
@@ -1919,80 +1886,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let records = load_inputs_str(&cfg.input)?;
             write_fasta_bp_out(&records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
         }
-        Command::CleanSequences {
-            input,
-            output,
-            log,
-            fasta_type,
-            fasta_out,
-            clean_name,
-            deduplicate_names,
-            strip,
-            filter_by_aa,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::CleanSequencesConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                log,
-                fasta_type,
-                fasta_out,
-                clean_name,
-                deduplicate_names,
-                strip,
-                filter_by_aa,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::CleanSequencesConfig>(p)?,
-                None => config::CleanSequencesConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let fasta_type = cfg.fasta_type.clone().unwrap_or_else(|| "protein".into());
-            let mut records: Vec<SeqRecord> = Vec::new();
-            for p in &cfg.input {
-                records.extend(load_typed(&PathBuf::from(p), &fasta_type)?);
-            }
-            let opts = clean_sequences::CleanSequencesOptions {
-                fasta_type: fasta_type.clone(),
-                clean_name: cfg.clean_name,
-                deduplicate_names: cfg.deduplicate_names,
-                strip: cfg.strip,
-                filter_by_aa: cfg.filter_by_aa,
-            };
-            let mut stats = clean_sequences::CleaningStats::default();
-            let out = clean_sequences::clean_sequences(records, &opts, &mut stats);
-            if cfg.fasta_out {
-                write_fasta_bp_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-            } else {
-                write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-            }
-            // Six lines, spelled exactly as `clean_sequences.py` prints them -- the
-            // log is the tool's report, so its wording is part of the output.
-            let msg = format!(
-                "Input sequences:            {}\n\
-                 Output sequences:           {}\n\
-                 Filtered (non-canonical):   {}\n\
-                 Filtered (empty after strip): {}\n\
-                 Names changed:              {}\n\
-                 Sequences changed:          {}\n",
-                stats.input_count,
-                stats.output_count,
-                stats.filtered_count,
-                stats.empty_after_strip_count,
-                stats.names_changed_count,
-                stats.sequences_changed_count,
-            );
-            match &cfg.log {
-                Some(p) => std::fs::write(p, msg).context("writing log")?,
-                None => eprint!("{msg}"),
-            }
-        }
+        Command::CleanSequences(args) => commands::clean_sequences::run(&args)?,
         Command::GeneCall {
             input,
             output,

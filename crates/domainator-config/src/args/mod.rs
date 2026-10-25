@@ -7,6 +7,7 @@
 //! names are upstream's parameter names, which are also the long flags (every struct
 //! is `rename_all = "snake_case"`) and the config-file keys.
 
+mod clean_sequences;
 mod color_genbank;
 mod common;
 mod enum_report;
@@ -21,6 +22,7 @@ mod select_by_coord;
 mod sort_contigs;
 mod trim_contigs;
 
+pub use clean_sequences::CleanSequencesArgs;
 pub use color_genbank::ColorGenbankArgs;
 pub use common::CommonArgs;
 pub use enum_report::EnumReportArgs;
@@ -53,6 +55,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "extract_unannotated" => ExtractUnannotatedArgs::augment_args(cmd),
         "trim_contigs" => TrimContigsArgs::augment_args(cmd),
         "color_genbank" => ColorGenbankArgs::augment_args(cmd),
+        "clean_sequences" => CleanSequencesArgs::augment_args(cmd),
         _ => return None,
     })
 }

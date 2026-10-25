@@ -1,6 +1,7 @@
 //! The bodies of the migrated tools, one module each: `run(&XArgs)` does the I/O
 //! wiring around the core library function.
 
+pub mod clean_sequences;
 pub mod color_genbank;
 pub mod enum_report;
 pub mod extract_domains;
@@ -38,6 +39,20 @@ pub fn load_seq_inputs(inputs: &[String]) -> Result<Vec<SeqRecord>> {
             out.extend(read_stdin_genbank()?);
         } else {
             out.extend(crate::load(std::path::Path::new(path))?);
+        }
+    }
+    Ok(out)
+}
+
+/// Like [`load_seq_inputs`], with FASTA records given the molecule type `alphabet`
+/// (`protein` or `nucleotide`; upstream's `default_molecule_type`).
+pub fn load_typed_inputs(inputs: &[String], alphabet: &str) -> Result<Vec<SeqRecord>> {
+    let mut out = Vec::new();
+    for path in inputs {
+        if is_stdin(path) {
+            out.extend(read_stdin_genbank()?);
+        } else {
+            out.extend(crate::load_typed(std::path::Path::new(path), alphabet)?);
         }
     }
     Ok(out)

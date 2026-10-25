@@ -299,35 +299,6 @@ impl GenbankToFastaConfig {
     }
 }
 
-/// `clean_sequences` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct CleanSequencesConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub log: Option<String>,
-    pub fasta_type: Option<String>,
-    pub fasta_out: bool,
-    pub clean_name: bool,
-    pub deduplicate_names: bool,
-    pub strip: bool,
-    pub filter_by_aa: bool,
-}
-
-impl CleanSequencesConfig {
-    pub fn merge_cli(&mut self, cli: CleanSequencesConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, log);
-        merge_scalar!(self, cli, fasta_type);
-        self.fasta_out |= cli.fasta_out;
-        self.clean_name |= cli.clean_name;
-        self.deduplicate_names |= cli.deduplicate_names;
-        self.strip |= cli.strip;
-        self.filter_by_aa |= cli.filter_by_aa;
-    }
-}
-
 /// `gene_call` parameters (a port-only tool: Prodigal-style gene calling through the
 /// external Orphos binary).
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -895,7 +866,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "domain_search" => domain_search_schema(),
         "deduplicate_genbank" => deduplicate_schema(),
         "genbank_to_fasta" => genbank_to_fasta_schema(),
-        "clean_sequences" => clean_sequences_schema(),
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "seq_dist" => seq_dist_schema(),
@@ -1183,27 +1153,6 @@ fn genbank_to_fasta_schema() -> serde_json::Value {
         "properties": {
             "input": {"type": "array", "items": {"type": "string"}, "description": "GenBank inputs (stdin if empty)"},
             "output": {"type": ["string", "null"], "description": "Output FASTA (stdout if omitted)"}
-        }
-    })
-}
-
-fn clean_sequences_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "clean_sequences config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "log": {"type": ["string", "null"]},
-            "fasta_type": {"enum": ["protein", "nucleotide", null]},
-            "fasta_out": {"type": "boolean", "default": false},
-            "clean_name": {"type": "boolean", "default": false, "description": "Newick-safe names"},
-            "deduplicate_names": {"type": "boolean", "default": false},
-            "strip": {"type": "boolean", "default": false, "description": "Trim non-canonical residues from ends"},
-            "filter_by_aa": {"type": "boolean", "default": false, "description": "Drop sequences with non-canonical residues"}
         }
     })
 }
@@ -1614,7 +1563,6 @@ mod tests {
             "domain_search" => DomainSearchConfig,
             "deduplicate_genbank" => DeduplicateConfig,
             "genbank_to_fasta" => GenbankToFastaConfig,
-            "clean_sequences" => CleanSequencesConfig,
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
             "seq_dist" => SeqDistConfig,

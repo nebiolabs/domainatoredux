@@ -28,8 +28,6 @@ build_ssn	test_build_ssn_mst_knn#1	rust-failed	pending:1.0-cli	error: unexpected
 build_ssn	test_build_ssn_mst_knn#2	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
 build_ssn	test_build_ssn_mst_knn_preserves_ssn_cluster_colors#0	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
 build_ssn	test_build_ssn_mst_knn_preserves_ssn_cluster_colors#1	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-clean_sequences	test_clean_sequences_fasta_output#0	rust-failed	pending:1.0-cli	error: unexpected argument '/tmp/tmpp5o8nhtg/rs/clean_out.fasta' found
-clean_sequences	test_clean_sequences_log_file#0	rust-failed	pending:1.0-cli	error: unexpected argument '--log_out' found
 compare_contigs	test_compare_contigs_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found
 compare_contigs	test_compare_contigs_2#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found
 compare_contigs	test_compare_contigs_database_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found
