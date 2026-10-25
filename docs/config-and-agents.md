@@ -40,13 +40,13 @@ The config file is the base, and command-line flags override it:
 
 | Kind of option | Behavior |
 | --- | --- |
-| scalars (`ji`, `cpu`, `sparse`) | the CLI value replaces the file's |
+| scalars (`mode`, `cpu`, `output`) | the CLI value replaces the file's |
 | lists (`references`, `domains`) | the CLI value replaces the file's, when non-empty |
 | booleans (`hits_only`, `max_mode`) | **OR'd together** |
 
 ```bash
 # override just the output, keep everything else from the file
-domainatoredux compare_contigs --config compare.yml --sparse other.hdf5
+domainatoredux gene_call --config call.yml -o other.gb
 ```
 
 Two things to watch:
@@ -65,17 +65,16 @@ Because inputs may legitimately come from the file, required arguments are valid
 `--print_config` dumps the merged parameter set as YAML and exits without doing any work:
 
 ```bash
-domainatoredux compare_contigs -i a.gb --sparse d.hdf5 --print_config
+domainatoredux gene_call -i contigs.fasta -o called.gb --print_config
 ```
 
 ```yaml
 input:
-- a.gb
-dense: null
-dense_text: null
-sparse: d.hdf5
-ji: null
-ai: null
+- contigs.fasta
+output: called.gb
+fasta_type: null
+mode: null
+scope: null
 ...
 ```
 
@@ -86,7 +85,7 @@ and `--help` to see what each default actually is.
 The output is a valid config file, so this is also how you capture a working invocation:
 
 ```bash
-domainatoredux compare_contigs -i a.gb --sparse d.hdf5 --print_config > compare.yml
+domainatoredux gene_call -i contigs.fasta -o called.gb --print_config > call.yml
 ```
 
 ### Tools on the 1.0 interface

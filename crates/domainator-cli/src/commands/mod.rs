@@ -3,6 +3,7 @@
 
 pub mod clean_sequences;
 pub mod color_genbank;
+pub mod compare_contigs;
 pub mod deduplicate_genbank;
 pub mod domain_search;
 pub mod domainate;

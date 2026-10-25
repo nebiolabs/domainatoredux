@@ -5,41 +5,45 @@ description: "Neighborhood-similarity matrix from domain content (step 3 alterna
 fields:
   - name: input
     label: "Input GenBank"
-    role: input_files
     file_type: genbank
-    required: true
     sources: workspace_first
     select: first
-  - name: sparse
+  - name: contigs
+    show: false
+    label: "Contigs"
+  - name: contigs_file
+    show: false
+    label: "Contigs file (.txt)"
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: hdf_out
     label: "Output (matrix)"
-    role: output_file
-    required: true
     output_name: "{stem}.compare.hdf5"
   - name: ji
     label: "Jaccard weight"
   - name: ai
     label: "Adjacency weight"
-  - name: k
-    label: "kNN k"
-  - name: lb
-    label: "Lower bound"
-  - name: mst_knn
-    label: "MST-kNN k"
-  - name: dense
+  - name: max_hits_per_query
+    label: "Max hits per query"
+  - name: threshold
+    label: "Threshold"
+  - name: mst
+    label: "MST"
+  - name: knn
+    label: "kNN"
+  - name: dense_text_out
     show: false
-    label: "Dense"
-  - name: dense_text
-    show: false
-    label: "Dense text"
+    label: "Output (dense text)"
   - name: databases
     show: false
     label: "Databases"
-  - name: knn
-    show: false
-    label: "Knn"
   - name: cpu
     show: false
     label: "Cpu"
+  - name: progress
+    show: false
+    label: "Progress"
   - name: max_output_gb
     show: false
     label: "Max output gb"

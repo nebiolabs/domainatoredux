@@ -42,7 +42,7 @@ domainatoredux select_by_cds -i annotated.gb -o neighborhoods.gb \
   --domains CcdB --cds_up 1 --cds_down 1
 
 # compare those neighborhoods by shared domain content, not by sequence
-domainatoredux compare_contigs -i neighborhoods.gb --dense similarity.hdf5 --ji 0.5 --ai 0.5
+domainatoredux compare_contigs -i neighborhoods.gb -o similarity.hdf5 --ji 0.5 --ai 0.5
 #> wrote 4x4 matrix
 
 # cluster them and write a Cytoscape network

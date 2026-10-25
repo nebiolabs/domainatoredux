@@ -46,36 +46,12 @@ color_table_to_legend	svg	extra	{"name":"svg","flags":["--svg"],"default":null,"
 color_table_to_legend	svg_out	missing	null	{"default":null,"flags":["-o","--svg_out"],"kind":"path","name":"svg_out","required":true,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
 color_table_to_legend	title	default	null	"Legend"	todo:1.0-cli	
 color_table_to_legend	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
-compare_contigs	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-compare_contigs	-	required_outputs	null	["hdf_out","dense_text_out","genbank_out"]	todo:1.0-cli	
-compare_contigs	ai	default	null	0.5	todo:1.0-cli	
-compare_contigs	contigs	missing	null	{"default":[],"flags":["--contigs"],"kind":"value","multiple":true,"name":"contigs","required":false,"type":"string"}	todo:1.0-cli	
-compare_contigs	contigs_file	missing	null	{"default":null,"flags":["--contigs_file"],"kind":"path","name":"contigs_file","required":false,"role":"input","type":"string"}	todo:1.0-cli	
-compare_contigs	cpu	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-compare_contigs	cpu	default	null	0	todo:1.0-cli	
-compare_contigs	dense	extra	{"name":"dense","flags":["--dense"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-compare_contigs	dense_text	extra	{"name":"dense_text","flags":["--dense_text"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-compare_contigs	dense_text_out	missing	null	{"default":null,"flags":["--dense_text_out"],"kind":"path","name":"dense_text_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-compare_contigs	genbank_out	missing	null	{"default":null,"flags":["--genbank_out"],"kind":"path","name":"genbank_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-compare_contigs	hdf_out	missing	null	{"default":null,"flags":["-o","--hdf_out"],"kind":"path","name":"hdf_out","required":false,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
-compare_contigs	input	required	false	true	todo:1.0-cli	
-compare_contigs	ji	default	null	0.5	todo:1.0-cli	
-compare_contigs	k	extra	{"name":"k","flags":["-k","--k"],"default":null,"kind":"value","type":"integer","min":0,"required":false}	null	todo:1.0-cli	
-compare_contigs	knn	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":1,"max":null,"exclusive_min":null}	todo:1.0-cli	
-compare_contigs	lb	extra	{"name":"lb","flags":["--lb"],"default":null,"kind":"value","type":"number","required":false}	null	todo:1.0-cli	
-compare_contigs	leaf_ordering	missing	null	{"choices":["greedy","optimal","none"],"default":"greedy","flags":["--leaf_ordering"],"kind":"value","name":"leaf_ordering","required":false,"type":"string"}	todo:1.0-cli	
-compare_contigs	linkage	missing	null	{"choices":["average","ward","complete","single","weighted"],"default":"average","flags":["--linkage"],"kind":"value","name":"linkage","required":false,"type":"string"}	todo:1.0-cli	
-compare_contigs	max_hits_per_query	missing	null	{"default":null,"flags":["--max_hits_per_query"],"kind":"value","name":"max_hits_per_query","required":false,"type":"integer"}	todo:1.0-cli	
-compare_contigs	max_output_gb	default	null	25	todo:1.0-cli	
-compare_contigs	mst	missing	null	{"default":false,"flags":["--mst"],"kind":"flag","name":"mst","sets":true,"type":"boolean"}	todo:1.0-cli	
-compare_contigs	mst_knn	extra	{"name":"mst_knn","flags":["--mst_knn"],"default":null,"kind":"value","type":"integer","min":0,"required":false}	null	todo:1.0-cli	
-compare_contigs	name_by_order	missing	null	{"default":false,"flags":["--name_by_order"],"kind":"flag","name":"name_by_order","sets":true,"type":"boolean"}	todo:1.0-cli	
-compare_contigs	progress	missing	null	{"default":false,"flags":["--progress"],"kind":"flag","name":"progress","sets":true,"type":"boolean"}	todo:1.0-cli	
-compare_contigs	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-compare_contigs	skip_sort_memory_check	missing	null	{"default":false,"flags":["--skip_sort_memory_check"],"kind":"flag","name":"skip_sort_memory_check","sets":true,"type":"boolean"}	todo:1.0-cli	
-compare_contigs	sparse	extra	{"name":"sparse","flags":["--sparse"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-compare_contigs	threshold	missing	null	{"default":0,"flags":["--threshold"],"kind":"value","name":"threshold","required":false,"type":"number"}	todo:1.0-cli	
-compare_contigs	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
+compare_contigs	-	required_outputs	["hdf_out","dense_text_out"]	["hdf_out","dense_text_out","genbank_out"]	deferred:ward-report	the sorted --genbank_out is not ported yet (sync phase 6); its options are accepted at their defaults in configs
+compare_contigs	genbank_out	missing	null	{"default":null,"flags":["--genbank_out"],"kind":"path","name":"genbank_out","required":false,"role":"output","stdout":true,"type":"string"}	deferred:ward-report	the sorted --genbank_out is not ported yet (sync phase 6); its options are accepted at their defaults in configs
+compare_contigs	leaf_ordering	missing	null	{"choices":["greedy","optimal","none"],"default":"greedy","flags":["--leaf_ordering"],"kind":"value","name":"leaf_ordering","required":false,"type":"string"}	deferred:ward-report	the sorted --genbank_out is not ported yet (sync phase 6); its options are accepted at their defaults in configs
+compare_contigs	linkage	missing	null	{"choices":["average","ward","complete","single","weighted"],"default":"average","flags":["--linkage"],"kind":"value","name":"linkage","required":false,"type":"string"}	deferred:ward-report	the sorted --genbank_out is not ported yet (sync phase 6); its options are accepted at their defaults in configs
+compare_contigs	name_by_order	missing	null	{"default":false,"flags":["--name_by_order"],"kind":"flag","name":"name_by_order","sets":true,"type":"boolean"}	deferred:ward-report	the sorted --genbank_out is not ported yet (sync phase 6); its options are accepted at their defaults in configs
+compare_contigs	skip_sort_memory_check	missing	null	{"default":false,"flags":["--skip_sort_memory_check"],"kind":"flag","name":"skip_sort_memory_check","sets":true,"type":"boolean"}	deferred:ward-report	the sorted --genbank_out is not ported yet (sync phase 6); its options are accepted at their defaults in configs
 db_download	-	tool	false	true	deferred:unported-tool	
 domain_search	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 domainate	esm2_3di_device	missing	null	{"default":"cuda:0","flags":["--esm2_3di_device"],"kind":"value","name":"esm2_3di_device","required":false,"type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs

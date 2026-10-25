@@ -68,7 +68,7 @@ A stdin input is spilled to a temporary file under your system temp directory, s
 read-only or tiny `TMPDIR` will cause failures on large piped inputs.
 
 **`--max_output_gb`** (default 25, `0` disables) aborts a run whose projected matrix or
-network output would exceed that size, before it writes. On `domain_search`, `seq_dist`,
+network output would exceed that size, before it writes. On `domainate`, `domain_search`, `seq_dist`,
 `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer`, `hmmer_compare`
 and `hmmer_search`.
 
@@ -457,12 +457,14 @@ domainatoredux seq_dist -i proteins.fasta -o dist.hdf5 --algorithm hmmer --cpu 8
 
 **Pairwise similarity by shared domain content** — the right comparison for gene
 neighborhoods rather than single proteins. Scores by Jaccard index (`--ji`) and adjacency
-index (`--ai`), weighted; at least one must be non-zero. Restrict to particular
-`--databases`; same `--dense`/`--sparse`/`--dense_text` outputs and `--lb`/`-k`/`--mst_knn`
-pruning as `seq_dist`.
+index (`--ai`), weighted; at least one must be non-zero and neither negative. Restrict to
+particular `--databases`, or to some contigs with `--contigs`/`--contigs_file`; `-i -`
+reads standard input. The same `-o/--hdf_out`/`--dense_text_out` outputs and
+`--threshold`/`--max_hits_per_query`/`--mst`/`--knn` pruning as `seq_dist`. Upstream's
+`--genbank_out` (the contigs sorted by similarity) is not ported yet.
 
 ```bash
-domainatoredux compare_contigs -i neighborhoods.gb --dense similarity.hdf5 --ji 0.5 --ai 0.5
+domainatoredux compare_contigs -i neighborhoods.gb -o similarity.hdf5 --ji 0.5 --ai 0.5
 ```
 
 ### `transform_matrix`

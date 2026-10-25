@@ -158,43 +158,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `compare_contigs` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct CompareContigsConfig {
-    pub input: Vec<String>,
-    pub dense: Option<String>,
-    pub dense_text: Option<String>,
-    pub sparse: Option<String>,
-    pub ji: Option<f64>,
-    pub ai: Option<f64>,
-    pub databases: Vec<String>,
-    pub k: Option<usize>,
-    pub lb: Option<f64>,
-    pub mst_knn: Option<usize>,
-    pub knn: Option<usize>,
-    pub cpu: Option<usize>,
-    pub max_output_gb: Option<f64>,
-}
-
-impl CompareContigsConfig {
-    pub fn merge_cli(&mut self, cli: CompareContigsConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, dense);
-        merge_scalar!(self, cli, dense_text);
-        merge_scalar!(self, cli, sparse);
-        merge_scalar!(self, cli, ji);
-        merge_scalar!(self, cli, ai);
-        merge_vec!(self, cli, databases);
-        merge_scalar!(self, cli, k);
-        merge_scalar!(self, cli, lb);
-        merge_scalar!(self, cli, mst_knn);
-        merge_scalar!(self, cli, knn);
-        merge_scalar!(self, cli, cpu);
-        merge_scalar!(self, cli, max_output_gb);
-    }
-}
-
 /// `transform_matrix` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -633,7 +596,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
-        "compare_contigs" => compare_contigs_schema(),
         "hmmer_compare" => hmmer_compare_schema(),
         "transform_matrix" => transform_matrix_schema(),
         "build_ssn" => build_ssn_schema(),
@@ -972,31 +934,6 @@ fn transform_matrix_schema() -> serde_json::Value {
     })
 }
 
-fn compare_contigs_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "compare_contigs config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}, "description": "Annotated GenBank files"},
-            "dense": {"type": ["string", "null"]},
-            "dense_text": {"type": ["string", "null"]},
-            "sparse": {"type": ["string", "null"]},
-            "ji": {"type": "number", "default": 0.5, "description": "Jaccard-index weight"},
-            "ai": {"type": "number", "default": 0.5, "description": "Adjacency-index weight"},
-            "databases": {"type": "array", "items": {"type": "string"}},
-            "k": {"type": ["integer", "null"]},
-            "lb": {"type": "number", "default": 0.0},
-            "mst_knn": {"type": ["integer", "null"], "description": "MST + OR-symmetric kNN; integer >= 0 (0 reduces to the MST alone). Mutually exclusive with knn"},
-            "knn": {"type": ["integer", "null"], "description": "OR-symmetric kNN without the spanning tree; integer >= 1. Unlike mst_knn this does not preserve connected components"},
-            "cpu": {"type": "integer", "default": 0},
-            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if a projected matrix output exceeds this many GB (0 disables)"}
-        }
-    })
-}
-
 fn hmmer_compare_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -1171,7 +1108,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "compare_contigs" => CompareContigsConfig,
             "transform_matrix" => TransformMatrixConfig,
             "build_ssn" => BuildSsnConfig,
             "build_ssn_viewer" => BuildSsnViewerConfig,

@@ -3,13 +3,12 @@
 //! (shared consecutive domain *pairs*) indices, combined by weight. Mirrors
 //! `domainator.compare_contigs` (the matrix path).
 //!
-//! M4 scope: the JI/AI similarity matrix and sparse/dense/TSV reports, including
-//! `--mst_knn` (MST ∪ OR-symmetric kNN pruning). The hierarchically-clustered
-//! GenBank report (`-o`, scipy ward `optimal_ordering`) is deferred.
+//! Scope: the JI/AI similarity matrix, including `--mst`/`--knn` (MST ∪
+//! OR-symmetric kNN pruning). The hierarchically sorted `--genbank_out` is not
+//! ported yet.
 
 use std::collections::{HashMap, HashSet};
 
-use crate::io::genbank::read_genbank;
 use crate::matrix::mst_knn::apply_mst_knn;
 use crate::matrix::{build_sparse_max, DataMatrix, Storage};
 use crate::seq::SeqRecord;
@@ -31,15 +30,14 @@ pub struct CompareContigsOptions {
     pub ai_weight: f64,
     /// Restrict to domains from these databases (`None` = all).
     pub databases: Option<HashSet<String>>,
-    /// Keep at most this many non-zero off-diagonal entries per row (top-N).
-    pub k: Option<usize>,
-    /// Zero out final scores `<= lb`.
-    pub lb: f64,
-    /// Prune the output to MST ∪ OR-symmetric kNN edges (integer > 1). When set,
-    /// `k` is ignored (the pruning sees the full candidate set). Mirrors
-    /// `compare_contigs --mst_knn`.
-    pub mst_knn: Option<usize>,
-    /// Pure OR-symmetric kNN (`--knn`), without the spanning tree.
+    /// `--max_hits_per_query`: keep each row's best combined scores (applied before
+    /// `--mst`/`--knn`).
+    pub max_hits_per_query: Option<usize>,
+    /// `--threshold`: zero out final scores `<= threshold`.
+    pub threshold: f64,
+    /// `--mst`: keep the maximum spanning forest's edges (with `knn`, the union).
+    pub mst: bool,
+    /// `--knn`: keep the OR-symmetric k-nearest-neighbor edges.
     pub knn: Option<usize>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
@@ -51,9 +49,9 @@ impl Default for CompareContigsOptions {
             ji_weight: 0.5,
             ai_weight: 0.5,
             databases: None,
-            k: None,
-            lb: 0.0,
-            mst_knn: None,
+            max_hits_per_query: None,
+            threshold: 0.0,
+            mst: false,
             knn: None,
             cpu: 0,
         }
@@ -219,7 +217,7 @@ fn combined_matrix(
                 }
                 entries
                     .into_iter()
-                    .filter(|&(_, v)| !(opts.lb > 0.0 && v <= opts.lb))
+                    .filter(|&(_, v)| !(opts.threshold > 0.0 && v <= opts.threshold))
                     .map(|(j, v)| (i as i64, j as i64, v))
                     .collect()
             })
@@ -249,27 +247,30 @@ fn combined_matrix(
     }
 }
 
-/// Load contigs from `genbanks` (in order, deduped by id) and compute the
-/// combined JI/AI similarity matrix.
+/// The combined JI/AI similarity matrix of `records`. Of records sharing an id only
+/// the first is scored (upstream `unique_records`).
 pub fn compare_contigs(
-    genbanks: &[String],
+    records: Vec<SeqRecord>,
     opts: &CompareContigsOptions,
-) -> std::io::Result<DataMatrix> {
+) -> Result<DataMatrix, String> {
+    if opts.ji_weight < 0.0 || opts.ai_weight < 0.0 {
+        return Err("Metric weights (--ji, --ai) must be non-negative.".into());
+    }
+    if opts.ji_weight == 0.0 && opts.ai_weight == 0.0 {
+        return Err("Please specify a non-zero weight for at least one metric.".into());
+    }
     let mut recs: Vec<SeqRecord> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    for path in genbanks {
-        for rec in read_genbank(path)? {
-            if seen.insert(rec.id.clone()) {
-                recs.push(rec);
-            } else {
-                eprintln!("Warning: duplicate contig name: {}", rec.id);
-            }
+    for rec in records {
+        if seen.insert(rec.id.clone()) {
+            recs.push(rec);
+        } else {
+            eprintln!("Warning: Duplicate contig names !!! :{}", rec.id);
         }
     }
 
-    // k == 0 -> empty matrix (no self either, matching the Python early return).
-    // `--mst_knn` ignores `k`, so this guard does not apply when it is set.
-    if opts.mst_knn.is_none() && opts.knn.is_none() && opts.k == Some(0) {
+    // A cap of 0 keeps nothing, not even the diagonal (upstream's early return).
+    if opts.max_hits_per_query == Some(0) {
         let names: Vec<String> = recs.iter().map(|r| r.id.clone()).collect();
         return Ok(DataMatrix {
             rows: names.clone(),
@@ -285,28 +286,16 @@ pub fn compare_contigs(
         });
     }
 
-    if opts.mst_knn.is_some() && opts.knn.is_some() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "--mst_knn and --knn are mutually exclusive (--mst_knn k == --mst --knn k).",
+    let matrix = combined_matrix(&recs, opts, opts.max_hits_per_query);
+    if opts.mst || opts.knn.is_some() {
+        return Ok(apply_mst_knn(
+            &matrix,
+            opts.knn.unwrap_or(0),
+            opts.threshold,
+            opts.mst,
         ));
     }
-    // Either sparsifier bypasses per-row top-k so the pruning sees the full candidate set.
-    let k = if opts.mst_knn.is_some() || opts.knn.is_some() {
-        None
-    } else {
-        opts.k
-    };
-    let matrix = combined_matrix(&recs, opts, k);
-
-    match opts
-        .mst_knn
-        .map(|k| (k, true))
-        .or_else(|| opts.knn.map(|k| (k, false)))
-    {
-        Some((k, include_mst)) => Ok(apply_mst_knn(&matrix, k, opts.lb, include_mst)),
-        None => Ok(matrix),
-    }
+    Ok(matrix)
 }
 
 #[cfg(test)]

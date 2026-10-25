@@ -31,7 +31,6 @@ use domainator_core::tools::build_ssn::build_ssn;
 use domainator_core::tools::build_ssn_viewer::{
     build_ssn_viewer_bundle, gzip, render_html, serialize_bundle,
 };
-use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
 use domainator_core::tools::gene_call;
 use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
 use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
@@ -152,55 +151,7 @@ enum Command {
     /// Compute a similarity matrix between input and reference sequences/profiles.
     SeqDist(config::args::SeqDistArgs),
     /// Pairwise contig similarity (Jaccard + Adjacency) from annotated GenBank.
-    CompareContigs {
-        /// Annotated GenBank file(s).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Write a dense HDF5 matrix here.
-        #[arg(long)]
-        dense: Option<PathBuf>,
-        /// Write a dense TSV matrix here.
-        #[arg(long = "dense_text")]
-        dense_text: Option<PathBuf>,
-        /// Write a sparse (CSR) HDF5 matrix here.
-        #[arg(long)]
-        sparse: Option<PathBuf>,
-        /// Jaccard-index weight (default: 0.5).
-        #[arg(long)]
-        ji: Option<f64>,
-        /// Adjacency-index weight (default: 0.5).
-        #[arg(long)]
-        ai: Option<f64>,
-        /// Restrict to domains from these databases.
-        #[arg(long, num_args = 1..)]
-        databases: Vec<String>,
-        /// Keep at most this many non-zero entries per row (incl. the diagonal).
-        #[arg(short = 'k', long)]
-        k: Option<usize>,
-        /// Zero out final scores <= this (default: 0).
-        #[arg(long)]
-        lb: Option<f64>,
-        /// Prune to MST + OR-symmetric kNN edges (integer >= 0, 0 = spanning tree only).
-        /// When set, -k is ignored.
-        #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
-        mst_knn: Option<usize>,
-        /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
-        /// does not preserve connected components.
-        #[arg(long = "knn", value_parser = parse_knn)]
-        knn: Option<usize>,
-        /// Worker threads (0 = all cores).
-        #[arg(long)]
-        cpu: Option<usize>,
-        /// Fail if a projected matrix output exceeds this many GB (default 25; 0 disables).
-        #[arg(long = "max_output_gb")]
-        max_output_gb: Option<f64>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    CompareContigs(config::args::CompareContigsArgs),
     /// Normalize / convert / sparsify a score matrix (dense<->sparse, --mode, --mst_knn).
     TransformMatrix {
         /// Input matrix file (HDF5 or dense TSV).
@@ -1222,95 +1173,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::ExtractPeptides(args) => commands::extract_peptides::run(&args)?,
         Command::ExtractUnannotated(args) => commands::extract_unannotated::run(&args)?,
         Command::SeqDist(args) => commands::seq_dist::run(&args)?,
-        Command::CompareContigs {
-            input,
-            dense,
-            dense_text,
-            sparse,
-            ji,
-            ai,
-            databases,
-            k,
-            lb,
-            mst_knn,
-            knn,
-            cpu,
-            max_output_gb,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::CompareContigsConfig {
-                input: paths_to_strings(&input)?,
-                dense: opt_path(&dense)?,
-                dense_text: opt_path(&dense_text)?,
-                sparse: opt_path(&sparse)?,
-                ji,
-                ai,
-                databases,
-                k,
-                lb,
-                mst_knn,
-                knn,
-                cpu,
-                max_output_gb,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::CompareContigsConfig>(p)?,
-                None => config::CompareContigsConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            if cfg.dense.is_none() && cfg.dense_text.is_none() && cfg.sparse.is_none() {
-                anyhow::bail!(
-                    "no output specified: pass at least one of --dense, --dense_text, --sparse"
-                );
-            }
-            let ji = cfg.ji.unwrap_or(0.5);
-            let ai = cfg.ai.unwrap_or(0.5);
-            if ji == 0.0 && ai == 0.0 {
-                anyhow::bail!("specify a non-zero weight for at least one metric (--ji / --ai)");
-            }
-            let opts = CompareContigsOptions {
-                ji_weight: ji,
-                ai_weight: ai,
-                databases: if cfg.databases.is_empty() {
-                    None
-                } else {
-                    Some(cfg.databases.into_iter().collect())
-                },
-                k: cfg.k,
-                lb: cfg.lb.unwrap_or(0.0),
-                mst_knn: cfg.mst_knn,
-                knn: cfg.knn,
-                cpu: cfg.cpu.unwrap_or(0),
-            };
-            let matrix = compare_contigs(&cfg.input, &opts).context("running compare_contigs")?;
-            // Output-size guardrails: estimate each requested output before writing.
-            let max_gb = cfg.max_output_gb.unwrap_or(25.0);
-            if let Some(p) = &cfg.dense {
-                enforce_matrix_gb(&matrix, "dense", p, max_gb, "--sparse, -k")?;
-            }
-            if let Some(p) = &cfg.dense_text {
-                enforce_matrix_gb(&matrix, "dense_text", p, max_gb, "--sparse, -k")?;
-            }
-            if let Some(p) = &cfg.sparse {
-                enforce_matrix_gb(&matrix, "sparse", p, max_gb, "--sparse, -k")?;
-            }
-            if let Some(p) = &cfg.dense {
-                hdf5_io::write_dense(p, &matrix)?;
-            }
-            if let Some(p) = &cfg.dense_text {
-                text::write_dense_text(p, &matrix)?;
-            }
-            if let Some(p) = &cfg.sparse {
-                hdf5_io::write_sparse(p, &matrix)?;
-            }
-            println!("wrote {}x{} matrix", matrix.nrows(), matrix.ncols());
-        }
+        Command::CompareContigs(args) => commands::compare_contigs::run(&args)?,
         Command::TransformMatrix {
             input,
             dense,

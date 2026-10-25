@@ -10,6 +10,7 @@
 mod clean_sequences;
 mod color_genbank;
 mod common;
+mod compare_contigs;
 mod deduplicate_genbank;
 mod domain_search;
 mod domainate;
@@ -30,6 +31,7 @@ mod trim_contigs;
 pub use clean_sequences::CleanSequencesArgs;
 pub use color_genbank::ColorGenbankArgs;
 pub use common::CommonArgs;
+pub use compare_contigs::CompareContigsArgs;
 pub use deduplicate_genbank::DeduplicateGenbankArgs;
 pub use domain_search::DomainSearchArgs;
 pub use domainate::DomainateArgs;
@@ -71,6 +73,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "domainate" => DomainateArgs::augment_args(cmd),
         "domain_search" => DomainSearchArgs::augment_args(cmd),
         "seq_dist" => SeqDistArgs::augment_args(cmd),
+        "compare_contigs" => CompareContigsArgs::augment_args(cmd),
         _ => return None,
     })
 }

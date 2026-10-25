@@ -28,16 +28,14 @@ build_ssn	test_build_ssn_mst_knn#1	rust-failed	pending:1.0-cli	error: unexpected
 build_ssn	test_build_ssn_mst_knn#2	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
 build_ssn	test_build_ssn_mst_knn_preserves_ssn_cluster_colors#0	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
 build_ssn	test_build_ssn_mst_knn_preserves_ssn_cluster_colors#1	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-compare_contigs	test_compare_contigs_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found
-compare_contigs	test_compare_contigs_2#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found
-compare_contigs	test_compare_contigs_database_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found
-compare_contigs	test_compare_contigs_progress_flag#0	rust-failed	deferred:progress	error: unexpected argument '--hdf_out' found
-compare_contigs	test_compare_contigs_sort_memory_check_fails_early#0	rust-failed	pending:1.0-cli	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_contigs_sort_memory_check_fails_early#1	rust-failed	pending:1.0-cli	error: unexpected argument '--hdf_out' found
-compare_contigs	test_compare_contigs_sort_memory_check_fails_early#2	rust-failed	pending:1.0-cli	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_contigs_warns_for_slow_optimal_leaf_ordering#0	rust-failed	pending:1.0-cli	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_contigs_warns_for_slow_optimal_leaf_ordering#1	rust-failed	pending:1.0-cli	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_no_annotations_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found
+compare_contigs	test_compare_contigs_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
+compare_contigs	test_compare_contigs_2#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
+compare_contigs	test_compare_contigs_database_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
+compare_contigs	test_compare_contigs_sort_memory_check_fails_early#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
+compare_contigs	test_compare_contigs_sort_memory_check_fails_early#2	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
+compare_contigs	test_compare_contigs_warns_for_slow_optimal_leaf_ordering#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
+compare_contigs	test_compare_contigs_warns_for_slow_optimal_leaf_ordering#1	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
+compare_contigs	test_compare_no_annotations_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
 domain_search	extra:test_domain_search_keeps_partial_markers#2	differs	pending:1.0-behavior	out.gb: compare_seqfiles failed at helpers.py:44
 domain_search	test_domain_search_nucleotide_multi_hit_max_hits_per_contig#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
 domain_search	test_domain_search_nucleotide_multi_hit_whole_contig#0	differs	gap:feature-order	out.gb: compare_seqfiles failed at helpers.py:44

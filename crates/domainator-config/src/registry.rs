@@ -268,11 +268,23 @@ pub const TOOLS: &[ToolInfo] = &[
             "Compute similarity scores between sequences or profiles.",
         )
     },
-    tool(
-        "compare_contigs",
-        "compare",
-        "Compute similarities between gene neighborhoods from their domain content and order.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["hdf_out", "dense_text_out"]),
+        no_stdout: &["hdf_out"],
+        unsupported: &[
+            ("genbank_out", "null"),
+            ("name_by_order", "false"),
+            ("linkage", "\"average\""),
+            ("leaf_ordering", "\"greedy\""),
+            ("skip_sort_memory_check", "false"),
+        ],
+        ..tool(
+            "compare_contigs",
+            "compare",
+            "Compute similarities between gene neighborhoods from their domain content and order.",
+        )
+    },
     tool(
         "transform_matrix",
         "compare",

@@ -162,11 +162,13 @@ Tracked so a later sync does not mistake them for oversights:
 - **HTML output** for `enum_report`, `hmmer_report`, `matrix_report` and `summary_report`.
   `--json` is offered instead, which is upstream's own recommendation for agents.
   (`deferred:html` in `known_gaps.tsv`.)
-- **The ward-clustered GenBank report** `compare_contigs -o`, and its `--mst_knn`
-  projections. (`deferred:ward-report`.)
+- **`compare_contigs --genbank_out`**, the contigs sorted by hierarchical clustering
+  (`--linkage`, `--leaf_ordering`, `--name_by_order`, `--skip_sort_memory_check`), which
+  the sync's phase 6 ports. Until then those options are accepted at their defaults in
+  config files. (`deferred:ward-report`.)
+- **`--progress`** draws no progress bar: `seq_dist` and `compare_contigs` accept and
+  ignore it.
 - **Infernal `.cm` references** in `domainate`/`domain_search`. (`deferred:infernal`.)
-- **`--progress`** draws no progress bar: `seq_dist` accepts and ignores it,
-  `compare_contigs` does not have it yet. (`deferred:progress`.)
 - **`seq_dist`'s diamond diagnostics**: the advisory before a large all-vs-all diamond
   search (`build_diamond_preflight_warning`) and the explained failures (out of disk or
   memory, a rejected `--diamond_args` option, unreadable input:
@@ -185,9 +187,8 @@ machine-checked on each sweep so none can be quietly forgotten. One open `gap:` 
 |---|---|---|
 | `deferred:html` | 9 | `--html` for `enum_report`, `matrix_report`, `summary_report`; `--json` is offered instead |
 | `gap:feature-order` | 5 | `domain_search` emits tied-coordinate features in the other order, below |
-| `deferred:ward-report` | 4 | `compare_contigs -o`, the ward-clustered GenBank report |
+| `deferred:ward-report` | 8 | `compare_contigs --genbank_out`, the sorted GenBank output |
 | `deferred:infernal` | 2 | `.cm` references |
-| `deferred:progress` | 1 | `compare_contigs --progress` |
 
 A `tolerated` row is one where the semantic comparator passed but the **bytes differ**, so
 the gap list structurally cannot hold it. Diffing those bytes is the single most productive
