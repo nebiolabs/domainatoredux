@@ -72,11 +72,6 @@ fn fmt_location(loc: &Location, rec_len: i64) -> String {
 
 const HEADER_INDENT: &str = "            "; // 12 spaces
 
-/// Write a header line at the 12-col indent (continuation lines).
-fn write_indented<W: Write>(w: &mut W, text: &str) -> io::Result<()> {
-    writeln!(w, "{HEADER_INDENT}{text}")
-}
-
 /// Write a `TAG  value` header field, padding the tag to 12 cols and soft-wrapping
 /// the value at 79 cols on whitespace (continuation indented 12). `tag` may carry a
 /// leading indent (e.g. `  ORGANISM`). Continuation join is space, matching how the
@@ -196,27 +191,29 @@ fn write_comment<W: Write>(w: &mut W, ann: &crate::seq::Annotations) -> io::Resu
     if ann.comment.is_none() && ann.structured_comment.is_empty() {
         return Ok(());
     }
-    // Build the full comment body: free text (verbatim lines, re-joined by '\n' by
-    // the parser) then each structured block as `##Name-START## .. ##Name-END##`.
+    // Biopython's `_write_comment`: each structured block as `##Name-START## ..
+    // ##Name-END##`, its keys padded to the longest key of any block, then the free
+    // text (lines re-joined by '\n' by the parser), every line wrapped like any other
+    // header field.
+    let padding = ann
+        .structured_comment
+        .iter()
+        .flat_map(|(_, entries)| entries.iter().map(|(k, _)| k.chars().count()))
+        .max()
+        .unwrap_or(0);
     let mut body: Vec<String> = Vec::new();
-    if let Some(c) = &ann.comment {
-        for line in c.split('\n') {
-            body.push(line.to_string());
-        }
-    }
     for (name, entries) in &ann.structured_comment {
         body.push(format!("##{name}-START##"));
         for (k, v) in entries {
-            body.push(format!("{k} :: {v}"));
+            body.push(format!("{k:<padding$} :: {v}"));
         }
         body.push(format!("##{name}-END##"));
     }
+    if let Some(c) = &ann.comment {
+        body.extend(c.split('\n').map(str::to_string));
+    }
     for (i, line) in body.iter().enumerate() {
-        if i == 0 {
-            writeln!(w, "COMMENT     {line}")?;
-        } else {
-            write_indented(w, line)?;
-        }
+        write_wrapped(w, if i == 0 { "COMMENT" } else { "" }, line)?;
     }
     Ok(())
 }
@@ -577,6 +574,39 @@ mod tests {
         );
         assert_eq!(fmt_location(&at(4000, 4000, 1), 4000), "4000^1");
         assert_eq!(fmt_location(&at(2644, 2645, 1), 4000), "2645");
+    }
+
+    /// Biopython's `_write_comment`: structured blocks first, keys padded to the
+    /// longest key of any block, then the free text.
+    #[test]
+    fn structured_comments_come_first_and_align() {
+        let ann = Annotations {
+            comment: Some("Free text.".into()),
+            structured_comment: vec![
+                (
+                    "Assembly-Data".into(),
+                    vec![
+                        ("Assembly Method".into(), "SPAdes".into()),
+                        ("Sequencing Technology".into(), "Illumina".into()),
+                    ],
+                ),
+                ("Other".into(), vec![("Key".into(), "v".into())]),
+            ],
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        write_comment(&mut out, &ann).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "COMMENT     ##Assembly-Data-START##\n\
+             \x20           Assembly Method       :: SPAdes\n\
+             \x20           Sequencing Technology :: Illumina\n\
+             \x20           ##Assembly-Data-END##\n\
+             \x20           ##Other-START##\n\
+             \x20           Key                   :: v\n\
+             \x20           ##Other-END##\n\
+             \x20           Free text.\n"
+        );
     }
 
     #[test]
