@@ -19,6 +19,9 @@ pub const FRAGMENT_TOKENS: [&str; 2] = [" (Fragment)", " (Fragments)"];
 /// UniProt text (`.dat`) entries flag them in a `Flags:` DE line (e.g. `Flags:
 /// Precursor; Fragments;`), which ends up in the DEFINITION of a converted GenBank file.
 pub const FRAGMENT_FLAGS_PREFIX: &str = "Flags:";
+/// MGnify protein FASTA headers say whether a protein is full length with an `FL=`
+/// token: `FL=0` is a fragment, `FL=1` full length.
+pub const MGNIFY_FRAGMENT_TOKEN: &str = "FL=0";
 /// UniProt marks a missing terminus with a `NON_TER` feature on the first or last residue.
 pub const NON_TERMINAL_FEATURE_NAME: &str = "NON_TER";
 /// The values `--partial` accepts.
@@ -107,10 +110,17 @@ fn has_bare_partial(feature: &SeqFeature) -> bool {
         .is_some_and(|v| v.trim().trim_matches('"').is_empty())
 }
 
-/// True if a description carries a UniProt fragment marker: ` (Fragment)` or
-/// ` (Fragments)` (FASTA headers), or a `Flags:` list naming `Fragment(s)` (text entries).
+/// True if a description carries a fragment marker: UniProt ` (Fragment)` or
+/// ` (Fragments)` (FASTA headers), a UniProt `Flags:` list naming `Fragment(s)` (text
+/// entries), or an MGnify `FL=0` token (FASTA headers).
 pub fn description_is_fragment(description: &str) -> bool {
     if FRAGMENT_TOKENS.iter().any(|t| description.contains(t)) {
+        return true;
+    }
+    if description
+        .split_whitespace()
+        .any(|t| t == MGNIFY_FRAGMENT_TOKEN)
+    {
         return true;
     }
     description
@@ -433,6 +443,12 @@ mod tests {
                 "RecName: Full=Superoxide dismutase; Flags: Fragment;",
                 Some("?"),
             ),
+            (
+                "MGYP000001 PL=00 UP=0 BIOMES=0000000000001 FL=0 CR=0",
+                Some("?"),
+            ),
+            ("MGYP000001 PL=00 UP=0 BIOMES=0000000000001 FL=1 CR=0", None),
+            ("MGYP000001 FL=00", None),
             (
                 "RecName: Full=Superoxide dismutase; Flags: Precursor; Fragments;",
                 Some("?"),

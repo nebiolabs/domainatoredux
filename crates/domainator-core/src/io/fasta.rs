@@ -107,24 +107,30 @@ fn parse_fasta<R: BufRead>(
             if out.len() as u64 >= max_recs {
                 return Ok(out); // partition limit reached; don't start the next record
             }
-            let raw = &line[1..];
-            let end = raw
-                .iter()
-                .rposition(|&b| b != b'\n' && b != b'\r')
-                .map_or(0, |i| i + 1);
-            title = Some(String::from_utf8_lossy(&raw[..end]).into_owned());
+            title = Some(String::from_utf8_lossy(rstrip(&line[1..])).into_owned());
         } else if title.is_some() {
-            for &b in &line {
-                if b != b'\n' && b != b'\r' {
-                    seq.push(b);
-                }
-            }
+            // Upstream (Biopython) strips each line's trailing whitespace and drops
+            // spaces, tabs and carriage returns anywhere in the sequence.
+            seq.extend(
+                rstrip(&line)
+                    .iter()
+                    .filter(|&&b| !matches!(b, b' ' | b'\t' | b'\r')),
+            );
         }
     }
     if (out.len() as u64) < max_recs {
         flush(&mut out, &mut title, &mut seq, &mol);
     }
     Ok(out)
+}
+
+/// `line` without its trailing whitespace, as Python's `str.rstrip()` removes it.
+fn rstrip(line: &[u8]) -> &[u8] {
+    let end = line
+        .iter()
+        .rposition(|b| !matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
+        .map_or(0, |i| i + 1);
+    &line[..end]
 }
 
 /// Write records as FASTA, wrapping sequence at 60 columns.
@@ -175,6 +181,18 @@ pub fn write_fasta(path: &str, records: &[SeqRecord]) -> io::Result<()> {
 mod tests {
     use super::*;
     use crate::seq::{Annotations, SeqRecord, Topology};
+
+    /// Biopython's rules, which upstream reads FASTA with: the title loses its
+    /// trailing whitespace, and spaces, tabs and carriage returns vanish from the
+    /// sequence wherever they are.
+    #[test]
+    fn whitespace_in_sequence_lines_is_dropped() {
+        let text = b">a desc \t\r\n\tAC\x0cGT\tA \r\n  CC \x0c\n>b\nGG";
+        let recs = parse_fasta(&text[..], u64::MAX, None).unwrap();
+        assert_eq!(recs[0].description, "a desc");
+        assert_eq!(recs[0].seq, b"AC\x0cGTACC");
+        assert_eq!(recs[1].seq, b"GG");
+    }
 
     #[test]
     fn fasta_round_trip() {
