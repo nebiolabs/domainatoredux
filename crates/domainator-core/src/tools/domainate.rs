@@ -223,22 +223,13 @@ pub fn add_domain_cds_annotations(rec: &mut SeqRecord) {
     }
 }
 
-/// Whether two half-open regions overlap by at least `min_overlap_fraction` of
-/// `region2` (port of `utils.regions_overlap`). `>= 1.0` never overlaps.
-fn regions_overlap(r1: (i64, i64), r2: (i64, i64), min_overlap_fraction: f64) -> bool {
-    if min_overlap_fraction >= 1.0 {
-        return false;
-    }
-    let r2_size = if r2.1 - r2.0 == 0 {
-        0.1
-    } else {
-        (r2.1 - r2.0) as f64
-    };
+/// The fraction of half-open `r2` that overlaps `r1` (`locations.overlap_fraction`).
+fn overlap_fraction(r1: (i64, i64), r2: (i64, i64)) -> f64 {
     let overlap = (r1.1.min(r2.1) - r1.0.max(r2.0)).max(0);
     if overlap == 0 {
-        false
+        0.0
     } else {
-        (overlap as f64 / r2_size) >= min_overlap_fraction
+        overlap as f64 / (r2.1 - r2.0) as f64
     }
 }
 
@@ -268,7 +259,9 @@ fn filter_by_overlap(
         }
         let non_overlap = bucket
             .iter()
-            .filter(|k| !regions_overlap((k.start, k.end), (hit.start, hit.end), allowed_overlap))
+            // Same rule as filter_domains: overlapping a kept hit by more than the
+            // allowed fraction rejects a hit.
+            .filter(|k| overlap_fraction((k.start, k.end), (hit.start, hit.end)) <= allowed_overlap)
             .count();
         if non_overlap == bucket.len() {
             bucket.push(hit);
@@ -765,6 +758,27 @@ mod tests {
                 assert_eq!(overlay(&loc, offset, length), None, "{offset} {length}");
             }
         }
+    }
+
+    /// Upstream `filter_by_overlap`: a hit is rejected only when it overlaps a better
+    /// kept hit by *more* than the allowed fraction of its own length.
+    #[test]
+    fn max_overlap_rejects_only_overlaps_above_the_fraction() {
+        let at = |start, end| SearchResult {
+            start,
+            end,
+            ..Default::default()
+        };
+        // The second hit overlaps the first by 5 of its 10 positions.
+        let kept = |allowed| filter_by_overlap(vec![at(0, 10), at(5, 15)], allowed, false).len();
+        assert_eq!(kept(0.5), 2);
+        assert_eq!(kept(0.4), 1);
+        assert_eq!(kept(0.0), 1);
+        // Touching is not overlapping.
+        assert_eq!(
+            filter_by_overlap(vec![at(0, 10), at(10, 20)], 0.0, false).len(),
+            2
+        );
     }
 
     fn hit(start: i64, end: i64, strand: i32, name: &str) -> SearchResult {

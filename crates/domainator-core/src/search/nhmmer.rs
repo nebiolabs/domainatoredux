@@ -29,7 +29,7 @@ pub struct NuclDb {
 }
 
 /// Run every profile in `db` against the whole-contig `targets` (`(name,
-/// residues)`, both strands), returning domains with `min_evalue <= i_evalue <
+/// residues)`, both strands), returning domains with `min_evalue <= i_evalue <=
 /// evalue`. Target names follow Python's `"{contig_index},contig,{len}"`.
 ///
 /// `max_mode` maps to nhmmer `--max` (all heuristic filters off). E-values are
@@ -214,7 +214,7 @@ pub fn nhmmer_db(
             let contig_len: Option<i64> = parts.nth(2).and_then(|s| s.parse::<i64>().ok());
             for dom in &hit.dcl {
                 let i_evalue = dom.lnp.exp();
-                if !(i_evalue < evalue && i_evalue >= min_evalue) {
+                if !(i_evalue <= evalue && i_evalue >= min_evalue) {
                     continue;
                 }
                 // env_from-1 .. env_to; reverse hits swap and set strand -1.

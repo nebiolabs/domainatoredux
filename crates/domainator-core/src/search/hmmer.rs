@@ -135,7 +135,7 @@ pub struct NamedHit {
 }
 
 /// Run every profile in `db` against `peptides` (`(name, residues)`), returning
-/// the domains with `min_evalue <= i_evalue < evalue`. `z` is the E-value search
+/// the domains with `min_evalue <= i_evalue <= evalue`. `z` is the E-value search
 /// space (domainate's `-Z`). Handles both hmmsearch (`.hmm` profiles) and phmmer
 /// (single-seq profiles); the output `program` qualifier is `db.program`.
 ///
@@ -207,7 +207,7 @@ pub fn hmmsearch_db(
             }
             for dom in &hit.dcl {
                 let i_evalue = dom.lnp.exp() * z;
-                if !(i_evalue < evalue && i_evalue >= min_evalue) {
+                if !(i_evalue <= evalue && i_evalue >= min_evalue) {
                     continue;
                 }
                 let (rstart, rend, identity) = match &dom.ad {
