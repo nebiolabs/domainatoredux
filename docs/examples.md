@@ -183,7 +183,7 @@ domainatoredux summary_report -i annotated.gb -o summary.txt
 
 # color the features, and a matching legend for the figure
 domainatoredux color_genbank -i annotated.gb -o colored.gb \
-  --mode domains_and_cdss --color_table_out colors.tsv
+  --target domains_and_cdss --color_table_out colors.tsv
 domainatoredux color_table_to_legend -i colors.tsv --svg legend.svg --title Domains
 ```
 

@@ -388,7 +388,7 @@ domainatoredux deduplicate_genbank -i proteins.fasta -o representatives.fasta \
 ### `color_genbank`
 
 Assign hex colors to features via the `Color` qualifier, which viewers (including
-Geneious and the [desktop app](gui.md)) honor. `--mode domains|cdss|domains_and_cdss`
+Geneious and the [desktop app](gui.md)) honor. `--target domains|cdss|domains_and_cdss`
 chooses what gets colored; colors come from a `--color_table` or are assigned
 automatically and can be saved with `--color_table_out` so runs stay consistent.
 `--search_hit_color` highlights `Domain_Search` features; `--clear` strips existing
@@ -396,7 +396,7 @@ colors.
 
 ```bash
 domainatoredux color_genbank -i annotated.gb -o colored.gb \
-  --mode domains_and_cdss --color_table_out colors.tsv
+  --target domains_and_cdss --color_table_out colors.tsv
 ```
 
 ### `color_table_to_legend`

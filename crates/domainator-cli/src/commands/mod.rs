@@ -1,6 +1,7 @@
 //! The bodies of the migrated tools, one module each: `run(&XArgs)` does the I/O
 //! wiring around the core library function.
 
+pub mod color_genbank;
 pub mod enum_report;
 pub mod extract_domains;
 pub mod extract_peptides;

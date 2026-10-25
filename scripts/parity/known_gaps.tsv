@@ -30,17 +30,6 @@ build_ssn	test_build_ssn_mst_knn_preserves_ssn_cluster_colors#0	rust-failed	pend
 build_ssn	test_build_ssn_mst_knn_preserves_ssn_cluster_colors#1	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
 clean_sequences	test_clean_sequences_fasta_output#0	rust-failed	pending:1.0-cli	error: unexpected argument '/tmp/tmpp5o8nhtg/rs/clean_out.fasta' found
 clean_sequences	test_clean_sequences_log_file#0	rust-failed	pending:1.0-cli	error: unexpected argument '--log_out' found
-color_genbank	test_color_genbank_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--target' found
-color_genbank	test_color_genbank_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--target' found
-color_genbank	test_color_genbank_3#0	rust-failed	pending:1.0-cli	error: unexpected argument '--target' found
-color_genbank	test_color_genbank_clear_1#0	rust-failed	deferred:color-domains	error: unexpected argument '--target' found
-color_genbank	test_color_genbank_color_table_out_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--target' found
-color_genbank	test_color_genbank_color_table_out_2#0	rust-failed	pending:1.0-cli	error: unexpected argument '--target' found
-color_genbank	test_color_genbank_databases_1#0	rust-failed	deferred:color-domains	error: unexpected argument '--target' found
-color_genbank	test_color_genbank_domain_database_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--target' found
-color_genbank	test_color_genbank_domain_search_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--target' found
-color_genbank	test_color_genbank_mode_domains_and_cdss#0	rust-failed	pending:1.0-cli	error: unexpected argument '--target' found
-color_genbank	test_color_genbank_pseudo_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--target' found
 compare_contigs	test_compare_contigs_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found
 compare_contigs	test_compare_contigs_2#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found
 compare_contigs	test_compare_contigs_database_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--dense_text_out' found

@@ -55,17 +55,6 @@ clean_sequences	log_out	missing	null	{"default":null,"flags":["--log_out"],"kind
 clean_sequences	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
 clean_sequences	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
 clean_sequences	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
-color_genbank	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-color_genbank	-	required_outputs	null	["genbank_out","fasta_out"]	todo:1.0-cli	
-color_genbank	color_table_out	stdout	true	false	todo:1.0-cli	
-color_genbank	fasta_out	missing	null	{"default":null,"flags":["--fasta_out"],"kind":"path","name":"fasta_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-color_genbank	genbank_out	missing	null	{"default":null,"flags":["-o","--genbank_out"],"kind":"path","name":"genbank_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-color_genbank	input	required	false	true	todo:1.0-cli	
-color_genbank	mode	extra	{"name":"mode","flags":["--mode"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-color_genbank	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-color_genbank	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-color_genbank	target	missing	null	{"choices":["domains","cdss","domains_and_cdss"],"default":"cdss","flags":["--target"],"kind":"value","name":"target","required":false,"type":"string"}	todo:1.0-cli	
-color_genbank	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 color_table_to_legend	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
 color_table_to_legend	-	required_outputs	null	["svg_out"]	todo:1.0-cli	
 color_table_to_legend	input	required	false	true	todo:1.0-cli	

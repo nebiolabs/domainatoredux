@@ -410,45 +410,7 @@ enum Command {
     #[command(allow_negative_numbers = true)]
     FilterDomains(config::args::FilterDomainsArgs),
     /// Assign hex colors to domain and/or CDS features (Color qualifier).
-    ColorGenbank {
-        /// Input GenBank file(s) (stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output GenBank file (stdout if omitted).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Only color contigs with these names.
-        #[arg(long, num_args = 1..)]
-        contigs: Vec<String>,
-        /// File of contig names to color (one per line).
-        #[arg(long = "contigs_file")]
-        contigs_file: Option<String>,
-        /// TSV (no header): key, hex color. If omitted, colors are auto-generated.
-        #[arg(long = "color_table")]
-        color_table: Option<String>,
-        /// Write the resolved color table (key, hex) to this file.
-        #[arg(long = "color_table_out")]
-        color_table_out: Option<String>,
-        /// Color to use for Domain_Search best-hit features.
-        #[arg(long = "search_hit_color")]
-        search_hit_color: Option<String>,
-        /// Remove all existing Color qualifiers before coloring.
-        #[arg(long)]
-        clear: bool,
-        /// Only use domains from these databases when determining color.
-        #[arg(long, num_args = 1..)]
-        databases: Vec<String>,
-        /// What to color: domains | cdss | domains_and_cdss (default: cdss).
-        #[arg(long)]
-        mode: Option<String>,
-        /// Color domains by their database id instead of their name.
-        #[arg(long = "domain_database")]
-        domain_database: bool,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    ColorGenbank(config::args::ColorGenbankArgs),
     /// Generate an SVG legend from a color table.
     ColorTableToLegend {
         /// Color table file(s) (TSV: key, hex; stdin if omitted).
@@ -2095,99 +2057,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::SortContigs(args) => commands::sort_contigs::run(&args)?,
         Command::SelectByCoord(args) => commands::select_by_coord::run(&args)?,
         Command::FilterDomains(args) => commands::filter_domains::run(&args)?,
-        Command::ColorGenbank {
-            input,
-            output,
-            contigs,
-            contigs_file,
-            color_table,
-            color_table_out,
-            search_hit_color,
-            clear,
-            databases,
-            mode,
-            domain_database,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::ColorGenbankConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                contigs,
-                contigs_file,
-                color_table,
-                color_table_out,
-                search_hit_color,
-                clear,
-                databases,
-                mode,
-                domain_database,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::ColorGenbankConfig>(p)?,
-                None => config::ColorGenbankConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let mut records = load_inputs_str(&cfg.input)?;
-            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-
-            let targets =
-                tools::color_genbank::ColorTargets::parse(cfg.mode.as_deref().unwrap_or("cdss"))
-                    .map_err(|e| anyhow::anyhow!(e))?;
-            let color_feature = if cfg.domain_database {
-                "database"
-            } else {
-                "name"
-            }
-            .to_string();
-
-            let mut color_map = match &cfg.color_table {
-                Some(path) => {
-                    let text = std::fs::read_to_string(path)
-                        .with_context(|| format!("reading color table {path}"))?;
-                    let table = tools::color_genbank::read_color_table(&text)
-                        .map_err(|e| anyhow::anyhow!(e))?;
-                    tools::color_genbank::ColorMap::from_table(table)
-                }
-                None => tools::color_genbank::ColorMap::auto(),
-            };
-
-            let search_hit_color = match &cfg.search_hit_color {
-                Some(c) => Some(
-                    tools::color_genbank::normalize_color_hex(c).map_err(|e| anyhow::anyhow!(e))?,
-                ),
-                None => None,
-            };
-            let databases = if cfg.databases.is_empty() {
-                None
-            } else {
-                Some(cfg.databases.iter().cloned().collect())
-            };
-
-            let opts = tools::color_genbank::ColorGenbankOptions {
-                targets,
-                search_hit_color,
-                clear: cfg.clear,
-                databases,
-                color_feature,
-            };
-            let out = tools::color_genbank::color_genbank(records, &mut color_map, &opts);
-            write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-
-            if let Some(path) = &cfg.color_table_out {
-                use std::io::Write;
-                let mut f = std::fs::File::create(path)
-                    .with_context(|| format!("writing color table {path}"))?;
-                for (annotation, color) in color_map.items() {
-                    writeln!(f, "{annotation}\t{color}")?;
-                }
-            }
-        }
+        Command::ColorGenbank(args) => commands::color_genbank::run(&args)?,
         Command::ColorTableToLegend {
             input,
             svg,

@@ -98,11 +98,16 @@ pub const TOOLS: &[ToolInfo] = &[
         "edit",
         "Clean sequence names and residues, and filter out sequences with non-canonical residues.",
     ),
-    tool(
-        "color_genbank",
-        "edit",
-        "Add color qualifiers to CDS and domain features.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        no_stdout: &["color_table_out"],
+        ..tool(
+            "color_genbank",
+            "edit",
+            "Add color qualifiers to CDS and domain features.",
+        )
+    },
     tool(
         "deduplicate_genbank",
         "edit",

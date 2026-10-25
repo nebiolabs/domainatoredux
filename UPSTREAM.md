@@ -166,7 +166,6 @@ Tracked so a later sync does not mistake them for oversights:
   projections. (`deferred:ward-report`.)
 - **Infernal `.cm` references** in `domainate`/`domain_search`. (`deferred:infernal`.)
 - **`--progress`** on `seq_dist` and `compare_contigs`. (`deferred:progress`.)
-- **`color_genbank --color_domains` / `--color_both`.** (`deferred:color-domains`.)
 - **`--partial` on `find_features` and `domainator_db_download`** (`bdc74bb`). Neither tool
   is ported. The GUI's managed UniProt download could take the same filter later.
 
@@ -182,7 +181,6 @@ machine-checked on each sweep so none can be quietly forgotten. One open `gap:` 
 | `gap:feature-order` | 5 | `domain_search` emits tied-coordinate features in the other order, below |
 | `deferred:ward-report` | 4 | `compare_contigs -o`, the ward-clustered GenBank report |
 | `deferred:progress` | 3 | `seq_dist` / `compare_contigs` `--progress`; intentionally not ported |
-| `deferred:color-domains` | 3 | `color_genbank --color_domains` / `--color_both`; intentionally not ported |
 | `deferred:infernal` | 2 | `.cm` references |
 | `upstream:hmmer-pure-rs` | 1 | a `domainate --evalue 1e-40` hit that lands on the other side of the cutoff |
 

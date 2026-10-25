@@ -5,29 +5,25 @@ description: "Batch-assign feature colors by name/database (color table or auto 
 fields:
   - name: input
     label: "Input sequences"
-    role: input_files
     file_type: sequence
-    required: true
     sources: workspace_first
     select: first
-  - name: output
+  - name: genbank_out
     label: "Output (GenBank)"
-    role: output_file
-    required: true
     output_name: "{stem}.colored.gb"
-  - name: mode
+  - name: fasta_out
+    label: "Output (FASTA)"
+  - name: target
     label: "Color targets"
   - name: domain_database
     label: "Color by database"
   - name: color_table
     label: "Color table (in)"
-    role: input_file
     file_type: table
     sources: workspace_first
     select: none
   - name: color_table_out
     label: "Color table (out)"
-    role: output_file
   - name: search_hit_color
     label: "Search-hit color"
   - name: clear

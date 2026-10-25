@@ -362,39 +362,6 @@ impl GeneCallConfig {
     }
 }
 
-/// `color_genbank` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct ColorGenbankConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub contigs: Vec<String>,
-    pub contigs_file: Option<String>,
-    pub color_table: Option<String>,
-    pub color_table_out: Option<String>,
-    pub search_hit_color: Option<String>,
-    pub clear: bool,
-    pub databases: Vec<String>,
-    pub mode: Option<String>,
-    pub domain_database: bool,
-}
-
-impl ColorGenbankConfig {
-    pub fn merge_cli(&mut self, cli: ColorGenbankConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_vec!(self, cli, contigs);
-        merge_scalar!(self, cli, contigs_file);
-        merge_scalar!(self, cli, color_table);
-        merge_scalar!(self, cli, color_table_out);
-        merge_scalar!(self, cli, search_hit_color);
-        self.clear |= cli.clear;
-        merge_vec!(self, cli, databases);
-        merge_scalar!(self, cli, mode);
-        self.domain_database |= cli.domain_database;
-    }
-}
-
 /// `color_table_to_legend` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -930,7 +897,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "genbank_to_fasta" => genbank_to_fasta_schema(),
         "clean_sequences" => clean_sequences_schema(),
         "gene_call" => gene_call_schema(),
-        "color_genbank" => color_genbank_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "seq_dist" => seq_dist_schema(),
         "compare_contigs" => compare_contigs_schema(),
@@ -1260,29 +1226,6 @@ fn gene_call_schema() -> serde_json::Value {
             "mask": {"type": "boolean", "default": false, "description": "No genes across runs of N"},
             "cpu": {"type": ["integer", "null"], "description": "Orphos threads (0 = all cores)"},
             "bin_path": {"type": ["string", "null"], "description": "Path to the orphos binary (else $DOMAINATOREDUX_ORPHOS, then PATH)"}
-        }
-    })
-}
-
-fn color_genbank_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "color_genbank config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "contigs": {"type": "array", "items": {"type": "string"}},
-            "contigs_file": {"type": ["string", "null"]},
-            "color_table": {"type": ["string", "null"]},
-            "color_table_out": {"type": ["string", "null"]},
-            "search_hit_color": {"type": ["string", "null"]},
-            "clear": {"type": "boolean", "default": false},
-            "databases": {"type": "array", "items": {"type": "string"}},
-            "mode": {"enum": ["domains", "cdss", "domains_and_cdss", null], "default": "cdss"},
-            "domain_database": {"type": "boolean", "default": false}
         }
     })
 }
@@ -1673,7 +1616,6 @@ mod tests {
             "genbank_to_fasta" => GenbankToFastaConfig,
             "clean_sequences" => CleanSequencesConfig,
             "gene_call" => GeneCallConfig,
-            "color_genbank" => ColorGenbankConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
             "seq_dist" => SeqDistConfig,
             "compare_contigs" => CompareContigsConfig,
