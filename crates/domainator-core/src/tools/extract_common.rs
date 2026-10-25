@@ -206,7 +206,11 @@ pub fn pad_location(rec: &SeqRecord, loc: &Loc, pad_up: i64, pad_down: i64) -> L
 /// parts and their junctions on a circular record. Returns forward sub-parts and
 /// the overall strand. A single part means it does not cross the origin; two
 /// parts mean it does. Port of the multi-part branch of `circular_envelope`.
-fn circular_envelope(parts: &[(i64, i64, i32)], rec_len: i64, strand: i32) -> Vec<(i64, i64)> {
+pub(crate) fn circular_envelope(
+    parts: &[(i64, i64, i32)],
+    rec_len: i64,
+    strand: i32,
+) -> Vec<(i64, i64)> {
     if parts.is_empty() {
         return vec![];
     }

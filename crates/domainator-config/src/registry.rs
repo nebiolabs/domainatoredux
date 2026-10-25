@@ -175,6 +175,14 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
+        ..tool(
+            "rotate_contigs",
+            "edit",
+            "Set the origin of circular contigs relative to a domain.",
+        )
+    },
+    ToolInfo {
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
         switches_on: &["deduplicate"],
         ..tool(
             "select_by_cds",

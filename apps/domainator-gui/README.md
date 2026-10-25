@@ -252,7 +252,7 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   HMM Logo viewer and appears in the domain_search/domainate reference dropdowns.
   The menu additionally covers the **sequence utilities / extractors / HMM-vs-HMM**
   tools: `genbank_to_fasta`,
-  `clean_sequences`, `sort_contigs`, `select_by_coord`, `trim_contigs`,
+  `clean_sequences`, `sort_contigs`, `select_by_coord`, `trim_contigs`, `rotate_contigs`,
   `extract_domains`, `extract_peptides`, `extract_unannotated`, `color_genbank`
   (batch color-by-name/database + optional `color_table_out`), `color_table_to_legend`
   (SVG), `deduplicate_genbank` (hash backend needs nothing; cd-hit/diamond/usearch need a

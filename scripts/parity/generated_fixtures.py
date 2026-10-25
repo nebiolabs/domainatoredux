@@ -74,6 +74,37 @@ def generate(data_dir, test_dir, out_dir):
     first = next(SeqIO.parse(str(data / "swissprot_CuSOD_subset.fasta"), "fasta"))
     _single_sequence_hmm(str(first.seq), str(out / "sod.hmm"), b"sod")
 
+    _rotate_contigs_fixtures(data, out)
+
+
+def _rotate_contigs_fixtures(data, out):
+    """The inputs test_rotate_contigs.py builds at test time."""
+    from Bio import SeqIO
+    from Bio.Seq import Seq
+    from Bio.SeqRecord import SeqRecord
+    from domainator.domain_search import main as domain_search_main
+
+    # test_rotate_search_hits: whole-contig domain_search hits to rotate on.
+    domain_search_main(["-i", str(data / "bacillus_phage_SPR.gb"), "-r", str(data / "SPR.hmm"),
+                        "--whole_contig", "-Z", "1000", "--cpu", "1", "-o", str(out / "spr_search_hits.gb")])
+    # test_rotate_domains_file
+    (out / "dhfr_domains.txt").write_text("DHFR_1\n")
+    # test_rotate_linear_genbank_skipped: the annotated contig marked linear.
+    record = next(SeqIO.parse(str(data / "bacillus_phage_SPR_with_annotations.gb"), "genbank"))
+    record.annotations["topology"] = "linear"
+    SeqIO.write([record], str(out / "spr_linear.gb"), "genbank")
+    # test_rotate_fasta_gene_call: the contig as FASTA.
+    record = next(SeqIO.parse(str(data / "bacillus_phage_SPR.gb"), "genbank"))
+    (out / "spr.fasta").write_text(f">{record.id}\n{record.seq}\n")
+    # test_rotate_nucleotide_query_spanning_origin: a circular contig and a nucleotide
+    # query across its origin.
+    sequence = "GCTAACCGTTAGCGATCGTACGATCGATGCTAGTCCGATTAACCGGTTAGGCTTACCGATGG"
+    circular = SeqRecord(Seq(sequence), id="circular_test", name="circular_test", description="circular test")
+    circular.annotations["molecule_type"] = "DNA"
+    circular.annotations["topology"] = "circular"
+    SeqIO.write([circular], str(out / "circular_test.gb"), "genbank")
+    (out / "origin_query.fna").write_text(f">origin_query\n{sequence[-18:] + sequence[:18]}\n")
+
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])

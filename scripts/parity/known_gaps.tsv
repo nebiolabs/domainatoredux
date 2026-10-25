@@ -35,6 +35,7 @@ enum_report	test_enum_report_html_max_height_1#0	rust-failed	deferred:html	error
 enum_report	test_enum_report_html_quote_escape_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 matrix_report	test_matrix_report_default_excludes_mst_knn#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 matrix_report	test_matrix_report_text_includes_mst_knn_projection#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
+rotate_contigs	extra:test_rotate_infernal#0	rust-failed	deferred:infernal	domainatoredux rotate_contigs: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/
 summary_report	test_contig_stats_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 summary_report	test_contig_stats_empty_input#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 summary_report	test_contig_stats_taxonomy_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found

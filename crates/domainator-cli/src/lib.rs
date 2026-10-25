@@ -74,6 +74,7 @@ enum Command {
     ColorTableToLegend(config::args::ColorTableToLegendArgs),
     /// Trim contig ends by kb, CDS count, or by stripping end CDSs by domain.
     TrimContigs(config::args::TrimContigsArgs),
+    RotateContigs(config::args::RotateContigsArgs),
     /// Extract domain-annotated regions from annotated contigs.
     #[command(allow_negative_numbers = true)]
     ExtractDomains(config::args::ExtractDomainsArgs),
@@ -453,6 +454,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::ColorGenbank(args) => commands::color_genbank::run(&args)?,
         Command::ColorTableToLegend(args) => commands::color_table_to_legend::run(&args)?,
         Command::TrimContigs(args) => commands::trim_contigs::run(&args)?,
+        Command::RotateContigs(args) => commands::rotate_contigs::run(&args)?,
         Command::ExtractDomains(args) => commands::extract_domains::run(&args)?,
         Command::ExtractPeptides(args) => commands::extract_peptides::run(&args)?,
         Command::ExtractUnannotated(args) => commands::extract_unannotated::run(&args)?,

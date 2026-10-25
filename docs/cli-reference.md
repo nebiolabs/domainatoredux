@@ -4,7 +4,7 @@
 domainatoredux <tool> [options]
 ```
 
-`domainatoredux --help` lists all 34 tools, plus `describe` and `completion`;
+`domainatoredux --help` lists all 35 tools, plus `describe` and `completion`;
 `domainatoredux <tool> --help` is the exhaustive,
 always-current list of that tool's flags. This page gives each tool's purpose, the flags
 that matter in practice, and a worked example. Filenames in the examples are
@@ -92,7 +92,7 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 | --- | --- |
 | [I/O and diagnostics](#io-and-diagnostics) | `inspect`, `convert`, `genbank_to_fasta`, `describe`, `completion` |
 | [Annotation and search](#annotation-and-search) | `domainate`, `domain_search`, `gene_call`, `filter_domains` |
-| [Selection and extraction](#selection-and-extraction) | `select_by_cds`, `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `sort_contigs`, `clean_sequences`, `deduplicate_genbank` |
+| [Selection and extraction](#selection-and-extraction) | `select_by_cds`, `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `rotate_contigs`, `sort_contigs`, `clean_sequences`, `deduplicate_genbank` |
 | [Color](#color) | `color_genbank`, `color_table_to_legend` |
 | [Matrices and networks](#matrices-and-networks) | `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer` |
 | [Reports](#reports) | `enum_report`, `summary_report`, `matrix_report`, `ssn_navigator` |
@@ -352,6 +352,26 @@ removes is dropped.
 
 ```bash
 domainatoredux trim_contigs -i neighborhoods.gb -o trimmed.gb --cds_range 1
+```
+
+### `rotate_contigs`
+
+Set the origin of circular contigs relative to a domain. The domain is chosen from the
+new hits of a reference search (`-r`), the pre-existing `Domainator` annotations named by
+`--domains`/`--domains_file`, or the `Domain_Search` hits (`--annotation_type
+domain_search`), all under `-e/--evalue` (pre-existing ones also under `--databases`):
+the highest score wins, then the lowest E-value, then the lowest position. `--anchor`
+puts the origin at the domain's `start`, `end` or `center`, in the domain's own
+orientation, and the contig is reverse complemented to put the domain on the forward
+strand unless `--keep_direction`. Features crossing the new origin become joins. A
+rotated contig is named `{id}_{first}:{last}` (with `rc` when reversed) unless
+`--keep_name`; new search hits are dropped unless `--keep_annotation` keeps the chosen
+one. Protein records, linear records (unless `--circularize`), and contigs with no
+qualifying domain are skipped with a warning. Protein references need CDS annotations,
+so FASTA contigs need `--gene_call`.
+
+```bash
+domainatoredux rotate_contigs -i plasmids.gb -o rotated.gb -r repA.hmm --anchor start
 ```
 
 ### `sort_contigs`

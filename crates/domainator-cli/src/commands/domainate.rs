@@ -98,7 +98,7 @@ pub fn run(args: &DomainateArgs) -> Result<()> {
 
 /// Upstream `count_peptides_in_record`: a protein record is one peptide, a
 /// nucleotide record one per CDS.
-fn count_peptides(rec: &SeqRecord) -> i64 {
+pub(super) fn count_peptides(rec: &SeqRecord) -> i64 {
     if rec.is_protein() {
         1
     } else {

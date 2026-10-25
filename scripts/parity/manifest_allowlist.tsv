@@ -37,7 +37,6 @@ matrix_report	-	required_outputs	["text_out","json_out"]	["text_out","html_out",
 matrix_report	html_out	missing	null	{"default":null,"flags":["--html_out"],"kind":"path","name":"html_out","required":false,"role":"output","stdout":true,"type":"string"}	deferred:html	
 matrix_report	knn_projection	missing	null	{"default":false,"flags":["--knn_projection"],"kind":"flag","name":"knn_projection","sets":true,"type":"boolean"}	deferred:html	only changes the HTML report
 plot_contigs	-	tool	false	true	deferred:unported-tool	
-rotate_contigs	-	tool	false	true	todo:new-tool	phase 6 of the 1.0 sync
 select_by_contig	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 split_by_cluster	-	tool	false	true	deferred:unported-tool	
 structure_dist	-	tool	false	true	deferred:structure	

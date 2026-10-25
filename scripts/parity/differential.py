@@ -209,10 +209,14 @@ def run_one(row, cfg, helpers, SeqIO):
         try:
             # Upstream 1.0 runs every tool through its dispatcher; the per-module
             # `python -m domainator.<module>` form exits 0 having done nothing.
+            # An `-i -` invocation (upstream feeds it through monkeypatch) must see an
+            # empty stdin, not wait on the sweep's own.
             py = subprocess.run([cfg.python, "-m", "domainator", module] + py_argv,
-                                capture_output=True, timeout=cfg.timeout, cwd=py_dir)
+                                capture_output=True, timeout=cfg.timeout, cwd=py_dir,
+                                stdin=subprocess.DEVNULL)
             rs = subprocess.run([cfg.rust, module] + rs_argv,
-                                capture_output=True, timeout=cfg.timeout, cwd=rs_dir)
+                                capture_output=True, timeout=cfg.timeout, cwd=rs_dir,
+                                stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired:
             return "error", f"timed out after {cfg.timeout}s"
         except Exception as exc:

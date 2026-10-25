@@ -71,7 +71,7 @@ the Python suite's underscore spellings (`--max_overlap`), and so do subcommands
 | | |
 | --- | --- |
 | **Annotation and search** | `domainate` annotate with hits to references · `domain_search` keep the records or neighborhoods that hit · `filter_domains` prune weak annotations |
-| **Selection and extraction** | `select_by_cds` · `select_by_contig` · `select_by_coord` · `extract_domains` · `extract_peptides` · `extract_unannotated` · `trim_contigs` · `sort_contigs` · `clean_sequences` · `deduplicate_genbank` |
+| **Selection and extraction** | `select_by_cds` · `select_by_contig` · `select_by_coord` · `extract_domains` · `extract_peptides` · `extract_unannotated` · `trim_contigs` · `rotate_contigs` · `sort_contigs` · `clean_sequences` · `deduplicate_genbank` |
 | **Matrices and networks** | `seq_dist` similarity by alignment · `compare_contigs` similarity by shared domain content · `transform_matrix` · `build_ssn` (Cytoscape XGMML) · `build_ssn_viewer` (interactive) |
 | **Reports** | `enum_report` per contig/CDS/domain tables · `summary_report` · `matrix_report` score distribution and suggested cutoffs · `ssn_navigator` query a network as JSON |
 | **HMM profiles** | `hmmer_build` · `hmmer_select` · `hmmer_search` · `hmmer_compare` · `hmmer_report` |

@@ -91,3 +91,28 @@ domainate	extra:test_domainate_gene_call_partial_filter#1	extra_invocations.tsv	
 domainate	extra:test_domainate_gene_call_partial_filter#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--gene_call	all	-Z	1000	--partial	only
 sort_contigs	extra:test_sort_contigs_by_domain_search_score#0	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/sorted.gb	--fasta_out	@TMP@/sorted.fasta
 sort_contigs	extra:test_sort_contigs_by_domain_search_score#1	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	@DATA@/CuSOD_enum_report_test.gb	-o	@TMP@/sorted.gb	--max_hits	5
+rotate_contigs	extra:test_rotate_existing_domain#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--anchor	start	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_existing_domain#1	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--anchor	end	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_existing_domain#2	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--anchor	center	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_existing_domain_keep_direction#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--keep_direction	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_forward_strand_domain_spanning_origin#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations_reversed.gb	--domains	Thymidylat_synt	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_keep_name#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--keep_name	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_highest_score_wins#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	Thymidylat_synt	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_evalue_filters_existing#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	Thymidylat_synt	-e	1e-60	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_evalue_filters_existing#1	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	-e	1e-60	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_databases#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--databases	SPR	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_databases#1	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--databases	Pfam	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_domains_file#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains_file	@GEN@/dhfr_domains.txt	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_search_hits#0	extra_invocations.tsv	-i	@GEN@/spr_search_hits.gb	--annotation_type	domain_search	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_search_new_annotation_dropped#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR.gb	-r	@DATA@/SPR.hmm	--cpu	1	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_search_keep_annotation#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR.gb	-r	@DATA@/SPR.hmm	--cpu	1	--keep_annotation	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_search_and_existing_domains#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	-r	@DATA@/SPR.hmm	--domains	DHFR_1	--cpu	1	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_fasta_gene_call#0	extra_invocations.tsv	-i	@GEN@/spr.fasta	-r	@DATA@/SPR.hmm	--gene_call	unannotated	--cpu	1	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_fasta_gene_call#1	extra_invocations.tsv	-i	@GEN@/spr.fasta	-r	@DATA@/SPR.hmm	--gene_call	unannotated	--circularize	--cpu	1	--keep_annotation	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_linear_genbank_skipped#0	extra_invocations.tsv	-i	@GEN@/spr_linear.gb	--domains	DHFR_1	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_linear_genbank_skipped#1	extra_invocations.tsv	-i	@GEN@/spr_linear.gb	--domains	DHFR_1	--circularize	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_protein_skipped#0	extra_invocations.tsv	-i	@DATA@/pdonr_peptides.fasta	--domains	CAT	--circularize	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_nucleotide_query_spanning_origin#0	extra_invocations.tsv	-i	@GEN@/circular_test.gb	-r	@GEN@/origin_query.fna	--cpu	1	-e	0.1	--keep_annotation	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_nucleotide_fasta_circularize#0	extra_invocations.tsv	-i	@DATA@/simple_dna_target.fna	-r	@DATA@/simple_dna_queries.fna	--circularize	--cpu	1	-e	0.1	--keep_annotation	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_infernal#0	extra_invocations.tsv	-i	@DATA@/pANT_R100.fa	-r	@DATA@/RF00042.cm	--circularize	--cpu	1	--keep_annotation	-o	@TMP@/out.gb
+rotate_contigs	extra:test_rotate_fasta_out#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--fasta_out	@TMP@/out.fasta

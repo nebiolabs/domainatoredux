@@ -31,6 +31,7 @@ mod hmmer_report;
 mod hmmer_search;
 mod hmmer_select;
 mod matrix_report;
+mod rotate_contigs;
 mod select_by_cds;
 mod select_by_contig;
 mod select_by_coord;
@@ -65,6 +66,7 @@ pub use hmmer_report::HmmerReportArgs;
 pub use hmmer_search::HmmerSearchArgs;
 pub use hmmer_select::HmmerSelectArgs;
 pub use matrix_report::MatrixReportArgs;
+pub use rotate_contigs::RotateContigsArgs;
 pub use select_by_cds::SelectByCdsArgs;
 pub use select_by_contig::SelectByContigArgs;
 pub use select_by_coord::SelectByCoordArgs;
@@ -92,6 +94,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "extract_peptides" => ExtractPeptidesArgs::augment_args(cmd),
         "extract_unannotated" => ExtractUnannotatedArgs::augment_args(cmd),
         "trim_contigs" => TrimContigsArgs::augment_args(cmd),
+        "rotate_contigs" => RotateContigsArgs::augment_args(cmd),
         "color_genbank" => ColorGenbankArgs::augment_args(cmd),
         "clean_sequences" => CleanSequencesArgs::augment_args(cmd),
         "genbank_to_fasta" => GenbankToFastaArgs::augment_args(cmd),

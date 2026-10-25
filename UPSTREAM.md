@@ -104,6 +104,7 @@ Use this to triage which module a changed upstream file lands in:
 | `utils.py` protein/taxonomy helpers | `.../seq/{protein_analysis,taxonomy,taxid,translate}.rs` |
 | `utils.py` fragment/partial helpers (`get_fragment_status`, `on_contig_translation`, `codon_offset`, ...) | `.../seq/partial.rs` |
 | `utils.slice_record_from_location`, `slice_record`, `_truncate_cds_qualifiers`; `CompoundLocation.merge_parts` | `.../tools/neighborhood.rs` (`slice_features`), `.../seq/location.rs` (`merge_touching_parts`) |
+| `rotate_contigs.py` | `.../tools/rotate_contigs.rs` (the search is `domainate`, the slice `extract_common`) |
 | `extract_domains.py`, `extract_peptides.py`, `extract_unannotated.py` | `.../tools/{extract_domains,extract_peptides,extract_unannotated,extract_common}.rs` |
 
 ## The routine
