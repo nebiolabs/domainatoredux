@@ -157,35 +157,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `format_db` (domainator_format_db) parameters (config-file shape).
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct FormatDbConfig {
-    pub input: Vec<String>,
-    pub shards: Option<usize>,
-    pub compress: bool,
-    pub index: bool,
-    pub output_dir: Option<String>,
-    pub name: Option<String>,
-    pub level: Option<u8>,
-    pub force: bool,
-    pub log: Option<String>,
-}
-
-impl FormatDbConfig {
-    pub fn merge_cli(&mut self, cli: FormatDbConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, shards);
-        self.compress |= cli.compress;
-        self.index |= cli.index;
-        merge_scalar!(self, cli, output_dir);
-        merge_scalar!(self, cli, name);
-        merge_scalar!(self, cli, level);
-        self.force |= cli.force;
-        merge_scalar!(self, cli, log);
-    }
-}
-
 /// A tool's manifest entry, as `domainatoredux describe` gives it: what the GUI renders
 /// its dialogs from. A migrated tool's comes from its clap arguments. An unmigrated
 /// tool's is converted from its old config schema, whose property names are its
@@ -294,7 +265,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
-        "format_db" => format_db_schema(),
         other => {
             anyhow::bail!("no schema for tool {other:?} (`domainatoredux --help` lists the tools)")
         }
@@ -485,27 +455,6 @@ fn color_table_to_legend_schema() -> serde_json::Value {
     })
 }
 
-fn format_db_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "format_db config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}, "description": "GenBank/FASTA database file(s)"},
-            "shards": {"type": ["integer", "null"], "description": "Split each input into this many shards"},
-            "compress": {"type": "boolean", "default": false, "description": "Write BGZF output"},
-            "index": {"type": "boolean", "default": false, "description": "Write a .didx index per output"},
-            "output_dir": {"type": ["string", "null"]},
-            "name": {"type": ["string", "null"], "description": "Base name for the output database (single input only)"},
-            "level": {"type": "integer", "default": 6, "description": "BGZF compression level (1-12)"},
-            "force": {"type": "boolean", "default": false},
-            "log": {"type": ["string", "null"], "description": "Write the run log here instead of stderr"}
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -580,7 +529,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "format_db" => FormatDbConfig,
         ]
     }
 

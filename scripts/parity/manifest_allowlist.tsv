@@ -35,17 +35,6 @@ enum_report	html_max_height	missing	null	{"default":null,"flags":["--html_max_he
 enum_report	html_out	missing	null	{"default":null,"flags":["--html_out"],"kind":"path","name":"html_out","required":false,"role":"output","stdout":true,"type":"string"}	deferred:html	
 enum_report	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 find_features	-	tool	false	true	deferred:unported-tool	
-format_db	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-format_db	cpu	missing	null	{"default":0,"flags":["--cpu"],"kind":"value","name":"cpu","required":false,"type":"integer"}	todo:1.0-cli	
-format_db	input	required	false	true	todo:1.0-cli	
-format_db	input	stdin	true	false	todo:1.0-cli	
-format_db	level	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-format_db	level	default	null	6	todo:1.0-cli	
-format_db	log	extra	{"name":"log","flags":["--log"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-format_db	log_out	missing	null	{"default":null,"flags":["--log_out"],"kind":"path","name":"log_out","required":false,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
-format_db	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-format_db	shards	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-format_db	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 gene_call	-	tool	true	false	port-only:	
 hmmer_report	-	required_outputs	["tsv_out","json_out"]	["tsv_out","html_out","json_out"]	deferred:html	no html_out
 hmmer_report	html_max_height	missing	null	{"default":null,"flags":["--html_max_height"],"kind":"value","name":"html_max_height","required":false,"type":"integer"}	deferred:html	

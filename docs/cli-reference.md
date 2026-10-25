@@ -708,10 +708,10 @@ HTML output is not ported.
 
 Prepare a sequence collection for fast repeated searching by
 [`domain_search`](#domain_search): split it into shards (`--shards`), BGZF-compress it
-(`--compress`, also spelled `--bgzf`) so it stays seekable, and build a `.didx` index
-(`--index`). `--output_dir` chooses where the result goes, `--name` names a single-input
-database, `--level` sets the compression level (1–12, default 6), `--force` overwrites and
-`--log` redirects the log.
+(`--compress`) so it stays seekable, and build a `.didx` index (`--index`).
+`--output_dir` chooses where the result goes, `--name` names a single-input database,
+`--level` sets the compression level (1–12, default 6), `--cpu` the worker threads,
+`--force` overwrites, and `--log_out` writes the log to a file instead of stderr.
 
 ```bash
 domainatoredux format_db -i uniprot.fasta --output_dir uniprot_db \

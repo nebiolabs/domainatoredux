@@ -14,6 +14,7 @@ pub mod extract_domains;
 pub mod extract_peptides;
 pub mod extract_unannotated;
 pub mod filter_domains;
+pub mod format_db;
 pub mod genbank_to_fasta;
 pub mod hmmer_build;
 pub mod hmmer_compare;

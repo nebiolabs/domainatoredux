@@ -341,7 +341,7 @@ fn plan_input(
         }
         Some(shards) => {
             if shards < 1 {
-                return Err("shards must be >= 1".into());
+                return Err("--shards must be >= 1".into());
             }
             let working_str = working.to_str().ok_or("non-UTF8 working path")?;
             let (offsets, _cds) = scan_offsets(working_str, filetype, Compression::None)?;
@@ -456,11 +456,16 @@ pub fn format_db(
     log: &mut dyn Write,
 ) -> Result<Vec<PathBuf>, String> {
     if opts.shards.is_none() && !opts.compress && !opts.index {
-        return Err("Nothing to do: request at least one of shards, compress, or index.".into());
+        return Err(
+            "Nothing to do: request at least one of --shards, --compress, or --index.".into(),
+        );
     }
     if opts.name.is_some() {
         if inputs.len() > 1 {
-            return Err("name cannot be used with multiple inputs (each would collide).".into());
+            return Err(
+                "--name cannot be used with multiple inputs (each would collide on the same name)."
+                    .into(),
+            );
         }
         if opts.shards.is_none() && !opts.compress {
             writeln!(

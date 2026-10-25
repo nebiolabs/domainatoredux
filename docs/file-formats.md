@@ -247,7 +247,7 @@ prepares a directory:
 
 - **shards** (`--shards N`) split the records across files so they can be searched in
   parallel;
-- **BGZF compression** (`--compress`, or `--bgzf`) — block-gzip, which is gzip-compatible
+- **BGZF compression** (`--compress`) — block-gzip, which is gzip-compatible
   to any reader but *seekable*, so a record can be fetched without decompressing the whole
   file;
 - a **`.didx` index** (`--index`) mapping record names to virtual offsets.

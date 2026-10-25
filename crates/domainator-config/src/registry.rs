@@ -42,6 +42,9 @@ pub struct ToolInfo {
     /// Whether `-i -` (standard input) is accepted; tools that read their input more
     /// than once need a file.
     pub stdin: bool,
+    /// Why standard input is refused, completing "This command cannot read standard
+    /// input, because ...", as upstream's `reject_stdin` reason does.
+    pub stdin_reason: &'static str,
     /// Outputs that cannot be written to standard output.
     pub no_stdout: &'static [&'static str],
     /// A run must give at least one of these outputs. `None`: no such rule.
@@ -69,6 +72,7 @@ const fn tool(name: &'static str, category: &'static str, summary: &'static str)
         in_manifest: true,
         migrated: false,
         stdin: true,
+        stdin_reason: "it reads its input more than once",
         no_stdout: &[],
         required_outputs: None,
         dynamic_defaults: &[],
@@ -409,11 +413,17 @@ pub const TOOLS: &[ToolInfo] = &[
         "Draw an SVG legend from a color table.",
     ),
     // database
-    tool(
-        "format_db",
-        "database",
-        "Shard, compress, and index a database for domain_search.",
-    ),
+    ToolInfo {
+        migrated: true,
+        stdin: false,
+        stdin_reason: "it formats database files in place",
+        no_stdout: &["log_out"],
+        ..tool(
+            "format_db",
+            "database",
+            "Shard, compress, and index a database for domain_search.",
+        )
+    },
     // port-only
     tool(
         "gene_call",

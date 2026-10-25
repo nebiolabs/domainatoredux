@@ -182,41 +182,7 @@ enum Command {
     /// Filter query HMM profiles by best score against reference HMM profiles.
     HmmerSearch(config::args::HmmerSearchArgs),
     /// Shard / BGZF-compress / .didx-index a domain_search database.
-    FormatDb {
-        /// GenBank or FASTA database file(s) to format (plain or BGZF).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Split each input into this many shards (balanced by record count).
-        #[arg(long)]
-        shards: Option<usize>,
-        /// Write BGZF (block-gzip) output.
-        #[arg(long, alias = "bgzf")]
-        compress: bool,
-        /// Write a .didx offset index per output file.
-        #[arg(long)]
-        index: bool,
-        /// Directory to write outputs into (default: alongside each input).
-        #[arg(long = "output_dir")]
-        output_dir: Option<String>,
-        /// Base name for the output database (requires a single input).
-        #[arg(long)]
-        name: Option<String>,
-        /// BGZF/deflate compression level (1-12).
-        #[arg(long)]
-        level: Option<u8>,
-        /// Overwrite existing outputs / rebuild indexes instead of skipping.
-        #[arg(long)]
-        force: bool,
-        /// Log file (default: stderr).
-        #[arg(long)]
-        log: Option<PathBuf>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    FormatDb(config::args::FormatDbArgs),
 }
 
 fn load(input: &Path) -> Result<Vec<SeqRecord>> {
@@ -513,11 +479,10 @@ fn check_io(
         )));
     }
     if !info.stdin && value("input").iter().any(|v| output::is_stdin(v)) {
-        return Err(usage(
-            "This command cannot read standard input, because it reads its input more than \
-             once. Give a file instead."
-                .to_string(),
-        ));
+        return Err(usage(format!(
+            "This command cannot read standard input, because {}. Give a file instead.",
+            info.stdin_reason
+        )));
     }
     Ok(())
 }
@@ -762,68 +727,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::HmmerSelect(args) => commands::hmmer_select::run(&args)?,
         Command::HmmerBuild(args) => commands::hmmer_build::run(&args)?,
         Command::HmmerSearch(args) => commands::hmmer_search::run(&args)?,
-        Command::FormatDb {
-            input,
-            shards,
-            compress,
-            index,
-            output_dir,
-            name,
-            level,
-            force,
-            log,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            use domainator_core::tools::format_db as fdb;
-            let cli = config::FormatDbConfig {
-                input: paths_to_strings(&input)?,
-                shards,
-                compress,
-                index,
-                output_dir,
-                name,
-                level,
-                force,
-                log: opt_path(&log)?,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::FormatDbConfig>(p)?,
-                None => config::FormatDbConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            if cfg.input.is_empty() {
-                anyhow::bail!("format_db requires at least one -i/--input database file");
-            }
-            let opts = fdb::FormatDbOptions {
-                shards: cfg.shards,
-                compress: cfg.compress,
-                index: cfg.index,
-                output_dir: cfg.output_dir,
-                name: cfg.name,
-                level: cfg.level.unwrap_or(6),
-                force: cfg.force,
-            };
-            let result = match &cfg.log {
-                Some(p) => {
-                    let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
-                    let r = fdb::format_db(&cfg.input, &opts, &mut f);
-                    f.flush()?;
-                    r
-                }
-                None => {
-                    let stderr = std::io::stderr();
-                    let mut h = stderr.lock();
-                    fdb::format_db(&cfg.input, &opts, &mut h)
-                }
-            };
-            result.map_err(|e| anyhow::anyhow!(e))?;
-        }
+        Command::FormatDb(args) => commands::format_db::run(&args)?,
     }
     Ok(())
 }
