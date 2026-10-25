@@ -40,7 +40,7 @@ serde_yaml = { workspace = true }
 ureq = "2"
 flate2.workspace = true
 tar = "0.4"
-zip = "2"
+zip.workspace = true
 # `reference_dbs`: UniProt/UniRef ship plain gzip, which is not seekable, so a
 # downloaded sequence database is recompressed as BGZF on the way to disk.
 bgzf.workspace = true

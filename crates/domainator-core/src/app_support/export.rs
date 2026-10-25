@@ -911,7 +911,7 @@ mod tests {
         let archive = dir.join("out/x.zip");
         export_files(&[src], &opts(Packaging::Zip, true), &archive, false).unwrap();
         let zip = zip::ZipArchive::new(File::open(&archive).unwrap()).unwrap();
-        let mut names: Vec<&str> = zip.file_names().collect();
+        let mut names: Vec<String> = zip.file_names().map(|n| n.unwrap().into_owned()).collect();
         names.sort_unstable();
         assert_eq!(names, ["REC1 (2).gbk", "a_b_c.gbk", "rec1.gbk"]);
     }
