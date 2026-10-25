@@ -1,29 +1,31 @@
-// The report column builder's model (role `columns`). The column types and their
-// parameters come from the tool's schema: `columns.items.oneOf` has one entry per
-// type, generated in `domainator-config` from the same enum that deserializes the
-// run (`column_schemas_match_their_enums` keeps them in step). The spec's
+// The report column builder's model (role `columns`). The columns and their
+// arguments come from the tool's manifest (`domainatoredux describe`): the
+// `columns` parameter lists one `{name, args, repeat_last, help}` entry per column,
+// generated from the same catalog that parses the run's `--columns`. The spec's
 // `column_types` (`tools/<id>.yml`) only relabels, hides and seeds them.
-import type { JsonSchemaProp, ToolField } from "./types";
+//
+// A column is sent as a token, its name and arguments joined by ':'
+// (`qualifier:CDS:product`). The last argument takes the rest of the token, so it
+// may contain ':'; a column whose last argument repeats (`taxid:genus:species`)
+// splits on every ':' instead.
+import type { ToolField } from "./types";
 
-/// One parameter box of a column type.
+/// One argument box of a column.
 export interface ColumnParam {
   name: string;
   label: string;
   help: string;
-  /// `list`: comma-separated text sent as an array; `enum`: a dropdown.
-  kind: "list" | "enum" | "number" | "text";
-  /// `enum`: the allowed values.
-  options: string[];
+  /// `list`: the repeating last argument, comma-separated text; `text`: one value.
+  kind: "list" | "text";
   /// Suggested values: chips for a list, a suggestion list for text.
   choices: string[];
-  /// `list`: the JSON type of each entry.
-  itemType: string;
-  /// What a new column of this type starts with, as box text.
+  /// What a new column starts with, as box text.
   initial: string;
-  required: boolean;
+  /// The last argument, which may contain ':'.
+  last: boolean;
 }
 
-/// One column type the builder offers.
+/// One column the builder offers.
 export interface ColumnType {
   type: string;
   label: string;
@@ -32,14 +34,11 @@ export interface ColumnType {
   params: ColumnParam[];
 }
 
-/// A builder row: a type, and each parameter as the text in its box.
+/// A builder row: a column, and each argument as the text in its box.
 export interface ColumnRow {
   type: string;
   params: Record<string, string>;
 }
-
-const firstType = (p: JsonSchemaProp): string =>
-  (Array.isArray(p.type) ? p.type.find((t) => t !== "null") : p.type) ?? "string";
 
 const humanize = (name: string) => {
   const s = name.replace(/_/g, " ");
@@ -53,35 +52,33 @@ export function textOf(v: unknown): string {
   return String(v);
 }
 
-/// The column types of `field`, from its schema property `prop`, in schema order.
-export function columnTypes(field: ToolField, prop: JsonSchemaProp | undefined): ColumnType[] {
-  return (prop?.items?.oneOf ?? []).map((variant) => {
-    const type = variant.properties?.type?.const ?? "";
-    const over = field.column_types?.[type];
-    const required = new Set(variant.required ?? []);
-    const params = Object.entries(variant.properties ?? {})
-      .filter(([name]) => name !== "type")
-      .map(([name, p]): ColumnParam => {
-        const po = over?.params?.[name];
-        const t = firstType(p);
-        const kind = p.enum ? "enum" : t === "array" ? "list" : t === "integer" || t === "number" ? "number" : "text";
-        const options = (p.enum ?? []).filter((x) => x !== null).map(String);
-        return {
-          name,
-          label: po?.label ?? humanize(name),
-          help: po?.help ?? p.description ?? "",
-          kind,
-          options,
-          choices: (po?.choices ?? []).map(String),
-          itemType: p.items?.type ?? "string",
-          initial: textOf(po?.default ?? (kind === "enum" ? options[0] : "")),
-          required: required.has(name),
-        };
-      });
+const listItems = (text: string) =>
+  text
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+/// The columns of `field`, from its manifest catalog, in catalog order.
+export function columnTypes(field: ToolField): ColumnType[] {
+  return (field.columns ?? []).map((c) => {
+    const over = field.column_types?.[c.name];
+    const params = c.args.map((name, i): ColumnParam => {
+      const po = over?.params?.[name];
+      const last = i === c.args.length - 1;
+      return {
+        name,
+        label: po?.label ?? humanize(name),
+        help: po?.help ?? "",
+        kind: last && c.repeat_last ? "list" : "text",
+        choices: (po?.choices ?? []).map(String),
+        initial: textOf(po?.default),
+        last,
+      };
+    });
     return {
-      type,
-      label: over?.label ?? variant.title ?? type,
-      help: over?.help ?? variant.description ?? "",
+      type: c.name,
+      label: over?.label ?? humanize(c.name),
+      help: over?.help ?? c.help ?? "",
       show: over?.show ?? true,
       params,
     };
@@ -92,7 +89,7 @@ export function newRow(t: ColumnType): ColumnRow {
   return { type: t.type, params: Object.fromEntries(t.params.map((p) => [p.name, p.initial])) };
 }
 
-/// Switch `row` to `type`, keeping the text of any parameter both types share.
+/// Switch `row` to `type`, keeping the text of any argument both columns share.
 export function retype(row: ColumnRow, type: string, types: ColumnType[]): void {
   const t = types.find((x) => x.type === type);
   if (!t) return;
@@ -100,50 +97,63 @@ export function retype(row: ColumnRow, type: string, types: ColumnType[]): void 
   row.params = Object.fromEntries(t.params.map((p) => [p.name, row.params[p.name] ?? p.initial]));
 }
 
-/// Rows from a column list: the spec's `gui_default`, or a cloned job's saved
-/// `columns`. A bare string is a parameterless column (enum_report's old
-/// checklist saved its columns that way).
+/// Rows from column tokens: the spec's `gui_default`, a cloned job's saved
+/// `columns`, or a remembered Enum Report view.
 export function toRows(list: unknown, types: ColumnType[]): ColumnRow[] {
   if (!Array.isArray(list)) return [];
   return list.map((item) => {
-    const obj: Record<string, unknown> = typeof item === "string" ? { type: item } : { ...(item as object) };
-    const type = String(obj.type ?? "");
+    const token = String(item);
+    const cut = token.indexOf(":");
+    const type = cut < 0 ? token : token.slice(0, cut);
+    const rest = cut < 0 ? "" : token.slice(cut + 1);
     const t = types.find((x) => x.type === type);
     const params: Record<string, string> = {};
-    for (const p of t?.params ?? []) params[p.name] = p.name in obj ? textOf(obj[p.name]) : p.initial;
+    const ps = t?.params ?? [];
+    if (ps.length && rest) {
+      if (ps[ps.length - 1].kind === "list") {
+        // Only the repeating argument: every ':' separates two of its values.
+        params[ps[0].name] = rest.split(":").join(", ");
+      } else {
+        const parts = rest.split(":");
+        ps.forEach((p, i) => {
+          params[p.name] = p.last ? parts.slice(i).join(":") : (parts[i] ?? "");
+        });
+      }
+    }
+    for (const p of ps) params[p.name] ??= p.initial;
     return { type, params };
   });
 }
 
-/// The rows as the column objects the run takes: each type's parameters only,
-/// since the column enums are `deny_unknown_fields`. Throws, with the column's
-/// number, on a type the schema lacks or an empty required list.
-export function toColumns(rows: ColumnRow[], types: ColumnType[]): Record<string, unknown>[] {
+/// The rows as the tokens the run takes. Throws, with the column's number, on a
+/// column the catalog lacks, an empty argument, or a ':' where the token cannot
+/// hold one.
+export function toColumns(rows: ColumnRow[], types: ColumnType[]): string[] {
   return rows.map((row, i) => {
     const t = types.find((x) => x.type === row.type);
-    if (!t) throw new Error(`Column ${i + 1}: unknown column type "${row.type}".`);
-    const out: Record<string, unknown> = { type: row.type };
+    if (!t) throw new Error(`Column ${i + 1}: unknown column "${row.type}".`);
+    const parts = [row.type];
     for (const p of t.params) {
       const raw = (row.params[p.name] ?? "").trim();
-      if (p.kind === "list") {
-        const items = raw.split(",").map((s) => s.trim()).filter(Boolean);
-        if (p.required && items.length === 0) {
-          throw new Error(`Column ${i + 1} (${t.label}): "${p.label}" needs at least one value.`);
-        }
-        out[p.name] = p.itemType === "integer" || p.itemType === "number" ? items.map(Number) : items;
-      } else if (p.kind === "number") {
-        if (raw !== "") out[p.name] = Number(raw);
-      } else {
-        out[p.name] = raw;
+      const values = p.kind === "list" ? listItems(raw) : raw ? [raw] : [];
+      if (values.length === 0) {
+        throw new Error(`Column ${i + 1} (${t.label}): "${p.label}" needs a value.`);
       }
+      if ((!p.last || p.kind === "list") && values.some((v) => v.includes(":"))) {
+        throw new Error(`Column ${i + 1} (${t.label}): "${p.label}" cannot contain ':'.`);
+      }
+      parts.push(...values);
     }
-    return out;
+    return parts.join(":");
   });
 }
 
+/// The column name of a token.
+export const columnName = (token: string) => token.split(":", 1)[0];
+
 /// A list parameter's text with `value` added, or removed if it is already there.
 export function toggleListValue(text: string, value: string): string {
-  const items = text.split(",").map((s) => s.trim()).filter(Boolean);
+  const items = listItems(text);
   const next = items.includes(value) ? items.filter((x) => x !== value) : [...items, value];
   return next.join(", ");
 }

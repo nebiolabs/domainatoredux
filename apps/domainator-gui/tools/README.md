@@ -1,14 +1,18 @@
 # GUI tool specs
 
-Each `<id>.yml` here is the desktop app's whole description of one tool's dialog:
-- its menu label and category
-- the fields the dialog shows, and in what order
+Each `<id>.yml` here is the desktop app's policy for one tool's dialog, layered over the
+tool's manifest entry (`domainatoredux describe --tool <id>`):
+- its menu label
+- the fields the dialog shows, their labels, and in what order
 - which files each input offers
-- what every option starts out as
+- what an option starts out as, where the dialog should differ from the command line
 
-`build.rs` embeds these files at compile time. `cmd_tools::list_tools` serves them to
-`ToolDialog.svelte`. Nothing else in the app lists the tools the GUI offers. Editing a
-file takes effect on the next build.
+The manifest supplies everything else: each option's type, choices, bounds, CLI default
+and help, the tool's Tools-menu group, and, for a tool on the 1.0 interface, which
+options are files to read or write. `build.rs` embeds these files at compile time, and
+`tool_specs::specs` resolves them against the manifest when the app starts.
+`cmd_tools::list_tools` serves the result to `ToolDialog.svelte`. Nothing else in the
+app lists the tools the GUI offers. Editing a file takes effect on the next build.
 
 ## Adding a tool or an option
 
@@ -20,72 +24,58 @@ file takes effect on the next build.
   `reference`), and the SSN viewer's node → sequence tracing follows those roles. A
   canceled job deletes the files named by its `output_file` fields that it created or
   changed, so a field that names an output file should have that role.
-- **New CLI option:** a new schema property makes
-  `every_schema_property_is_listed_once` fail until the option is listed here, with
+- **New CLI option:** a new manifest parameter makes
+  `every_manifest_parameter_is_listed_once` fail until the option is listed here, with
   `show: false` if the dialog should not offer it. That failure is how you decide about
-  the option.
+  the option. `-v`/`-q` are never listed.
 
 ## Example
 
 ```yaml
-id: domain_search
-label: "Domain search"
-category: "Annotation & search"
+id: sort_contigs
+label: "Sort contigs"
 description: "Shown under the dialog title."
 fields:
-  - name: input
+  - name: input                       # an input: the manifest says so
     label: "Input sequences"
-    role: input_file
-    file_type: [sequence, hmm]        # one value, or a list
-    required: true
-    sources: databases_first
+    file_type: sequence               # one value, or a list
+    sources: workspace_first
     select: first
-  - name: references
-    label: "References (HMM/FASTA)"
-    role: input_files
-    file_type: reference
-    required: true
-    sources: databases_first
-    select: "database:pfam"
-    prefill_priority: 1               # a selected FASTA goes here, not to `input`
-  - name: output
+  - name: genbank_out                 # an output: its name ends in _out
     label: "Output (GenBank)"
-    role: output_file
-    required: true
-    output_name: "{stem}.search.gb"
-  - name: evalue
-    label: "E-value"
-    help: "Report hits at or below this E-value."
-    cli_default: 0.001
-    gui_default: 1.0e-5
-  - name: batch_size
+    output_name: "{stem}.sorted.gb"
+  - name: max_hits
+    label: "Keep top N"
+    gui_default: 100                  # the command line's default is none
+  - name: databases
     show: false
-    label: "Batch size"
-    cli_default: 10000
+    label: "Databases"
 ```
 
 ## Tool keys
 
 | Key | Required | What it does |
 |---|---|---|
-| `id` | yes | The tool's id, as in `domainatoredux <id>` and `domainatoredux schema <id>`. It must equal the file name without `.yml`. A job runs `domainatoredux <id> --config …`. |
+| `id` | yes | The tool's id, as in `domainatoredux <id>` and `domainatoredux describe --tool <id>`. It must equal the file name without `.yml`. A job runs `domainatoredux <id> --config …`. |
 | `label` | yes | The name shown in the Tools menu, on the toolbar's Tools button, and as the dialog title. |
-| `category` | yes | The Tools menu submenu. It must be one of `cmd_tools::TOOL_CATEGORIES`: `Annotation & search`, `Selection & extraction`, `Matrices & networks`, `Reports`, `HMM profiles`, `Color` or `Conversion`. Categories appear in that order. Within one, tools appear in file-name order. |
 | `description` | yes | The sentence under the dialog title. |
-| `fields` | yes | Every property of the tool's schema, once each. List order is dialog order. Hidden fields can go anywhere; the generated files put them last. |
+| `fields` | yes | Every parameter of the tool's manifest entry except `verbose`/`quiet`, once each. List order is dialog order. Hidden fields can go anywhere; the generated files put them last. |
+
+The Tools-menu group is the manifest's `category`, shown with its label from
+`cmd_tools::CATEGORY_LABELS` (upstream's groups, in upstream's order). Within one,
+tools appear in file-name order.
 
 ## Field keys
 
 | Key | Applies to | Default | What it does |
 |---|---|---|---|
-| `name` | all | (required) | The schema property. Use its spelling in `domainatoredux schema <id>`, which is the underscore form (`max_overlap`, not `max-overlap`). |
+| `name` | all | (required) | The manifest parameter, spelled as `domainatoredux describe` spells it (`max_overlap`, not `max-overlap`). |
 | `label` | all | (required) | The text left of the control. |
-| `role` | all | `param` | Which control the dialog draws, and how the value is sent. See [Roles](#roles). |
-| `required` | all | `false` | Adds a red `*` to the label. On an input, removes the "(none)" entry. On a dropdown option (enum), removes the blank "(default)" entry unless the schema allows null. A required field cannot be hidden. A required output needs an `output_name`. The dialog doesn't block Run when a required field is blank. The tool refuses instead. |
-| `show` | all | `true` | `false` keeps the option out of the dialog. It is never sent, so the CLI default applies. The one exception is `cpu`, which gets the Preferences thread count when that isn't 0. |
-| `help` | shown fields | schema `description` | The hint under the control. See [Help text](#help-text). |
-| `cli_default` | all | none | The schema's `default`, copied here. See [Defaults](#defaults). |
-| `gui_default` | shown `param` / `columns` fields | none | What the dialog starts with instead of `cli_default`. |
+| `role` | tools not yet on the 1.0 interface | `param` | Which control the dialog draws, and how the value is sent. A migrated tool's roles come from the manifest, and setting one is a test failure. See [Roles](#roles). |
+| `required` | all | the manifest's | Adds a red `*` to the label. On an input, removes the "(none)" entry. On a dropdown option, removes the blank "(default)" entry. A spec can make a field required, never optional. A required field cannot be hidden. A required output needs an `output_name`. The dialog doesn't block Run when a required field is blank. The tool refuses instead. |
+| `show` | all | `true` | `false` keeps the option out of the dialog. It is never sent, so the CLI default applies. The one exception is `cpu`, which gets the Preferences thread count when that isn't 0. A program path (`*_path` other than a directory) is never shown. |
+| `help` | shown fields | the manifest's `help` | The hint under the control. See [Help text](#help-text). |
+| `gui_default` | shown `param` / `columns` fields | none | What the dialog starts with instead of the CLI default. See [Defaults](#defaults). |
 | `file_type` | inputs | (required) | Which files and databases the dropdown offers. See [File types](#file-types). |
 | `sources` | inputs | (required) | Which dropdown group comes first: `databases_first` or `workspace_first`. |
 | `select` | inputs | (required) | The dropdown's starting entry when no selected file was placed in it. See [Input dropdowns](#input-dropdowns). |
@@ -97,25 +87,28 @@ fields:
 
 | `role` | Control | Sent to the tool as |
 |---|---|---|
-| `param` | Drawn from the property's schema type (below) | The typed value |
+| `param` | Drawn from the parameter's manifest type (below) | The typed value |
 | `input_file` | A dropdown of databases and files | A string: `"input": "a.gb"` |
-| `input_files` | The same dropdown, one choice | A one-item list: `"input": ["a.gb"]` |
+| `input_files` | The same dropdown, one choice per row, with "+ Add file" | A list: `"input": ["a.gb"]` |
 | `output_file` | A file-name box | The name joined onto the current folder |
-| `columns` | A report's column builder: an ordered list of column types and their parameters. See [Column builder](#column-builder). | A list of column objects, `{type, ...parameters}`, in list order |
+| `columns` | A report's column builder: an ordered list of columns and their arguments. See [Column builder](#column-builder). | A list of column tokens, `name:arg:arg`, in list order |
 
-`input_file` and `input_files` differ only in shape. The role has to match the type the
-schema gives the property: `"type": ["string", "null"]` means `input_file`, and
-`"type": "array"` means `input_files`. A mismatch fails at Run with
-"bad params: invalid type". No field lets you choose several files yet.
+On a tool on the 1.0 interface the role is derived from the manifest parameter: `kind:
+columns` is `columns`; `role: input` is `input_files` when the parameter takes several
+values, else `input_file`; `role: output` (a name ending in `_out`) is `output_file`;
+`role: directory` is `input_file` when the field has a `file_type` (the taxonomy
+database), else `param`; everything else is `param`. A tool not yet migrated names its
+non-`param` roles here, and its `input_file`/`input_files` must match the shape its old
+config expects.
 
-A `param` is drawn by its schema type:
+A `param` is drawn by its manifest type:
 
-| Schema type | Control | Blank / unchecked |
+| Manifest | Control | Blank / unchecked |
 |---|---|---|
-| has an `enum` | a dropdown of the enum values, with a "(default)" entry when the schema allows null or the field isn't required | not sent |
-| `boolean` | a checkbox | not sent (the CLI's `false`) |
-| `integer`, `number` | a number box | not sent |
-| `array` | a text box of comma-separated values; numbers are converted for numeric arrays | not sent |
+| has `choices` | a dropdown of the choices, with a "(default)" entry when the field isn't required | not sent |
+| `kind: flag` | a checkbox | not sent (the CLI's default) |
+| `multiple` | a text box of comma-separated values; numbers are converted for numeric lists | not sent |
+| `type: integer`, `number` | a number box, bounded by `min`/`max` | not sent |
 | anything else | a text box | not sent |
 
 Anything not sent falls back to the CLI default.
@@ -201,52 +194,48 @@ what fits and lists the files it left out under the directory line.
 
 A `columns` field (enum_report's and hmmer_report's `columns`) is an ordered list. The
 Enum Report viewer tab uses the same builder, with `enum_report.yml`'s `column_types`. Each
-row is a column type plus that type's parameters, and the list order is the report's
-column order. ↑/↓ reorder the rows.
+row is a column plus its arguments, and the list order is the report's column order. ↑/↓
+reorder the rows.
 
-**The types come from the schema, not from this file.** `domainatoredux schema <id>` gives
-`columns.items.oneOf`, one entry per column type. Each entry has:
-- a `title`, shown in the type dropdown
-- a `description`, shown as the row's hint
-- its parameters with their types, e.g. `taxname` → `ranks`, a list of strings
+**The columns come from the manifest, not from this file.** `domainatoredux describe
+--tool <id>` lists them under the `columns` parameter, one entry per column:
+- its `name`, shown in the dropdown
+- its `help`, shown as the row's hint
+- its `args`, the argument names, e.g. `qualifier` → `feature`, `qualifier`
+- `repeat_last`: the last argument takes one or more values (`taxid:genus:species`)
 
-`domainator-config` writes those entries next to the column enum the run deserializes,
-and `column_schemas_match_their_enums` checks the two agree. So a new column type
-appears in the builder without any change here.
+The catalog is `crates/domainator-config/src/columns.rs`, the same one that parses the
+run's `--columns`, so a new column appears in the builder without any change here.
 
-**`column_types` adjusts how the builder shows them.** It is keyed by column type:
+A row is sent as a token: the column's name and its arguments joined by `:`. The last
+argument keeps any `:` it contains; a repeating argument is a comma-separated box, and
+each value becomes one `:`-separated part. An empty argument, or a `:` where the token
+cannot hold one, stops the run before it starts, naming the column.
+
+**`column_types` adjusts how the builder shows them.** It is keyed by column name:
 
 ```yaml
     column_types:
       taxname:
-        label: "Taxon name"        # replaces the schema's title in the dropdown
-        help: "..."                # replaces the schema's description under the row
-        show: false                # leave the type out of the dropdown
+        label: "Taxon name"        # replaces the column's name in the dropdown
+        help: "..."                # replaces the column's help under the row
+        show: false                # leave the column out of the dropdown
         params:
-          ranks:
-            label: "Ranks"         # the text beside the box (default: the parameter name)
-            help: "..."            # tooltip and placeholder (default: the schema's description)
+          rank:
+            label: "Ranks"         # the text beside the box (default: the argument name)
+            help: "..."            # tooltip and placeholder
             default: [species]     # what a newly added column starts with
             choices: [self, domain, superkingdom, phylum, genus, species]
 ```
 
-Every key is optional. How each parameter is drawn depends on its schema type:
+Every key is optional. A repeating argument shows its `choices` as one-click chips that
+add or remove a value; any other argument shows them as a suggestion list. Values outside
+`choices` can always be typed. A new row starts each argument at its `default`, else blank.
+Changing a row's column keeps the values of arguments the two columns share.
 
-| Parameter | Box | `choices` |
-|---|---|---|
-| list (`"type": "array"`) | comma-separated text, sent as an array | one-click chips that add or remove a value |
-| enum | a dropdown of the enum values | not used |
-| number | a text box, sent as a number | not used |
-| string | a text box | a suggestion list |
-
-Values outside `choices` can always be typed. A new row starts each parameter at its
-`default`. Without a default, an enum starts on its first value and anything else starts
-blank. A required list left empty stops the run before it starts, naming the column.
-Changing a row's type keeps the values of parameters the two types share.
-
-`gui_default` for a `columns` field is the list of column objects the builder starts with,
-e.g. `[{type: domains}, {type: taxname, ranks: [genus]}]`. Each object must be valid for
-its type (`gui_defaults_fit_their_property`) and must not use a type `column_types` hides.
+`gui_default` for a `columns` field is the list of tokens the builder starts with, e.g.
+`[domains, taxname:genus]`. Each must parse (`gui_defaults_fit_their_property`) and must
+not use a column `column_types` hides.
 
 ## Outputs
 
@@ -267,17 +256,14 @@ written. Every required output needs an `output_name`.
 
 ## Defaults
 
-- **`cli_default`** repeats the schema's `default` and must equal it
-  (`cli_defaults_match_the_schema`). Numbers compare by value, so `1000` and `1000.0` are
-  equal. It is present exactly when the schema declares a `default`. It is there so this
-  file shows what the command line does. To change the command line's default, edit the
-  schema in `crates/domainator-config`, not this file.
+- **The CLI default** is the manifest's `default`. A spec does not repeat it.
 - **`gui_default`** is what the dialog starts with instead:
-  - It must fit the property's type, and its enum if it has one.
+  - It must fit the parameter: its type, its choices, its bounds, a list when it takes
+    several values.
   - It is allowed only on shown `param` and `columns` fields. Files
     are chosen with `select` and `output_name`.
-  - An array is written as a YAML list (`[a, b]`) and shows in the box as `a,b`.
-  - When `gui_default` and `cli_default` differ, the dialog says so under the field.
+  - A list is written as a YAML list (`[a, b]`) and shows in the box as `a,b`.
+  - When `gui_default` and the CLI default differ, the dialog says so under the field.
 - **Clearing a field** sends nothing, and the run falls back to the CLI default: the
   params go to the CLI itself.
 - **A cloned job** (the Jobs panel's ⎘ button, or "Clone into Tool Dialog") starts from
@@ -286,34 +272,33 @@ written. Every required output needs an `output_name`.
 
 ## Help text
 
-The hint under a field is the schema property's `description`, the same text
-`domainatoredux schema <id>` gives agents. Those descriptions are written in
-`crates/domainator-config/src/lib.rs`: in each tool's schema function, with gaps filled
-from the shared `common_help` list by `fill_common_descriptions`.
+The hint under a field is the manifest parameter's `help`, the same text
+`domainatoredux describe` gives agents. On a tool on the 1.0 interface it is the doc
+comment of the option in `crates/domainator-config/src/args/<tool>.rs`; on the others, the
+description in its old config schema in `crates/domainator-config/src/lib.rs`.
 
 - Setting `help:` replaces the hint in the dialog only. Leave the key out to keep the
-  schema's text.
+  manifest's text.
 - A `help` on a hidden field, or an empty one, is a test failure.
-- On a `columns` field, `help` is the hint under the whole builder; the schema's
-  description there is written for agents, so the builder shows none by default. Each
-  row's own hint comes from its column type (see [Column builder](#column-builder)).
+- On a `columns` field, `help` is the hint under the whole builder. Each row's own hint
+  comes from its column (see [Column builder](#column-builder)).
 
 ## What checks these files
 
 | Check | Catches |
 |---|---|
 | `build.rs` (the build fails) | invalid YAML, a misspelled or unknown key, a bad `select` value |
-| `every_schema_property_is_listed_once` | a schema property missing here, a field that isn't a schema property, a field listed twice |
-| `cli_defaults_match_the_schema` | a `cli_default` that is stale, missing, or has no schema default behind it |
-| `gui_defaults_fit_their_property` | a `gui_default` of the wrong type, outside its enum, on a hidden field, or on a file field; for `columns`, a column object its type rejects or a hidden type |
-| `input_fields_declare_sources_and_select` | an input missing `file_type`/`sources`/`select`; an unknown `file_type`; an unknown or unfitting `database:<id>`; those keys or `prefill_priority` on a non-input; a hidden required field; a hidden or empty `help` |
-| `column_type_overrides_name_real_types_and_parameters` | a `column_types` type or parameter the schema lacks; a `default` or `choice` that doesn't fit; `column_types` on a non-`columns` field; every type hidden |
-| `column_schemas_match_their_enums` (`domainator-config`) | a column type or parameter in the schema that the column enum lacks, or the reverse |
-| `required_outputs_have_a_name_template` | a required output with no `output_name`, or one with another placeholder or a path |
-| `one_spec_file_per_tool_named_after_it` | a file name that isn't its `id`, an unknown `category`, a duplicate `id` |
-| `every_offered_tool_is_dispatched_and_has_a_schema` (`cmd_tools.rs`) | a tool here the CLI has no subcommand for, or a shown field that is not a schema property |
+| `every_manifest_parameter_is_listed_once` | a manifest parameter missing here, a field that isn't a manifest parameter, a field listed twice |
+| `migrated_tools_derive_every_role` | a `role` on a tool whose manifest decides it |
+| `gui_defaults_fit_their_property` | a `gui_default` of the wrong type, outside its choices or bounds, on a hidden field, or on a file field; for `columns`, a token that does not parse or a hidden column |
+| `input_fields_declare_sources_and_select` | a shown input missing `file_type`/`sources`/`select`; an unknown `file_type`; an unknown or unfitting `database:<id>`; those keys or `prefill_priority` on a non-input; a hidden required field; a shown program path; a hidden or empty `help` |
+| `column_type_overrides_name_real_columns_and_arguments` | a `column_types` column or argument the catalog lacks; a `default` or `choice` that isn't text; `column_types` on a non-`columns` field; every column hidden |
+| `required_outputs_have_a_name_template` | a required output with no `output_name`, one with another placeholder or a path, or a tool whose manifest `required_outputs` none of its shown outputs seeds |
+| `one_spec_file_per_tool_named_after_it` | a file name that isn't its `id`, a tool not in the manifest, a category with no menu label, a duplicate `id` |
+| `every_offered_tool_is_dispatched` (`cmd_tools.rs`) | a tool here the CLI has no subcommand for |
 | `every_tools_dialog_params_parse_as_its_cli_config` (`cmd_tools.rs`) | a dialog whose default params (seeded values, files filled, default columns) the CLI rejects |
 | `derived_provenance_roles_match_the_golden_table` (`cmd_tools.rs`) | a `file_type` or field-name change that alters an input role the SSN tracing follows |
 
 Run them with `cargo test -p domainator-gui`. Where selected files land is tested by
-`src/lib/toolInputs.test.ts` (`npm test`).
+`src/lib/toolInputs.test.ts`, and the column tokens by `src/lib/columns.test.ts`
+(`npm test`).

@@ -1,41 +1,26 @@
 # GUI dialog for `domainatoredux sort_contigs`. Format: see README.md in this directory.
 id: sort_contigs
 label: "Sort contigs"
-category: "Selection & extraction"
 description: "Sort contigs by best search/domain score; optionally keep only the top N."
 fields:
   - name: input
     label: "Input sequences"
-    role: input_files
     file_type: sequence
-    required: true
     sources: workspace_first
     select: first
   - name: genbank_out
     label: "Output (GenBank)"
-    role: output_file
-    required: true
     output_name: "{stem}.sorted.gb"
   - name: fasta_out
     label: "Output (FASTA)"
-    role: output_file
   - name: max_hits
     label: "Keep top N"
   - name: domains
     label: "Sort by domains"
   - name: domains_file
     label: "Domains file"
-    role: input_file
     file_type: [text, hmm]
     sources: workspace_first
     select: none
   - name: databases
     label: "Databases"
-  - name: verbose
-    label: "Verbose"
-    show: false
-    cli_default: false
-  - name: quiet
-    label: "Quiet"
-    show: false
-    cli_default: false

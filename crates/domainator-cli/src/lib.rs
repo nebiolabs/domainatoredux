@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
-use config::{load_config, print_config, schema, ColumnSpec, EnumConfig, HmmerReportColumn};
+use config::{load_config, print_config};
 use domainator_config as config;
 
 mod commands;
@@ -34,7 +34,6 @@ use domainator_core::tools::build_ssn_viewer::{
 use domainator_core::tools::clean_sequences;
 use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
 use domainator_core::tools::deduplicate_genbank;
-use domainator_core::tools::enum_report::{self, needs_taxonomy, Analysis, OutputFormat};
 use domainator_core::tools::gene_call;
 use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
 use domainator_core::tools::matrix_report::{matrix_report, render_text, to_json};
@@ -1121,17 +1120,7 @@ enum Command {
         /// The shell to complete for.
         shell: clap_complete::Shell,
     },
-    /// Print a JSON Schema for a tool's `--config` file.
-    Schema {
-        /// Tool name: any of the tool subcommands (e.g. domainate, seq_dist, enum_report).
-        tool: String,
-    },
-    /// Write a TSV table of per-contig/CDS/domain info (column order = flag order).
-    EnumReport {
-        /// All enum_report arguments (parsed in order; see the Python tool's flags).
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 0..)]
-        args: Vec<String>,
-    },
+    EnumReport(config::args::EnumReportArgs),
     /// Extract contig regions around selected CDSs (by name/domain/expr/hits).
     SelectByCds {
         /// Input file(s) (GenBank or FASTA). Reads stdin GenBank if omitted.
@@ -1353,12 +1342,7 @@ enum Command {
         #[arg(long = "print_config")]
         print_config: bool,
     },
-    /// Tabulate HMM-profile metadata to TSV (column order = flag order; or --json).
-    HmmerReport {
-        /// All hmmer_report arguments (parsed in order; see the Python tool's flags).
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 0..)]
-        args: Vec<String>,
-    },
+    HmmerReport(config::args::HmmerReportArgs),
     /// Filter an HMM file by text matches on profile NAME/DESC/ACC fields.
     HmmerSelect {
         /// Input `.hmm` file(s). Reads stdin if omitted (unsupported: give files).
@@ -1826,195 +1810,6 @@ fn compile_allowed_taxids(
         )
     };
     Ok(allowed)
-}
-
-/// CLI-provided `enum_report` params (column order preserved), plus the
-/// `--config`/`--print_config` control flags.
-struct EnumCli {
-    config: EnumConfig,
-    config_path: Option<String>,
-    print_config: bool,
-}
-
-/// Parse `enum_report` args by hand so the relative order of column flags is
-/// preserved (mirrors the Python tool's ordered argparse actions), building a
-/// declarative [`EnumConfig`].
-fn parse_enum_args(args: &[String]) -> Result<EnumCli> {
-    let is_flag = |t: &str| t == "-i" || t == "-o" || t == "-e" || t.starts_with("--");
-    let mut cfg = EnumConfig::default();
-    let mut config_path = None;
-    let mut print_config = false;
-
-    let mut i = 0;
-    let next = |i: &mut usize, what: &str| -> Result<String> {
-        *i += 1;
-        args.get(*i)
-            .cloned()
-            .with_context(|| format!("{what} requires a value"))
-    };
-    let consume_multi = |i: &mut usize| -> Vec<String> {
-        let mut out = Vec::new();
-        while *i + 1 < args.len() && !is_flag(&args[*i + 1]) {
-            *i += 1;
-            out.push(args[*i].clone());
-        }
-        out
-    };
-
-    while i < args.len() {
-        let a = args[i].clone();
-        match a.as_str() {
-            "-i" | "--input" => cfg.input.extend(consume_multi(&mut i)),
-            "-o" | "--output" => cfg.output = Some(next(&mut i, "--output")?),
-            "--by" => cfg.by = Some(next(&mut i, "--by")?.to_lowercase()),
-            "--partial" => cfg.partial = Some(next(&mut i, "--partial")?),
-            "--databases" => cfg.databases.extend(consume_multi(&mut i)),
-            "--contigs" => cfg.contigs.extend(consume_multi(&mut i)),
-            "--contigs_file" => cfg.contigs_file = Some(next(&mut i, "--contigs_file")?),
-            "--column_names" => cfg.column_names = Some(consume_multi(&mut i)),
-            "--ncbi_taxonomy_path" => {
-                cfg.ncbi_taxonomy_path = Some(next(&mut i, "--ncbi_taxonomy_path")?)
-            }
-            "--json" => cfg.json = Some(next(&mut i, "--json")?),
-            "--config" => config_path = Some(next(&mut i, "--config")?),
-            "--print_config" => print_config = true,
-            "--taxonomy_update" => {}
-            "--html" | "--html_max_height" => {
-                anyhow::bail!(
-                    "enum_report HTML output is not supported in this port; use TSV or --json"
-                )
-            }
-            "--taxid" => cfg.columns.push(ColumnSpec::Taxid {
-                ranks: consume_multi(&mut i),
-            }),
-            "--taxname" => cfg.columns.push(ColumnSpec::Taxname {
-                ranks: consume_multi(&mut i),
-            }),
-            "--qualifier" => {
-                let feature = next(&mut i, "--qualifier")?;
-                let qualifier = next(&mut i, "--qualifier")?;
-                cfg.columns
-                    .push(ColumnSpec::Qualifier { feature, qualifier });
-            }
-            "--feature_count" => {
-                let feature = next(&mut i, "--feature_count")?;
-                cfg.columns.push(ColumnSpec::FeatureCount { feature });
-            }
-            "--motif_count" => {
-                let pattern = next(&mut i, "--motif_count")?;
-                cfg.columns.push(ColumnSpec::MotifCount { pattern });
-            }
-            "--net_charge" => {
-                let ph = next(&mut i, "--net_charge")?;
-                cfg.columns.push(ColumnSpec::NetCharge { ph });
-            }
-            "--repeat_count" => {
-                let min_length = next(&mut i, "--repeat_count")?;
-                cfg.columns.push(ColumnSpec::RepeatCount { min_length });
-            }
-            "--named_domain_count" => {
-                let name = next(&mut i, "--named_domain_count")?;
-                cfg.columns.push(ColumnSpec::NamedDomainCount { name });
-            }
-            "--append" => {
-                let name = next(&mut i, "--append")?;
-                let value_type = next(&mut i, "--append")?;
-                let value = next(&mut i, "--append")?;
-                cfg.columns.push(ColumnSpec::Append {
-                    name,
-                    value_type,
-                    value,
-                });
-            }
-            other if other.starts_with("--") => {
-                let name = &other[2..];
-                match ColumnSpec::from_static_flag(name) {
-                    Some(spec) => cfg.columns.push(spec),
-                    None => anyhow::bail!("unknown enum_report option: {other}"),
-                }
-            }
-            other => anyhow::bail!("unexpected enum_report argument: {other}"),
-        }
-        i += 1;
-    }
-    Ok(EnumCli {
-        config: cfg,
-        config_path,
-        print_config,
-    })
-}
-
-/// CLI-provided `hmmer_report` params (column order preserved) + control flags.
-struct HmmerReportCli {
-    config: config::HmmerReportConfig,
-    config_path: Option<String>,
-    print_config: bool,
-}
-
-/// Parse `hmmer_report` args by hand so the relative order of column flags is
-/// preserved (mirrors the Python tool's ordered argparse actions).
-fn parse_hmmer_report_args(args: &[String]) -> Result<HmmerReportCli> {
-    let is_flag = |t: &str| t == "-i" || t == "-o" || t.starts_with("--");
-    let mut cfg = config::HmmerReportConfig::default();
-    let mut config_path = None;
-    let mut print_config = false;
-
-    let mut i = 0;
-    let next = |i: &mut usize, what: &str| -> Result<String> {
-        *i += 1;
-        args.get(*i)
-            .cloned()
-            .with_context(|| format!("{what} requires a value"))
-    };
-    let consume_multi = |i: &mut usize| -> Vec<String> {
-        let mut out = Vec::new();
-        while *i + 1 < args.len() && !is_flag(&args[*i + 1]) {
-            *i += 1;
-            out.push(args[*i].clone());
-        }
-        out
-    };
-
-    while i < args.len() {
-        let a = args[i].clone();
-        match a.as_str() {
-            "-i" | "--input" => cfg.input.extend(consume_multi(&mut i)),
-            "-o" | "--output" => cfg.output = Some(next(&mut i, "--output")?),
-            "--column_names" => cfg.column_names = Some(consume_multi(&mut i)),
-            "--json" => cfg.json = Some(next(&mut i, "--json")?),
-            "--config" => config_path = Some(next(&mut i, "--config")?),
-            "--print_config" => print_config = true,
-            "--html" | "--html_max_height" => {
-                anyhow::bail!(
-                    "hmmer_report HTML output is not supported in this port; use TSV or --json"
-                )
-            }
-            "--append" => {
-                let name = next(&mut i, "--append")?;
-                let value_type = next(&mut i, "--append")?;
-                let value = next(&mut i, "--append")?;
-                cfg.columns.push(HmmerReportColumn::Append {
-                    name,
-                    value_type,
-                    value,
-                });
-            }
-            other if other.starts_with("--") => {
-                let name = &other[2..];
-                match HmmerReportColumn::from_static_flag(name) {
-                    Some(spec) => cfg.columns.push(spec),
-                    None => anyhow::bail!("unknown hmmer_report option: {other}"),
-                }
-            }
-            other => anyhow::bail!("unexpected hmmer_report argument: {other}"),
-        }
-        i += 1;
-    }
-    Ok(HmmerReportCli {
-        config: cfg,
-        config_path,
-        print_config,
-    })
 }
 
 /// Run one `domainatoredux` command line. `args` includes the program name first, as
@@ -4060,9 +3855,6 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => print!("{text}"),
             }
         }
-        Command::Schema { tool } => {
-            println!("{}", schema(&tool)?);
-        }
         Command::Describe { tool, indent } => {
             for t in &tool {
                 if !config::registry::tool_info(t).is_some_and(|i| i.in_manifest) {
@@ -4093,107 +3885,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 &mut std::io::stdout(),
             );
         }
-        Command::EnumReport { args } => {
-            let EnumCli {
-                config: cli_cfg,
-                config_path,
-                print_config: do_print,
-            } = parse_enum_args(&args)?;
-            // Config file (if any) provides the base; CLI values override/extend.
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<EnumConfig>(p)?,
-                None => EnumConfig::default(),
-            };
-            cfg.merge_cli(cli_cfg);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let by = cfg.by_enum()?;
-            let partial = config::parse_partial(cfg.partial.as_deref())?;
-            let analyses: Vec<Analysis> = cfg
-                .columns
-                .iter()
-                .map(|c| c.to_analysis())
-                .collect::<Result<_>>()?;
-            let ncbi_path = cfg
-                .ncbi_taxonomy_path
-                .clone()
-                .unwrap_or_else(default_ncbi_taxonomy_path);
-
-            let target_contigs = parse_name_list(&cfg.contigs, cfg.contigs_file.as_deref())?;
-            let mut records: Vec<(SeqRecord, String)> = Vec::new();
-            if cfg.input.is_empty() {
-                for r in load_inputs(&[])? {
-                    records.push((r, "<stdin>".to_string()));
-                }
-            } else {
-                for path in &cfg.input {
-                    for r in load(&PathBuf::from(path))? {
-                        records.push((r, path.clone()));
-                    }
-                }
-            }
-            if let Some(set) = &target_contigs {
-                records.retain(|(r, _)| set.contains(&r.id));
-            }
-            let tax = if needs_taxonomy(&analyses) {
-                Some(load_taxonomy(&ncbi_path)?)
-            } else {
-                None
-            };
-            let databases: Option<std::collections::HashSet<String>> = if cfg.databases.is_empty() {
-                None
-            } else {
-                Some(cfg.databases.iter().cloned().collect())
-            };
-            let col_names = cfg.column_names.as_deref();
-            // `-o` is TSV and `--json` is NDJSON; they are independent outputs, so a
-            // run can produce both. `--json -` writes to stdout, like Python.
-            // `-o` defaults to stdout only when no output at all was requested.
-            let want_tsv = cfg.output.is_some() || cfg.json.is_none();
-            for (target, format) in [
-                (want_tsv.then(|| cfg.output.clone()), OutputFormat::Tsv),
-                (cfg.json.clone().map(Some), OutputFormat::Json),
-            ] {
-                let Some(target) = target else { continue };
-                let result = match target.as_deref() {
-                    Some(p) if p != "-" => {
-                        let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
-                        let r = enum_report::enum_report(
-                            records.clone(),
-                            by,
-                            &analyses,
-                            col_names,
-                            tax.as_ref(),
-                            databases.as_ref(),
-                            partial,
-                            format,
-                            &mut f,
-                        );
-                        f.flush()?;
-                        r
-                    }
-                    _ => {
-                        let stdout = std::io::stdout();
-                        let mut h = stdout.lock();
-                        enum_report::enum_report(
-                            records.clone(),
-                            by,
-                            &analyses,
-                            col_names,
-                            tax.as_ref(),
-                            databases.as_ref(),
-                            partial,
-                            format,
-                            &mut h,
-                        )
-                    }
-                };
-                result.map_err(|e| anyhow::anyhow!(e))?;
-            }
-        }
+        Command::EnumReport(args) => commands::enum_report::run(&args)?,
         Command::SelectByCds {
             input,
             output,
@@ -4512,57 +4204,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             }
         }
-        Command::HmmerReport { args } => {
-            use domainator_core::tools::hmmer_report as hr;
-            let HmmerReportCli {
-                config: cli_cfg,
-                config_path,
-                print_config: do_print,
-            } = parse_hmmer_report_args(&args)?;
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::HmmerReportConfig>(p)?,
-                None => config::HmmerReportConfig::default(),
-            };
-            cfg.merge_cli(cli_cfg);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let analyses: Vec<hr::Analysis> = cfg
-                .columns
-                .iter()
-                .map(|c| c.to_analysis())
-                .collect::<Result<_>>()?;
-            if cfg.input.is_empty() {
-                anyhow::bail!("hmmer_report requires at least one -i/--input .hmm file");
-            }
-            let records = hr::read_hmms_to_iterators(&cfg.input).map_err(|e| anyhow::anyhow!(e))?;
-            let col_names = cfg.column_names.as_deref();
-            // `-o` is TSV and `--json` is NDJSON; independent outputs, so one run can
-            // produce both. `--json -` writes to stdout, like Python.
-            let want_tsv = cfg.output.is_some() || cfg.json.is_none();
-            for (target, format) in [
-                (want_tsv.then(|| cfg.output.clone()), hr::OutputFormat::Tsv),
-                (cfg.json.clone().map(Some), hr::OutputFormat::Json),
-            ] {
-                let Some(target) = target else { continue };
-                match target.as_deref() {
-                    Some(p) if p != "-" => {
-                        let mut f = std::io::BufWriter::new(std::fs::File::create(p)?);
-                        hr::hmmer_report(&records, &analyses, col_names, format, &mut f)
-                            .map_err(|e| anyhow::anyhow!(e))?;
-                        f.flush()?;
-                    }
-                    _ => {
-                        let stdout = std::io::stdout();
-                        let mut h = stdout.lock();
-                        hr::hmmer_report(&records, &analyses, col_names, format, &mut h)
-                            .map_err(|e| anyhow::anyhow!(e))?;
-                    }
-                }
-            }
-        }
+        Command::HmmerReport(args) => commands::hmmer_report::run(&args)?,
         Command::HmmerSelect {
             input,
             output,

@@ -161,7 +161,12 @@ pub fn describe_parameter(cmd: &Command, arg: &Arg, info: &ToolInfo) -> Value {
     }
     let ty = type_info(arg.get_value_parser());
     let role = path_role(name);
-    let kind = if role.is_some() { "path" } else { "value" };
+    let columns = info.columns.filter(|_| name == "columns");
+    let kind = match (columns, role) {
+        (Some(_), _) => "columns",
+        (None, Some(_)) => "path",
+        (None, None) => "value",
+    };
     p.insert("kind".into(), json!(kind));
     p.insert("type".into(), json!(ty.json_type));
     for (key, v) in [
@@ -209,6 +214,22 @@ pub fn describe_parameter(cmd: &Command, arg: &Arg, info: &ToolInfo) -> Value {
         .collect();
     if !choices.is_empty() {
         p.insert("choices".into(), Value::Array(choices));
+    }
+    if let Some(catalog) = columns {
+        // Upstream lists name, args and repeat_last; `help` is ours, for agents and
+        // the GUI's column builder.
+        let entries: Vec<Value> = catalog
+            .iter()
+            .map(|c| {
+                json!({
+                    "name": c.name,
+                    "args": c.args,
+                    "repeat_last": c.repeat_last,
+                    "help": c.help,
+                })
+            })
+            .collect();
+        p.insert("columns".into(), Value::Array(entries));
     }
     if role == Some("input") && name == "input" {
         p.insert("stdin".into(), json!(info.stdin));

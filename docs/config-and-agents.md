@@ -1,12 +1,12 @@
 # Config files and agent output
 
 Domainator is designed to be driven by scripts and agents as well as by hand: every tool
-can take its parameters from a file, describe its own parameters as a JSON Schema, and
-the report tools can emit JSON instead of (or as well as) human-readable output.
+can take its parameters from a file, `describe` lists every tool's parameters as JSON,
+and the report tools can emit JSON instead of (or as well as) human-readable output.
 
 ## Config files
 
-Every tool except `inspect`, `convert` and `schema` accepts `--config`, pointing at a
+Every tool except `inspect` and `convert` accepts `--config`, pointing at a
 JSON or YAML file:
 
 ```bash
@@ -27,7 +27,8 @@ cpu: 0
 The key names are the long flag names without the dashes.
 
 The tools are moving, one at a time, to the Domainator 1.0 interface, whose config files
-are **interchangeable with the Python suite's**; so far that is `sort_contigs`. The rest of
+are **interchangeable with the Python suite's**; so far that is `sort_contigs`,
+`enum_report` and `hmmer_report`. The rest of
 this section describes the older, native format of the tools not yet moved, which is *not*
 compatible with the Python suite's files. See
 [Tools on the 1.0 interface](#tools-on-the-10-interface) for the new one.
@@ -41,7 +42,6 @@ The config file is the base, and command-line flags override it:
 | scalars (`evalue`, `cpu`, `output`) | the CLI value replaces the file's |
 | lists (`references`, `domains`) | the CLI value replaces the file's, when non-empty |
 | booleans (`hits_only`, `max_mode`) | **OR'd together** |
-| report columns (`enum_report`, `hmmer_report`) | appended |
 
 ```bash
 # override just the E-value, keep everything else from the file
@@ -125,28 +125,21 @@ from the command-line parser itself, so it cannot disagree with it:
 domainatoredux describe --tool sort_contigs --indent 1
 ```
 
-`schema`, below, is the older per-tool view and will be replaced by `describe`.
+A report's `columns` option also lists its columns, each with its argument names
+(`{"name": "qualifier", "args": ["feature", "qualifier"], ...}`).
 
-`domainatoredux schema <tool>` prints a draft-07 JSON Schema describing that tool's config
-file — every option, its type, its allowed values, and a description:
-
-```bash
-domainatoredux schema domain_search
-domainatoredux schema seq_dist | jq -r '.properties | keys[]'
-```
-
-The 32 config-backed tools are
-covered; `inspect`, `convert` and `schema` have no config and no schema.
-
-This is the interface to use when generating invocations programmatically: it is the same
-schema the desktop app renders its tool dialogs from, so anything an agent can discover
-here is exactly what the GUI exposes.
+This is the interface to use when generating invocations programmatically: the desktop
+app renders its tool dialogs from the same manifest, so anything an agent can discover
+here is exactly what the GUI exposes. For a tool not yet on the 1.0 interface, its entry
+shows its current options, and its config keys are the option names it lists.
 
 ## JSON output
 
-Four tools write machine-readable output with `--json`. In every case **`--json` takes a
-path, `-` means stdout, and it is independent of `-o`** — so one run can produce a
-human-readable report and a JSON one at the same time.
+Four tools write machine-readable output on request: `enum_report` and `hmmer_report`
+with `--json_out`, `matrix_report` and `summary_report` with `--json`. In every case the
+option **takes a path, `-` means stdout, and it is independent of `-o`** — so one run can
+produce a human-readable report and a JSON one at the same time. `ssn_navigator` always
+writes JSON.
 
 | Tool | Shape |
 | --- | --- |
@@ -159,7 +152,7 @@ human-readable report and a JSON one at the same time.
 NDJSON streams, so it works on datasets far larger than memory:
 
 ```bash
-domainatoredux enum_report -i annotated.gb --domains --length --json -
+domainatoredux enum_report -i annotated.gb --columns domains length --json_out -
 ```
 
 ```
@@ -170,13 +163,13 @@ domainatoredux enum_report -i annotated.gb --domains --length --json -
 Both at once:
 
 ```bash
-domainatoredux enum_report -i annotated.gb --domains --length -o table.tsv --json rows.ndjson
+domainatoredux enum_report -i annotated.gb --columns domains length -o table.tsv --json_out rows.ndjson
 ```
 
 The object keys are the column names, in the order you asked for the columns.
 
-HTML output is **not** available for any report tool; `--html` is a hard error. Use TSV or
-JSON. The [desktop app](gui.md) covers the visual case.
+HTML output is **not** available for any report tool; `--html_out` is an error. Use TSV
+or JSON. The [desktop app](gui.md) covers the visual case.
 
 ## Querying a built network
 
@@ -210,14 +203,14 @@ A reasonable shape for automated analysis:
 
 ```bash
 # 1. discover what the tool takes
-domainatoredux schema domain_search > schema.json
+domainatoredux describe --tool domain_search > domain_search.json
 
 # 2. run it from a generated config
 domainatoredux domain_search --config search.json
 
 # 3. read the results as data
 domainatoredux summary_report -i hits.gb --json - > summary.json
-domainatoredux enum_report -i hits.gb --by cds --domains --score --json rows.ndjson
+domainatoredux enum_report -i hits.gb --by cds --columns domains score --json_out rows.ndjson
 
 # 4. build a network and explore it without a GUI
 domainatoredux seq_dist -i hits.gb --dense dist.hdf5 --algorithm hmmer

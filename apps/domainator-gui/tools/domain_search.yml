@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux domain_search`. Format: see README.md in this directory.
 id: domain_search
 label: "Domain search"
-category: "Annotation & search"
 description: "Search sequences with HMM/FASTA references and extract hit CDSs or their genomic neighborhoods (step 1)."
 fields:
   - name: input
@@ -26,22 +25,17 @@ fields:
     output_name: "{stem}.search.gb"
   - name: evalue
     label: "E-value"
-    cli_default: 0.001
   - name: max_hits
     label: "Max hits"
     gui_default: 10000000
   - name: z
     label: "Z (db size)"
-    cli_default: 1000.0
   - name: add_annotations
     label: "Add annotations"
-    cli_default: false
   - name: max_mode
     label: "Max mode"
-    cli_default: false
   - name: whole_contig
     label: "Whole contig"
-    cli_default: false
   - name: cds_range
     label: "CDS range (±)"
   - name: cds_up
@@ -58,10 +52,8 @@ fields:
     label: "Strand (f/r)"
   - name: keep_direction
     label: "Keep direction"
-    cli_default: false
   - name: translate
     label: "Translate"
-    cli_default: false
   - name: decoys
     label: "Decoy refs"
   - name: decoys_file
@@ -88,38 +80,30 @@ fields:
   - name: partial
     label: "Fragments"
     help: "Which CDSs/proteins to search, by fragment status: include (all), exclude (skip fragments), only (only fragments)."
-    cli_default: "include"
   - name: min_evalue
     show: false
     label: "Min evalue"
-    cli_default: 0.0
   - name: max_hits_per_contig
     show: false
     label: "Max hits per contig"
   - name: max_overlap
     show: false
     label: "Max overlap"
-    cli_default: 1.0
   - name: batch_size
     show: false
     label: "Batch size"
-    cli_default: 10000
   - name: cpu
     show: false
     label: "Cpu"
-    cli_default: 0
   - name: fasta_type
     show: false
     label: "Fasta type"
   - name: pad
     show: false
     label: "Pad"
-    cli_default: false
   - name: max_region_overlap
     show: false
     label: "Max region overlap"
-    cli_default: 1.0
   - name: max_output_gb
     show: false
     label: "Max output gb"
-    cli_default: 25.0

@@ -50,7 +50,7 @@
     erDraft = toRows(defaultColumns(erBy, prefs), erTypes);
     erError = null;
   }
-  async function saveEr(cols: Record<string, unknown>[] | null) {
+  async function saveEr(cols: string[] | null) {
     if (!prefs) return;
     if (!(await save({ enum_report_columns: { ...prefs.enum_report_columns, [erBy]: cols } }))) return;
     loadErDraft();

@@ -1,29 +1,22 @@
 # GUI dialog for `domainatoredux hmmer_report`. Format: see README.md in this directory.
 id: hmmer_report
 label: "HMM report (export)"
-category: "HMM profiles"
 description: "Export a per-profile TSV/JSON report from HMM file(s) with a custom column set."
 fields:
   - name: input
     label: "Input HMM(s)"
-    role: input_files
     file_type: hmm
-    required: true
     sources: workspace_first
     select: first
-  - name: output
-    label: "Output"
-    role: output_file
-    required: true
+  - name: tsv_out
+    label: "Output (TSV)"
     output_name: "{stem}.hmm_report.tsv"
   - name: columns
     label: "Columns"
-    role: columns
     help: "A leading name column is always included; the columns below follow it."
-    gui_default: [{"type": "source"}, {"type": "length"}]
-  - name: json
+    gui_default: [source, length]
+  - name: json_out
     label: "JSON output (optional)"
-    role: output_file
   - name: column_names
     show: false
     label: "Column names"

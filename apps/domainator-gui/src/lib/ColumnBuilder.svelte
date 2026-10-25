@@ -1,7 +1,7 @@
 <script lang="ts">
   // The report column builder (ToolDialog's `columns` role): an ordered list of
-  // columns, each a type plus that type's parameters. The order is the output
-  // column order. The types come from the schema; see `columns.ts`.
+  // columns, each with its arguments. The order is the output column order. The
+  // columns come from the tool's manifest; see `columns.ts`.
   import { listHas, newRow, retype, toggleListValue, type ColumnRow, type ColumnType } from "./columns";
 
   let { types, rows = $bindable([]) }: { types: ColumnType[]; rows: ColumnRow[] } = $props();
@@ -44,23 +44,17 @@
           {#each t.params as p (p.name)}
             <label class="param" title={p.help}>
               <span class="plabel">{p.label}</span>
-              {#if p.kind === "enum"}
-                <select bind:value={row.params[p.name]}>
-                  {#each p.options as o (o)}<option value={o}>{o}</option>{/each}
-                </select>
-              {:else}
-                <input
-                  type="text"
-                  class:missing={p.required && !(row.params[p.name] ?? "").trim()}
-                  bind:value={row.params[p.name]}
-                  placeholder={p.kind === "list" ? `${p.help || p.label} (comma-separated)` : p.help}
-                  list={p.kind === "text" && p.choices.length ? `${uid}-${i}-${p.name}` : undefined}
-                />
-                {#if p.kind === "text" && p.choices.length}
-                  <datalist id={`${uid}-${i}-${p.name}`}>
-                    {#each p.choices as c (c)}<option value={c}></option>{/each}
-                  </datalist>
-                {/if}
+              <input
+                type="text"
+                class:missing={!(row.params[p.name] ?? "").trim()}
+                bind:value={row.params[p.name]}
+                placeholder={p.kind === "list" ? `${p.help || p.label} (comma-separated)` : p.help}
+                list={p.kind === "text" && p.choices.length ? `${uid}-${i}-${p.name}` : undefined}
+              />
+              {#if p.kind === "text" && p.choices.length}
+                <datalist id={`${uid}-${i}-${p.name}`}>
+                  {#each p.choices as c (c)}<option value={c}></option>{/each}
+                </datalist>
               {/if}
             </label>
             {#if p.kind === "list" && p.choices.length}
@@ -141,8 +135,7 @@
     align-items: center;
     gap: 6px;
   }
-  .param input,
-  .param select {
+  .param input {
     flex: 1;
   }
   .plabel {

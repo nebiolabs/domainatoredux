@@ -1,6 +1,6 @@
 //! File-inspection / viewer-data commands.
 
-use domainator_config::ColumnSpec;
+use domainator_config::columns::{enum_analyses, EnumColumn};
 use domainator_core::app_support::contig_view::{build_contig_file_view, ContigFileView};
 use domainator_core::app_support::hmm_logo::{
     index_hmm_file, logo_from_hmm_bytes, read_hmm_byte_ranges, HmmEntry, HmmLogo, HmmSummary,
@@ -128,9 +128,9 @@ pub async fn run_summary_stats(
 /// `[contig_index, feat_index | null]`, the record and feature row `i` describes
 /// (the indices `load_contig_view` reports), so a row can be tied to a Contig View
 /// selection. `by` is `contig` | `cds` | `domain`
-/// (default `cds`). `columns` are column objects, `{type, ...parameters}`, as the
-/// config's `ColumnSpec` reads them -- the same shape the export's column builder
-/// sends -- and a per-granularity default set when empty. `ncbi_taxonomy_path` is
+/// (default `cds`). `columns` are `--columns` tokens (`qualifier:CDS:product`) --
+/// what the export's column builder sends -- and a per-granularity default set
+/// when empty. `ncbi_taxonomy_path` is
 /// needed only by the taxonomy columns, and is served from `taxonomy_cache`.
 /// Column order is preserved (serde_json `preserve_order`); the grid infers numeric
 /// vs text columns from the JSON value kinds.
@@ -138,7 +138,7 @@ pub async fn run_summary_stats(
 pub async fn run_enum_report(
     path: String,
     by: Option<String>,
-    columns: Option<Vec<Value>>,
+    columns: Option<Vec<String>>,
     ncbi_taxonomy_path: Option<String>,
 ) -> Result<Value, String> {
     // Off the UI thread: an 11 MB GenBank has thousands of CDS and takes a while,
@@ -150,23 +150,19 @@ pub async fn run_enum_report(
     .map_err(|e| format!("enum report failed: {e}"))?
 }
 
-/// Default columns per granularity.
-pub(crate) fn default_columns(by: &str) -> Vec<ColumnSpec> {
-    let names: &[&str] = match by {
+/// Default columns per granularity, as tokens. Mirrors `BUILTIN` in `enumColumns.ts`.
+pub(crate) fn default_columns(by: &str) -> &'static [&'static str] {
+    match by {
         "contig" => &["length", "cds_count", "domains"],
         "domain" => &["start", "end", "strand", "score", "identity"],
         _ => &["domains", "architecture", "length"],
-    };
-    names
-        .iter()
-        .filter_map(|n| ColumnSpec::from_static_flag(n))
-        .collect()
+    }
 }
 
 fn run_enum_report_blocking(
     path: String,
     by: Option<String>,
-    columns: Vec<Value>,
+    columns: Vec<String>,
     ncbi_taxonomy_path: Option<String>,
 ) -> Result<Value, String> {
     let by_str = by.as_deref().unwrap_or("cds");
@@ -175,18 +171,19 @@ fn run_enum_report_blocking(
         "domain" => By::Domain,
         _ => By::Cds,
     };
-    let specs: Vec<ColumnSpec> = if columns.is_empty() {
+    let tokens: Vec<String> = if columns.is_empty() {
         default_columns(by_str)
+            .iter()
+            .map(|t| t.to_string())
+            .collect()
     } else {
         columns
-            .into_iter()
-            .map(|c| serde_json::from_value(c).map_err(|e| format!("bad column: {e}")))
-            .collect::<Result<_, _>>()?
     };
-    let analyses = specs
+    let columns = tokens
         .iter()
-        .map(|c| c.to_analysis().map_err(|e| e.to_string()))
+        .map(|t| t.parse::<EnumColumn>())
         .collect::<Result<Vec<_>, _>>()?;
+    let analyses = enum_analyses(&columns).map_err(|e| e.to_string())?;
     // Before reading the file, so a missing taxonomy is reported at once.
     let tax = if needs_taxonomy(&analyses) {
         let tax_path = ncbi_taxonomy_path.as_deref().filter(|p| !p.trim().is_empty()).ok_or(
@@ -1290,17 +1287,14 @@ mod tests {
         );
     }
 
-    /// The Enum Report tab takes the same column objects as the export's builder,
-    /// taxonomy columns included; it used to take bare names of the static columns
-    /// and load no taxonomy.
+    /// The Enum Report tab takes the same column tokens as the export's builder,
+    /// taxonomy columns included.
     #[test]
-    fn enum_report_tab_runs_column_objects_with_a_taxonomy() {
+    fn enum_report_tab_runs_column_tokens_with_a_taxonomy() {
         let (gb, tax) = crate::cmd_tools::tests::enum_report_fixture("enum-tab");
-        let columns = vec![
-            json!({"type": "length"}),
-            json!({"type": "taxname", "ranks": ["genus", "species"]}),
-            json!({"type": "taxid_lineage"}),
-        ];
+        let columns: Vec<String> = ["length", "taxname:genus:species", "taxid_lineage"]
+            .map(String::from)
+            .to_vec();
         let report = run_enum_report_blocking(
             gb.to_string_lossy().into_owned(),
             Some("contig".into()),

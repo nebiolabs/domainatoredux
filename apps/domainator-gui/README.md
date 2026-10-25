@@ -96,9 +96,9 @@ Linux) and use Windows only to *validate the GUI*:
     calls *every* registered window listener for *every* event, so two of them run
     each command twice.
   - The **Tools** menu is built from `cmd_tools::list_tools()`, which serves the
-    tool spec files in `tools/`, and grouped by `TOOL_CATEGORIES`.
-    `every_offered_tool_is_dispatched_and_has_a_schema` checks the menu against what
-    `run_tool` can dispatch.
+    tool spec files in `tools/`, and grouped by the manifest's categories
+    (`CATEGORY_LABELS`). `every_offered_tool_is_dispatched` checks the menu against
+    what `run_tool` can dispatch.
   - Detached viewer windows get a reduced menu via `WebviewWindowBuilder::menu()`
     on non-macOS; on macOS they share the app menu (`Window::set_menu` is
     unsupported there) and `menu.ts`'s `SHELL_ONLY` set is the backstop.
@@ -125,9 +125,9 @@ Linux) and use Windows only to *validate the GUI*:
   Thread count is app-level, not per-workspace, because it is a property of the
   *machine* — a workspace copied from a 64-core node to a laptop must not carry
   `default_cpu = 64`. It reaches runs through
-  `app_support::tool_params::apply_default_cpu`, which consults the tool's schema
-  first: every config struct is `deny_unknown_fields`, so injecting `cpu` into a
-  tool that has no such property would make the run be *rejected*.
+  `app_support::tool_params::apply_default_cpu`, which consults the tool's manifest
+  entry first: a config naming an unknown option is rejected, so injecting `cpu` into
+  a tool that has no such option would make the run be *rejected*.
 - **Theme** is `app.css`'s `--l-*` / `--d-*` palettes aliased onto the app tokens.
   The `prefers-color-scheme` block stays first so there is no flash before JS
   runs; `:root[data-theme]` then wins in both directions. The SSN viewer's shell
@@ -216,7 +216,7 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
     entry, or none.
   - `output_file` becomes a filename, seeded from `output_name`; the app prepends
     the current directory.
-  - `param` is rendered from the tool's JSON schema.
+  - `param` is rendered from the option's manifest type (`domainatoredux describe`).
 
   Adding a tool takes a spec file, nothing else: a job runs `<id> --config <params>`
   through the CLI in a worker process (see "Jobs run in worker processes" below), so
@@ -339,25 +339,23 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   `load_matrix_report`, `resolve_record` (scans the workspace), `render_ssn_html`,
   `open_workspace`/`list_folder`/`rescan_tree`, `register_database`, and the GenBank
   write-back edits. Only the native pickers and light JSON reads stay synchronous.
-  `list_tools`, `tool_schema`, and `list_external_tools` are `async` too: a tool
-  dialog fetches its schema via `tool_schema`, and on Linux/WebKitGTK the main thread
-  also drives WebView layout/paint — a *synchronous* schema fetch could queue behind
-  a heavy viewer render and leave the dialog stuck at "Loading…". Running them on the
+  `list_tools` and `list_external_tools` are `async` too: on Linux/WebKitGTK the main
+  thread also drives WebView layout/paint, so a *synchronous* fetch could queue behind
+  a heavy viewer render and leave a dialog stuck at "Loading…". Running them on the
   async runtime makes them immune to whatever the main thread is doing. **Window
   creation (`open_sequence_window` / `open_file_window` / `open_hmm_logo_window`)
   and every native picker (`pick_directory`, `pick_files`, `pick_file`,
   `save_text_file`) are `async` for the reason above** — don't make any of them
   synchronous again. The pickers also `set_parent(&window)`, so Windows can't raise
   an ownerless dialog *behind* the app.
-  **Belt-and-suspenders for the tool dialog:** tool JSON Schemas are static, so the
-  frontend prefetches every tool's schema **at app startup** (before any workspace/
-  GenBank viewer is mounted, i.e. while the main thread is idle) into a dedicated
-  never-cleared cache (`toolSchemaCached` in `api.ts`, distinct from the viewer
-  `cache.ts` that `clearCache()` wipes on workspace-open). Opening a tool dialog then
-  reads its schema from memory with **no backend round-trip**, so it can't stall
-  behind a large contig view's WebView rendering — the cause of dialogs (esp. the
-  GenBank-input tools, opened while a big contig view was on screen) sitting at
-  "Loading…". This is a pure-frontend fix, so it takes effect via Vite HMR without a
+  **Belt-and-suspenders for the tool dialog:** `list_tools` carries each field's
+  manifest parameter (type, choices, bounds, default, help, column catalog), and the
+  frontend loads it once **at app startup** (before any workspace/GenBank viewer is
+  mounted, i.e. while the main thread is idle). Opening a tool dialog then needs **no
+  backend round-trip**, so it can't stall behind a large contig view's WebView
+  rendering — the cause of dialogs (esp. the GenBank-input tools, opened while a big
+  contig view was on screen) sitting at "Loading…". This is a pure-frontend fix, so it
+  takes effect via Vite HMR without a
   backend restart.
 - **Jobs run in worker processes** (`worker.rs`, `cmd_tools.rs`, `job_io.rs`; the
   design is `WORKER_PROCESS_PLAN.md`). `main.rs` first checks for a hidden
@@ -408,26 +406,25 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   option but are no longer used by the SSN bar.) `resolve_record` scans files (fine
   for modest workspaces); a `.didx`/provenance-indexed fast path can replace it.
 - **Report column builder (`columns` role).** Both report exports edit their `columns`
-  with `ColumnBuilder.svelte`: an ordered list where each row is a column type plus
-  that type's parameters. The types and parameters are not hand-listed anywhere in the
-  GUI. They are the schema's `columns.items.oneOf`, which `domainator-config`
-  generates next to the `ColumnSpec` / `HmmerReportColumn` enums, and
-  `column_schemas_match_their_enums` checks the two agree. The spec's `column_types`
-  (`tools/<id>.yml`) only relabels, hides and seeds them, e.g. enum_report's rank
-  chips. `columns.ts` holds the model and the row ↔ column-object conversion.
-  `run_export_enum_report` goes through `EnumConfig` exactly as the CLI's arm does:
-  parameterized columns, `databases`, `contigs`, `column_names` and `json`, and the
-  taxonomy, loaded only when a column needs it, from the `ncbi_taxonomy_path` input.
+  with `ColumnBuilder.svelte`: an ordered list where each row is a column plus its
+  arguments. The columns are not hand-listed anywhere in the GUI. They are the
+  manifest's catalog for the `columns` parameter, from
+  `crates/domainator-config/src/columns.rs`, the same catalog that parses the CLI's
+  `--columns` tokens. The spec's `column_types` (`tools/<id>.yml`) only relabels, hides
+  and seeds them, e.g. enum_report's rank chips. `columns.ts` holds the model and the
+  row ↔ token conversion (`columns.test.ts`). The export runs the CLI itself, so
+  columns, `databases`, `contigs`, `column_names` and `json_out` behave exactly as
+  on the command line, and the taxonomy is loaded only when a column needs it, from
+  the `ncbi_taxonomy_path` input.
   That input starts on the managed NCBI Taxonomy download (`reference_dbs.rs`,
   `DbKind::Taxonomy`, registry format `taxonomy`). The GUI-only `taxid_self` /
   `taxname_self` columns were dropped from the export; `taxid`/`taxname` with rank
   `self` report the record's own taxon from the taxonomy instead.
-- **Every tool option has help text.** `ToolDialog` renders each option's schema
-  `description` as a hint. A shared dictionary (`common_help` in `domainator-config`,
-  applied by `fill_common_descriptions` in `schema()`) fills a one-line description
-  for any property a per-tool schema left blank, so all 333 options across the tools
-  have a tooltip (and the CLI's emitted schema gets them too). Per-tool schemas can
-  still override with a more specific description.
+- **Every tool option has help text.** `ToolDialog` renders each option's manifest
+  `help` as a hint. On a migrated tool that is the option's `--help` text; on the
+  others it comes from the old config schema, where a shared dictionary
+  (`common_help` in `domainator-config`) fills a one-line description for any property
+  a per-tool schema left blank.
 - **domainate / domain_search accept HMM *and* FASTA references.** The references
   field uses a `reference` pseudo file-type (`typeMatches` → hmm | fasta), matching
   what the core `read_references` accepts (protein/nucleotide HMM or FASTA; `.cm` and
@@ -496,9 +493,9 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   external taxdump needed). Pure data + client-side charts — sidesteps the
   matplotlib dependency that keeps the CLI `summary_report` deferred.
   The Enum Report tab's **Columns** popover is the export's `ColumnBuilder`, over the
-  same schema types and `tools/enum_report.yml` `column_types`, applied with an
+  same manifest catalog and `tools/enum_report.yml` `column_types`, applied with an
   explicit Apply (each change reruns the whole report). `run_enum_report` takes
-  column objects and an `ncbi_taxonomy_path`, chosen in the tab's Taxonomy dropdown
+  column tokens and an `ncbi_taxonomy_path`, chosen in the tab's Taxonomy dropdown
   from the registered `taxonomy` databases. The parsed taxonomy (~9 s and ~2 GB peak
   for the full NCBI taxdump) is kept in `taxonomy_cache.rs`'s single slot, which every
   GUI taxonomy load shares.

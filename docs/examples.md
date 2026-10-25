@@ -26,7 +26,7 @@ domainatoredux domainate -i pDONR201_multi_genemark.gb -r pdonr_hmms.hmm -o anno
 #> wrote 4 records to annotated.gb
 
 # what got annotated, gene by gene?
-domainatoredux enum_report -i annotated.gb --by cds --domains --length -o genes.tsv
+domainatoredux enum_report -i annotated.gb --by cds --columns domains length -o genes.tsv
 ```
 
 ```
@@ -134,7 +134,7 @@ domainatoredux hmmer_select -i pfam-A.hmm -o nucleases.hmm --contains nuclease -
 domainatoredux hmmer_build -i my_alignment.sto -o mine.hmm --name MyDomain --desc "My domain"
 
 # see what you ended up with
-domainatoredux hmmer_report -i nucleases.hmm -i mine.hmm --acc --desc --length -o profiles.tsv
+domainatoredux hmmer_report -i nucleases.hmm mine.hmm --columns acc desc length -o profiles.tsv
 
 # keep only candidates related to something known
 domainatoredux hmmer_search -i candidates.hmm -r nucleases.hmm -o related.hmm --score_cutoff 20
@@ -174,8 +174,8 @@ deduplication with nothing installed, use `--algorithm hash --id 1`.
 ```bash
 # per-domain table with chemistry and taxonomy
 domainatoredux enum_report -i annotated.gb --by domain \
-  --domains --start --end --score --length \
-  --molecular_weight --isoelectric_point --taxname genus species \
+  --columns domains start end score length \
+  molecular_weight isoelectric_point taxname:genus:species \
   -o domains.tsv
 
 # dataset-level summary
@@ -198,7 +198,7 @@ network without a GUI:
 
 ```bash
 domainatoredux summary_report -i annotated.gb --json - | jq .domain_counts
-domainatoredux enum_report -i annotated.gb --by cds --domains --json - | head -1
+domainatoredux enum_report -i annotated.gb --by cds --columns domains --json_out - | head -1
 domainatoredux ssn_navigator -i network.dsnv --mode overview
 domainatoredux ssn_navigator -i network.dsnv --mode clusters --threshold 120 --min_size 3
 ```

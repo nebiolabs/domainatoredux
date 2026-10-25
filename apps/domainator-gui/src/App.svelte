@@ -5,7 +5,6 @@
     listTools,
     pickDirectory,
     startupInfo,
-    toolSchemaCached,
   } from "./lib/api";
   import FolderTree from "./lib/FolderTree.svelte";
   import FileTable from "./lib/FileTable.svelte";
@@ -67,17 +66,16 @@
       .catch((e) => (standaloneErr = String(e)));
   });
 
-  // Load the tool list and prefetch every tool's JSON Schema ONCE at startup —
-  // before any workspace/GenBank viewer is open, so the main thread is idle and
-  // the fetches can't stall. Opening a tool dialog then needs no backend call,
-  // which is what previously left dialogs stuck at "Loading…" while a large
+  // Load the tool list ONCE at startup -- before any workspace/GenBank viewer is
+  // open, so the main thread is idle and the fetch can't stall. Each tool's fields
+  // carry their manifest parameters, so opening a tool dialog then needs no backend
+  // call, which is what previously left dialogs stuck at "Loading…" while a large
   // GenBank contig view was rendering.
   $effect(() => {
     if (isStandalone) return;
     listTools()
       .then((t) => {
         tools = t;
-        for (const m of t) void toolSchemaCached(m.id);
       })
       // Without this the Tools menu just renders empty and the rejection only
       // reaches the console.

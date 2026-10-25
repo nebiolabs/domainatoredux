@@ -108,6 +108,19 @@ fn scalar(key: &str, v: &ConfigValue) -> Result<String> {
 
 /// The command-line arguments that set `key` to `value`.
 fn arguments(cmd: &Command, key: &str, value: &ConfigValue) -> Result<Vec<String>> {
+    let unsupported = crate::registry::tool_info(cmd.get_name())
+        .and_then(|t| t.unsupported.iter().find(|(name, _)| *name == key));
+    if let Some((_, default)) = unsupported {
+        let default: Value = serde_json::from_str(default).context("registry default")?;
+        if *value == ConfigValue::Null || *value == ConfigValue::from(&default) {
+            return Ok(Vec::new());
+        }
+        bail!(
+            "`{key}` is an option of upstream domainator's {} that domainatoredux does not \
+             support; remove it, or set it to {default}",
+            cmd.get_name()
+        );
+    }
     let arg = parameters(cmd)
         .find(|a| a.get_id().as_str() == key)
         .with_context(|| {
@@ -330,6 +343,22 @@ mod tests {
         assert!(
             format!("{err:#}").contains("unknown option `output`"),
             "{err:#}"
+        );
+    }
+
+    #[test]
+    fn an_unsupported_upstream_option_is_accepted_only_at_its_default() {
+        let cmd = crate::args::tool_command("enum_report").unwrap();
+        let ok = scratch(
+            "unsupported-ok.yml",
+            "html_out: null\ntaxonomy_update: false\n",
+        );
+        assert!(expand(&cmd, &os(&["--config", &ok])).unwrap().is_empty());
+        let bad = scratch("unsupported-bad.yml", "html_out: r.html\n");
+        let e = format!("{:#}", expand(&cmd, &os(&["--config", &bad])).unwrap_err());
+        assert!(
+            e.contains("`html_out`") && e.contains("does not support"),
+            "{e}"
         );
     }
 

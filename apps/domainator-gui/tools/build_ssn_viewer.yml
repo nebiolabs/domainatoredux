@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux build_ssn_viewer`. Format: see README.md in this directory.
 id: build_ssn_viewer
 label: "Build SSN viewer"
-category: "Matrices & networks"
 description: "Build a .dsnv bundle for the interactive network viewer."
 fields:
   - name: input
@@ -24,14 +23,12 @@ fields:
     select: none
   - name: merge_impact_metric
     label: "Merge metric"
-    cli_default: "min_child"
   - name: html
     show: false
     label: "Html"
   - name: embed_data
     show: false
     label: "Embed data"
-    cli_default: false
   - name: name
     show: false
     label: "Name"
@@ -53,4 +50,3 @@ fields:
   - name: max_output_gb
     show: false
     label: "Max output gb"
-    cli_default: 25.0

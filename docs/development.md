@@ -84,23 +84,23 @@ only one possible. Parity can only ask "is this the same as Python"; everything 
 When adding to any of those, a test is the whole safety net. A few guards earn their keep
 in particular:
 
-- **`every_schema_matches_its_config_struct`** (`domainator-config`) —
-  `domainatoredux schema <tool>` is both the documented agent interface and what the GUI
-  renders its dialogs from, while the config struct is what actually deserializes. They
-  are hand-written in different places and drift both ways: a field missing from the
-  schema is a flag no agent and no GUI dialog can discover, and a property the struct
-  lacks is worse, because every config struct is `deny_unknown_fields`, so a config
-  written to match the schema is *rejected*. **Add your tool to `every_tool()` when you
-  add a tool.**
+- **`describe_matches_upstream_up_to_the_allowlist`** (`domainator-cli`) — diffs
+  `domainatoredux describe` against upstream's own manifest; every difference must be a
+  row of `scripts/parity/manifest_allowlist.tsv`, and every row a real difference. See
+  [Parity](parity.md).
+- **`every_schema_matches_its_config_struct`** (`domainator-config`) — for the tools not
+  yet on the 1.0 interface, the old config schema is what the GUI's dialogs are converted
+  from (`tool_manifest`), while the config struct is what actually deserializes. A
+  property the struct lacks is a dialog field whose run is *rejected*
+  (`deny_unknown_fields`). Each tool leaves `every_tool()` when it is migrated.
 - **`merge_cli` coverage** — a struct field the merge forgets is a CLI flag that silently
-  does nothing.
-- **`every_offered_tool_is_dispatched_and_has_a_schema`** and
-  **`every_tools_dialog_params_parse_as_its_cli_config`** (`domainator-gui`) — the GUI tool
-  registry, the CLI's subcommands and the schema emitter are three hand-maintained lists
-  in three places. GUI jobs run `<tool> --config <params>` through the CLI in a worker
-  process, so a menu entry the CLI does not know, or a dialog whose params the config
-  struct rejects, fails only when the user presses Run. The tests feed each tool's
-  dialog params to `domainator_cli::run` with `--print_config`.
+  does nothing (unmigrated tools only).
+- **`every_offered_tool_is_dispatched`** and
+  **`every_tools_dialog_params_parse_as_its_cli_config`** (`domainator-gui`) — GUI jobs
+  run `<tool> --config <params>` through the CLI in a worker process, so a menu entry
+  the CLI does not know, or a dialog whose params the CLI rejects, fails only when the
+  user presses Run. The tests feed each tool's dialog params to `domainator_cli::run`
+  with `--print_config`.
 - **`derived_provenance_roles_match_the_golden_table`** (`domainator-gui`) — a job's
   provenance inputs are derived from its tool spec, and `trace_source_sequences` follows
   their roles. A spec edit that changes a role breaks SSN node → sequence tracing without
@@ -272,12 +272,12 @@ WSL2-versus-Windows validation guidance — Tauri uses **WebView2 on Windows** a
 shipping.
 
 The tool dialogs are described by one spec file per tool,
-`apps/domainator-gui/tools/<id>.yml`, embedded at compile time. The spec gives the
-fields, their order, and which files each input offers. It lists every CLI option with
-its CLI default, and a GUI default can override that for the dialog alone. The format
-is in `apps/domainator-gui/tools/README.md`. The tests in `tool_specs.rs` check each spec
-against `domainatoredux schema <id>`: every option is listed, and each `cli_default` equals
-the schema's.
+`apps/domainator-gui/tools/<id>.yml`, embedded at compile time, layered over the tool's
+manifest entry (`domainatoredux describe`). The spec gives the fields' labels, their
+order, and which files each input offers, and a GUI default can override the CLI's for
+the dialog alone; types, choices, defaults, help and roles come from the manifest. The
+format is in `apps/domainator-gui/tools/README.md`. The tests in `tool_specs.rs` check each
+spec against the manifest: every option is listed, and every GUI default fits.
 
 Three internal design notes live alongside it:
 `apps/domainator-gui/PERSISTENT_CACHE_PLAN.md` (a deferred on-disk report cache),

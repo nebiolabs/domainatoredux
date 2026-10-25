@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux select_by_contig`. Format: see README.md in this directory.
 id: select_by_contig
 label: "Select by contig"
-category: "Selection & extraction"
 description: "Select whole contigs by name/regex, domain content, taxonomy, length, or CDS count."
 fields:
   - name: input
@@ -18,7 +17,6 @@ fields:
     output_name: "{stem}.selected.gb"
   - name: fasta_out
     label: "FASTA output"
-    cli_default: false
   - name: contigs
     label: "Contig names"
   - name: contigs_file
@@ -45,15 +43,12 @@ fields:
     label: "Domain expr"
   - name: domain_type
     label: "Domain type"
-    cli_default: "domain"
   - name: databases
     label: "Databases"
   - name: unannotated
     label: "Unannotated"
-    cli_default: false
   - name: evalue
     label: "E-value"
-    cli_default: 100000000.0
   - name: first
     label: "First N"
   - name: length_lb
@@ -70,7 +65,6 @@ fields:
     label: "Search score ≤"
   - name: invert
     label: "Invert"
-    cli_default: false
   - name: include_taxids
     label: "Include taxids"
   - name: exclude_taxids
@@ -86,4 +80,3 @@ fields:
   - name: partial
     label: "Fragments"
     help: "Which contigs to select, by fragment status. A nucleotide contig is a fragment if any of its CDSs is. Not affected by Invert."
-    cli_default: "include"

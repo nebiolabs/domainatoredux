@@ -156,10 +156,10 @@ pub fn build_main(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 // entries is unusable, so they are grouped by the registry's category.
                 let tools = tauri::async_runtime::block_on(crate::cmd_tools::list_tools());
                 sub = sub.separator();
-                // Grouped in TOOL_CATEGORIES order, not first-appearance order, so
+                // Grouped in CATEGORY_LABELS order, not first-appearance order, so
                 // the menu's shape is a property of that table rather than of the
                 // registry's internal ordering.
-                for cat in crate::cmd_tools::TOOL_CATEGORIES {
+                for cat in crate::cmd_tools::category_order() {
                     let in_cat: Vec<_> = tools.iter().filter(|t| t.category == cat).collect();
                     if in_cat.is_empty() {
                         continue;
@@ -178,7 +178,7 @@ pub fn build_main(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 // the real guard, this is the runtime safety net.
                 let orphans: Vec<_> = tools
                     .iter()
-                    .filter(|t| !crate::cmd_tools::TOOL_CATEGORIES.contains(&t.category.as_str()))
+                    .filter(|t| !crate::cmd_tools::category_order().any(|c| c == t.category))
                     .collect();
                 if !orphans.is_empty() {
                     let mut cs = SubmenuBuilder::new(app, "Other");

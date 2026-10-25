@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux hmmer_compare`. Format: see README.md in this directory.
 id: hmmer_compare
 label: "HMM compare"
-category: "HMM profiles"
 description: "Profile-vs-profile Viterbi comparison; writes a scores/alignments table."
 fields:
   - name: input
@@ -25,17 +24,13 @@ fields:
     output_name: "{stem}.compare.tsv"
   - name: score_cutoff
     label: "Score cutoff"
-    cli_default: 0.0
   - name: k
     label: "Top-k per query"
   - name: alignments
     label: "Include alignments"
-    cli_default: false
   - name: cpu
     show: false
     label: "Cpu"
-    cli_default: 0
   - name: max_output_gb
     show: false
     label: "Max output gb"
-    cli_default: 25.0

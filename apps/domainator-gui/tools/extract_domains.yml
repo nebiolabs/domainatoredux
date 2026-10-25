@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux extract_domains`. Format: see README.md in this directory.
 id: extract_domains
 label: "Extract domains"
-category: "Selection & extraction"
 description: "Extract annotated domain regions as their own records (GenBank or FASTA)."
 fields:
   - name: input
@@ -18,42 +17,33 @@ fields:
     output_name: "{stem}.domains.gb"
   - name: fasta_out
     label: "FASTA output"
-    cli_default: false
   - name: domains
     label: "Domain names"
   - name: databases
     label: "Databases"
   - name: search_hits
     label: "Search hits"
-    cli_default: false
   - name: evalue
     label: "Max E-value"
   - name: score
     label: "Min score"
   - name: pad_up
     label: "Pad upstream"
-    cli_default: 0
   - name: pad_down
     label: "Pad downstream"
-    cli_default: 0
   - name: combine
     label: "Combine adjacent"
-    cli_default: false
   - name: splice
     label: "Splice"
-    cli_default: false
   - name: keep_direction
     label: "Keep direction"
-    cli_default: false
   - name: keep_name
     label: "Keep name"
-    cli_default: false
   - name: contigs
     label: "Restrict to contigs"
   - name: partial
     label: "Fragments"
     help: "Which domains to extract, by the fragment status of the CDS or protein they are on."
-    cli_default: "include"
   - name: domains_file
     show: false
     label: "Domains file"

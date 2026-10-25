@@ -6,6 +6,8 @@
 //! may be standard output, whether `-i -` is allowed, which outputs a run needs at least
 //! one of. The CLI checks that every subcommand has an entry here and vice versa.
 
+use crate::columns::{ColumnDef, ENUM_COLUMNS, HMMER_COLUMNS};
+
 /// `(key, heading)` pairs, in the order upstream's `domainator --help` lists them.
 pub const CATEGORIES: &[(&str, &str)] = &[
     ("annotate", "Annotate and search sequences and structures"),
@@ -49,6 +51,14 @@ pub struct ToolInfo {
     pub dynamic_defaults: &'static [&'static str],
     /// `--x`/`--no_x` switches whose default is on.
     pub switches_on: &'static [&'static str],
+    /// The catalog of a report's `--columns` (`describe` lists it under the option).
+    pub columns: Option<&'static [ColumnDef]>,
+    /// Upstream options this port does not have, each with upstream's default as JSON.
+    /// A config file may name one at that default (or null), so upstream's
+    /// `--print_config` output works here; any other value is an error that says the
+    /// option is not supported. The golden test checks each against upstream's
+    /// manifest.
+    pub unsupported: &'static [(&'static str, &'static str)],
 }
 
 const fn tool(name: &'static str, category: &'static str, summary: &'static str) -> ToolInfo {
@@ -63,6 +73,8 @@ const fn tool(name: &'static str, category: &'static str, summary: &'static str)
         required_outputs: None,
         dynamic_defaults: &[],
         switches_on: &[],
+        columns: None,
+        unsupported: &[],
     }
 }
 
@@ -201,16 +213,33 @@ pub const TOOLS: &[ToolInfo] = &[
         "Query a similarity network bundle: clusters, members, and metadata.",
     ),
     // report
-    tool(
-        "enum_report",
-        "report",
-        "Tabulate properties of each contig, CDS, or domain.",
-    ),
-    tool(
-        "hmmer_report",
-        "report",
-        "Tabulate properties of each HMM profile.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["tsv_out", "json_out"]),
+        dynamic_defaults: &["ncbi_taxonomy_path"],
+        columns: Some(ENUM_COLUMNS),
+        unsupported: &[
+            ("html_out", "null"),
+            ("html_max_height", "null"),
+            ("taxonomy_update", "false"),
+        ],
+        ..tool(
+            "enum_report",
+            "report",
+            "Tabulate properties of each contig, CDS, or domain.",
+        )
+    },
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["tsv_out", "json_out"]),
+        columns: Some(HMMER_COLUMNS),
+        unsupported: &[("html_out", "null"), ("html_max_height", "null")],
+        ..tool(
+            "hmmer_report",
+            "report",
+            "Tabulate properties of each HMM profile.",
+        )
+    },
     tool(
         "summary_report",
         "report",

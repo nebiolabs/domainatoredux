@@ -383,11 +383,7 @@ mod tests {
 
         let view = EnumReportView {
             by: Some("contig".into()),
-            columns: [(
-                "contig".to_string(),
-                vec![serde_json::json!({"type": "length"})],
-            )]
-            .into(),
+            columns: [("contig".to_string(), vec!["length".to_string()])].into(),
         };
         set_enum_report_view(file.clone(), view.clone()).unwrap();
         assert_eq!(get_enum_report_view(file), Some(view.clone()));

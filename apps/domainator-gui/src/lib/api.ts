@@ -195,7 +195,7 @@ export interface EnumReportResult {
 export const runEnumReport = (
   path: string,
   by: string,
-  columns: Record<string, unknown>[],
+  columns: string[],
   ncbiTaxonomyPath: string | null,
 ): Promise<EnumReportResult> => invoke("run_enum_report", { path, by, columns, ncbiTaxonomyPath });
 
@@ -309,27 +309,6 @@ export const addFeature = (
 ): Promise<void> => invoke("add_feature", { path, contigIndex, kind, start, end, strand, qualifiers });
 
 export const listTools = (): Promise<ToolMeta[]> => invoke("list_tools");
-
-export const toolSchema = (tool: string): Promise<string> =>
-  invoke("tool_schema", { tool });
-
-// Tool JSON Schemas are static per tool, so cache them in a module singleton that
-// (unlike the viewer cache) is NEVER cleared. Prefetched at app startup — before
-// any heavy GenBank viewer is mounted — so opening a tool dialog needs no backend
-// round-trip and can't stall behind main-thread work. A rejected fetch is dropped
-// so it can be retried.
-const schemaCache = new Map<string, Promise<string>>();
-export function toolSchemaCached(tool: string): Promise<string> {
-  let p = schemaCache.get(tool);
-  if (!p) {
-    p = toolSchema(tool).catch((e) => {
-      schemaCache.delete(tool);
-      throw e;
-    });
-    schemaCache.set(tool, p);
-  }
-  return p;
-}
 
 export const runTool = (
   tool: string,

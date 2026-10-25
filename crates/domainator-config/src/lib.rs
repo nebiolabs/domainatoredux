@@ -1,7 +1,7 @@
-//! Config-file (`--config`) and `--print_config` support for the
-//! selection/reporting tools, plus `schema` output — a native Rust JSON/YAML
-//! parameter schema (not byte-compatible with the Python jsonargparse files, but
-//! serving the same purpose: declarative, agent-friendly, quoting-free params).
+//! The tools' interface: the 1.0 layer (`args`, `manifest`, `config_file`, `columns`,
+//! `registry`) for migrated tools, and for the rest, until each is migrated, the old
+//! native config structs with their `merge_cli` and the config schemas that
+//! [`tool_manifest`] converts for the GUI.
 
 // `domain_search_schema`'s `json!` literal outgrew the default limit of 128.
 #![recursion_limit = "256"]
@@ -10,17 +10,12 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 pub mod args;
+pub mod columns;
 pub mod config_file;
 pub mod manifest;
 pub mod registry;
 pub mod resolve;
 pub mod types;
-
-use domainator_core::tools::enum_report::{
-    append_analysis, feature_count_analysis, motif_count_analysis, named_domain_count_analysis,
-    net_charge_analysis, qualifier_analysis, repeat_count_analysis, static_analysis,
-    taxid_analysis, taxname_analysis, Analysis, By,
-};
 
 /// Load a JSON or YAML config file into `T`, choosing the parser by extension
 /// (`.json` -> JSON, otherwise YAML, which is a superset of JSON).
@@ -80,194 +75,6 @@ pub fn print_config<T: Serialize>(cfg: &T) -> Result<String> {
     serde_yaml::to_string(cfg).context("serializing config")
 }
 
-// ---------------------------------------------------------------------------
-// enum_report
-// ---------------------------------------------------------------------------
-
-/// One ordered `enum_report` column (a declarative form of the CLI's column
-/// flags). Serialized as `{"type": "<name>", ...args}`.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ColumnSpec {
-    Domains,
-    DomainDescriptions,
-    Sequence,
-    Start,
-    End,
-    Strand,
-    Length,
-    Topology,
-    Architecture,
-    ArchitectureDetailed,
-    Score,
-    Identity,
-    Definition,
-    Filename,
-    CdsCount,
-    DomainCount,
-    DomainSearch,
-    TaxidLineage,
-    TaxnameLineage,
-    RankLineage,
-    IsoelectricPoint,
-    StartsWith,
-    MolecularWeight,
-    Fragment,
-    PartialCount,
-    Taxid {
-        ranks: Vec<String>,
-    },
-    Taxname {
-        ranks: Vec<String>,
-    },
-    Qualifier {
-        feature: String,
-        qualifier: String,
-    },
-    FeatureCount {
-        feature: String,
-    },
-    Append {
-        name: String,
-        value_type: String,
-        value: String,
-    },
-    MotifCount {
-        pattern: String,
-    },
-    NetCharge {
-        ph: String,
-    },
-    RepeatCount {
-        min_length: String,
-    },
-    NamedDomainCount {
-        name: String,
-    },
-}
-
-impl ColumnSpec {
-    /// The static-column flag name for the no-argument variants (else `None`).
-    fn static_name(&self) -> Option<&'static str> {
-        use ColumnSpec::*;
-        Some(match self {
-            Domains => "domains",
-            DomainDescriptions => "domain_descriptions",
-            Sequence => "sequence",
-            Start => "start",
-            End => "end",
-            Strand => "strand",
-            Length => "length",
-            Topology => "topology",
-            Architecture => "architecture",
-            ArchitectureDetailed => "architecture_detailed",
-            Score => "score",
-            Identity => "identity",
-            Definition => "definition",
-            Filename => "filename",
-            CdsCount => "cds_count",
-            DomainCount => "domain_count",
-            DomainSearch => "domain_search",
-            TaxidLineage => "taxid_lineage",
-            TaxnameLineage => "taxname_lineage",
-            RankLineage => "rank_lineage",
-            IsoelectricPoint => "isoelectric_point",
-            StartsWith => "starts_with",
-            MolecularWeight => "molecular_weight",
-            Fragment => "fragment",
-            PartialCount => "partial_count",
-            _ => return None,
-        })
-    }
-
-    /// Reverse of `static_name`: the no-argument column for a flag name.
-    pub fn from_static_flag(name: &str) -> Option<ColumnSpec> {
-        use ColumnSpec::*;
-        Some(match name {
-            "domains" => Domains,
-            "domain_descriptions" => DomainDescriptions,
-            "sequence" => Sequence,
-            "start" => Start,
-            "end" => End,
-            "strand" => Strand,
-            "length" => Length,
-            "topology" => Topology,
-            "architecture" => Architecture,
-            "architecture_detailed" => ArchitectureDetailed,
-            "score" => Score,
-            "identity" => Identity,
-            "definition" => Definition,
-            "filename" => Filename,
-            "cds_count" => CdsCount,
-            "domain_count" => DomainCount,
-            "domain_search" => DomainSearch,
-            "taxid_lineage" => TaxidLineage,
-            "taxname_lineage" => TaxnameLineage,
-            "rank_lineage" => RankLineage,
-            "isoelectric_point" => IsoelectricPoint,
-            "starts_with" => StartsWith,
-            "molecular_weight" => MolecularWeight,
-            "fragment" => Fragment,
-            "partial_count" => PartialCount,
-            _ => return None,
-        })
-    }
-
-    /// Build the core [`Analysis`] for this column.
-    pub fn to_analysis(&self) -> Result<Analysis> {
-        if let Some(name) = self.static_name() {
-            return static_analysis(name)
-                .with_context(|| format!("unknown enum_report column: {name}"));
-        }
-        Ok(match self {
-            ColumnSpec::Taxid { ranks } => taxid_analysis(ranks.clone()),
-            ColumnSpec::Taxname { ranks } => taxname_analysis(ranks.clone()),
-            ColumnSpec::Qualifier { feature, qualifier } => {
-                qualifier_analysis(feature.clone(), qualifier.clone())
-            }
-            ColumnSpec::FeatureCount { feature } => feature_count_analysis(feature.clone()),
-            ColumnSpec::Append {
-                name,
-                value_type,
-                value,
-            } => {
-                append_analysis(name.clone(), value_type, value).map_err(|e| anyhow::anyhow!(e))?
-            }
-            ColumnSpec::MotifCount { pattern } => motif_count_analysis(pattern.clone()),
-            ColumnSpec::NetCharge { ph } => {
-                net_charge_analysis(ph).map_err(|e| anyhow::anyhow!(e))?
-            }
-            ColumnSpec::RepeatCount { min_length } => {
-                repeat_count_analysis(min_length).map_err(|e| anyhow::anyhow!(e))?
-            }
-            ColumnSpec::NamedDomainCount { name } => named_domain_count_analysis(name.clone()),
-            _ => unreachable!("static variants handled above"),
-        })
-    }
-}
-
-/// The full `enum_report` parameter set (config-file shape).
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct EnumConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    /// `contig` (default) | `cds` | `domain`.
-    pub by: Option<String>,
-    pub databases: Vec<String>,
-    pub contigs: Vec<String>,
-    pub contigs_file: Option<String>,
-    pub column_names: Option<Vec<String>>,
-    pub ncbi_taxonomy_path: Option<String>,
-    /// Ordered output columns.
-    pub columns: Vec<ColumnSpec>,
-    /// Write streaming NDJSON here (`-` = stdout). Sits alongside `output`, which
-    /// stays TSV, so both can be produced in one run.
-    pub json: Option<String>,
-    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
-    pub partial: Option<String>,
-}
-
 /// Parse a resolved `partial` value (`None` = the default, `include`). Config files
 /// skip clap's `value_parser`, so every tool validates here after the merge.
 pub fn parse_partial(value: Option<&str>) -> Result<domainator_core::seq::partial::Partial> {
@@ -275,54 +82,6 @@ pub fn parse_partial(value: Option<&str>) -> Result<domainator_core::seq::partia
         .unwrap_or("include")
         .parse()
         .map_err(|e: String| anyhow::anyhow!(e))
-}
-
-impl EnumConfig {
-    pub fn by_enum(&self) -> Result<By> {
-        Ok(match self.by.as_deref().unwrap_or("contig") {
-            "contig" => By::Contig,
-            "cds" => By::Cds,
-            "domain" => By::Domain,
-            other => anyhow::bail!("`by` must be contig/cds/domain, got {other:?}"),
-        })
-    }
-
-    /// Merge CLI-provided values over this (file) config: scalars from `cli`
-    /// override when set; list values override when non-empty; `columns` from the
-    /// CLI are appended (argparse-style).
-    pub fn merge_cli(&mut self, cli: EnumConfig) {
-        if !cli.input.is_empty() {
-            self.input = cli.input;
-        }
-        if cli.output.is_some() {
-            self.output = cli.output;
-        }
-        if cli.by.is_some() {
-            self.by = cli.by;
-        }
-        if !cli.databases.is_empty() {
-            self.databases = cli.databases;
-        }
-        if !cli.contigs.is_empty() {
-            self.contigs = cli.contigs;
-        }
-        if cli.contigs_file.is_some() {
-            self.contigs_file = cli.contigs_file;
-        }
-        if cli.column_names.is_some() {
-            self.column_names = cli.column_names;
-        }
-        if cli.ncbi_taxonomy_path.is_some() {
-            self.ncbi_taxonomy_path = cli.ncbi_taxonomy_path;
-        }
-        self.columns.extend(cli.columns);
-        if cli.json.is_some() {
-            self.json = cli.json;
-        }
-        if cli.partial.is_some() {
-            self.partial = cli.partial;
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1310,101 +1069,6 @@ impl HmmerCompareConfig {
     }
 }
 
-// ---------------------------------------------------------------------------
-// hmmer_report
-// ---------------------------------------------------------------------------
-
-use domainator_core::tools::hmmer_report::{
-    append_analysis as hr_append, static_analysis as hr_static, Analysis as HrAnalysis,
-};
-
-/// One ordered `hmmer_report` column (declarative form of the CLI column flags).
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-pub enum HmmerReportColumn {
-    Source,
-    Acc,
-    Desc,
-    Length,
-    Consensus,
-    Alphabet,
-    Append {
-        name: String,
-        value_type: String,
-        value: String,
-    },
-}
-
-impl HmmerReportColumn {
-    fn static_name(&self) -> Option<&'static str> {
-        use HmmerReportColumn::*;
-        Some(match self {
-            Source => "source",
-            Acc => "acc",
-            Desc => "desc",
-            Length => "length",
-            Consensus => "consensus",
-            Alphabet => "alphabet",
-            Append { .. } => return None,
-        })
-    }
-
-    /// The no-argument column for a flag name.
-    pub fn from_static_flag(name: &str) -> Option<HmmerReportColumn> {
-        use HmmerReportColumn::*;
-        Some(match name {
-            "source" => Source,
-            "acc" => Acc,
-            "desc" => Desc,
-            "length" => Length,
-            "consensus" => Consensus,
-            "alphabet" => Alphabet,
-            _ => return None,
-        })
-    }
-
-    /// Build the core [`HrAnalysis`] for this column.
-    pub fn to_analysis(&self) -> Result<HrAnalysis> {
-        if let Some(name) = self.static_name() {
-            return hr_static(name).with_context(|| format!("unknown hmmer_report column: {name}"));
-        }
-        Ok(match self {
-            HmmerReportColumn::Append {
-                name,
-                value_type,
-                value,
-            } => hr_append(name.clone(), value_type, value).map_err(|e| anyhow::anyhow!(e))?,
-            _ => unreachable!("static variants handled above"),
-        })
-    }
-}
-
-/// The full `hmmer_report` parameter set (config-file shape).
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct HmmerReportConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub column_names: Option<Vec<String>>,
-    /// Ordered output columns.
-    pub columns: Vec<HmmerReportColumn>,
-    /// Write streaming NDJSON here (`-` = stdout). Sits alongside `output`, which
-    /// stays TSV, so both can be produced in one run.
-    pub json: Option<String>,
-}
-
-impl HmmerReportConfig {
-    pub fn merge_cli(&mut self, cli: HmmerReportConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        if cli.column_names.is_some() {
-            self.column_names = cli.column_names;
-        }
-        self.columns.extend(cli.columns);
-        merge_scalar!(self, cli, json);
-    }
-}
-
 /// `hmmer_select` parameters (config-file shape).
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -1513,14 +1177,112 @@ impl FormatDbConfig {
     }
 }
 
-/// A pragmatic JSON Schema (draft-07) describing a tool's config file.
-pub fn schema(tool: &str) -> Result<String> {
-    if let (Some(cmd), Some(info)) = (args::tool_command(tool), registry::tool_info(tool)) {
-        let schema = manifest_schema(&manifest::describe_tool(&cmd, info));
-        return serde_json::to_string_pretty(&schema).context("serializing schema");
+/// A tool's manifest entry, as `domainatoredux describe` gives it: what the GUI renders
+/// its dialogs from. A migrated tool's comes from its clap arguments. An unmigrated
+/// tool's is converted from its old config schema, whose property names are its
+/// config keys (until migration they need not equal the command line's).
+pub fn tool_manifest(tool: &str) -> Result<serde_json::Value> {
+    use serde_json::{json, Value};
+    let info = registry::tool_info(tool)
+        .with_context(|| format!("unknown tool {tool:?} (`domainatoredux --help` lists them)"))?;
+    if let Some(cmd) = args::tool_command(tool) {
+        return Ok(manifest::describe_tool(&cmd, info));
     }
+    let schema = legacy_schema(tool)?;
+    let parameters: Vec<Value> = schema["properties"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(name, prop)| legacy_parameter(name, prop))
+        .collect();
+    Ok(json!({
+        "name": info.name,
+        "category": info.category,
+        "summary": info.summary,
+        "description": schema["description"].as_str().unwrap_or(info.summary),
+        "parameters": parameters,
+        "required_outputs": info.required_outputs,
+        "mutually_exclusive": [],
+    }))
+}
+
+/// One property of an old config schema as a manifest parameter.
+fn legacy_parameter(name: &str, prop: &serde_json::Value) -> serde_json::Value {
+    use serde_json::{json, Map, Value};
+    let first_type = |p: &Value| -> String {
+        match &p["type"] {
+            Value::String(t) => t.clone(),
+            Value::Array(ts) => ts
+                .iter()
+                .filter_map(Value::as_str)
+                .find(|t| *t != "null")
+                .unwrap_or("string")
+                .to_string(),
+            _ => "string".to_string(),
+        }
+    };
+    let base = first_type(prop);
+    let multiple = base == "array";
+    let (ty, item) = if multiple {
+        (first_type(&prop["items"]), &prop["items"])
+    } else {
+        (base, prop)
+    };
+    let role = manifest::path_role(name);
+    let kind = if ty == "boolean" && !multiple {
+        "flag"
+    } else if role.is_some() {
+        "path"
+    } else {
+        "value"
+    };
+    let mut p = Map::new();
+    p.insert("name".into(), json!(name));
+    p.insert("flags".into(), json!([format!("--{name}")]));
+    p.insert(
+        "help".into(),
+        json!(prop["description"].as_str().unwrap_or_default()),
+    );
+    p.insert("kind".into(), json!(kind));
+    p.insert("type".into(), json!(ty));
+    if let Some(role) = role {
+        p.insert("role".into(), json!(role));
+    }
+    if multiple {
+        p.insert("multiple".into(), json!(true));
+    }
+    p.insert("required".into(), json!(false));
+    p.insert(
+        "default".into(),
+        prop.get("default").cloned().unwrap_or(Value::Null),
+    );
+    let choices: Vec<Value> = item["enum"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|v| !v.is_null())
+        .cloned()
+        .collect();
+    if !choices.is_empty() {
+        p.insert("choices".into(), Value::Array(choices));
+    }
+    for (theirs, ours) in [
+        ("minimum", "min"),
+        ("maximum", "max"),
+        ("exclusiveMinimum", "exclusive_min"),
+    ] {
+        if let Some(v) = item.get(theirs) {
+            p.insert(ours.into(), v.clone());
+        }
+    }
+    Value::Object(p)
+}
+
+/// The draft-07 JSON Schema of an unmigrated tool's config file, which
+/// [`tool_manifest`] turns into manifest parameters for the GUI. Each one goes when
+/// its tool is migrated.
+fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
-        "enum_report" => enum_schema(),
         "select_by_contig" => select_by_contig_schema(),
         "select_by_cds" => select_by_cds_schema(),
         "domainate" => domainate_schema(),
@@ -1546,7 +1308,6 @@ pub fn schema(tool: &str) -> Result<String> {
         "matrix_report" => matrix_report_schema(),
         "ssn_navigator" => ssn_navigator_schema(),
         "summary_report" => summary_report_schema(),
-        "hmmer_report" => hmmer_report_schema(),
         "hmmer_select" => hmmer_select_schema(),
         "hmmer_build" => hmmer_build_schema(),
         "hmmer_search" => hmmer_search_schema(),
@@ -1557,57 +1318,7 @@ pub fn schema(tool: &str) -> Result<String> {
     };
     let mut s = s;
     fill_common_descriptions(&mut s);
-    serde_json::to_string_pretty(&s).context("serializing schema")
-}
-
-/// The config-file schema of a migrated tool, from its manifest entry: a property per
-/// parameter, so the GUI's dialogs keep rendering from `schema` until they read the
-/// manifest itself.
-fn manifest_schema(tool: &serde_json::Value) -> serde_json::Value {
-    use serde_json::{json, Map, Value};
-    let mut props = Map::new();
-    for p in tool["parameters"].as_array().into_iter().flatten() {
-        let mut item = Map::new();
-        let ty = p["type"].clone();
-        if let Some(choices) = p["choices"].as_array() {
-            item.insert("enum".into(), Value::Array(choices.clone()));
-        }
-        for (ours, theirs) in [
-            ("min", "minimum"),
-            ("max", "maximum"),
-            ("exclusive_min", "exclusiveMinimum"),
-        ] {
-            if let Some(v) = p.get(ours) {
-                item.insert(theirs.into(), v.clone());
-            }
-        }
-        let mut prop = if p["kind"] == "flag" {
-            json!({"type": "boolean"})
-        } else if p["multiple"] == true {
-            item.insert("type".into(), ty);
-            json!({"type": ["array", "null"], "items": Value::Object(item)})
-        } else {
-            if let Some(Value::Array(e)) = item.get_mut("enum") {
-                e.push(Value::Null);
-            }
-            item.insert("type".into(), json!([ty, "null"]));
-            Value::Object(item)
-        };
-        if let Some(d) = p.get("default").filter(|d| !d.is_null()) {
-            prop["default"] = d.clone();
-        }
-        if let Some(h) = p["help"].as_str().filter(|h| !h.is_empty()) {
-            prop["description"] = json!(h);
-        }
-        props.insert(p["name"].as_str().unwrap_or_default().to_string(), prop);
-    }
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": format!("{} config", tool["name"].as_str().unwrap_or_default()),
-        "type": "object",
-        "additionalProperties": false,
-        "properties": props,
-    })
+    Ok(s)
 }
 
 /// Fill in a `description` for any top-level property that lacks one, from the
@@ -1752,144 +1463,6 @@ fn common_help(name: &str) -> Option<&'static str> {
         "z" => "Effective database size (Z) used for E-value calculation.",
         _ => return None,
     })
-}
-
-fn enum_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "enum_report config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
-            "input": {"type": "array", "items": {"type": "string"}, "description": "GenBank/FASTA input files"},
-            "output": {"type": ["string", "null"], "description": "Output path (stdout if omitted)"},
-            "by": {"enum": ["contig", "cds", "domain"], "default": "contig"},
-            "databases": {"type": "array", "items": {"type": "string"}, "description": "Restrict domains to these databases"},
-            "contigs": {"type": "array", "items": {"type": "string"}},
-            "contigs_file": {"type": ["string", "null"]},
-            "column_names": {"type": ["array", "null"], "items": {"type": "string"}, "description": "Override output column names"},
-            "ncbi_taxonomy_path": {"type": ["string", "null"]},
-            "json": {"type": ["string", "null"], "description": "Write streaming NDJSON (one compact object per row) here; '-' for stdout. Independent of `output`, which stays TSV"},
-            "columns": enum_columns_schema()
-        }
-    })
-}
-
-/// One `oneOf` entry of a report's `columns` items: the column `type` and the
-/// parameters that type takes. Every parameter is required -- the `ColumnSpec` /
-/// `HmmerReportColumn` variant fields have no defaults -- and nothing else is
-/// allowed, since both enums are `deny_unknown_fields`. The GUI's column builder
-/// renders from these entries (`title` as the choice, `description` as its hint).
-fn column_variant(
-    ty: &str,
-    title: &str,
-    description: &str,
-    params: serde_json::Value,
-) -> serde_json::Value {
-    use serde_json::json;
-    let mut properties = serde_json::Map::new();
-    properties.insert("type".into(), json!({ "const": ty }));
-    let mut required = vec![json!("type")];
-    for (name, prop) in params.as_object().cloned().unwrap_or_default() {
-        required.push(json!(name));
-        properties.insert(name, prop);
-    }
-    json!({
-        "title": title,
-        "description": description,
-        "type": "object",
-        "properties": properties,
-        "required": required,
-        "additionalProperties": false
-    })
-}
-
-/// A column type that takes no parameters.
-fn static_column(ty: &str, title: &str, description: &str) -> serde_json::Value {
-    column_variant(ty, title, description, serde_json::json!({}))
-}
-
-/// `enum_report`'s `columns`: one [`column_variant`] per [`ColumnSpec`] variant,
-/// in the order the GUI offers them. `column_schemas_match_their_enums` checks the
-/// two agree.
-fn enum_columns_schema() -> serde_json::Value {
-    use serde_json::json;
-    const TAX: &str = "Needs an NCBI taxonomy database (`ncbi_taxonomy_path`).";
-    let ranks = |what: &str| {
-        json!({
-            "type": "array",
-            "items": {"type": "string"},
-            "minItems": 1,
-            "description": format!("Ranks to report the {what} at, one column each, e.g. domain, phylum, genus, species; `self` is the record's own taxon")
-        })
-    };
-    json!({
-        "type": "array",
-        "description": "Ordered output columns; each is an object with a `type` tag and that type's parameters",
-        "items": {"oneOf": [
-            static_column("domains", "Domains", "Domain names, alphabetical and semicolon-separated, each listed once."),
-            static_column("domain_descriptions", "Domain descriptions", "Domain descriptions, alphabetical and semicolon-separated, each listed once."),
-            static_column("architecture", "Architecture", "Domains in order of their start position, semicolon-separated."),
-            static_column("architecture_detailed", "Architecture (detailed)", "Domain architecture per CDS: domains within a CDS separated by '/', CDSs by ';', and a CDS with no domains shown as 'no_domains'."),
-            static_column("domain_count", "Domain count", "The total number of domains."),
-            column_variant("named_domain_count", "Named domain count", "The number of Domainator domain features with this name, in a column named named_domain_count_<name>.",
-                json!({"name": {"type": "string", "description": "Domain name"}})),
-            static_column("score", "Score (sum)", "The sum of domain scores."),
-            static_column("identity", "Identity (sum)", "The sum of domain identities."),
-            static_column("domain_search", "Domain search hit", "Several columns describing the domain_search hit: best_query, query_description, query_start, query_end, query_length, match_start, match_end, match_strand, match_score, match_identity."),
-            static_column("length", "Length", "The contig, CDS or domain length."),
-            static_column("start", "Start", "The start coordinate of the feature."),
-            static_column("end", "End", "The end coordinate of the feature."),
-            static_column("strand", "Strand", "The strand of the feature."),
-            static_column("topology", "Topology", "The contig topology (mostly useful with `by: contig`)."),
-            static_column("sequence", "Sequence", "The contig, CDS or domain sequence."),
-            static_column("starts_with", "First residue", "The first character of the contig sequence."),
-            static_column("definition", "Definition", "The record's DEFINITION line."),
-            static_column("filename", "File name", "The input file the record came from."),
-            static_column("cds_count", "CDS count", "The number of CDSs."),
-            column_variant("feature_count", "Feature count", "The number of features of this type.",
-                json!({"feature": {"type": "string", "description": "Feature type, e.g. CDS"}})),
-            column_variant("qualifier", "Qualifier value", "Every value of this qualifier on features of this type, ';'-separated, in a column named qualifier_<feature>_<qualifier>.",
-                json!({
-                    "feature": {"type": "string", "description": "Feature type, e.g. CDS"},
-                    "qualifier": {"type": "string", "description": "Qualifier name, e.g. product"}
-                })),
-            column_variant("taxid", "Taxid at rank", &format!("The taxid at each given rank, in columns named taxid_<rank>. {TAX}"),
-                json!({"ranks": ranks("taxid")})),
-            column_variant("taxname", "Taxon name at rank", &format!("The taxon name at each given rank, in columns named taxname_<rank>. {TAX}"),
-                json!({"ranks": ranks("taxon name")})),
-            static_column("taxid_lineage", "Taxid lineage", &format!("Semicolon-separated taxids from the root to the record's taxon. {TAX}")),
-            static_column("taxname_lineage", "Taxon-name lineage", &format!("Semicolon-separated taxon names from the root to the record's taxon. {TAX}")),
-            static_column("rank_lineage", "Rank lineage", &format!("Semicolon-separated ranks from the root to the record's taxon. {TAX}")),
-            static_column("molecular_weight", "Molecular weight", "The molecular weight in daltons, computed for protein, DNA or RNA from the molecule_type annotation."),
-            static_column("fragment", "Fragment status", "Whether the protein or CDS is a fragment: complete, N (missing the N-terminus), C (missing the C-terminus), NC (missing both), or ? (missing ends unknown, e.g. from a UniProt ' (Fragment)' header). Only for rows that are a single protein or CDS (protein records, CDSs, and the domains of protein records); otherwise empty, with a warning. See also partial_count."),
-            static_column("partial_count", "Partial CDS count", "The number of partial CDSs: by contig, the CDSs with '<' or '>' in their location (for a protein record, 1 if it is a fragment); by cds, 1 if the CDS or protein is a fragment; by domain, 1 if the CDS or protein the domain is on is a fragment, whether or not the domain reaches the missing end."),
-            static_column("isoelectric_point", "Isoelectric point", "The protein's isoelectric point. Only defined for a contig with exactly one protein sequence."),
-            column_variant("net_charge", "Net charge", "The protein's net charge at the given pH. Only defined for a contig with exactly one protein sequence.",
-                json!({"ph": {"type": "string", "description": "pH, e.g. 7.0"}})),
-            column_variant("motif_count", "PROSITE motif count", "Occurrences of a PROSITE motif: protein motifs in proteins, nucleotide motifs in nucleic acids.",
-                json!({"pattern": {"type": "string", "description": "PROSITE pattern, e.g. C-x(2,4)-C"}})),
-            column_variant("repeat_count", "Repeat count", "The number of single-residue repeats at least this long; e.g. AGGKKK has repeat_count_1 = 3, repeat_count_2 = 2 and repeat_count_3 = 1.",
-                json!({"min_length": {"type": "string", "description": "Minimum repeat length, e.g. 2"}})),
-            append_column()
-        ]}
-    })
-}
-
-/// The `append` column type, shared by both reports.
-fn append_column() -> serde_json::Value {
-    column_variant(
-        "append",
-        "Constant column",
-        "A column with the same value on every row.",
-        serde_json::json!({
-            "name": {"type": "string", "description": "Column name"},
-            "value_type": {"enum": ["str", "int", "float"], "description": "Value type"},
-            "value": {"type": "string", "description": "Value"}
-        }),
-    )
 }
 
 fn select_by_contig_schema() -> serde_json::Value {
@@ -2498,35 +2071,6 @@ fn hmmer_compare_schema() -> serde_json::Value {
     })
 }
 
-fn hmmer_report_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "hmmer_report config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}, "description": "Input .hmm files (optionally gzip/BGZF-compressed)"},
-            "output": {"type": ["string", "null"], "description": "TSV output (stdout if omitted)"},
-            "column_names": {"type": ["array", "null"], "items": {"type": "string"}, "description": "Override output column names"},
-            "json": {"type": ["string", "null"], "description": "Write streaming NDJSON (one compact object per row) here; '-' for stdout. Independent of `output`, which stays TSV"},
-            "columns": {
-                "type": "array",
-                "description": "Ordered output columns (after the leading `name`); each is an object with a `type` tag and that type's parameters",
-                "items": {"oneOf": [
-                    static_column("source", "Source file", "The name of the HMM file the profile was read from."),
-                    static_column("acc", "Accession", "The profile's ACC line."),
-                    static_column("desc", "Description", "The profile's DESC line."),
-                    static_column("length", "Length", "The length of the profile (its number of nodes)."),
-                    static_column("consensus", "Consensus", "The profile's consensus residue line, if it has one."),
-                    static_column("alphabet", "Alphabet", "The profile's alphabet (amino, DNA or RNA)."),
-                    append_column()
-                ]}
-            }
-        }
-    })
-}
-
 fn hmmer_build_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -2719,7 +2263,6 @@ mod tests {
 
     fn every_tool() -> Vec<(&'static str, serde_json::Value)> {
         tools![
-            "enum_report" => EnumConfig,
             "select_by_contig" => SelectByContigConfig,
             "select_by_cds" => SelectByCdsConfig,
             "domainate" => DomainateConfig,
@@ -2745,7 +2288,6 @@ mod tests {
             "ssn_navigator" => SsnNavigatorConfig,
             "summary_report" => SummaryReportConfig,
             "hmmer_compare" => HmmerCompareConfig,
-            "hmmer_report" => HmmerReportConfig,
             "hmmer_select" => HmmerSelectConfig,
             "hmmer_build" => HmmerBuildConfig,
             "hmmer_search" => HmmerSearchConfig,
@@ -2754,8 +2296,7 @@ mod tests {
     }
 
     fn schema_properties(tool: &str) -> Vec<String> {
-        let text = schema(tool).unwrap_or_else(|e| panic!("no schema for {tool}: {e}"));
-        let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let parsed = legacy_schema(tool).unwrap_or_else(|e| panic!("no schema for {tool}: {e}"));
         parsed["properties"]
             .as_object()
             .unwrap_or_else(|| panic!("{tool} schema has no properties object"))
@@ -2768,14 +2309,14 @@ mod tests {
         default.as_object().unwrap().keys().cloned().collect()
     }
 
-    /// `domainatoredux schema <tool>` is the documented agent interface *and* what the
-    /// GUI renders its tool dialogs from (`cmd_tools::tool_schema`), while the
-    /// config struct is what actually gets deserialized. The two are written by
-    /// hand in different places, so they drift silently and in both directions:
+    /// An unmigrated tool's old config schema is what the GUI renders its dialog from
+    /// (converted by [`tool_manifest`]), while the config struct is what actually gets
+    /// deserialized. The two are written by hand in different places, so they drift
+    /// silently and in both directions:
     ///
-    /// * a field missing from the schema is a flag no agent and no GUI dialog can
-    ///   discover -- which is how `hmmer_build --window_length` and
-    ///   `format_db --log` went missing;
+    /// * a field missing from the schema is a flag no GUI dialog can discover --
+    ///   which is how `hmmer_build --window_length` and `format_db --log` went
+    ///   missing;
     /// * a property the struct does not have is worse, because every config struct
     ///   is `deny_unknown_fields`, so a config written to match the schema is
     ///   *rejected*.
@@ -2817,20 +2358,47 @@ mod tests {
     /// A tool the CLI accepts but `every_tool()` forgets is a tool this file stops
     /// guarding, so cross-check against the dispatcher's own list of names.
     #[test]
-    fn the_tool_list_covers_every_schema() {
+    fn the_tool_list_covers_every_unmigrated_tool() {
         let listed: Vec<&str> = every_tool().iter().map(|(t, _)| *t).collect();
-        for tool in &listed {
-            assert!(schema(tool).is_ok(), "{tool} is listed but has no schema");
+        for info in registry::TOOLS.iter().filter(|t| t.in_manifest) {
+            assert_eq!(
+                listed.contains(&info.name),
+                !info.migrated,
+                "{}: list the unmigrated tools, and only them",
+                info.name
+            );
+            assert_eq!(
+                legacy_schema(info.name).is_ok(),
+                !info.migrated,
+                "{}",
+                info.name
+            );
+            let m = tool_manifest(info.name).unwrap();
+            assert!(
+                !m["parameters"].as_array().unwrap().is_empty(),
+                "{}",
+                info.name
+            );
         }
-        assert!(
-            schema("not-a-tool").is_err(),
-            "unknown tools must be rejected"
-        );
-        assert_eq!(
-            listed.len(),
-            31,
-            "a tool was added or removed without updating this list"
-        );
+        assert!(tool_manifest("not-a-tool").is_err());
+    }
+
+    /// The GUI reads an unmigrated tool's dialog from its old schema, converted.
+    #[test]
+    fn a_legacy_schema_converts_to_manifest_parameters() {
+        let m = tool_manifest("select_by_contig").unwrap();
+        let param = |name: &str| {
+            m["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["name"] == name)
+                .unwrap_or_else(|| panic!("no {name}"))
+                .clone()
+        };
+        assert_eq!(param("input")["multiple"], true);
+        assert_eq!(param("input")["role"], "input");
+        assert_eq!(param("invert")["kind"], "flag");
     }
 
     /// A field `merge_cli` forgets is a CLI flag that silently does nothing: every
@@ -2880,198 +2448,5 @@ mod tests {
             };
             assert_eq!(merged.as_deref(), Some("all"), "{tool}");
         }
-    }
-
-    /// One of every `ColumnSpec` variant. The `match` has no wildcard, so a new
-    /// variant does not compile until it is listed here -- and then
-    /// `column_schemas_match_their_enums` makes the schema describe it.
-    fn every_enum_column() -> Vec<ColumnSpec> {
-        use ColumnSpec::*;
-        let s = || "x".to_string();
-        let all = vec![
-            Domains,
-            DomainDescriptions,
-            Sequence,
-            Start,
-            End,
-            Strand,
-            Length,
-            Topology,
-            Architecture,
-            ArchitectureDetailed,
-            Score,
-            Identity,
-            Definition,
-            Filename,
-            CdsCount,
-            DomainCount,
-            DomainSearch,
-            TaxidLineage,
-            TaxnameLineage,
-            RankLineage,
-            IsoelectricPoint,
-            StartsWith,
-            MolecularWeight,
-            Fragment,
-            PartialCount,
-            Taxid { ranks: vec![s()] },
-            Taxname { ranks: vec![s()] },
-            Qualifier {
-                feature: s(),
-                qualifier: s(),
-            },
-            FeatureCount { feature: s() },
-            Append {
-                name: s(),
-                value_type: "str".into(),
-                value: s(),
-            },
-            MotifCount { pattern: s() },
-            NetCharge { ph: "7".into() },
-            RepeatCount {
-                min_length: "2".into(),
-            },
-            NamedDomainCount { name: s() },
-        ];
-        for c in &all {
-            match c {
-                Domains
-                | DomainDescriptions
-                | Sequence
-                | Start
-                | End
-                | Strand
-                | Length
-                | Topology
-                | Architecture
-                | ArchitectureDetailed
-                | Score
-                | Identity
-                | Definition
-                | Filename
-                | CdsCount
-                | DomainCount
-                | DomainSearch
-                | TaxidLineage
-                | TaxnameLineage
-                | RankLineage
-                | IsoelectricPoint
-                | StartsWith
-                | MolecularWeight
-                | Fragment
-                | PartialCount
-                | Taxid { .. }
-                | Taxname { .. }
-                | Qualifier { .. }
-                | FeatureCount { .. }
-                | Append { .. }
-                | MotifCount { .. }
-                | NetCharge { .. }
-                | RepeatCount { .. }
-                | NamedDomainCount { .. } => {}
-            }
-        }
-        all
-    }
-
-    fn every_hmmer_column() -> Vec<HmmerReportColumn> {
-        use HmmerReportColumn::*;
-        let all = vec![
-            Source,
-            Acc,
-            Desc,
-            Length,
-            Consensus,
-            Alphabet,
-            Append {
-                name: "x".into(),
-                value_type: "str".into(),
-                value: "x".into(),
-            },
-        ];
-        for c in &all {
-            match c {
-                Source | Acc | Desc | Length | Consensus | Alphabet | Append { .. } => {}
-            }
-        }
-        all
-    }
-
-    /// Checks one report's `columns` schema against its column enum, both ways.
-    /// The GUI's column builder draws its choices and their parameter boxes from
-    /// the `oneOf` entries, and the enum is what deserializes the result, so a
-    /// variant the schema lacks can never be chosen, and an entry the enum lacks
-    /// builds a column the run rejects.
-    fn check_columns_schema<T: Serialize + serde::de::DeserializeOwned>(tool: &str, all: &[T]) {
-        let schema: serde_json::Value = serde_json::from_str(&schema(tool).unwrap()).unwrap();
-        let variants = schema["properties"]["columns"]["items"]["oneOf"]
-            .as_array()
-            .unwrap_or_else(|| panic!("{tool}: columns.items has no oneOf"))
-            .clone();
-        let type_of = |v: &serde_json::Value| {
-            v["properties"]["type"]["const"]
-                .as_str()
-                .unwrap()
-                .to_string()
-        };
-        let keys = |v: &serde_json::Value| -> Vec<String> {
-            let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
-            k.sort();
-            k
-        };
-        let mut types: Vec<String> = variants.iter().map(type_of).collect();
-        let n = types.len();
-        types.sort();
-        types.dedup();
-        assert_eq!(n, types.len(), "{tool}: a column type is described twice");
-        assert_eq!(
-            n,
-            all.len(),
-            "{tool}: the schema describes {n} column types, the enum has {}",
-            all.len()
-        );
-
-        for column in all {
-            let value = serde_json::to_value(column).unwrap();
-            let ty = value["type"].as_str().unwrap().to_string();
-            let variant = variants
-                .iter()
-                .find(|v| type_of(v) == ty)
-                .unwrap_or_else(|| panic!("{tool}: column type {ty:?} is missing from the schema"));
-            let mut required: Vec<String> = variant["required"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|r| r.as_str().unwrap().to_string())
-                .collect();
-            required.sort();
-            assert_eq!(
-                keys(&variant["properties"]),
-                keys(&value),
-                "{tool}.{ty}: schema parameters differ from the enum's fields"
-            );
-            assert_eq!(
-                required,
-                keys(&value),
-                "{tool}.{ty}: every field is required, since none has a default"
-            );
-            assert_eq!(
-                variant["additionalProperties"], false,
-                "{tool}.{ty}: the enum is deny_unknown_fields"
-            );
-            assert!(
-                variant["title"].is_string() && variant["description"].is_string(),
-                "{tool}.{ty}: the GUI needs a title and description"
-            );
-            // And what the schema describes, the enum reads back.
-            let _: T = serde_json::from_value(value.clone())
-                .unwrap_or_else(|e| panic!("{tool}.{ty}: {value} does not deserialize: {e}"));
-        }
-    }
-
-    #[test]
-    fn column_schemas_match_their_enums() {
-        check_columns_schema("enum_report", &every_enum_column());
-        check_columns_schema("hmmer_report", &every_hmmer_column());
     }
 }

@@ -3,8 +3,10 @@
 //! Shared with `build.rs` through `#[path]`, which parses every spec file before
 //! embedding it, so a misspelled key or a malformed file fails the build rather
 //! than the dialog. That is also why this module depends on nothing but serde.
-//! The checks that need the tool's schema (every CLI option listed, `cli_default`
-//! equal to the schema's `default`, ...) are tests in `tool_specs.rs`.
+//! A spec is GUI policy layered over the tool's manifest entry (`domainatoredux
+//! describe`): the fields marked "resolved" are filled from the manifest when the
+//! specs load (`tool_specs::specs`), and the checks that need the manifest (every
+//! parameter listed, defaults that fit, ...) are tests in `tool_specs.rs`.
 
 use std::collections::BTreeMap;
 
@@ -16,10 +18,15 @@ use serde_json::Value;
 pub struct ToolSpec {
     pub id: String,
     pub label: String,
-    /// One of `cmd_tools::TOOL_CATEGORIES`.
+    /// Resolved: the Tools-menu group, `cmd_tools::CATEGORY_LABELS`' label for the
+    /// tool's manifest category.
+    #[serde(skip)]
     pub category: String,
     pub description: String,
-    /// Every property of the tool's schema, in dialog order.
+    /// Resolved: the tool's manifest entry.
+    #[serde(skip)]
+    pub manifest: Value,
+    /// Every parameter of the tool's manifest entry except `-v`/`-q`, in dialog order.
     pub fields: Vec<FieldSpec>,
 }
 
@@ -28,27 +35,32 @@ pub struct ToolSpec {
 pub struct FieldSpec {
     pub name: String,
     pub label: String,
-    /// The hint under the field. Unset, the dialog shows the schema property's
-    /// `description` -- the same text `domainatoredux schema <id>` gives agents.
+    /// The hint under the field. Unset, the dialog shows the parameter's manifest
+    /// `help` -- the same text `domainatoredux describe` gives agents.
     #[serde(default)]
     pub help: Option<String>,
-    /// One of `cmd_tools::ROLES`.
-    #[serde(default = "param_role")]
+    /// The control the dialog draws, one of `cmd_tools::ROLES`. Normally derived from
+    /// the manifest parameter (`tool_specs::derived_role`); the spec may set it only
+    /// for a tool not yet migrated to the 1.0 interface, whose names do not follow
+    /// upstream's rules.
+    #[serde(default, rename = "role")]
+    pub role_override: Option<String>,
+    /// Resolved: `role_override`, else the derived role.
+    #[serde(skip)]
     pub role: String,
     /// Inputs only: the file types the dropdown offers. Written as one value
     /// (`file_type: hmm`) or a list (`file_type: [sequence, hmm]`).
     #[serde(default, deserialize_with = "one_or_many")]
     pub file_type: Vec<String>,
+    /// Marks the field required in the dialog. Resolved: also true when the manifest
+    /// says so (a spec can tighten, never loosen).
     #[serde(default)]
     pub required: bool,
     /// `false` for a CLI option the dialog does not offer; it is never sent, so
     /// the CLI default applies.
     #[serde(default = "shown")]
     pub show: bool,
-    /// The schema's `default`, copied here so the file shows it; test-checked.
-    #[serde(default)]
-    pub cli_default: Option<Value>,
-    /// What the dialog seeds instead of `cli_default`.
+    /// What the dialog seeds instead of the manifest `default`.
     #[serde(default)]
     pub gui_default: Option<Value>,
     /// Input roles only: which group of the dropdown comes first.
@@ -67,20 +79,23 @@ pub struct FieldSpec {
     #[serde(default)]
     pub output_name: Option<String>,
     /// `columns` role only: GUI overrides for the column builder, keyed by column
-    /// `type`. The types and their parameters come from the schema's
-    /// `columns.items.oneOf`; this only relabels, hides, and seeds them.
+    /// name. The columns and their arguments come from the manifest parameter's
+    /// `columns`; this only relabels, hides, and seeds them.
     #[serde(default)]
     pub column_types: BTreeMap<String, ColumnTypeSpec>,
+    /// Resolved: the manifest parameter.
+    #[serde(skip)]
+    pub param: Value,
 }
 
-/// The builder's view of one column type (a schema `oneOf` entry).
+/// The builder's view of one column (a manifest `columns` entry).
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColumnTypeSpec {
-    /// Replaces the entry's `title` in the type dropdown.
+    /// Replaces the column's name in the dropdown.
     #[serde(default)]
     pub label: Option<String>,
-    /// Replaces the entry's `description` as the row's hint.
+    /// Replaces the column's `help` as the row's hint.
     #[serde(default)]
     pub help: Option<String>,
     /// `false` leaves the type out of the dropdown.
@@ -90,14 +105,14 @@ pub struct ColumnTypeSpec {
     pub params: BTreeMap<String, ColumnParamSpec>,
 }
 
-/// The builder's view of one parameter of a column type.
+/// The builder's view of one argument of a column.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColumnParamSpec {
-    /// The text beside the box (default: the parameter name).
+    /// The text beside the box (default: the argument name).
     #[serde(default)]
     pub label: Option<String>,
-    /// The box's tooltip and placeholder (default: the schema's description).
+    /// The box's tooltip and placeholder.
     #[serde(default)]
     pub help: Option<String>,
     /// What a newly added column of this type starts with.
@@ -120,10 +135,6 @@ fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D:
         OneOrMany::One(s) => vec![s],
         OneOrMany::Many(v) => v,
     })
-}
-
-fn param_role() -> String {
-    "param".into()
 }
 
 fn shown() -> bool {

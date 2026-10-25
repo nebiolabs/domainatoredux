@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux compare_contigs`. Format: see README.md in this directory.
 id: compare_contigs
 label: "Compare contigs"
-category: "Matrices & networks"
 description: "Neighborhood-similarity matrix from domain content (step 3 alternative; pure-Rust)."
 fields:
   - name: input
@@ -18,15 +17,12 @@ fields:
     output_name: "{stem}.compare.hdf5"
   - name: ji
     label: "Jaccard weight"
-    cli_default: 0.5
   - name: ai
     label: "Adjacency weight"
-    cli_default: 0.5
   - name: k
     label: "kNN k"
   - name: lb
     label: "Lower bound"
-    cli_default: 0.0
   - name: mst_knn
     label: "MST-kNN k"
   - name: dense
@@ -44,8 +40,6 @@ fields:
   - name: cpu
     show: false
     label: "Cpu"
-    cli_default: 0
   - name: max_output_gb
     show: false
     label: "Max output gb"
-    cli_default: 25.0

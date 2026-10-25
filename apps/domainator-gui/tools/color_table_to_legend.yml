@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux color_table_to_legend`. Format: see README.md in this directory.
 id: color_table_to_legend
 label: "Color table → legend"
-category: "Color"
 description: "Render a color table as an SVG legend."
 fields:
   - name: input
@@ -18,4 +17,3 @@ fields:
     output_name: "{stem}.legend.svg"
   - name: title
     label: "Title"
-    cli_default: "Legend"

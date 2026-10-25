@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { runTool, toolSchemaCached } from "./api";
+  import { runTool } from "./api";
   import { parentDir, ws } from "./state.svelte";
   import { fieldAccepts, isInputRole, placeFiles, type TypedPath } from "./toolInputs";
   import ColumnBuilder from "./ColumnBuilder.svelte";
   import { columnTypes, toColumns, toRows } from "./columns";
-  import type { JsonSchema, JsonSchemaProp, ToolField, ToolMeta } from "./types";
+  import type { ToolField, ToolMeta } from "./types";
 
   let {
     tool,
@@ -23,10 +23,6 @@
     onclose: () => void;
   } = $props();
 
-  const enumHasNull = (p: JsonSchemaProp | undefined) =>
-    Array.isArray(p?.enum) && p.enum.includes(null);
-
-  let schema = $state<JsonSchema | null>(null);
   let values = $state<Record<string, any>>({});
   let error = $state<string | null>(null);
   let running = $state(false);
@@ -112,11 +108,7 @@
   }
   const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const showValue = (v: unknown) => (v === null || v === undefined ? "unset" : Array.isArray(v) ? v.join(",") || "empty" : String(v));
-  function propType(p: JsonSchemaProp | undefined): string {
-    if (!p) return "string";
-    return Array.isArray(p.type) ? (p.type.find((t) => t !== "null") ?? "string") : (p.type ?? "string");
-  }
-  const schemaProp = (name: string): JsonSchemaProp | undefined => schema?.properties?.[name];
+  const isNumber = (field: ToolField) => field.value_type === "integer" || field.value_type === "number";
 
   $effect(() => {
     void tool;
@@ -124,75 +116,69 @@
     const placement = meta ? placeFiles(meta, files) : { assigned: {}, left: [] };
     leftOut = placement.left.map((f) => f.path.split(/[\\/]/).pop() ?? f.path);
     error = null;
-    schema = null;
     editedOutputs = new Set();
     if (!meta) {
       error = `Unknown tool "${tool}".`;
       return;
     }
-    toolSchemaCached(tool)
-      .then((schemaText) => {
-        schema = JSON.parse(schemaText) as JsonSchema;
-        const v: Record<string, any> = {};
-        // Seed params from the field's default (the spec's GUI override, else the
-        // CLI's). Arrays are shown as comma-separated text, except in the column
-        // builder, which edits the list itself.
-        for (const field of meta?.fields ?? []) {
-          const d = field.default;
-          if (field.role === "columns") {
-            v[field.name] = toRows(d, columnTypes(field, schemaProp(field.name)));
-          } else if (d !== undefined && d !== null) {
-            v[field.name] = Array.isArray(d) ? d.join(",") : d;
-          } else if (enumHasNull(schemaProp(field.name))) {
-            v[field.name] = ""; // optional enum → blank, matching the CLI's unset default
-          }
+    const v: Record<string, any> = {};
+    // Seed params from the field's default (the spec's GUI override, else the
+    // CLI's). Arrays are shown as comma-separated text, except in the column
+    // builder, which edits the list itself.
+    for (const field of meta?.fields ?? []) {
+      const d = field.default;
+      if (field.role === "columns") {
+        v[field.name] = toRows(d, columnTypes(field));
+      } else if (d !== undefined && d !== null) {
+        v[field.name] = Array.isArray(d) ? d.join(",") : d;
+      } else if (field.choices.length) {
+        v[field.name] = ""; // optional choice → blank, matching the CLI's unset default
+      }
+    }
+    // Seed input dropdowns with the placed files, else per the spec's `select`.
+    let primaryInput = "";
+    for (const field of meta?.fields ?? []) {
+      if (isInputRole(field.role)) {
+        const seeded = initial?.[field.name] ?? placement.assigned[field.name];
+        const picks: string[] = seeded == null
+          ? [initialChoice(field, fileGroups(field))]
+          : (Array.isArray(seeded) ? seeded : [seeded]).map(String);
+        const pick = picks.find(Boolean) ?? "";
+        // `input_files` is a list of dropdowns, one per file.
+        v[field.name] = field.role === "input_files" ? (picks.length ? picks : [""]) : pick;
+        // `input` names the output when it has a value; else the first input that does.
+        if (pick && (field.name === "input" || !primaryInput)) primaryInput = pick;
+      }
+    }
+    // Seed output filenames from the primary input's stem.
+    const stem = primaryInput ? stemOf(primaryInput) : "output";
+    for (const field of meta?.fields ?? []) {
+      if (field.role === "output_file" && field.output_name) {
+        v[field.name] = field.output_name.replaceAll("{stem}", stem);
+      }
+    }
+    // Clone: overlay a prior job's params (which are in the *collected* shape —
+    // output_file is a full path, input_files/arrays are arrays) onto the form.
+    if (initial) {
+      for (const field of meta?.fields ?? []) {
+        const raw = initial[field.name];
+        if (raw === undefined || raw === null) continue;
+        if (field.role === "output_file") {
+          v[field.name] = String(raw).split(/[\\/]/).pop() ?? "";
+          editedOutputs.add(field.name);
+        } else if (field.role === "input_files") {
+          const list = (Array.isArray(raw) ? raw : [raw]).map(String);
+          v[field.name] = list.length ? list : [""];
+        } else if (field.role === "columns") {
+          v[field.name] = toRows(raw, columnTypes(field));
+        } else if (Array.isArray(raw)) {
+          v[field.name] = raw.join(",");
+        } else {
+          v[field.name] = raw;
         }
-        // Seed input dropdowns with the placed files, else per the spec's `select`.
-        let primaryInput = "";
-        for (const field of meta?.fields ?? []) {
-          if (isInputRole(field.role)) {
-            const seeded = initial?.[field.name] ?? placement.assigned[field.name];
-            const picks: string[] = seeded == null
-              ? [initialChoice(field, fileGroups(field))]
-              : (Array.isArray(seeded) ? seeded : [seeded]).map(String);
-            const pick = picks.find(Boolean) ?? "";
-            // `input_files` is a list of dropdowns, one per file.
-            v[field.name] = field.role === "input_files" ? (picks.length ? picks : [""]) : pick;
-            // `input` names the output when it has a value; else the first input that does.
-            if (pick && (field.name === "input" || !primaryInput)) primaryInput = pick;
-          }
-        }
-        // Seed output filenames from the primary input's stem.
-        const stem = primaryInput ? stemOf(primaryInput) : "output";
-        for (const field of meta?.fields ?? []) {
-          if (field.role === "output_file" && field.output_name) {
-            v[field.name] = field.output_name.replaceAll("{stem}", stem);
-          }
-        }
-        // Clone: overlay a prior job's params (which are in the *collected* shape —
-        // output_file is a full path, input_files/arrays are arrays) onto the form.
-        if (initial) {
-          for (const field of meta?.fields ?? []) {
-            const raw = initial[field.name];
-            if (raw === undefined || raw === null) continue;
-            if (field.role === "output_file") {
-              v[field.name] = String(raw).split(/[\\/]/).pop() ?? "";
-              editedOutputs.add(field.name);
-            } else if (field.role === "input_files") {
-              const list = (Array.isArray(raw) ? raw : [raw]).map(String);
-              v[field.name] = list.length ? list : [""];
-            } else if (field.role === "columns") {
-              v[field.name] = toRows(raw, columnTypes(field, schemaProp(field.name)));
-            } else if (Array.isArray(raw)) {
-              v[field.name] = raw.join(",");
-            } else {
-              v[field.name] = raw;
-            }
-          }
-        }
-        values = v;
-      })
-      .catch((e) => (error = String(e)));
+      }
+    }
+    values = v;
   });
 
   function join(dir: string, name: string): string {
@@ -213,20 +199,15 @@
         const name = String(val ?? "").trim();
         if (name) out[field.name] = join(folder, name);
       } else if (field.role === "columns") {
-        out[field.name] = toColumns(Array.isArray(val) ? val : [], columnTypes(field, schemaProp(field.name)));
+        out[field.name] = toColumns(Array.isArray(val) ? val : [], columnTypes(field));
       } else {
-        const prop = schemaProp(field.name);
-        const t = propType(prop);
-        if (t === "boolean") {
+        if (field.kind === "flag") {
           if (val === true) out[field.name] = true;
-        } else if (t === "integer" || t === "number") {
-          if (val !== "" && val !== undefined && val !== null) out[field.name] = Number(val);
-        } else if (t === "array") {
+        } else if (field.multiple) {
           const list = String(val ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-          if (list.length) {
-            const items = prop?.items?.type;
-            out[field.name] = items === "integer" || items === "number" ? list.map(Number) : list;
-          }
+          if (list.length) out[field.name] = isNumber(field) ? list.map(Number) : list;
+        } else if (isNumber(field)) {
+          if (val !== "" && val !== undefined && val !== null) out[field.name] = Number(val);
         } else {
           if (val !== "" && val !== undefined && val !== null) out[field.name] = val;
         }
@@ -291,21 +272,18 @@
 
     {#if error}<div class="err">{error}</div>{/if}
 
-    {#if error && !schema}
+    {#if !meta}
       <!-- error banner already shown above; nothing else to render -->
-    {:else if !meta || !schema}
-      <div class="msg">Loading…</div>
     {:else}
       <div class="fields">
         {#each meta.fields as field (field.name)}
           {#if field.role === "columns"}
             <div class="field builder-field">
               <span class="flabel">{field.label}</span>
-              <ColumnBuilder types={columnTypes(field, schemaProp(field.name))} bind:rows={values[field.name]} />
+              <ColumnBuilder types={columnTypes(field)} bind:rows={values[field.name]} />
               {#if field.help}<span class="hint">{field.help}</span>{/if}
             </div>
           {:else}
-          {@const prop = schemaProp(field.name)}
           <label class="field">
             <span class="flabel">{field.label}{#if field.required}<span class="req">*</span>{/if}</span>
 
@@ -363,24 +341,30 @@
               {/if}
             {:else if field.role === "output_file"}
               <input type="text" bind:value={values[field.name]} oninput={() => editedOutputs.add(field.name)} placeholder="filename" />
-            {:else if prop?.enum}
+            {:else if field.choices.length && !field.multiple}
               <select bind:value={values[field.name]}>
-                {#if enumHasNull(prop) || !field.required}
+                {#if !field.required}
                   <option value="">{field.cli_default != null ? `(default: ${showValue(field.cli_default)})` : "(default)"}</option>
                 {/if}
-                {#each prop.enum.filter((o) => o !== null) as opt (opt)}<option value={opt}>{opt}</option>{/each}
+                {#each field.choices.map(String) as opt (opt)}<option value={opt}>{opt}</option>{/each}
               </select>
-            {:else if propType(prop) === "boolean"}
+            {:else if field.kind === "flag"}
               <input type="checkbox" bind:checked={values[field.name]} />
-            {:else if propType(prop) === "integer" || propType(prop) === "number"}
-              <input type="number" step="any" bind:value={values[field.name]} />
-            {:else if propType(prop) === "array"}
+            {:else if field.multiple}
               <input type="text" bind:value={values[field.name]} placeholder="comma, separated" />
+            {:else if isNumber(field)}
+              <input
+                type="number"
+                step={field.value_type === "integer" ? 1 : "any"}
+                min={field.min ?? field.exclusive_min ?? undefined}
+                max={field.max ?? undefined}
+                bind:value={values[field.name]}
+              />
             {:else}
               <input type="text" bind:value={values[field.name]} />
             {/if}
 
-            {#if field.help ?? prop?.description}<span class="hint">{field.help ?? prop?.description}</span>{/if}
+            {#if field.help}<span class="hint">{field.help}</span>{/if}
             {#if field.role === "param" && !sameValue(field.default, field.cli_default)}
               <span class="hint">GUI default; the command line's is {showValue(field.cli_default)}.</span>
             {/if}
@@ -560,10 +544,6 @@
     align-self: center;
     color: var(--text-dim);
     font-size: 12px;
-  }
-  .msg {
-    padding: 20px;
-    color: var(--text-dim);
   }
   .builder-field {
     align-items: start;

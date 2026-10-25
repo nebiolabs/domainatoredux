@@ -166,6 +166,13 @@ allowlisted option fails again. The regeneration keeps each row's hand-written `
 `deferred:` (not ported, on purpose), `port-only:` (this port's alone), `upstream:`, or
 `todo:` (the 1.0 migration; none may remain once it is done).
 
+A tool on the 1.0 interface may lack an upstream option only through its registry entry's
+`unsupported` list (`crates/domainator-config/src/registry.rs`), which names the option
+with upstream's default. A config file may then set it to that default, so upstream's
+`--print_config` output still loads, and any other value is an error saying the option is
+not supported. The test checks each entry against upstream's manifest, and fails on a
+migrated tool's `missing` row that is not in the list.
+
 ## Keeping in sync when the upstream pin moves
 
 `scripts/sync_upstream.sh` fast-forwards the clone and prints the changelog. After

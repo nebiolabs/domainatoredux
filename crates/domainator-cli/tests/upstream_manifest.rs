@@ -180,7 +180,8 @@ fn aspects(ours: &Map<String, Value>, theirs: &Map<String, Value>) -> Vec<(Strin
         };
         push("default", default(ours), default(theirs));
     }
-    let columns = |m: &Map<String, Value>| bare(&json!({"c": get(m, "columns")}))["c"].clone();
+    let columns =
+        |m: &Map<String, Value>| bare(&json!({"columns": get(m, "columns")}))["columns"].clone();
     push("columns", columns(ours), columns(theirs));
     out
 }
@@ -300,6 +301,13 @@ fn seed_class(r: &Row) -> String {
     if r.parameter.starts_with("html_") {
         return "deferred:html".to_string();
     }
+    if r.aspect == "missing" {
+        let unsupported = domainator_config::registry::tool_info(&r.tool)
+            .is_some_and(|t| t.unsupported.iter().any(|(n, _)| *n == r.parameter));
+        if unsupported {
+            return "deferred:unsupported".to_string();
+        }
+    }
     "todo:1.0-cli".to_string()
 }
 
@@ -382,6 +390,7 @@ fn check_against_the_allowlist() {
             r.aspect
         );
     }
+    check_unsupported(&theirs, &listed);
     let listed: BTreeSet<Row> = listed.into_iter().map(|(r, _, _)| r).collect();
     let actual: BTreeSet<Row> = actual.into_iter().collect();
     let new: Vec<&Row> = actual.difference(&listed).collect();
@@ -407,4 +416,51 @@ fn check_against_the_allowlist() {
         stale.len(),
         show(&stale)
     );
+}
+
+/// A migrated tool lacks an upstream option only as a registry `unsupported` entry,
+/// which accepts upstream's default from a config file; so every `missing` row of a
+/// migrated tool is one, its default is upstream's, and its class is `deferred:`.
+fn check_unsupported(theirs: &Value, listed: &[(Row, String, String)]) {
+    use domainator_config::registry::TOOLS;
+    for info in TOOLS.iter().filter(|t| t.migrated) {
+        let upstream: &[Value] = theirs["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == info.name)
+            .and_then(|t| t["parameters"].as_array())
+            .map_or(&[], Vec::as_slice);
+        for (name, default) in info.unsupported {
+            let p = upstream
+                .iter()
+                .find(|p| p["name"] == *name)
+                .unwrap_or_else(|| panic!("{}: unsupported {name} is not upstream's", info.name));
+            let default: Value = serde_json::from_str(default).unwrap();
+            assert_eq!(
+                p["default"], default,
+                "{}: unsupported {name}: upstream's default",
+                info.name
+            );
+            let row = listed.iter().find(|(r, _, _)| {
+                r.tool == info.name && r.parameter == *name && r.aspect == "missing"
+            });
+            assert!(
+                row.is_some_and(|(_, class, _)| class.starts_with("deferred:")),
+                "{}: unsupported {name} needs a deferred: `missing` row",
+                info.name
+            );
+        }
+        for (r, _, _) in listed {
+            if r.tool == info.name && r.aspect == "missing" {
+                assert!(
+                    info.unsupported.iter().any(|(n, _)| *n == r.parameter),
+                    "{}: upstream's {} is missing; add it, or list it in the registry's \
+                     `unsupported` so upstream configs still load",
+                    info.name,
+                    r.parameter
+                );
+            }
+        }
+    }
 }

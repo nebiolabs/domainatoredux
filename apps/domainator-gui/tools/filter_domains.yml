@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux filter_domains`. Format: see README.md in this directory.
 id: filter_domains
 label: "Filter domains"
-category: "Annotation & search"
 description: "Remove domain annotations from records by e-value, overlap, name, or database (keeps the sequences)."
 fields:
   - name: input
@@ -18,10 +17,8 @@ fields:
     output_name: "{stem}.filtered.gb"
   - name: evalue
     label: "Max E-value"
-    cli_default: 100000000.0
   - name: max_overlap
     label: "Max overlap"
-    cli_default: 1.0
   - name: domains
     label: "Keep domains"
   - name: domains_file
@@ -36,7 +33,6 @@ fields:
     label: "Remove databases"
   - name: annotation_type
     label: "Annotation type"
-    cli_default: "all"
   - name: contigs
     label: "Restrict to contigs"
   - name: contigs_file

@@ -16,8 +16,8 @@ Three counts appear in this project and they measure different things:
 
 | Count | What it is |
 | --- | --- |
-| **35** | subcommands of the `domainatoredux` executable (`domainatoredux --help`), including the `inspect`, `convert` and `schema` dev/meta commands |
-| **32** | tools with a `--config` schema (`domainatoredux schema <tool>`) — all but those three |
+| **36** | subcommands of the `domainatoredux` executable (`domainatoredux --help`), including the `inspect` and `convert` dev commands and the `describe` and `completion` meta commands |
+| **32** | tools in the manifest (`domainatoredux describe`), each with a `--config` file — all but those four |
 | **29** | tools wired into the GUI's Tools menu |
 | **41 rows below** | upstream Python scripts, ported *and* deliberately unported |
 
@@ -26,8 +26,8 @@ and [the parity harness](parity.md) that enforces the port's fidelity.
 
 Partial features and fragments (upstream 0.12.0) are ported across every tool that has
 them. That covers marker-preserving slicing with `<`/`>` on cut ends, `/codon_start`
-handling, `--partial` on the eight tools that take it, and `enum_report --fragment` /
-`--partial_count`. They are checked by the parity sweep's `extra:` invocations; see
+handling, `--partial` on the eight tools that take it, and `enum_report`'s `fragment` and
+`partial_count` columns. They are checked by the parity sweep's `extra:` invocations; see
 [File formats](file-formats.md#partial-features-and-fragments). `find_features.py` and
 `domainator_db_download.py` gained `--partial` upstream, but neither tool is ported.
 

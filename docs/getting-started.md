@@ -49,11 +49,11 @@ the tools are shaped this way.
 
 ## 3. Tabulate the annotations
 
-`enum_report` writes a table, one row per contig, CDS or domain. **The order of the column
-flags is the order of the output columns:**
+`enum_report` writes a table, one row per contig, CDS or domain. **The order of
+`--columns` is the order of the output columns:**
 
 ```bash
-domainatoredux enum_report -i annotated.gb --domains --length -o report.tsv
+domainatoredux enum_report -i annotated.gb --columns domains length -o report.tsv
 ```
 
 ```

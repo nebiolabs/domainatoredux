@@ -2,19 +2,22 @@
 //! embedded at compile time by `build.rs` (which also refuses a file that does
 //! not parse). See `tools/README.md` for the format.
 //!
-//! A spec lists **every** property of the tool's schema, whether or not the dialog
-//! shows it, next to the CLI default. That is what lets a developer see and override
-//! the defaults in one place, and it is why the tests below compare each spec
-//! against `domainator_config::schema`. The schema is what the config struct
-//! deserializes, and every config struct is `deny_unknown_fields`.
+//! A spec is GUI policy over the tool's manifest entry
+//! (`domainator_config::tool_manifest`, what `domainatoredux describe` prints): labels,
+//! dialog order, which files an input offers, GUI defaults. It lists **every**
+//! manifest parameter except `-v`/`-q` (which no dialog offers), shown or not, so a new CLI option fails a test
+//! here until someone decides whether the dialog offers it. Types, choices, defaults,
+//! roles and help come from the manifest, filled in when the specs load.
 
 use std::sync::OnceLock;
+
+use serde_json::Value;
 
 pub use crate::tool_spec_types::{FieldSpec, ToolSpec};
 
 include!(concat!(env!("OUT_DIR"), "/tool_specs.rs"));
 
-/// Every spec, in file-name order.
+/// Every spec, in file-name order, resolved against its tool's manifest.
 pub fn specs() -> &'static [ToolSpec] {
     static SPECS: OnceLock<Vec<ToolSpec>> = OnceLock::new();
     SPECS.get_or_init(|| {
@@ -23,69 +26,134 @@ pub fn specs() -> &'static [ToolSpec] {
             .map(|(name, text)| {
                 // build.rs parsed the same text with the same types, so this
                 // cannot fail on anything that compiled.
-                serde_yaml::from_str(text).unwrap_or_else(|e| panic!("tools/{name}: {e}"))
+                let spec: ToolSpec =
+                    serde_yaml::from_str(text).unwrap_or_else(|e| panic!("tools/{name}: {e}"));
+                resolve(spec)
             })
             .collect()
     })
 }
 
+/// The manifest parameter `name` of a tool's manifest entry.
+pub fn manifest_param<'a>(manifest: &'a Value, name: &str) -> Option<&'a Value> {
+    manifest["parameters"]
+        .as_array()?
+        .iter()
+        .find(|p| p["name"] == name)
+}
+
+/// The dialog role a manifest parameter implies: a report's column builder, an input
+/// dropdown (a list of them for a multiple input), an output name, or a plain
+/// value. A directory is an input only when the spec says which files it offers
+/// (the taxonomy database); a program path is a plain value, and never shown.
+pub fn derived_role(param: &Value, has_file_type: bool) -> &'static str {
+    match (param["kind"].as_str(), param["role"].as_str()) {
+        (Some("columns"), _) => "columns",
+        (_, Some("input")) if param["multiple"] == true => "input_files",
+        (_, Some("input")) => "input_file",
+        (_, Some("output")) => "output_file",
+        (_, Some("directory")) if has_file_type => "input_file",
+        _ => "param",
+    }
+}
+
+fn resolve(mut spec: ToolSpec) -> ToolSpec {
+    // A spec for a tool the manifest does not know has no parameters to resolve
+    // against; `one_spec_file_per_tool_named_after_it` names the file.
+    spec.manifest = domainator_config::tool_manifest(&spec.id).unwrap_or(Value::Null);
+    spec.category = spec.manifest["category"]
+        .as_str()
+        .and_then(crate::cmd_tools::category_label)
+        .unwrap_or_default()
+        .to_string();
+    // An unmigrated tool's names do not follow upstream's rules, so its spec names
+    // every non-`param` role itself.
+    let migrated = domainator_config::registry::tool_info(&spec.id).is_some_and(|t| t.migrated);
+    for f in &mut spec.fields {
+        f.param = manifest_param(&spec.manifest, &f.name)
+            .cloned()
+            .unwrap_or(Value::Null);
+        let derived = if migrated {
+            derived_role(&f.param, !f.file_type.is_empty())
+        } else {
+            "param"
+        };
+        f.role = f
+            .role_override
+            .clone()
+            .unwrap_or_else(|| derived.to_string());
+        f.required |= f.param["required"] == true;
+    }
+    spec
+}
+
 impl FieldSpec {
     /// What the dialog seeds: the GUI override, else the CLI default.
-    pub fn effective_default(&self) -> Option<&serde_json::Value> {
-        self.gui_default.as_ref().or(self.cli_default.as_ref())
+    pub fn effective_default(&self) -> Option<&Value> {
+        self.gui_default
+            .as_ref()
+            .or(self.param.get("default").filter(|d| !d.is_null()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cmd_tools::{ROLES, TOOL_CATEGORIES};
+    use crate::cmd_tools::ROLES;
     use crate::tool_spec_types::Select;
-    use serde_json::Value;
+    use domainator_config::columns::{parse_column, ColumnDef};
+    use domainator_config::registry::tool_info;
 
-    fn schema_props(tool: &str) -> serde_json::Map<String, Value> {
-        let text =
-            domainator_config::schema(tool).unwrap_or_else(|e| panic!("{tool}: no schema: {e}"));
-        let v: Value = serde_json::from_str(&text).unwrap();
-        v["properties"].as_object().unwrap().clone()
+    /// Parameters every tool has and no spec lists (`-v`/`-q`): a job's log level is
+    /// the app's business.
+    const COMMON_PARAMETERS: [&str; 2] = ["verbose", "quiet"];
+
+    fn catalog(tool: &str) -> &'static [ColumnDef] {
+        tool_info(tool)
+            .and_then(|t| t.columns)
+            .unwrap_or_else(|| panic!("{tool} has no column catalog"))
     }
 
-    /// Numbers compare by value: the schema writes `1000.0`, and a spec that says
-    /// `1000` means the same default.
-    fn same_value(a: &Value, b: &Value) -> bool {
-        match (a, b) {
-            (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
-            (Value::Array(x), Value::Array(y)) => {
-                x.len() == y.len() && x.iter().zip(y).all(|(a, b)| same_value(a, b))
-            }
-            _ => a == b,
+    /// Whether `v` is a value of manifest parameter `param`: its type, one of its
+    /// choices, within its bounds; a list of such for a multiple parameter.
+    fn fits_param(v: &Value, param: &Value) -> Result<(), String> {
+        if param["multiple"] == true {
+            let Some(items) = v.as_array() else {
+                return Err(format!("{v} is not a list"));
+            };
+            return items.iter().try_for_each(|i| fits_one(i, param));
         }
+        fits_one(v, param)
     }
 
-    /// The JSON types a schema property admits (`"type"` may be a string or a
-    /// list). An `enum` without a `type` has none; membership is its check.
-    fn prop_types(prop: &Value) -> Vec<String> {
-        match &prop["type"] {
-            Value::String(s) => vec![s.clone()],
-            Value::Array(a) => a
-                .iter()
-                .filter_map(|t| t.as_str().map(str::to_string))
-                .collect(),
-            _ => Vec::new(),
-        }
-    }
-
-    fn value_fits_type(v: &Value, t: &str) -> bool {
-        match t {
-            "string" => v.is_string(),
+    fn fits_one(v: &Value, param: &Value) -> Result<(), String> {
+        let ty = param["type"].as_str().unwrap_or("string");
+        let ok = match ty {
             "boolean" => v.is_boolean(),
             "integer" => v.as_f64().is_some_and(|n| n.fract() == 0.0),
             "number" => v.is_number(),
-            "array" => v.is_array(),
-            "object" => v.is_object(),
-            "null" => v.is_null(),
-            _ => false,
+            _ => v.is_string(),
+        };
+        if !ok {
+            return Err(format!("{v} is not a {ty}"));
         }
+        if let Some(choices) = param["choices"].as_array() {
+            if !choices.contains(v) {
+                return Err(format!("{v} is not one of {choices:?}"));
+            }
+        }
+        let n = v.as_f64();
+        let below = |key: &str, strict: bool| {
+            param[key]
+                .as_f64()
+                .zip(n)
+                .is_some_and(|(b, n)| if strict { n <= b } else { n < b })
+        };
+        let above = param["max"].as_f64().zip(n).is_some_and(|(b, n)| n > b);
+        if below("min", false) || below("exclusive_min", true) || above {
+            return Err(format!("{v} is out of bounds"));
+        }
+        Ok(())
     }
 
     /// Every `file_type` a spec may name: the types `workspace::classify_file`
@@ -107,63 +175,12 @@ mod tests {
         "reference",
     ];
 
-    /// A `columns` property's `items.oneOf`: one entry per column type.
-    fn column_variants(prop: &Value) -> Vec<Value> {
-        prop["items"]["oneOf"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    fn variant_type(v: &Value) -> &str {
-        v["properties"]["type"]["const"].as_str().unwrap_or("")
-    }
-
-    /// Whether `v` fits schema property `prop`: its enum when it has one, else its type.
-    fn fits_prop(v: &Value, prop: &Value) -> bool {
-        if let Some(options) = prop["enum"].as_array() {
-            return options.iter().any(|o| same_value(o, v));
-        }
-        let types = prop_types(prop);
-        types.is_empty() || types.iter().any(|t| value_fits_type(v, t))
-    }
-
-    /// Check one column object against its `oneOf` entry, the way the report's
-    /// `deny_unknown_fields` column enum will read it; returns its type.
-    fn check_column(at: &str, variants: &[Value], column: &Value) -> String {
-        let ty = column["type"]
-            .as_str()
-            .unwrap_or_else(|| panic!("{at}: a column needs a `type`"));
-        let variant = variants
-            .iter()
-            .find(|v| variant_type(v) == ty)
-            .unwrap_or_else(|| panic!("{at}: unknown column type {ty:?}"));
-        let props = variant["properties"].as_object().unwrap();
-        for (k, val) in column.as_object().unwrap() {
-            let prop = props
-                .get(k)
-                .unwrap_or_else(|| panic!("{at}: {ty} columns take no {k:?}"));
-            if k != "type" {
-                assert!(
-                    fits_prop(val, prop),
-                    "{at}: {ty}.{k} = {val} does not fit {prop}"
-                );
-            }
-        }
-        for r in variant["required"].as_array().unwrap() {
-            let r = r.as_str().unwrap();
-            assert!(column.get(r).is_some(), "{at}: a {ty} column needs {r:?}");
-        }
-        ty.to_string()
-    }
-
-    /// `column_types` relabels and seeds the builder the schema defines, so every
-    /// key has to name something the schema has. A misspelled type or parameter
-    /// would otherwise be ignored without a word.
+    /// `column_types` relabels and seeds the builder the manifest defines, so every
+    /// key has to name a real column and argument. A misspelled one would otherwise
+    /// be ignored without a word.
     #[test]
-    fn column_type_overrides_name_real_types_and_parameters() {
+    fn column_type_overrides_name_real_columns_and_arguments() {
         for spec in specs() {
-            let props = schema_props(&spec.id);
             for f in &spec.fields {
                 let at = format!("{}.{}", spec.id, f.name);
                 if f.role != "columns" {
@@ -173,46 +190,38 @@ mod tests {
                     );
                     continue;
                 }
-                let variants = column_variants(&props[&f.name]);
-                assert!(
-                    !variants.is_empty(),
-                    "{at}: the schema's columns.items has no oneOf to build from"
-                );
-                for (ty, over) in &f.column_types {
-                    let variant = variants
-                        .iter()
-                        .find(|v| variant_type(v) == ty)
-                        .unwrap_or_else(|| panic!("{at}: column_types names unknown type {ty:?}"));
-                    for (param, p) in &over.params {
-                        let prop = variant["properties"]
-                            .get(param)
-                            .filter(|_| param != "type")
-                            .unwrap_or_else(|| panic!("{at}.{ty}: no parameter {param:?}"));
-                        if let Some(d) = &p.default {
-                            assert!(
-                                fits_prop(d, prop),
-                                "{at}.{ty}.{param}: default {d} does not fit {prop}"
-                            );
-                        }
-                        // A choice is one entry of a list parameter, or a whole value otherwise.
-                        let one = if prop["type"] == "array" {
-                            &prop["items"]
-                        } else {
-                            prop
+                let catalog = catalog(&spec.id);
+                for (name, over) in &f.column_types {
+                    let def = catalog.iter().find(|c| c.name == name).unwrap_or_else(|| {
+                        panic!("{at}: column_types names unknown column {name:?}")
+                    });
+                    for (arg, p) in &over.params {
+                        let last = def.args.last() == Some(&arg.as_str());
+                        assert!(
+                            def.args.contains(&arg.as_str()),
+                            "{at}.{name}: no argument {arg:?} (it has {:?})",
+                            def.args
+                        );
+                        // An argument is text; the repeating last one is a list of it.
+                        let fits = |v: &Value| {
+                            v.is_string()
+                                || (def.repeat_last
+                                    && last
+                                    && v.as_array().is_some_and(|a| a.iter().all(Value::is_string)))
                         };
+                        if let Some(d) = &p.default {
+                            assert!(fits(d), "{at}.{name}.{arg}: default {d} is not text");
+                        }
                         for c in &p.choices {
-                            assert!(
-                                fits_prop(c, one),
-                                "{at}.{ty}.{param}: choice {c} does not fit {one}"
-                            );
+                            assert!(c.is_string(), "{at}.{name}.{arg}: choice {c} is not text");
                         }
                     }
                 }
                 assert!(
-                    variants
+                    catalog
                         .iter()
-                        .any(|v| f.column_types.get(variant_type(v)).is_none_or(|o| o.show)),
-                    "{at}: column_types hides every column type"
+                        .any(|c| f.column_types.get(c.name).is_none_or(|o| o.show)),
+                    "{at}: column_types hides every column"
                 );
             }
         }
@@ -239,10 +248,15 @@ mod tests {
                 spec.id
             );
             assert!(
-                TOOL_CATEGORIES.contains(&spec.category.as_str()),
-                "{}: unknown category {:?}",
+                tool_info(&spec.id).is_some_and(|t| t.in_manifest),
+                "tools/{file}: {} is not a tool in `domainatoredux describe`",
+                spec.id
+            );
+            assert!(
+                !spec.category.is_empty(),
+                "{}: its manifest category {} has no entry in cmd_tools::CATEGORY_LABELS",
                 spec.id,
-                spec.category
+                spec.manifest["category"]
             );
             ids.push(spec.id.clone());
         }
@@ -252,24 +266,30 @@ mod tests {
         assert_eq!(n, ids.len(), "duplicate tool id");
     }
 
-    /// A schema property missing from the spec is a CLI option nobody decided
-    /// about; a spec field the schema lacks is worse, because the config struct is
-    /// `deny_unknown_fields` and would reject the run.
+    /// A manifest parameter missing from the spec is a CLI option nobody decided
+    /// about; a spec field the manifest lacks is a value the CLI would reject.
     #[test]
-    fn every_schema_property_is_listed_once() {
+    fn every_manifest_parameter_is_listed_once() {
         for spec in specs() {
-            let props = schema_props(&spec.id);
+            let params: Vec<&str> = spec.manifest["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|p| p["name"].as_str())
+                .filter(|n| !COMMON_PARAMETERS.contains(n))
+                .collect();
             let mut names: Vec<&str> = spec.fields.iter().map(|f| f.name.as_str()).collect();
             for n in &names {
                 assert!(
-                    props.contains_key(*n),
-                    "{}: field {n:?} is not a config property",
+                    params.contains(n),
+                    "{}: field {n:?} is not a parameter of `domainatoredux describe --tool {}`",
+                    spec.id,
                     spec.id
                 );
             }
-            for p in props.keys() {
+            for p in &params {
                 assert!(
-                    names.contains(&p.as_str()),
+                    names.contains(p),
                     "{}: CLI option {p:?} is not listed in tools/{}.yml (add it, with `show: false` if the dialog should not offer it)",
                     spec.id,
                     spec.id
@@ -282,25 +302,22 @@ mod tests {
         }
     }
 
+    /// The spec may name a role only where the manifest cannot say it: a tool still
+    /// on the old interface, whose `output` is not named `*_out`.
     #[test]
-    fn cli_defaults_match_the_schema() {
+    fn migrated_tools_derive_every_role() {
         for spec in specs() {
-            let props = schema_props(&spec.id);
+            if !tool_info(&spec.id).is_some_and(|t| t.migrated) {
+                continue;
+            }
             for f in &spec.fields {
-                let schema_default = props[&f.name].get("default");
-                match (&f.cli_default, schema_default) {
-                    (None, None) => {}
-                    (Some(a), Some(b)) => assert!(
-                        same_value(a, b),
-                        "{}.{}: cli_default is {a}, but the schema's default is {b}",
-                        spec.id,
-                        f.name
-                    ),
-                    (a, b) => panic!(
-                        "{}.{}: cli_default is {a:?}, but the schema's default is {b:?}",
-                        spec.id, f.name
-                    ),
-                }
+                assert!(
+                    f.role_override.is_none(),
+                    "{}.{}: drop `role`; the manifest decides it ({})",
+                    spec.id,
+                    f.name,
+                    f.role
+                );
             }
         }
     }
@@ -308,7 +325,6 @@ mod tests {
     #[test]
     fn gui_defaults_fit_their_property() {
         for spec in specs() {
-            let props = schema_props(&spec.id);
             for f in spec.fields.iter().filter(|f| f.gui_default.is_some()) {
                 let v = f.gui_default.as_ref().unwrap();
                 let at = format!("{}.{}", spec.id, f.name);
@@ -319,29 +335,22 @@ mod tests {
                     "{at}: gui_default on a {} field (files are chosen with `select`/`output_name`)",
                     f.role
                 );
-                let prop = &props[&f.name];
-                if let Some(options) = prop["enum"].as_array() {
-                    assert!(
-                        options.iter().any(|o| same_value(o, v)),
-                        "{at}: {v} is not one of {options:?}"
-                    );
-                }
-                let types = prop_types(prop);
-                if !types.is_empty() {
-                    assert!(
-                        types.iter().any(|t| value_fits_type(v, t)),
-                        "{at}: {v} is not a {types:?}"
-                    );
-                }
                 if f.role == "columns" {
-                    let variants = column_variants(prop);
-                    for (i, column) in v.as_array().unwrap().iter().enumerate() {
-                        let ty = check_column(&format!("{at}[{i}]"), &variants, column);
+                    let catalog = catalog(&spec.id);
+                    for (i, token) in v.as_array().unwrap().iter().enumerate() {
+                        let token = token
+                            .as_str()
+                            .unwrap_or_else(|| panic!("{at}[{i}]: a column is a token string"));
+                        let c = parse_column(token, catalog)
+                            .unwrap_or_else(|e| panic!("{at}[{i}]: {e}"));
                         assert!(
-                            f.column_types.get(&ty).is_none_or(|o| o.show),
-                            "{at}[{i}]: starts with column type {ty:?}, which column_types hides"
+                            f.column_types.get(&c.name).is_none_or(|o| o.show),
+                            "{at}[{i}]: starts with column {}, which column_types hides",
+                            c.name
                         );
                     }
+                } else if let Err(e) = fits_param(v, &f.param) {
+                    panic!("{at}: gui_default {e}");
                 }
             }
         }
@@ -358,7 +367,8 @@ mod tests {
                     "{at}: ToolDialog cannot render role {:?}",
                     f.role
                 );
-                if matches!(f.role.as_str(), "input_file" | "input_files") {
+                let input = matches!(f.role.as_str(), "input_file" | "input_files");
+                if input && f.show {
                     assert!(f.sources.is_some(), "{at}: an input needs `sources`");
                     assert!(f.select.is_some(), "{at}: an input needs `select`");
                     assert!(!f.file_type.is_empty(), "{at}: an input needs `file_type`");
@@ -380,7 +390,7 @@ mod tests {
                             f.file_type
                         );
                     }
-                } else {
+                } else if !input {
                     assert!(
                         f.sources.is_none() && f.select.is_none() && f.prefill_priority.is_none(),
                         "{at}: `sources`/`select`/`prefill_priority` only apply to inputs"
@@ -403,39 +413,53 @@ mod tests {
                         "{at}: `help` on a hidden field is never shown"
                     );
                 }
+                // A program path is the External tools panel's business.
+                assert!(
+                    !(f.show && f.param["role"] == "program"),
+                    "{at}: a program path is never shown"
+                );
                 if let Some(h) = &f.help {
-                    assert!(!h.trim().is_empty(), "{at}: an empty `help` hides the schema's description; delete the key instead");
+                    assert!(
+                        !h.trim().is_empty(),
+                        "{at}: an empty `help` hides the manifest's; delete the key instead"
+                    );
                 }
             }
         }
     }
 
+    fn check_name_template(at: &str, t: &str) {
+        let rest = t.replace("{stem}", "");
+        assert!(
+            !rest.contains('{') && !rest.contains('}'),
+            "{at}: {t:?} has a placeholder other than {{stem}}"
+        );
+        assert!(
+            !rest.contains('/') && !rest.contains('\\'),
+            "{at}: {t:?} is a path, not a file name"
+        );
+    }
+
     /// The seeded output name is the only thing between a user and a run, and the
-    /// dialog substitutes nothing but `{stem}`.
+    /// dialog substitutes nothing but `{stem}`. A tool that needs one of several
+    /// outputs (the manifest's `required_outputs`) seeds at least one.
     #[test]
     fn required_outputs_have_a_name_template() {
         for spec in specs() {
-            for f in spec
-                .fields
-                .iter()
-                .filter(|f| f.role == "output_file" && f.required)
-            {
-                let t = f
-                    .output_name
-                    .as_deref()
-                    .unwrap_or_else(|| panic!("{}.{}: no output_name", spec.id, f.name));
-                let rest = t.replace("{stem}", "");
+            for f in spec.fields.iter().filter(|f| f.role == "output_file") {
+                let at = format!("{}.{}", spec.id, f.name);
+                match f.output_name.as_deref() {
+                    Some(t) => check_name_template(&at, t),
+                    None => assert!(!f.required, "{at}: a required output needs an output_name"),
+                }
+            }
+            if let Some(any_of) = spec.manifest["required_outputs"].as_array() {
                 assert!(
-                    !rest.contains('{') && !rest.contains('}'),
-                    "{}.{}: {t:?} has a placeholder other than {{stem}}",
-                    spec.id,
-                    f.name
-                );
-                assert!(
-                    !rest.contains('/') && !rest.contains('\\'),
-                    "{}.{}: {t:?} is a path, not a file name",
-                    spec.id,
-                    f.name
+                    spec.fields.iter().any(|f| f.show
+                        && f.output_name.is_some()
+                        && any_of.iter().any(|o| *o == f.name)),
+                    "{}: a run needs one of {any_of:?}; give one a shown field with an output_name",
+                    spec.id
                 );
             }
         }

@@ -129,10 +129,10 @@ fragment status. `--partial` is never inverted by `--invert`.
 | `enum_report` | which rows are reported: by contig (as for `select_by_contig`), by CDS, or by domain (by the CDS or protein the domain is on) |
 | `summary_report` | which CDSs/proteins are counted. Filtered protein records are skipped. On nucleotide contigs, filtered CDSs and the domains on them aren't counted, but the contig is. The report always gives the number of partial CDSs and protein fragments among those counted. |
 
-`enum_report --fragment` adds a `fragment` column with the status (`complete`, `N`, `C`,
+`enum_report --columns fragment` adds a `fragment` column with the status (`complete`, `N`, `C`,
 `NC` or `?`) for rows that are a single protein or CDS: protein records, CDSs, and domains
 on protein records (which get the status of their protein). For other rows it is empty,
-with a warning. `enum_report --partial_count` adds a `partial_count` column. By contig, it
+with a warning. `enum_report --columns partial_count` adds a `partial_count` column. By contig, it
 is the number of partial CDSs on the contig (for a protein record, 1 if it is a fragment).
 By CDS, it is 1 if the CDS or protein is a fragment. By domain, it is 1 if the CDS or protein
 the domain is on is a fragment, whether or not the domain reaches the missing end. In every

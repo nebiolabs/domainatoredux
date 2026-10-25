@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux clean_sequences`. Format: see README.md in this directory.
 id: clean_sequences
 label: "Clean sequences"
-category: "Selection & extraction"
 description: "Normalize sequences: clean/deduplicate names, strip gaps, filter non-canonical residues."
 fields:
   - name: input
@@ -18,21 +17,16 @@ fields:
     output_name: "{stem}.cleaned.gb"
   - name: fasta_out
     label: "FASTA output"
-    cli_default: false
   - name: fasta_type
     label: "FASTA type"
   - name: clean_name
     label: "Clean names"
-    cli_default: false
   - name: deduplicate_names
     label: "Deduplicate names"
-    cli_default: false
   - name: strip
     label: "Strip gaps"
-    cli_default: false
   - name: filter_by_aa
     label: "Filter non-canonical"
-    cli_default: false
   - name: log
     show: false
     label: "Log"

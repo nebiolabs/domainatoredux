@@ -185,14 +185,14 @@ pub struct FileMeta {
 
 /// What the Enum Report tab remembers for one file: the granularity last shown
 /// (`contig` | `cds` | `domain`) and, per granularity, the columns last applied.
-/// Columns are the column objects the config's `ColumnSpec` reads, kept as JSON
-/// so this module needs no knowledge of them.
+/// Columns are `--columns` tokens (`qualifier:CDS:product`), kept as text so this
+/// module needs no knowledge of them.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct EnumReportView {
     #[serde(default)]
     pub by: Option<String>,
     #[serde(default)]
-    pub columns: std::collections::BTreeMap<String, Vec<serde_json::Value>>,
+    pub columns: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 impl FileMeta {
@@ -576,11 +576,7 @@ mod tests {
         fs::write(crate::io::didx::index_path_for(&src), b"idx").unwrap();
         let view = EnumReportView {
             by: Some("domain".into()),
-            columns: [(
-                "domain".to_string(),
-                vec![serde_json::json!({"type": "score"})],
-            )]
-            .into(),
+            columns: [("domain".to_string(), vec!["score".to_string()])].into(),
         };
         FileMeta {
             description: "kept".into(),

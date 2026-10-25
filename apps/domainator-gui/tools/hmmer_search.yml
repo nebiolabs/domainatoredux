@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux hmmer_search`. Format: see README.md in this directory.
 id: hmmer_search
 label: "HMM search"
-category: "HMM profiles"
 description: "Keep query profiles that score against a reference HMM set (writes an HMM file)."
 fields:
   - name: input
@@ -25,7 +24,6 @@ fields:
     output_name: "{stem}.searched.hmm"
   - name: score_cutoff
     label: "Score cutoff"
-    cli_default: 10.0
   - name: max_hits
     label: "Max hits"
   - name: cpu

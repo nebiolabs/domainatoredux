@@ -1,7 +1,8 @@
-//! Tool listing / schema / execution.
+//! Tool listing / execution.
 //!
-//! Forms are driven by `domainator-config`'s per-tool JSON Schema, and the form's
-//! values are the tool's `*Config` as JSON. A run writes them to
+//! Forms are driven by each tool's manifest entry (`domainatoredux describe`) under
+//! the GUI policy of its spec file (`tool_specs.rs`), and the form's values are a
+//! config file keyed by parameter name, as JSON. A run writes them to
 //! `.domainatoredux/jobs/<id>/worker-config.json` and runs `<tool> --config <that
 //! file>` through the CLI in a worker copy of this executable (`worker.rs`), so a
 //! GUI run takes exactly the code path a CLI run does. The job's inputs and
@@ -19,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-use domainator_config::schema;
+use domainator_config::columns::EnumColumn;
 use domainator_core::app_support::provenance::{new_job_id, now_ms, write_job, JobRecord};
 use domainator_core::app_support::workspace::dot_dir;
 use serde::{Deserialize, Serialize};
@@ -79,27 +80,42 @@ fn ms_str(ms: u128) -> String {
 ///   pre-filled from the selected files (in `prefill_priority` order), else starting on `select`
 /// * `output_file` — a filename (seeded from `output_name`); the app prepends the
 ///   current directory
-/// * `param` — rendered from the tool's JSON schema by type
-/// * `columns` — a report's column builder: an ordered list of column objects,
-///   whose types and parameters come from the schema's `columns.items.oneOf`
-///   (adjusted by the spec's `column_types`); the order is the output column order
+/// * `param` — rendered from the manifest parameter's `value_type`, `choices` and
+///   `multiple`
+/// * `columns` — a report's column builder: an ordered list of column tokens
+///   (`qualifier:CDS:product`), whose columns and arguments come from the manifest's
+///   catalog (adjusted by the spec's `column_types`); the order is the output order
 ///
 /// `ROLES` below is the list, and a test checks every field against it.
 #[derive(Serialize)]
 pub struct ToolField {
     pub name: String,
     pub label: String,
-    /// The spec's `help`, which replaces the schema's `description` as the hint.
+    /// The hint: the spec's `help`, else the manifest parameter's.
     pub help: Option<String>,
     pub role: String,
     /// Inputs: the file types the dropdown offers (the spec's `file_type`). Empty
     /// for every other role.
     pub file_types: Vec<String>,
     pub required: bool,
-    /// The value the dialog seeds: the spec's `gui_default`, else its `cli_default`.
+    /// The value the dialog seeds: the spec's `gui_default`, else the CLI default.
     pub default: Option<Value>,
-    /// The CLI's default, so the dialog can say so when `default` differs.
+    /// The CLI's default (the manifest's), so the dialog can say so when `default`
+    /// differs.
     pub cli_default: Option<Value>,
+    /// The manifest parameter's kind: `value`, `flag`, `path` or `columns`.
+    pub kind: String,
+    /// Its JSON type: of each value, for a multiple parameter.
+    pub value_type: String,
+    /// It takes a list of values.
+    pub multiple: bool,
+    /// The values it allows, when they are limited.
+    pub choices: Vec<Value>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub exclusive_min: Option<f64>,
+    /// `columns`: the report's catalog, `{name, args, repeat_last, help}` each.
+    pub columns: Vec<Value>,
     /// Inputs: `databases_first` | `workspace_first`.
     pub sources: Option<String>,
     /// Inputs: `first` | `none` | `database:<managed id>`, for when no selected
@@ -121,7 +137,7 @@ pub struct ToolMeta {
     pub description: String,
     /// The fields the dialog shows, in order (a spec's `show: false` fields are left out).
     pub fields: Vec<ToolField>,
-    /// Which menu group this tool belongs to, one of [`TOOL_CATEGORIES`].
+    /// Which menu group this tool belongs to, one of [`CATEGORY_LABELS`]' labels.
     pub category: String,
 }
 
@@ -134,17 +150,32 @@ pub const ROLES: [&str; 5] = [
     "columns",
 ];
 
-/// The Tools menu's groups, in the order they appear. Mirrors the grouping in the
-/// repository's CLAUDE.md so the menu and the docs agree.
-pub const TOOL_CATEGORIES: [&str; 7] = [
-    "Annotation & search",
-    "Selection & extraction",
-    "Matrices & networks",
-    "Reports",
-    "HMM profiles",
-    "Color",
-    "Conversion",
+/// The Tools menu's groups, in the order they appear: the manifest's categories
+/// (`domainator_config::registry::CATEGORIES`, upstream's), each with a menu label.
+pub const CATEGORY_LABELS: [(&str, &str); 9] = [
+    ("annotate", "Annotation & search"),
+    ("edit", "Selection & editing"),
+    ("convert", "Conversion"),
+    ("profile", "HMM profiles"),
+    ("compare", "Comparison"),
+    ("network", "Networks"),
+    ("report", "Reports"),
+    ("plot", "Figures"),
+    ("database", "Databases"),
 ];
+
+/// The menu label of a manifest category.
+pub fn category_label(category: &str) -> Option<&'static str> {
+    CATEGORY_LABELS
+        .iter()
+        .find(|(key, _)| *key == category)
+        .map(|(_, label)| *label)
+}
+
+/// The menu labels, in menu order.
+pub fn category_order() -> impl Iterator<Item = &'static str> {
+    CATEGORY_LABELS.iter().map(|(_, label)| *label)
+}
 
 /// Tools currently runnable from the GUI, each with its form field spec.
 ///
@@ -156,12 +187,11 @@ pub async fn list_tools() -> Vec<ToolMeta> {
     let mut tools: Vec<ToolMeta> = crate::tool_specs::specs().iter().map(tool_meta).collect();
     // In menu order, so the toolbar's Tools button can group by first appearance
     // and come out shaped like the native menu. Stable: file order within a
-    // category is kept. A category outside TOOL_CATEGORIES is a test failure; in a
-    // release build the tool still shows, last, rather than vanishing.
+    // category is kept. A tool without a category is a test failure; in a release
+    // build it still shows, last, rather than vanishing.
     tools.sort_by_key(|t| {
-        TOOL_CATEGORIES
-            .iter()
-            .position(|c| *c == t.category)
+        category_order()
+            .position(|c| c == t.category)
             .unwrap_or(usize::MAX)
     });
     tools
@@ -185,15 +215,31 @@ fn tool_meta(spec: &crate::tool_specs::ToolSpec) -> ToolMeta {
                     f.name,
                     f.role
                 );
+                let p = &f.param;
+                let help = f.help.clone().or_else(|| {
+                    p["help"]
+                        .as_str()
+                        .filter(|h| !h.is_empty())
+                        .map(str::to_string)
+                });
+                let list = |key: &str| p[key].as_array().cloned().unwrap_or_default();
                 ToolField {
                     name: f.name.clone(),
                     label: f.label.clone(),
-                    help: f.help.clone(),
+                    help,
                     role: f.role.clone(),
                     file_types: f.file_type.clone(),
                     required: f.required,
                     default: f.effective_default().cloned(),
-                    cli_default: f.cli_default.clone(),
+                    cli_default: p.get("default").filter(|d| !d.is_null()).cloned(),
+                    kind: p["kind"].as_str().unwrap_or("value").to_string(),
+                    value_type: p["type"].as_str().unwrap_or("string").to_string(),
+                    multiple: p["multiple"] == true,
+                    choices: list("choices"),
+                    min: p["min"].as_f64(),
+                    max: p["max"].as_f64(),
+                    exclusive_min: p["exclusive_min"].as_f64(),
+                    columns: list("columns"),
                     sources: f.sources.map(|s| s.as_str().to_string()),
                     select: f.select.as_ref().map(|s| s.to_string()),
                     prefill_priority: f.prefill_priority.unwrap_or(0),
@@ -203,15 +249,6 @@ fn tool_meta(spec: &crate::tool_specs::ToolSpec) -> ToolMeta {
             })
             .collect(),
     }
-}
-
-/// The draft-07 JSON Schema for a tool's parameters (drives the form).
-///
-/// `async` so a tool dialog's schema fetch never waits on the main thread (see
-/// [`list_tools`]) — otherwise the dialog can hang at "Loading…".
-#[tauri::command]
-pub async fn tool_schema(tool: String) -> Result<String, String> {
-    schema(&tool).map_err(|e| e.to_string())
 }
 
 #[derive(Serialize, Debug)]
@@ -369,21 +406,18 @@ pub async fn run_tool(
     let job_id = new_job_id(started);
     let prefs_path = crate::cmd_prefs::prefs_path(&app).ok();
 
-    // Apply the app-level default thread count, but only where the tool's schema
-    // actually has a `cpu` property -- every config struct is
-    // `deny_unknown_fields`, so a blind injection would make the run be rejected.
+    // Apply the app-level default thread count, but only where the tool actually has
+    // a `cpu` parameter -- a config naming an unknown parameter is rejected.
     // Guarded across all tools by `injecting_the_default_cpu_never_breaks_a_tool`.
     let mut params = params;
     if let Some(path) = &prefs_path {
         let default_cpu = domainator_core::app_support::prefs::load_prefs(path).default_cpu;
-        if let Ok(schema_text) = schema(&tool) {
-            if let Ok(schema) = serde_json::from_str::<Value>(&schema_text) {
-                domainator_core::app_support::tool_params::apply_default_cpu(
-                    &mut params,
-                    &schema,
-                    default_cpu,
-                );
-            }
+        if let Some(spec) = crate::tool_specs::specs().iter().find(|s| s.id == tool) {
+            domainator_core::app_support::tool_params::apply_default_cpu(
+                &mut params,
+                &spec.manifest,
+                default_cpu,
+            );
         }
     }
 
@@ -733,19 +767,18 @@ fn preflight(tool: &str, params: &Value) -> Result<(), String> {
             .is_none_or(|s| s.trim().is_empty())
     };
     if tool == "enum_report" && blank("ncbi_taxonomy_path") {
-        if let Ok(cfg) = serde_json::from_value::<domainator_config::EnumConfig>(params.clone()) {
-            let analyses: Vec<_> = cfg
-                .columns
-                .iter()
-                .filter_map(|c| c.to_analysis().ok())
-                .collect();
-            if domainator_core::tools::enum_report::needs_taxonomy(&analyses) {
-                return Err(
-                    "the taxonomy columns need a taxonomy database: install NCBI Taxonomy \
-                            from Reference Databases, or choose one"
-                        .into(),
-                );
-            }
+        let analyses: Vec<_> = params["columns"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| c.as_str()?.parse::<EnumColumn>().ok()?.to_analysis().ok())
+            .collect();
+        if domainator_core::tools::enum_report::needs_taxonomy(&analyses) {
+            return Err(
+                "the taxonomy columns need a taxonomy database: install NCBI Taxonomy \
+                        from Reference Databases, or choose one"
+                    .into(),
+            );
         }
     }
     let filters = ["include_taxids", "exclude_taxids", "taxonomy_expr"]
@@ -860,28 +893,13 @@ pub(crate) mod tests {
         worker::run_cli(args.map(OsString::from).to_vec()).map_err(|e| format!("{e:#}"))
     }
 
-    /// Three lists have to agree, in three different places: the GUI registry
-    /// (`tools/*.yml`), the CLI's subcommands, and `domainator-config`'s schema
-    /// emitter. A tool offered in the menu that the CLI does not know is a
-    /// dialog that fails only when the user presses Run; a dialog field that is
-    /// not a config property is worse, because every config struct is
-    /// `deny_unknown_fields`, so the run is rejected outright.
+    /// The GUI registry (`tools/*.yml`) and the CLI's subcommands are two lists. A
+    /// tool offered in the menu that the CLI does not know is a dialog that fails only
+    /// when the user presses Run.
     #[test]
-    fn every_offered_tool_is_dispatched_and_has_a_schema() {
+    fn every_offered_tool_is_dispatched() {
         let dir = scratch("dispatch");
         for tool in tools() {
-            let schema = schema(&tool.id)
-                .unwrap_or_else(|e| panic!("{} is in the menu but has no schema: {e}", tool.id));
-            let parsed: Value = serde_json::from_str(&schema).unwrap();
-            let props = parsed["properties"].as_object().unwrap();
-            for field in &tool.fields {
-                assert!(
-                    props.contains_key(&field.name),
-                    "{}: dialog field {:?} is not a config property, so a run would be rejected",
-                    tool.id,
-                    field.name
-                );
-            }
             if let Err(e) = cli_accepts(&dir, &tool.id, &serde_json::json!({})) {
                 panic!(
                     "{} is offered in the menu but the CLI rejects `{} --config`: {e}",
@@ -912,70 +930,69 @@ pub(crate) mod tests {
 
     /// Worker mode hands the dialog's params to the CLI as a `--config` file, so a
     /// shape mismatch is a run rejected outright. For every tool: the params a
-    /// dialog produces (schema defaults, every file field filled, each column
+    /// dialog produces (manifest defaults, every file field filled, each column
     /// builder's default columns, the default thread count injected) must parse
     /// as its CLI config, and each report column must resolve to an analysis.
     #[test]
     fn every_tools_dialog_params_parse_as_its_cli_config() {
+        use domainator_config::columns::HmmerColumn;
         let dir = scratch("dialog-params");
         for spec in crate::tool_specs::specs() {
             let mut params = dialog_params(spec);
-            let schema: Value = serde_json::from_str(&schema(&spec.id).unwrap()).unwrap();
-            domainator_core::app_support::tool_params::apply_default_cpu(&mut params, &schema, 4);
+            domainator_core::app_support::tool_params::apply_default_cpu(
+                &mut params,
+                &spec.manifest,
+                4,
+            );
             if let Err(e) = cli_accepts(&dir, &spec.id, &params) {
                 panic!(
                     "{}: the CLI rejects the dialog's params {params}: {e}",
                     spec.id
                 );
             }
-            match spec.id.as_str() {
-                "enum_report" => {
-                    let cfg: domainator_config::EnumConfig =
-                        serde_json::from_value(params.clone()).unwrap();
-                    cfg.by_enum().unwrap();
-                    for c in &cfg.columns {
-                        c.to_analysis()
-                            .unwrap_or_else(|e| panic!("enum_report column {c:?}: {e}"));
-                    }
-                }
-                "hmmer_report" => {
-                    let cfg: domainator_config::HmmerReportConfig =
-                        serde_json::from_value(params.clone()).unwrap();
-                    for c in &cfg.columns {
-                        c.to_analysis()
-                            .unwrap_or_else(|e| panic!("hmmer_report column {c:?}: {e}"));
-                    }
-                }
-                _ => {}
+            for token in params["columns"].as_array().into_iter().flatten() {
+                let token = token.as_str().unwrap();
+                let analysis = match spec.id.as_str() {
+                    "enum_report" => token
+                        .parse::<EnumColumn>()
+                        .map(|c| c.to_analysis().map(drop)),
+                    _ => token
+                        .parse::<HmmerColumn>()
+                        .map(|c| c.to_analysis().map(drop)),
+                };
+                analysis
+                    .unwrap_or_else(|e| panic!("{}: column {token}: {e}", spec.id))
+                    .unwrap_or_else(|e| panic!("{}: column {token}: {e}", spec.id));
             }
         }
     }
 
-    /// `cpu` is a config property on only some tools, and every config struct is
-    /// `deny_unknown_fields` -- so injecting the preference blindly would not be
-    /// ignored, it would make the run be **rejected**. This walks every offered
-    /// tool and asserts the injection never produces a rejection, which is the
-    /// failure a user would otherwise only see on pressing Run.
+    /// `cpu` is a parameter of only some tools, and a config naming an unknown
+    /// parameter is rejected -- so injecting the preference blindly would not be
+    /// ignored, it would make the run be **rejected**. This walks every offered tool
+    /// and asserts the injection never produces a rejection, which is the failure a
+    /// user would otherwise only see on pressing Run.
     #[test]
     fn injecting_the_default_cpu_never_breaks_a_tool() {
         let dir = scratch("default-cpu");
-        for tool in tools() {
-            let schema_text = schema(&tool.id).unwrap();
-            let schema: Value = serde_json::from_str(&schema_text).unwrap();
+        for spec in crate::tool_specs::specs() {
             let mut params = serde_json::json!({});
-            domainator_core::app_support::tool_params::apply_default_cpu(&mut params, &schema, 4);
-
-            let has_cpu = schema["properties"].get("cpu").is_some();
+            domainator_core::app_support::tool_params::apply_default_cpu(
+                &mut params,
+                &spec.manifest,
+                4,
+            );
+            let has_cpu = crate::tool_specs::manifest_param(&spec.manifest, "cpu").is_some();
             assert_eq!(
                 params.get("cpu").is_some(),
                 has_cpu,
-                "{}: cpu injected iff the schema declares it",
-                tool.id
+                "{}: cpu injected iff the tool has it",
+                spec.id
             );
-            if let Err(e) = cli_accepts(&dir, &tool.id, &params) {
+            if let Err(e) = cli_accepts(&dir, &spec.id, &params) {
                 panic!(
                     "{}: injecting cpu made the config be rejected: {e}",
-                    tool.id
+                    spec.id
                 );
             }
         }
@@ -1085,33 +1102,31 @@ pub(crate) mod tests {
         );
     }
 
-    /// Every tool must land in a known group. One outside `TOOL_CATEGORIES` is
-    /// sorted last and grouped under its own name in the native menu rather than
+    /// Every tool must land in a known group. One outside `CATEGORY_LABELS` is
+    /// sorted last and grouped under "Other" in the native menu rather than
     /// disappearing, but that is a bug -- the same class as `ToolField::role`
     /// naming a role `ToolDialog` cannot render, and guarded the same way.
     #[test]
     fn every_tool_has_a_known_category() {
         for tool in tools() {
             assert!(
-                TOOL_CATEGORIES.contains(&tool.category.as_str()),
-                "{} has category {:?} (tools/{}.yml), which is not in TOOL_CATEGORIES",
+                category_order().any(|c| c == tool.category),
+                "{} has category {:?}, which is not in CATEGORY_LABELS",
                 tool.id,
-                tool.category,
-                tool.id
+                tool.category
             );
         }
     }
 
-    /// A category no tool uses is a submenu that would render empty.
+    /// The menu labels are upstream's categories, in upstream's order.
     #[test]
-    fn every_category_is_used_by_at_least_one_tool() {
-        let used: HashSet<String> = tools().into_iter().map(|t| t.category).collect();
-        for cat in TOOL_CATEGORIES {
-            assert!(
-                used.contains(cat),
-                "no tool uses category {cat:?}; its submenu would be empty"
-            );
-        }
+    fn category_labels_follow_the_manifest_categories() {
+        let keys: Vec<&str> = CATEGORY_LABELS.iter().map(|(k, _)| *k).collect();
+        let upstream: Vec<&str> = domainator_config::registry::CATEGORIES
+            .iter()
+            .map(|(k, _)| *k)
+            .collect();
+        assert_eq!(keys, upstream);
     }
 
     /// A job left non-terminal by a process that has gone must not stay that way.
@@ -1146,15 +1161,14 @@ pub(crate) mod tests {
     }
 
     /// The frontend's Tools button groups by first appearance; the native menu
-    /// groups by `TOOL_CATEGORIES`. They agree only if `list_tools` is sorted.
+    /// groups by `CATEGORY_LABELS`. They agree only if `list_tools` is sorted.
     #[test]
     fn list_tools_is_in_category_order() {
         let order: Vec<usize> = tools()
             .iter()
             .map(|t| {
-                TOOL_CATEGORIES
-                    .iter()
-                    .position(|c| *c == t.category)
+                category_order()
+                    .position(|c| c == t.category)
                     .unwrap_or(usize::MAX)
             })
             .collect();
@@ -1283,25 +1297,25 @@ ORIGIN
         (gb, tax)
     }
 
-    /// The enum_report dialog's column objects run through the CLI's `EnumConfig`
-    /// -- parameterized columns and the taxonomy ones included -- and the job is
-    /// recorded with its inputs and outputs.
+    /// The enum_report dialog's column tokens run through the CLI -- columns with
+    /// arguments and the taxonomy ones included -- and the job is recorded with its
+    /// inputs and outputs.
     #[test]
     fn enum_report_runs_parameterized_and_taxonomy_columns() {
         let (gb, tax) = enum_report_fixture("enum_report");
         let out = gb.with_file_name("out.tsv");
         let params = serde_json::json!({
             "input": [gb.to_string_lossy()],
-            "output": out.to_string_lossy(),
+            "tsv_out": out.to_string_lossy(),
             "by": "cds",
             "ncbi_taxonomy_path": tax.to_string_lossy(),
             "columns": [
-                {"type": "length"},
-                {"type": "qualifier", "feature": "CDS", "qualifier": "product"},
-                {"type": "taxname", "ranks": ["species", "genus"]},
-                {"type": "taxid", "ranks": ["superkingdom"]},
-                {"type": "rank_lineage"},
-                {"type": "append", "name": "batch", "value_type": "int", "value": "7"}
+                "length",
+                "qualifier:CDS:product",
+                "taxname:species:genus",
+                "taxid:superkingdom",
+                "rank_lineage",
+                "append:batch:int:7"
             ]
         });
         let root = gb.parent().unwrap().to_path_buf();
@@ -1339,8 +1353,8 @@ ORIGIN
         let (gb, _tax) = enum_report_fixture("enum_report-notax");
         let params = serde_json::json!({
             "input": [gb.to_string_lossy()],
-            "output": gb.with_file_name("out.tsv").to_string_lossy(),
-            "columns": [{"type": "taxname_lineage"}]
+            "tsv_out": gb.with_file_name("out.tsv").to_string_lossy(),
+            "columns": ["taxname_lineage"]
         });
         let root = gb.parent().unwrap().to_path_buf();
         let Err(JobFailure::Failed(err)) = run_in_process_job("enum_report", params, &root) else {

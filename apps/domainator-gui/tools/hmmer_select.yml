@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux hmmer_select`. Format: see README.md in this directory.
 id: hmmer_select
 label: "HMM select"
-category: "HMM profiles"
 description: "Extract a subset of profiles from HMM file(s) by name/description/accession (regex, exact, or substring match)."
 fields:
   - name: input
@@ -24,10 +23,8 @@ fields:
     label: "Substring match"
   - name: field
     label: "Match field"
-    cli_default: "all"
   - name: case_sensitive
     label: "Case sensitive"
-    cli_default: false
   - name: alphabet
     show: false
     label: "Alphabet"

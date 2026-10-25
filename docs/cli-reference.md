@@ -4,7 +4,8 @@
 domainatoredux <tool> [options]
 ```
 
-`domainatoredux --help` lists all 35 tools; `domainatoredux <tool> --help` is the exhaustive,
+`domainatoredux --help` lists all 34 tools, plus `describe` and `completion`;
+`domainatoredux <tool> --help` is the exhaustive,
 always-current list of that tool's flags. This page gives each tool's purpose, the flags
 that matter in practice, and a worked example. Filenames in the examples are
 placeholders.
@@ -20,7 +21,8 @@ is `domainator`, this one is `domainatoredux`, so the two can be installed side 
 
 **The Domainator 1.0 interface, tool by tool.** Upstream 1.0 renamed many options and
 made every output its own `--<content>_out` option. This port is moving each tool to that
-interface, and these tools have moved so far: `sort_contigs`. On a migrated tool:
+interface, and these tools have moved so far: `sort_contigs`, `enum_report`,
+`hmmer_report`. On a migrated tool:
 
 - outputs are `-o/--genbank_out`, `--fasta_out`, `--tsv_out`, ... and at least one is
   required. Nothing goes to stdout unless you ask for it with `-`, and at most one output
@@ -59,7 +61,7 @@ because it might legitimately have come from `--config`. See
 is omitted, and most tools write to stdout when `-o` is omitted, so they pipe:
 
 ```bash
-domainatoredux select_by_contig -i in.gb --domains Sod_Fe_N | domainatoredux enum_report --domains
+domainatoredux select_by_contig -i in.gb --domains Sod_Fe_N | domainatoredux enum_report -i - --columns domains -o -
 ```
 
 A stdin input is spilled to a temporary file under your system temp directory, so a
@@ -89,7 +91,7 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 
 | Role | Tools |
 | --- | --- |
-| [I/O and diagnostics](#io-and-diagnostics) | `inspect`, `convert`, `genbank_to_fasta`, `schema` |
+| [I/O and diagnostics](#io-and-diagnostics) | `inspect`, `convert`, `genbank_to_fasta`, `describe`, `completion` |
 | [Annotation and search](#annotation-and-search) | `domainate`, `domain_search`, `gene_call`, `filter_domains` |
 | [Selection and extraction](#selection-and-extraction) | `select_by_cds`, `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `sort_contigs`, `clean_sequences`, `deduplicate_genbank` |
 | [Color](#color) | `color_genbank`, `color_table_to_legend` |
@@ -146,16 +148,6 @@ Print a shell completion script, for `bash`, `zsh`, `fish`, `powershell` or `elv
 
 ```bash
 domainatoredux completion bash > ~/.local/share/bash-completion/completions/domainatoredux
-```
-
-### `schema`
-
-Print the draft-07 JSON Schema for a tool's `--config` file. Covered for the 30 config-backed tools — not `inspect`, `convert` or `schema`
-itself.
-
-```bash
-domainatoredux schema domain_search
-domainatoredux schema seq_dist | jq '.properties | keys'
 ```
 
 ---
@@ -492,32 +484,37 @@ spanning tree and the hierarchy, and everything else is derived when read, so th
 
 ### `enum_report`
 
-**One row per contig, CDS or domain**, chosen with `--by contig|cds|domain`. Column flags
-are positional: **the order you pass them is the order of the output columns.** That is
-why this tool parses its own arguments and why `--help` shows only a passthrough.
+**One row per contig, CDS or domain**, chosen with `--by contig|cds|domain`.
+`--columns` takes the columns in output order. A column with arguments takes them after
+`:`, as in `qualifier:CDS:product`; `--columns` can be given more than once, and the
+order across them is kept. `--help` lists every column.
 
-Bare column flags: `--domains`, `--domain_descriptions`, `--sequence`, `--start`, `--end`,
-`--strand`, `--length`, `--topology`, `--architecture`, `--architecture_detailed`,
-`--score`, `--identity`, `--definition`, `--filename`, `--cds_count`, `--domain_count`,
-`--domain_search`, `--taxid_lineage`, `--taxname_lineage`, `--rank_lineage`,
-`--isoelectric_point`, `--molecular_weight`, `--starts_with`, `--fragment` (`complete`,
-`N`, `C`, `NC` or `?`), `--partial_count`.
+Columns without arguments: `domains`, `domain_descriptions`, `score`, `identity`,
+`architecture`, `architecture_detailed`, `start`, `end`, `strand`, `length`, `topology`,
+`sequence`, `cds_count`, `domain_count`, `definition`, `filename`, `domain_search`,
+`taxid_lineage`, `taxname_lineage`, `rank_lineage`, `isoelectric_point`, `starts_with`,
+`molecular_weight`, `partial_count`, `fragment` (`complete`, `N`, `C`, `NC` or `?`).
 
-Column flags that take values: `--taxid [ranks...]`, `--taxname [ranks...]`,
-`--qualifier <feature> <qualifier>`, `--feature_count <feature>`,
-`--motif_count <prosite-pattern>`, `--net_charge <pH>`, `--repeat_count <min_length>`,
-`--named_domain_count <name>`, `--append <name> <value_type> <value>` (a constant column).
+Columns with arguments: `taxid:<rank>[:<rank>...]`, `taxname:<rank>[:<rank>...]`
+(`self` is the record's own taxon), `qualifier:<feature>:<qualifier>`,
+`feature_count:<feature>`, `motif_count:<prosite-pattern>`, `net_charge:<pH>`,
+`repeat_count:<length>`, `named_domain_count:<domain>`, and
+`append:<name>:<str|int|float>:<value>`, a constant column. The last argument keeps any
+`:` it contains.
 
-`--json <path|->` writes streaming NDJSON — one object per row — independently of `-o`, so
-a single run can emit both. `--partial` filters rows by fragment status.
+Outputs are `-o/--tsv_out` and `--json_out` (streaming NDJSON, one object per row); give
+at least one. `--partial` filters rows by fragment status. The taxonomy columns read
+`--ncbi_taxonomy_path` (extracted `.dmp` files or a `taxdump.tar.gz`), which is never
+downloaded.
 
 ```bash
 domainatoredux enum_report -i annotated.gb --by cds \
-  --domains --length --molecular_weight --isoelectric_point \
-  --taxname genus species -o table.tsv
+  --columns domains length molecular_weight isoelectric_point taxname:genus:species \
+  -o table.tsv
 ```
 
-HTML output is not ported; use TSV or `--json`.
+HTML output (`--html_out`) and `--taxonomy_update` are not ported. A config file may
+still name them at their defaults (`null`, `false`), so upstream's configs load.
 
 ### `summary_report`
 
@@ -632,12 +629,13 @@ and then to [`build_ssn_viewer`](#build_ssn_viewer).
 
 ### `hmmer_report`
 
-Tabulate profile metadata. Like `enum_report`, **column flag order is column order**.
-Columns: `--source`, `--acc`, `--desc`, `--length`, `--consensus`, `--alphabet`, plus
-`--append <name> <value_type> <value>`. `--json <path|->` writes streaming NDJSON.
+Tabulate profile metadata. Like `enum_report`, `--columns` takes the columns in output
+order: `source`, `acc`, `desc`, `length`, `consensus`, `alphabet`, and
+`append:<name>:<str|int|float>:<value>`. Outputs are `-o/--tsv_out` and `--json_out`
+(streaming NDJSON).
 
 ```bash
-domainatoredux hmmer_report -i pfam-A.hmm --acc --desc --length -o profiles.tsv
+domainatoredux hmmer_report -i pfam-A.hmm --columns acc desc length -o profiles.tsv
 ```
 
 HTML output is not ported.

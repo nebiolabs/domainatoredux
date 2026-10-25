@@ -1,6 +1,8 @@
 //! The bodies of the migrated tools, one module each: `run(&XArgs)` does the I/O
 //! wiring around the core library function.
 
+pub mod enum_report;
+pub mod hmmer_report;
 pub mod sort_contigs;
 
 use anyhow::{Context, Result};
@@ -32,7 +34,7 @@ pub fn load_seq_inputs(inputs: &[String]) -> Result<Vec<SeqRecord>> {
     Ok(out)
 }
 
-fn read_stdin_genbank() -> Result<Vec<SeqRecord>> {
+pub(crate) fn read_stdin_genbank() -> Result<Vec<SeqRecord>> {
     use std::io::Read;
     let mut buf = String::new();
     std::io::stdin()

@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux deduplicate`. Format: see README.md in this directory.
 id: deduplicate_genbank
 label: "Deduplicate"
-category: "Selection & extraction"
 description: "Collapse near-identical sequences to representatives (hash, or diamond/cd-hit/usearch backends)."
 fields:
   - name: input
@@ -18,30 +17,26 @@ fields:
     output_name: "{stem}.dedup.gb"
   - name: algorithm
     label: "Algorithm"
-    cli_default: "cd-hit"
   - name: id
     label: "Identity threshold"
     required: true
   - name: fasta_out
     label: "FASTA output"
-    cli_default: false
   - name: fasta_type
     label: "FASTA type"
   - name: both_strands
     label: "Both strands"
-    cli_default: false
   - name: prefix_count
     label: "Prefix count"
-    cli_default: false
   - name: suffix_count
     label: "Suffix count"
-    cli_default: false
   - name: cluster_table
     label: "Cluster table (out)"
     role: output_file
   - name: cluster_sep
     label: "Cluster separator"
   - name: bin_path
+    show: false
     label: "Binary path"
   - name: log
     show: false

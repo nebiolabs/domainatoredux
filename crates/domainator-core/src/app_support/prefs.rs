@@ -83,16 +83,16 @@ pub struct Prefs {
     pub enum_report_columns: EnumReportColumns,
 }
 
-/// Default Enum Report columns per granularity: column objects as the config's
-/// `ColumnSpec` reads them. `None` means the GUI's built-in set.
+/// Default Enum Report columns per granularity: `--columns` tokens
+/// (`qualifier:CDS:product`). `None` means the GUI's built-in set.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct EnumReportColumns {
     #[serde(default)]
-    pub contig: Option<Vec<serde_json::Value>>,
+    pub contig: Option<Vec<String>>,
     #[serde(default)]
-    pub cds: Option<Vec<serde_json::Value>>,
+    pub cds: Option<Vec<String>>,
     #[serde(default)]
-    pub domain: Option<Vec<serde_json::Value>>,
+    pub domain: Option<Vec<String>>,
 }
 
 fn default_schema_version() -> u32 {
@@ -321,7 +321,7 @@ mod tests {
     fn a_patch_replaces_the_enum_report_defaults_whole() {
         let mut p = Prefs::default();
         let cols = EnumReportColumns {
-            cds: Some(vec![serde_json::json!({"type": "length"})]),
+            cds: Some(vec!["length".to_string()]),
             ..Default::default()
         };
         apply_patch(

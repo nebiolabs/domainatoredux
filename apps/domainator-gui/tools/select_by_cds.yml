@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux select_by_cds`. Format: see README.md in this directory.
 id: select_by_cds
 label: "Select by CDS"
-category: "Selection & extraction"
 description: "Extract CDSs (and optionally their genomic neighborhoods) by name, domain content, or search hit."
 fields:
   - name: input
@@ -38,16 +37,12 @@ fields:
     label: "Databases"
   - name: search_hits
     label: "Search hits"
-    cli_default: false
   - name: unannotated
     label: "Unannotated"
-    cli_default: false
   - name: invert
     label: "Invert"
-    cli_default: false
   - name: evalue
     label: "E-value"
-    cli_default: 100000000.0
   - name: contigs
     label: "Restrict to contigs"
   - name: contigs_file
@@ -58,7 +53,6 @@ fields:
     select: none
   - name: whole_contig
     label: "Whole contig"
-    cli_default: false
   - name: cds_range
     label: "CDS range (±)"
   - name: cds_up
@@ -75,20 +69,14 @@ fields:
     label: "Strand (f/r)"
   - name: keep_direction
     label: "Keep direction"
-    cli_default: false
   - name: pad
     label: "Pad to equal length"
-    cli_default: false
   - name: skip_deduplicate
     label: "Skip dedup"
-    cli_default: false
   - name: max_region_overlap
     label: "Max region overlap"
-    cli_default: 1.0
   - name: include_nucleic_acids
     label: "Include nucleic acids"
-    cli_default: false
   - name: partial
     label: "Fragments"
     help: "Which CDSs to extract regions around, by fragment status. Not affected by Invert."
-    cli_default: "include"

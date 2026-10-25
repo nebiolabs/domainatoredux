@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux transform_matrix`. Format: see README.md in this directory.
 id: transform_matrix
 label: "Transform matrix"
-category: "Matrices & networks"
 description: "Rescale or prune a similarity matrix (mode, lower bound, MST-kNN)."
 fields:
   - name: input
@@ -18,7 +17,6 @@ fields:
     output_name: "{stem}.transformed.hdf5"
   - name: mode
     label: "Mode"
-    cli_default: "none"
   - name: lb
     label: "Lower bound"
   - name: mst_knn
@@ -38,4 +36,3 @@ fields:
   - name: max_output_gb
     show: false
     label: "Max output gb"
-    cli_default: 25.0

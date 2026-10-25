@@ -34,8 +34,9 @@ codebase, silence it with a narrow `#[allow(...)]` **plus a one-line reason** (t
 existing ones cover Tauri IPC signatures, parity-mirroring parameter lists, and HMMER's
 1-based node indices); never add a crate-wide allow.
 
-**35 tools** (`domainatoredux <tool>`), grouped: I/O and dev (`inspect`, `convert`,
-`genbank_to_fasta`, `format_db`, `schema <tool>`); annotation and search (`domainate`,
+**34 tools** (`domainatoredux <tool>`) plus the `describe` and `completion` builtins,
+grouped: I/O and dev (`inspect`, `convert`, `genbank_to_fasta`, `format_db`); annotation
+and search (`domainate`,
 `domain_search`, `gene_call`, `filter_domains`); selection and extraction (`select_by_cds`,
 `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`,
 `extract_unannotated`, `trim_contigs`, `sort_contigs`, `clean_sequences`,
@@ -49,9 +50,7 @@ filename), moved there out of `README.md` when the docs became user-facing.
 CLI flags use the Python suite's **underscore** names (e.g. `--max_overlap`,
 `--dense_text`, `--whole_contig`, `-Z`/`--z`), set explicitly via clap `long = "..."` —
 don't assume clap's kebab default. Subcommands are snake_case too (`rename_all` on the
-`Command` enum), equal to upstream's tool names. (`enum_report` and `hmmer_report` parse their args by
-hand in the CLI because column order follows flag order, which clap derive does not
-preserve.)
+`Command` enum), equal to upstream's tool names.
 
 **The 1.0 interface (migration in progress, see the upstream-1.0 sync plan).** Each
 migrated tool's interface is one clap `Args` struct, `crates/domainator-config/src/args/<tool>.rs`,
@@ -64,26 +63,33 @@ one clap parse, so CLI flags win and every check applies to files too; `--print_
 and `domainatoredux describe` (`manifest.rs`, upstream's manifest v1 format) are read off
 the clap command. Outputs go through `crates/domainator-cli/src/output.rs` (`-` = stdout,
 atomic temp-file writes, `.gz`/`.bgz` = BGZF). Errors print as one line,
-`domainatoredux <tool>: error: ...` (`report_error`, shared with the GUI worker). Only
-`sort_contigs` is migrated so far; the rest still use the old layer below.
+`domainatoredux <tool>: error: ...` (`report_error`, shared with the GUI worker). The
+report tools' `--columns` take upstream's `name:arg:arg` tokens, parsed against the
+catalogs in `columns.rs` (the clap value type, so a bad token fails at parse time).
+An upstream option a migrated tool lacks is listed in its registry entry's
+`unsupported`, with upstream's default, so upstream configs that name it still load.
+Migrated so far: `sort_contigs`, `enum_report`, `hmmer_report`; the rest still use the
+old layer below.
 
 **Config files / agent interface, unmigrated tools** (the `crates/domainator-config` crate — *not* a
 `config.rs` in the CLI): every tool accepts `--config <file.json|.yml>` (a **native Rust**
 serde schema, *not* byte-compatible with Python's jsonargparse files) and `--print_config`
 (dump resolved params as YAML). Merge order is config = base, CLI flags override (scalars
-replace, lists replace when non-empty, bools OR, report columns append). `domainatoredux
-schema <tool>` emits a draft-07 JSON Schema. `resolve.rs` maps each `*Config` to the
-core's `*Options` and is shared by the CLI **and** the GUI, so the two cannot drift.
+replace, lists replace when non-empty, bools OR). Each has a draft-07 JSON Schema
+(`legacy_schema`), no longer a command, which `tool_manifest` converts into manifest
+parameters for the GUI until the tool is migrated. `resolve.rs` maps each `*Config` to
+the core's `*Options` and is shared by the CLI **and** the GUI, so the two cannot drift.
 
 To make merge correct, **defaulted scalar and required-path flags are `Option` in clap**
 (defaults applied via `unwrap_or` after merge; required paths like `-i`/`-o`/`-r` are
 validated post-merge so they can come from the config file).
 
-**Agent-facing `--json`** (upstream's documented contract, see its `AGENTS.md`):
-`enum_report` and `hmmer_report` write **streaming NDJSON**, one compact object per row;
-`matrix_report` and `summary_report` write **one JSON object** with a stable shape;
-`ssn_navigator` always writes JSON. In every case `--json` takes a path (`-` = stdout) and
-is **independent of `-o`**, so a run can produce TSV/text and JSON together.
+**Agent-facing JSON** (upstream's documented contract, see its `AGENTS.md`):
+`enum_report` and `hmmer_report` write **streaming NDJSON** with `--json_out`, one
+compact object per row; `matrix_report` and `summary_report` write **one JSON object**
+with a stable shape with `--json`; `ssn_navigator` always writes JSON. In every case the
+option takes a path (`-` = stdout) and is **independent of `-o`**, so a run can produce
+TSV/text and JSON together.
 
 **Versioning** (`docs/development.md`, "Versioning and releases"): our own SemVer line is
 `workspace.package.version` and nothing else (no `version` in any `tauri.conf.json` or
@@ -136,42 +142,41 @@ keep in particular:
   outputs end `_out`, numbers reject nan/inf, `--print_config` round-trips). Both build
   the CLI's `Command` on a 256 MB-stack thread: the derive overflows a test thread in
   debug builds.
-- **`every_schema_matches_its_config_struct`** (`domainator-config`) — `domainatoredux schema
-  <tool>` is the documented agent interface *and* what the GUI renders its tool dialogs
-  from (`cmd_tools::tool_schema`), while the config struct is what actually deserializes.
-  They are hand-written in different places and drift in both directions: a field missing
-  from the schema is a flag no agent and no GUI dialog can discover (this is how
-  `hmmer_build --window_length` and `format_db --log` went missing), and a property the
-  struct lacks is worse, because every config struct is `deny_unknown_fields`, so a config
-  written to match the schema is *rejected*. Add a tool to `every_tool()` when you add a tool.
+- **`every_schema_matches_its_config_struct`** (`domainator-config`) — an unmigrated
+  tool's old config schema is what the GUI renders its dialog from (converted by
+  `tool_manifest`), while the config struct is what actually deserializes. A property
+  the struct lacks is a dialog field whose run is *rejected* (`deny_unknown_fields`). A
+  tool leaves `every_tool()` when it is migrated.
 - **`merge_cli` coverage** — a struct field the merge forgets is a CLI flag that silently
-  does nothing.
-- **`every_offered_tool_is_dispatched_and_has_a_schema`** (`domainator-gui`) — the GUI tool
-  registry, the CLI's subcommands and the schema emitter are three hand-maintained lists in
-  three places. A Tools-menu job runs `<tool> --config <dialog params>` through
-  `domainator_cli::run` in a **worker process** (a copy of the GUI executable started with
-  `--domainatoredux-worker`, `src-tauri/src/worker.rs`), so there is no per-tool GUI runner to
-  drift from the CLI. A menu entry the CLI has no subcommand for fails only when the user
-  presses Run; a dialog field that is not a config property is rejected outright by
-  `deny_unknown_fields` (`every_tools_dialog_params_parse_as_its_cli_config` feeds every
-  dialog's default params to the CLI with `--print_config`). A job's provenance inputs are
-  derived from its spec's `role`/`file_type` (`job_io.rs`), and
+  does nothing (unmigrated tools).
+- **`every_offered_tool_is_dispatched`** (`domainator-gui`) — the GUI tool registry and the
+  CLI's subcommands are two hand-maintained lists. A Tools-menu job runs
+  `<tool> --config <dialog params>` through `domainator_cli::run` in a **worker process**
+  (a copy of the GUI executable started with `--domainatoredux-worker`,
+  `src-tauri/src/worker.rs`), so there is no per-tool GUI runner to drift from the CLI. A
+  menu entry the CLI has no subcommand for fails only when the user presses Run
+  (`every_tools_dialog_params_parse_as_its_cli_config` feeds every dialog's default
+  params to the CLI with `--print_config`). A job's provenance inputs are derived from
+  its spec's `role`/`file_type` (`job_io.rs`), and
   `derived_provenance_roles_match_the_golden_table` keeps the roles
   `trace_source_sequences` follows. `tests/worker.rs` runs the real binary: worker mode
   must never start Tauri, and Cancel must kill the whole process tree.
   `ToolField::role` must be one of `ROLES`, because a role `ToolDialog.svelte` cannot
   render makes the field silently disappear from the form. The registry is the tool
   spec files, `apps/domainator-gui/tools/<id>.yml`, one per tool and embedded by
-  `build.rs`, which fails the build on a malformed file. Each spec lists **every**
-  schema property, with the CLI default and an optional `gui_default`. A spec also sets
-  each input's `sources` (databases or workspace first) and `select` (its starting
-  entry). `tool_specs.rs`'s tests (`every_schema_property_is_listed_once`,
-  `cli_defaults_match_the_schema`, `gui_defaults_fit_their_property`) catch a new CLI
-  option the GUI never decided about and a copied default that went stale. When you
+  `build.rs`, which fails the build on a malformed file. A spec is GUI policy over the
+  tool's manifest entry (`domainator_config::tool_manifest`, resolved in
+  `tool_specs::specs`): it lists **every** manifest parameter but `-v`/`-q`, with labels,
+  an optional `gui_default`, and each input's `sources` (databases or workspace first)
+  and `select` (its starting entry). Types, choices, defaults, help, the menu category
+  and, for a migrated tool, every field's role come from the manifest.
+  `tool_specs.rs`'s tests (`every_manifest_parameter_is_listed_once`,
+  `migrated_tools_derive_every_role`, `gui_defaults_fit_their_property`) catch a new CLI
+  option the GUI never decided about and a GUI default the CLI would reject. When you
   add a tool, write its spec file too. The report column builders (`columns` role)
-  render from the schema's `columns.items.oneOf`, generated beside `ColumnSpec` /
-  `HmmerReportColumn`; `column_schemas_match_their_enums` (`domainator-config`) keeps
-  those entries and the enums in step, so a new column variant must get a schema entry.
+  render from the manifest's column catalog, the same `columns.rs` catalog the CLI
+  parses `--columns` with, and send `name:arg` tokens (`columns.ts`, tested by
+  `columns.test.ts`).
 - **`storage_format_matches_what_the_readers_require`** and
   **`a_gzipped_fasta_is_installed_as_an_indexed_bgzf_database`** (`domainator-gui`,
   `reference_dbs.rs`) — the managed UniProt/Pfam downloads have no upstream counterpart,
@@ -249,9 +254,9 @@ Virtual Cargo workspace: three library/binary crates plus two Tauri apps and one
 WASM app.
 
 - **`crates/domainator-core/`** — the data model, all I/O, and all tool logic as library functions (GUI-reusable; mirrors the Python convention that every tool is also a library function). Also holds `app_support/` — the GUI-facing seam (workspace file classification, provenance/job DAG, contig view + edit, HMM logo, summary stats).
-- **`crates/domainator-config/`** — per-tool serde config structs, `merge_cli`, `--print_config`, the draft-07 `schema <tool>` emitter, and `resolve.rs` (config → `*Options`), shared by the CLI and the GUI.
+- **`crates/domainator-config/`** — the interface: the 1.0 layer (`args/`, `registry.rs`, `manifest.rs`, `config_file.rs`, `columns.rs`, `tool_manifest`) and, for unmigrated tools, per-tool serde config structs, `merge_cli`, `--print_config`, the legacy config schemas, and `resolve.rs` (config → `*Options`), shared by the CLI and the GUI.
 - **`crates/domainator-cli/`** — thin clap front-end; arg parsing + I/O wiring only, calls into core. Binary name `domainatoredux` (upstream's is `domainator`; the subcommand names are identical).
-- **`apps/domainator-gui/`** — the Tauri v2 + Svelte 5 desktop app: schema-driven tool dialogs, a workspace/job model, and a dozen viewers (contig, SSN, matrix report, enum report, HMM logo, summary dashboard, …). Its Rust side is a thin `#[tauri::command]` layer over `app_support`.
+- **`apps/domainator-gui/`** — the Tauri v2 + Svelte 5 desktop app: manifest-driven tool dialogs, a workspace/job model, and a dozen viewers (contig, SSN, matrix report, enum report, HMM logo, summary dashboard, …). Its Rust side is a thin `#[tauri::command]` layer over `app_support`.
 - **`apps/genbank-summary/`** and **`wasm_apps/genbank-summary/`** — a small standalone Tauri app and its browser/WASM twin.
 
 `serde_json` is built with **`preserve_order`** workspace-wide, so JSON object key order

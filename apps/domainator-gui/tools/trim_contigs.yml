@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux trim_contigs`. Format: see README.md in this directory.
 id: trim_contigs
 label: "Trim contigs"
-category: "Selection & extraction"
 description: "Trim the ends of contigs by kb, CDS count, or up to a domain boundary."
 fields:
   - name: input
@@ -34,7 +33,6 @@ fields:
     label: "Domain expr"
   - name: no_domain
     label: "Drop domain-less"
-    cli_default: false
   - name: contigs
     label: "Restrict to contigs"
   - name: domains_file

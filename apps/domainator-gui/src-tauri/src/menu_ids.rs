@@ -300,8 +300,8 @@ mod tests {
     }
 
     /// The headline guard, and the direct analogue of
-    /// `every_offered_tool_is_dispatched_and_has_a_schema`: two hand-maintained
-    /// lists, in two languages, in two files.
+    /// `every_offered_tool_is_dispatched`: two hand-maintained lists, in two
+    /// languages, in two files.
     ///
     /// An id Rust emits with no frontend entry is a menu item that does nothing
     /// when clicked; an id the frontend lists that Rust never emits is dead code

@@ -95,7 +95,6 @@ pub fn run() {
             cmd_files::render_ssn_html,
             cmd_files::extract_records,
             cmd_tools::list_tools,
-            cmd_tools::tool_schema,
             cmd_tools::run_tool,
             cmd_tools::job_status,
             cmd_tools::list_jobs,

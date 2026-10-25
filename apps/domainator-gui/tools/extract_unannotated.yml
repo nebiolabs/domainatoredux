@@ -1,7 +1,6 @@
 # GUI dialog for `domainatoredux extract_unannotated`. Format: see README.md in this directory.
 id: extract_unannotated
 label: "Extract unannotated"
-category: "Selection & extraction"
 description: "Extract the regions of each CDS/contig with no domain annotation."
 fields:
   - name: input
@@ -18,23 +17,18 @@ fields:
     output_name: "{stem}.unannotated.gb"
   - name: fasta_out
     label: "FASTA output"
-    cli_default: false
   - name: databases
     label: "Databases"
   - name: search_hits
     label: "Search hits"
-    cli_default: false
   - name: largest
     label: "Largest only"
-    cli_default: false
   - name: lb
     label: "Min length"
   - name: keep_direction
     label: "Keep direction"
-    cli_default: false
   - name: keep_name
     label: "Keep name"
-    cli_default: false
   - name: evalue
     label: "Max E-value"
   - name: score

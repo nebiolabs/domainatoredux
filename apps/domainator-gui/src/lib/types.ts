@@ -301,7 +301,7 @@ export interface RefDbProgress {
 export interface ToolField {
   name: string;
   label: string;
-  /// The spec's `help`; when null the dialog shows the schema's `description`.
+  /// The hint: the spec's `help`, else the manifest parameter's.
   help: string | null;
   role: "input_file" | "input_files" | "output_file" | "param" | "columns";
   /// Inputs: the file types the dropdown offers (the spec's `file_type`); empty otherwise.
@@ -309,8 +309,21 @@ export interface ToolField {
   required: boolean;
   /// What the dialog seeds: `tools/<id>.yml`'s `gui_default`, else `cli_default`.
   default: unknown;
-  /// The CLI's default, shown as a hint when `default` differs from it.
+  /// The CLI's default (the manifest's), shown as a hint when `default` differs.
   cli_default: unknown;
+  /// The manifest parameter's kind.
+  kind: "value" | "flag" | "path" | "columns";
+  /// Its JSON type: of each value, for a multiple parameter.
+  value_type: "string" | "integer" | "number" | "boolean";
+  /// It takes a list of values.
+  multiple: boolean;
+  /// The values it allows, when they are limited.
+  choices: unknown[];
+  min: number | null;
+  max: number | null;
+  exclusive_min: number | null;
+  /// `columns`: the report's column catalog.
+  columns: ColumnInfo[];
   /// Inputs: which group of the dropdown comes first.
   sources: "databases_first" | "workspace_first" | null;
   /// Inputs: `first` | `none` | `database:<managed id>`, for when no selected
@@ -324,7 +337,16 @@ export interface ToolField {
   column_types: Record<string, ColumnTypeSpec>;
 }
 
-/// `tool_spec_types::ColumnTypeSpec`: how the builder shows one column type.
+/// One entry of a manifest `columns` catalog.
+export interface ColumnInfo {
+  name: string;
+  /// Argument names; with `repeat_last`, the last one takes one or more values.
+  args: string[];
+  repeat_last: boolean;
+  help: string;
+}
+
+/// `tool_spec_types::ColumnTypeSpec`: how the builder shows one column.
 export interface ColumnTypeSpec {
   label: string | null;
   help: string | null;
@@ -344,7 +366,7 @@ export interface ToolMeta {
   label: string;
   description: string;
   fields: ToolField[];
-  /// Menu group, one of `cmd_tools::TOOL_CATEGORIES`; `list_tools` returns the
+  /// Menu group, one of `cmd_tools::CATEGORY_LABELS`' labels; `list_tools` returns the
   /// tools sorted by it.
   category: string;
 }
@@ -367,28 +389,6 @@ export interface JobInfo {
   started_at_ms: string;
   outputs: string[];
   params: Record<string, unknown>;
-}
-
-// Minimal JSON-Schema shape we render forms from (draft-07 subset).
-export interface JsonSchema {
-  title?: string;
-  description?: string;
-  type?: string;
-  properties?: Record<string, JsonSchemaProp>;
-  required?: string[];
-}
-
-export interface JsonSchemaProp {
-  type?: string | string[];
-  title?: string;
-  description?: string;
-  default?: unknown;
-  const?: string;
-  enum?: (string | null)[];
-  /// A report's `columns` items carry one `oneOf` entry per column type.
-  items?: { type?: string; oneOf?: JsonSchemaProp[] };
-  properties?: Record<string, JsonSchemaProp>;
-  required?: string[];
 }
 
 export interface MatrixReport {
@@ -425,16 +425,17 @@ export interface Prefs {
 /// Mirrors `app_support::prefs::EnumReportColumns`: the Enum Report's default
 /// columns per granularity, `null` for the built-in set.
 export interface EnumReportColumns {
-  contig: Record<string, unknown>[] | null;
-  cds: Record<string, unknown>[] | null;
-  domain: Record<string, unknown>[] | null;
+  contig: string[] | null;
+  cds: string[] | null;
+  domain: string[] | null;
 }
 
 /// Mirrors `app_support::workspace::EnumReportView`: what the Enum Report tab
 /// remembers for one file.
 export interface EnumReportView {
   by: string | null;
-  columns: Record<string, Record<string, unknown>[]>;
+  /// Column tokens per granularity.
+  columns: Record<string, string[]>;
 }
 
 /// A partial settings update. Omitted fields are left alone.

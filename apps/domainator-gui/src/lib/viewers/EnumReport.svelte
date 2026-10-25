@@ -11,7 +11,7 @@
   } from "../api";
   import { cached } from "../cache";
   import ColumnBuilder from "../ColumnBuilder.svelte";
-  import { toColumns, toRows, type ColumnRow, type ColumnType } from "../columns";
+  import { columnName, toColumns, toRows, type ColumnRow, type ColumnType } from "../columns";
   import { defaultColumns, loadEnumColumnTypes, sessionViews, type Column } from "../enumColumns";
   import { ws } from "../state.svelte";
   import { ENUM_BYS, fittingBys, itemKey, targetItem, type EnumBy, type SelItem } from "../selection";
@@ -78,7 +78,7 @@
     if (taxPath && taxonomies.some((d) => d.path === taxPath)) return;
     taxPath = (taxonomies.find((d) => d.managed_id === "ncbi_taxonomy") ?? taxonomies[0])?.path ?? "";
   });
-  const needsTaxonomy = $derived(applied.some((c) => TAXONOMY_TYPES.has(String(c.type))));
+  const needsTaxonomy = $derived(applied.some((c) => TAXONOMY_TYPES.has(columnName(c))));
   // The taxonomy a run uses: none unless a column needs one, so switching it while
   // no taxonomy column is shown doesn't rerun the report (and reset the grid).
   const runTax = $derived(needsTaxonomy ? taxPath || null : null);

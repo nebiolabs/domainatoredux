@@ -8,18 +8,24 @@
 //! is `rename_all = "snake_case"`) and the config-file keys.
 
 mod common;
+mod enum_report;
+mod hmmer_report;
 mod sort_contigs;
 
 pub use common::CommonArgs;
+pub use enum_report::EnumReportArgs;
+pub use hmmer_report::HmmerReportArgs;
 pub use sort_contigs::SortContigsArgs;
 
 /// The `clap::Command` of a migrated tool, built from its args struct alone, for
-/// callers that have no CLI to ask (the config schema the GUI renders from).
+/// callers that have no CLI to ask (the GUI's tool dialogs).
 pub fn tool_command(name: &str) -> Option<clap::Command> {
     use clap::Args;
     let cmd = clap::Command::new(crate::registry::tool_info(name)?.name);
     Some(match name {
         "sort_contigs" => SortContigsArgs::augment_args(cmd),
+        "enum_report" => EnumReportArgs::augment_args(cmd),
+        "hmmer_report" => HmmerReportArgs::augment_args(cmd),
         _ => return None,
     })
 }

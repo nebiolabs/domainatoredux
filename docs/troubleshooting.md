@@ -60,13 +60,15 @@ clustering DNA as if it were protein.
 Point `--bin_path` at the `cdhit` multiplexer binary (the Rust port, which dispatches on
 its first argument) and this resolves itself.
 
-## "HTML output is not supported in this port"
+## "unexpected argument '--html_out'"
 
-`enum_report --html` and `hmmer_report --html` are deliberately not implemented, and error
-rather than silently writing something else. Use TSV (`-o`) or JSON (`--json`):
+`enum_report --html_out` and `hmmer_report --html_out` are deliberately not implemented,
+and error rather than silently writing something else. A config file that sets
+`html_out` gets "an option of upstream domainator's enum_report that domainatoredux does
+not support". Use TSV (`-o`) or JSON (`--json_out`):
 
 ```bash
-domainatoredux enum_report -i in.gb --domains --length -o table.tsv
+domainatoredux enum_report -i in.gb --columns domains length -o table.tsv
 ```
 
 The same applies to `matrix_report` and `summary_report`. For the visual version, the

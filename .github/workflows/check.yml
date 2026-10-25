@@ -63,7 +63,7 @@ jobs:
         run: cargo doc --no-deps -p domainator-core -p domainator-config -p domainator-cli
 
   # The two Tauri apps. This is where the GUI's own guards run -- the tool registry vs
-  # CLI vs schema checks, the tool-spec tests, the reference-database storage tests --
+  # CLI vs manifest checks, the tool-spec tests, the reference-database storage tests --
   # none of which have an upstream to be checked against.
   gui:
     name: gui build + test

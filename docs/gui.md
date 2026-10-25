@@ -113,9 +113,9 @@ chart and legend exports open a Save dialog. Select nodes and click **Open seque
 
 ## Running tools
 
-The **Tools** menu runs 29 of the command-line tools, grouped as Annotation & search,
-Selection & extraction, Matrices & networks, Reports, HMM profiles, Color and
-Conversion. The **Tools** button in the middle of the toolbar offers the same groups cut
+The **Tools** menu runs 29 of the command-line tools, grouped as upstream groups them:
+Annotation & search, Selection & editing, Conversion, HMM profiles, Comparison,
+Networks, Reports and Figures. The **Tools** button in the middle of the toolbar offers the same groups cut
 down to the tools that can take the selected files as inputs, and the dialog it opens
 starts with those files filled in. Selecting a matrix `.hdf5` and a `.tsv`, for example,
 offers only Build SSN and Build SSN Viewer, with the matrix as the input and the table as
@@ -133,8 +133,8 @@ Domain search and Domainate put a FASTA in References, so the search database st
 the first registered database. A file only one input can take, such as a GenBank file,
 always goes to that input.
 
-Each dialog is generated from the same JSON Schema the CLI prints
-(`domainatoredux schema <tool>`), so the options and their types are exactly the CLI's — they
+Each dialog is generated from the same tool manifest the CLI prints
+(`domainatoredux describe`), so the options and their types are exactly the CLI's — they
 cannot drift apart. Booleans render as checkboxes, enumerations as dropdowns, lists as
 comma-separated fields, and every option carries its description inline. Where the app
 starts an option at a different value from the command line, the dialog says so under it.
