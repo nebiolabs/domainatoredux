@@ -157,33 +157,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `hmmer_compare` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct HmmerCompareConfig {
-    pub input: Vec<String>,
-    pub reference: Vec<String>,
-    pub output: Option<String>,
-    pub score_cutoff: Option<f64>,
-    pub k: Option<usize>,
-    pub alignments: bool,
-    pub cpu: Option<usize>,
-    pub max_output_gb: Option<f64>,
-}
-
-impl HmmerCompareConfig {
-    pub fn merge_cli(&mut self, cli: HmmerCompareConfig) {
-        merge_vec!(self, cli, input);
-        merge_vec!(self, cli, reference);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, score_cutoff);
-        merge_scalar!(self, cli, k);
-        self.alignments |= cli.alignments;
-        merge_scalar!(self, cli, cpu);
-        merge_scalar!(self, cli, max_output_gb);
-    }
-}
-
 /// `hmmer_select` parameters (config-file shape).
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -400,7 +373,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
-        "hmmer_compare" => hmmer_compare_schema(),
         "hmmer_select" => hmmer_select_schema(),
         "hmmer_build" => hmmer_build_schema(),
         "hmmer_search" => hmmer_search_schema(),
@@ -595,26 +567,6 @@ fn color_table_to_legend_schema() -> serde_json::Value {
     })
 }
 
-fn hmmer_compare_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "hmmer_compare config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}, "description": "Query .hmm files (optionally compressed)"},
-            "reference": {"type": "array", "items": {"type": "string"}, "description": "Reference .hmm files (optionally compressed)"},
-            "output": {"type": ["string", "null"], "description": "TSV output (stdout if omitted)"},
-            "score_cutoff": {"type": "number", "default": 0.0},
-            "k": {"type": ["integer", "null"]},
-            "alignments": {"type": "boolean", "default": false},
-            "cpu": {"type": "integer", "default": 0},
-            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected TSV output exceeds this many GB (0 disables)"}
-        }
-    })
-}
-
 fn hmmer_build_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -769,7 +721,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "hmmer_compare" => HmmerCompareConfig,
             "hmmer_select" => HmmerSelectConfig,
             "hmmer_build" => HmmerBuildConfig,
             "hmmer_search" => HmmerSearchConfig,

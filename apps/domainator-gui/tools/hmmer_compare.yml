@@ -1,33 +1,29 @@
 # GUI dialog for `domainatoredux hmmer_compare`. Format: see README.md in this directory.
 id: hmmer_compare
 label: "HMM compare"
-description: "Profile-vs-profile Viterbi comparison; writes a scores/alignments table."
+description: "Profile-vs-profile Viterbi comparison; writes a scores table and optionally the alignments."
 fields:
   - name: input
     label: "Query HMM(s)"
-    role: input_files
     file_type: hmm
-    required: true
     sources: workspace_first
     select: first
   - name: reference
     label: "Reference HMM(s)"
-    role: input_files
     file_type: hmm
-    required: true
     sources: databases_first
     select: "database:pfam"
-  - name: output
+  - name: tsv_out
     label: "Output (table)"
-    role: output_file
     required: true
     output_name: "{stem}.compare.tsv"
-  - name: score_cutoff
-    label: "Score cutoff"
-  - name: k
-    label: "Top-k per query"
-  - name: alignments
-    label: "Include alignments"
+  - name: alignments_out
+    label: "Alignments"
+    output_name: "{stem}.alignments.txt"
+  - name: min_score
+    label: "Minimum score"
+  - name: max_hits_per_query
+    label: "Top hits per query"
   - name: cpu
     show: false
     label: "Cpu"

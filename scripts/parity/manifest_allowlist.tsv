@@ -56,23 +56,6 @@ hmmer_build	name	required	false	true	todo:1.0-cli
 hmmer_build	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
 hmmer_build	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
 hmmer_build	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
-hmmer_compare	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-hmmer_compare	-	required_outputs	null	["tsv_out","alignments_out"]	todo:1.0-cli	
-hmmer_compare	alignments	extra	{"name":"alignments","flags":["--alignments"],"sets":true,"kind":"flag","type":"boolean","default":false}	null	todo:1.0-cli	
-hmmer_compare	alignments_out	missing	null	{"default":null,"flags":["--alignments_out"],"kind":"path","name":"alignments_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-hmmer_compare	cpu	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-hmmer_compare	cpu	default	null	0	todo:1.0-cli	
-hmmer_compare	input	required	false	true	todo:1.0-cli	
-hmmer_compare	k	extra	{"name":"k","flags":["-k","--k"],"default":null,"kind":"value","type":"integer","min":0,"required":false}	null	todo:1.0-cli	
-hmmer_compare	max_hits_per_query	missing	null	{"default":null,"flags":["--max_hits_per_query"],"kind":"value","name":"max_hits_per_query","required":false,"type":"integer"}	todo:1.0-cli	
-hmmer_compare	max_output_gb	default	null	25	todo:1.0-cli	
-hmmer_compare	min_score	missing	null	{"default":0,"flags":["--min_score"],"kind":"value","name":"min_score","required":false,"type":"number"}	todo:1.0-cli	
-hmmer_compare	output	extra	{"name":"output","flags":["-o","--output"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-hmmer_compare	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-hmmer_compare	reference	required	false	true	todo:1.0-cli	
-hmmer_compare	score_cutoff	extra	{"name":"score_cutoff","flags":["--score_cutoff"],"default":null,"kind":"value","type":"number","required":false}	null	todo:1.0-cli	
-hmmer_compare	tsv_out	missing	null	{"default":null,"flags":["-o","--tsv_out"],"kind":"path","name":"tsv_out","required":false,"role":"output","stdout":true,"type":"string"}	todo:1.0-cli	
-hmmer_compare	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
 hmmer_report	-	required_outputs	["tsv_out","json_out"]	["tsv_out","html_out","json_out"]	deferred:html	no html_out
 hmmer_report	html_max_height	missing	null	{"default":null,"flags":["--html_max_height"],"kind":"value","name":"html_max_height","required":false,"type":"integer"}	deferred:html	
 hmmer_report	html_out	missing	null	{"default":null,"flags":["--html_out"],"kind":"path","name":"html_out","required":false,"role":"output","stdout":true,"type":"string"}	deferred:html	

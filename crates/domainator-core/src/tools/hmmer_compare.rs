@@ -5,7 +5,6 @@
 
 use std::cmp::Ordering;
 use std::io::{self, Write};
-use std::path::Path;
 
 use hmmer_pure_rs::{Alphabet, Bg, Hmm};
 
@@ -13,26 +12,23 @@ use crate::search::hmm_compare::{compare_hmmer, compare_hmmer_aligned};
 
 /// Options for [`hmmer_compare`].
 pub struct HmmerCompareOptions {
-    /// Report alignments with score `>= score_cutoff`.
-    pub score_cutoff: f64,
-    /// Emit the rendered alignment block under each hit.
-    pub alignments: bool,
+    /// Report alignments with score `>= min_score` (the unrounded score).
+    pub min_score: f64,
     /// Keep at most this many top hits per query (`None` = all).
-    pub k: Option<usize>,
+    pub max_hits_per_query: Option<usize>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
-    /// Fail if the projected TSV output exceeds this many GB (`0`/`None` disables).
-    pub max_output_gb: Option<f64>,
+    /// Fail once the outputs would exceed this many bytes (`None` disables).
+    pub max_output_bytes: Option<u64>,
 }
 
 impl Default for HmmerCompareOptions {
     fn default() -> Self {
         HmmerCompareOptions {
-            score_cutoff: 0.0,
-            alignments: false,
-            k: None,
+            min_score: 0.0,
+            max_hits_per_query: None,
             cpu: 0,
-            max_output_gb: None,
+            max_output_bytes: None,
         }
     }
 }
@@ -43,17 +39,6 @@ fn round2(x: f64) -> f64 {
     (x * 100.0).round_ties_even() / 100.0
 }
 
-/// Read and concatenate all HMM profiles from `files`, in order.
-fn load_all_hmms(files: &[String]) -> io::Result<Vec<Hmm>> {
-    let mut out = Vec::new();
-    for f in files {
-        let hmms = crate::search::hmm_read::read_hmm_file(Path::new(f))
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{e:?}")))?;
-        out.extend(hmms);
-    }
-    Ok(out)
-}
-
 /// One scored (and optionally aligned) hit.
 struct Hit {
     query: String,
@@ -62,110 +47,118 @@ struct Hit {
     alignment: Option<String>,
 }
 
-/// Compare every query profile against every reference profile, writing a TSV
-/// (`query`, `reference`, `score`) with optional alignment blocks to `out`.
-pub fn hmmer_compare<W: Write>(
-    query_files: &[String],
-    reference_files: &[String],
+/// Compare every query profile against every reference profile (upstream
+/// `hmmer_compare.hmmer_compare`). Each hit is a `query reference score` row in
+/// `tsv_out` (after a header), and the same row followed by its alignment and a blank
+/// line in `alignments_out`; either can be `None`.
+///
+/// `queries` holds each query file's name and profiles, in order; a file's profiles
+/// must share the references' alphabet.
+pub fn hmmer_compare(
+    queries: &[(String, Vec<Hmm>)],
+    references: &[Hmm],
     opts: &HmmerCompareOptions,
-    out: &mut W,
+    mut tsv_out: Option<&mut dyn Write>,
+    mut alignments_out: Option<&mut dyn Write>,
 ) -> io::Result<()> {
-    let queries = load_all_hmms(query_files)?;
-    let references = load_all_hmms(reference_files)?;
+    use crate::search::hmm_compare::{check_alphabets_match, common_hmm_alphabet};
+    let to_err = |m: String| io::Error::new(io::ErrorKind::InvalidInput, m);
+    let reference_alphabet = common_hmm_alphabet(references, "reference").map_err(to_err)?;
 
-    // Both sides must share an alphabet: hmmer_compare aligns profiles column by column,
-    // and nucleotide scores run at roughly half the amino acid scale.
-    {
-        use crate::search::hmm_compare::{check_alphabets_match, common_hmm_alphabet};
-        let to_err = |m: String| io::Error::new(io::ErrorKind::InvalidInput, m);
-        let q = common_hmm_alphabet(&queries, "input").map_err(to_err)?;
-        let r = common_hmm_alphabet(&references, "reference").map_err(to_err)?;
-        check_alphabets_match(q, r, &query_files.join(", "), "hmmer_compare").map_err(to_err)?;
-    }
-
-    // Output-size guardrail (uncompressed TSV bytes; default via caller, 0/None disables).
-    let max_bytes: Option<u64> = match opts.max_output_gb {
-        Some(gb) => crate::tools::output_guardrails::max_output_gb_to_bytes(gb)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?,
-        None => None,
-    };
-    let over_limit = |projected: u64, max: u64| -> io::Error {
-        io::Error::other(format!(
-            "Projected hmmer_compare TSV output size is {:.2} GB, which exceeds the configured \
-                 limit of {:.2} GB. Reduce the projected output size or raise the limit with \
-                 --max_output_gb. Relevant options: -k, --score_cutoff, --alignments.",
-            projected as f64 / 1_000_000_000.0,
-            max as f64 / 1_000_000_000.0
-        ))
-    };
-
-    let header = "query\treference\tscore\n";
-    let mut written: u64 = header.len() as u64;
-    if let Some(max) = max_bytes {
-        if written > max {
-            return Err(over_limit(written, max));
+    let mut written: u64 = 0;
+    let mut account = |bytes: u64| -> io::Result<()> {
+        written += bytes;
+        match opts.max_output_bytes {
+            Some(max) if written > max => Err(io::Error::other(
+                crate::tools::output_guardrails::output_limit_message(
+                    "hmmer_compare output",
+                    written,
+                    max,
+                    &["--max_hits_per_query", "--min_score", "--alignments_out"],
+                    None,
+                ),
+            )),
+            _ => Ok(()),
         }
+    };
+    let header = "query\treference\tscore\n";
+    if let Some(out) = tsv_out.as_mut() {
+        account(header.len() as u64)?;
+        out.write_all(header.as_bytes())?;
     }
-    out.write_all(header.as_bytes())?;
-    if queries.is_empty() || references.is_empty() {
-        return Ok(());
-    }
-    let bg = Bg::new(&Alphabet::new(queries[0].abc_type));
+    let aligned = alignments_out.is_some();
 
-    // Score each query against all references in parallel; `map` preserves query
-    // order so output is identical regardless of thread count.
-    let per_query: Vec<Vec<Hit>> = crate::parallel::with_threads(opts.cpu, || {
-        use rayon::prelude::*;
-        queries
-            .par_iter()
-            .map(|q| {
-                let mut hits: Vec<Hit> = Vec::new();
-                for r in &references {
-                    let (score, alignment) = if opts.alignments {
-                        let a = compare_hmmer_aligned(q, r, &bg.f);
-                        (round2(a.score as f64), Some(a.text))
-                    } else {
-                        (round2(compare_hmmer(q, r, &bg.f) as f64), None)
-                    };
-                    if score >= opts.score_cutoff {
-                        hits.push(Hit {
-                            query: q.name.clone(),
-                            reference: r.name.clone(),
-                            score,
-                            alignment,
-                        });
-                    }
-                }
-                // Sort by descending score (ties broken by reference name).
-                hits.sort_by(|a, b| {
-                    b.score
-                        .partial_cmp(&a.score)
-                        .unwrap_or(Ordering::Equal)
-                        .then_with(|| a.reference.cmp(&b.reference))
-                });
-                if let Some(k) = opts.k {
-                    hits.truncate(k);
-                }
-                hits
-            })
-            .collect()
-    });
-
-    for hits in per_query {
-        for hit in hits {
-            let mut rendered = format!("{}\t{}\t{:.2}\n", hit.query, hit.reference, hit.score);
-            if let Some(text) = &hit.alignment {
-                rendered.push_str(text);
-                rendered.push_str("\n\n\n\n");
+    for (file, profiles) in queries {
+        let Some(alphabet) = common_hmm_alphabet(profiles, "input").map_err(to_err)? else {
+            continue; // no profiles in this file
+        };
+        check_alphabets_match(Some(alphabet), reference_alphabet, file, "hmmer_compare")
+            .map_err(to_err)?;
+        let bg = Bg::new(&Alphabet::new(profiles[0].abc_type));
+        // Score each query against all references in parallel; `map` preserves query
+        // order so output is identical regardless of thread count.
+        let per_query: Vec<Vec<Hit>> = crate::parallel::with_threads(opts.cpu, || {
+            use rayon::prelude::*;
+            profiles
+                .par_iter()
+                .map(|q| query_hits(q, references, &bg, aligned, opts))
+                .collect()
+        });
+        for hit in per_query.into_iter().flatten() {
+            let row = format!(
+                "{}\t{}\t{:.2}\n",
+                hit.query,
+                hit.reference,
+                round2(hit.score)
+            );
+            let alignment = hit.alignment.map(|text| format!("{row}{text}\n\n"));
+            let tsv_bytes = if tsv_out.is_some() { row.len() } else { 0 };
+            account((tsv_bytes + alignment.as_ref().map_or(0, String::len)) as u64)?;
+            if let Some(out) = tsv_out.as_mut() {
+                out.write_all(row.as_bytes())?;
             }
-            if let Some(max) = max_bytes {
-                written += rendered.len() as u64;
-                if written > max {
-                    return Err(over_limit(written, max));
-                }
+            if let (Some(out), Some(alignment)) = (alignments_out.as_mut(), alignment) {
+                out.write_all(alignment.as_bytes())?;
             }
-            out.write_all(rendered.as_bytes())?;
         }
     }
     Ok(())
+}
+
+/// One query's hits at or above the cutoff, best first (ties by reference name), at
+/// most `max_hits_per_query` of them.
+fn query_hits(
+    query: &Hmm,
+    references: &[Hmm],
+    bg: &Bg,
+    aligned: bool,
+    opts: &HmmerCompareOptions,
+) -> Vec<Hit> {
+    let mut hits: Vec<Hit> = Vec::new();
+    for r in references {
+        let (score, alignment) = if aligned {
+            let a = compare_hmmer_aligned(query, r, &bg.f);
+            (f64::from(a.score), Some(a.text))
+        } else {
+            (f64::from(compare_hmmer(query, r, &bg.f)), None)
+        };
+        if score >= opts.min_score {
+            hits.push(Hit {
+                query: query.name.clone(),
+                reference: r.name.clone(),
+                score,
+                alignment,
+            });
+        }
+    }
+    hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a.reference.cmp(&b.reference))
+    });
+    if let Some(k) = opts.max_hits_per_query {
+        hits.truncate(k);
+    }
+    hits
 }

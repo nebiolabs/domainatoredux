@@ -114,7 +114,8 @@ For the pairwise alignments themselves rather than a matrix, use
 [`hmmer_compare`](cli-reference.md#hmmer_compare):
 
 ```bash
-domainatoredux hmmer_compare -i pdonr_hmms.hmm -r pdonr_hmms.hmm -o scores.tsv --alignments
+domainatoredux hmmer_compare -i pdonr_hmms.hmm -r pdonr_hmms.hmm -o scores.tsv \
+  --alignments_out alignments.txt
 ```
 
 ## 4. Curate a reference HMM set

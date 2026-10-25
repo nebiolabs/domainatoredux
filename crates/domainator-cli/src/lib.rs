@@ -27,7 +27,6 @@ use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools;
 use domainator_core::tools::gene_call;
-use domainator_core::tools::hmmer_compare::{hmmer_compare, HmmerCompareOptions};
 use domainator_core::tools::select_common::parse_name_list;
 
 #[derive(Parser)]
@@ -175,38 +174,7 @@ enum Command {
     /// Select a subset of contigs from a GenBank/FASTA file by various criteria.
     SelectByContig(config::args::SelectByContigArgs),
     /// Align HMM profiles against reference HMM profiles (hhsearch-like).
-    HmmerCompare {
-        /// Query `.hmm` file(s).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Reference `.hmm` file(s).
-        #[arg(short, long, num_args = 1..)]
-        reference: Vec<PathBuf>,
-        /// Output TSV (default: stdout).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Report hits with score >= this (default: 0).
-        #[arg(long = "score_cutoff")]
-        score_cutoff: Option<f64>,
-        /// Keep at most this many top hits per query.
-        #[arg(short = 'k', long)]
-        k: Option<usize>,
-        /// Emit rendered alignments under each hit.
-        #[arg(long)]
-        alignments: bool,
-        /// Worker threads (0 = all cores).
-        #[arg(long)]
-        cpu: Option<usize>,
-        /// Fail if the projected TSV output exceeds this many GB (default 25; 0 disables).
-        #[arg(long = "max_output_gb")]
-        max_output_gb: Option<f64>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    HmmerCompare(config::args::HmmerCompareArgs),
     HmmerReport(config::args::HmmerReportArgs),
     /// Filter an HMM file by text matches on profile NAME/DESC/ACC fields.
     HmmerSelect {
@@ -891,62 +859,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::EnumReport(args) => commands::enum_report::run(&args)?,
         Command::SelectByCds(args) => commands::select_by_cds::run(&args)?,
         Command::SelectByContig(args) => commands::select_by_contig::run(&args)?,
-        Command::HmmerCompare {
-            input,
-            reference,
-            output,
-            score_cutoff,
-            k,
-            alignments,
-            cpu,
-            max_output_gb,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::HmmerCompareConfig {
-                input: paths_to_strings(&input)?,
-                reference: paths_to_strings(&reference)?,
-                output: opt_path(&output)?,
-                score_cutoff,
-                k,
-                alignments,
-                cpu,
-                max_output_gb,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::HmmerCompareConfig>(p)?,
-                None => config::HmmerCompareConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let opts = HmmerCompareOptions {
-                score_cutoff: cfg.score_cutoff.unwrap_or(0.0),
-                alignments: cfg.alignments,
-                k: cfg.k,
-                cpu: cfg.cpu.unwrap_or(0),
-                max_output_gb: Some(cfg.max_output_gb.unwrap_or(25.0)),
-            };
-            match &cfg.output {
-                Some(p) => {
-                    // Buffer in memory so a tripped output-size guardrail leaves no
-                    // partial file (mirrors the Python tool's temp-file + rename).
-                    let mut buf: Vec<u8> = Vec::new();
-                    hmmer_compare(&cfg.input, &cfg.reference, &opts, &mut buf)
-                        .context("running hmmer_compare")?;
-                    std::fs::write(p, &buf)?;
-                }
-                None => {
-                    let stdout = std::io::stdout();
-                    let mut h = stdout.lock();
-                    hmmer_compare(&cfg.input, &cfg.reference, &opts, &mut h)
-                        .context("running hmmer_compare")?;
-                }
-            }
-        }
+        Command::HmmerCompare(args) => commands::hmmer_compare::run(&args)?,
         Command::HmmerReport(args) => commands::hmmer_report::run(&args)?,
         Command::HmmerSelect {
             input,

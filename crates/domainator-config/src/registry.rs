@@ -251,11 +251,15 @@ pub const TOOLS: &[ToolInfo] = &[
         "profile",
         "Select HMM profiles by their similarity to reference profiles.",
     ),
-    tool(
-        "hmmer_compare",
-        "profile",
-        "Score and align pairs of HMM profiles.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["tsv_out", "alignments_out"]),
+        ..tool(
+            "hmmer_compare",
+            "profile",
+            "Score and align pairs of HMM profiles.",
+        )
+    },
     // compare
     ToolInfo {
         migrated: true,

@@ -668,12 +668,14 @@ domainatoredux hmmer_search -i candidates.hmm -r known.hmm -o related.hmm --scor
 
 ### `hmmer_compare`
 
-Align profiles against profiles (hhsearch-like, by profile-vs-profile Viterbi) and write a
-scores table. `--alignments` includes the alignments, `--score_cutoff` and `-k` limit
-output.
+Align profiles against profiles (hhsearch-like, by profile-vs-profile Viterbi).
+`-o/--tsv_out` writes a `query reference score` table and `--alignments_out` each hit's
+row followed by its alignment; at least one is required. `--min_score` (default 0) and
+`--max_hits_per_query` limit the hits.
 
 ```bash
-domainatoredux hmmer_compare -i query.hmm -r pfam-A.hmm -o scores.tsv --alignments
+domainatoredux hmmer_compare -i query.hmm -r pfam-A.hmm -o scores.tsv \
+  --alignments_out alignments.txt
 ```
 
 To build a network *of* profiles, feed the same files to

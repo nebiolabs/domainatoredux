@@ -24,8 +24,10 @@ use std::io::Read;
 use std::path::Path;
 
 use hmmer_pure_rs::errors::{HmmerError, HmmerResult};
+/// The profile type every reader here returns, for callers outside the core.
+pub use hmmer_pure_rs::hmm::Hmm;
 use hmmer_pure_rs::hmm::{
-    Hmm, CUTOFF_UNSET, P7H_GA, P7H_NC, P7H_TC, P7_GA1, P7_GA2, P7_NC1, P7_NC2, P7_TC1, P7_TC2,
+    CUTOFF_UNSET, P7H_GA, P7H_NC, P7H_TC, P7_GA1, P7_GA2, P7_NC1, P7_NC2, P7_TC1, P7_TC2,
 };
 
 /// Profiles per parse chunk. Pfam records average ~54 KB of text, so a chunk is a

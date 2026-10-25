@@ -15,6 +15,7 @@ pub mod extract_peptides;
 pub mod extract_unannotated;
 pub mod filter_domains;
 pub mod genbank_to_fasta;
+pub mod hmmer_compare;
 pub mod hmmer_report;
 pub mod matrix_report;
 pub mod select_by_cds;
@@ -29,6 +30,7 @@ pub mod trim_contigs;
 
 use anyhow::{Context, Result};
 use domainator_core::io::genbank::read_genbank;
+use domainator_core::search::hmm_read::{read_hmm_file, Hmm};
 use domainator_core::seq::SeqRecord;
 
 use crate::output::is_stdin;
@@ -90,4 +92,31 @@ pub(crate) fn read_stdin_genbank() -> Result<Vec<SeqRecord>> {
         read_genbank(&tmp.to_string_lossy()).context("parsing GenBank from standard input");
     let _ = std::fs::remove_file(&tmp);
     records
+}
+
+/// Read HMM profile files, each with the name it is reported under; `-` reads standard
+/// input (through a temporary file, as the reader takes a path).
+pub fn read_hmm_inputs(paths: &[String]) -> Result<Vec<(String, Vec<Hmm>)>> {
+    let mut out = Vec::new();
+    for path in paths {
+        let profiles = if is_stdin(path) {
+            use std::io::Read;
+            let mut text = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut text)
+                .context("reading standard input")?;
+            let tmp = std::env::temp_dir()
+                .join(format!("domainatoredux_stdin_{}.hmm", std::process::id()));
+            std::fs::write(&tmp, &text)?;
+            let read = read_hmm_file(&tmp);
+            let _ = std::fs::remove_file(&tmp);
+            read
+        } else {
+            read_hmm_file(std::path::Path::new(path))
+        };
+        let profiles =
+            profiles.map_err(|e| anyhow::anyhow!("reading HMM profiles from {path}: {e:?}"))?;
+        out.push((path.clone(), profiles));
+    }
+    Ok(out)
 }
