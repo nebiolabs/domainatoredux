@@ -287,7 +287,10 @@ fn extract_zip_member(bytes: &[u8], member: &str, dest: &Path) -> Result<(), Str
         .map_err(|e| format!("opening zip: {e}"))?;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| format!("zip entry: {e}"))?;
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|e| format!("zip entry name: {e}"))?
+            .into_owned();
         if Path::new(&name).file_name().and_then(|n| n.to_str()) == Some(member) {
             let mut out = std::fs::File::create(dest)
                 .map_err(|e| format!("writing {}: {e}", dest.display()))?;
