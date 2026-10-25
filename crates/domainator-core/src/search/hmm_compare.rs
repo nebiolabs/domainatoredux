@@ -469,6 +469,36 @@ pub fn common_hmm_alphabet(
     Ok(found.map(|(abc, _)| abc))
 }
 
+/// The alphabet shared by a set of hmm files, each given as its name and profiles
+/// (upstream `hmmio.common_hmm_alphabet`): a file's alphabet is its first profile's,
+/// files without profiles are skipped, and two files that disagree are an error
+/// naming both. `None` when no file holds a profile.
+pub fn common_file_alphabet(
+    files: &[(String, Vec<Hmm>)],
+    role: &str,
+) -> Result<Option<hmmer_pure_rs::alphabet::AlphabetType>, String> {
+    let mut found: Option<(hmmer_pure_rs::alphabet::AlphabetType, &str)> = None;
+    for (file, profiles) in files {
+        let Some(alphabet) = profiles.first().map(|h| h.abc_type) else {
+            continue;
+        };
+        match found {
+            None => found = Some((alphabet, file)),
+            Some((first, first_file)) if first != alphabet => {
+                return Err(format!(
+                    "Mismatched alphabets among the {role} hmm files: {first_file} is {}, \
+                     but {file} is {}. All profiles compared or written together must use \
+                     the same alphabet.",
+                    alphabet_name(first),
+                    alphabet_name(alphabet)
+                ))
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(found.map(|(alphabet, _)| alphabet))
+}
+
 /// Error when the `-i` and `-r` sides of a profile-profile comparison disagree.
 pub fn check_alphabets_match(
     input: Option<hmmer_pure_rs::alphabet::AlphabetType>,

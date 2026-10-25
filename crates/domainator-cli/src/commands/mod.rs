@@ -18,6 +18,7 @@ pub mod genbank_to_fasta;
 pub mod hmmer_build;
 pub mod hmmer_compare;
 pub mod hmmer_report;
+pub mod hmmer_search;
 pub mod hmmer_select;
 pub mod matrix_report;
 pub mod select_by_cds;

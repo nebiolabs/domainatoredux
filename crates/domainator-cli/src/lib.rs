@@ -22,7 +22,6 @@ pub mod output;
 use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
 use domainator_core::io::{detect_filetype, fasta, FileType};
-use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools;
@@ -181,38 +180,7 @@ enum Command {
     /// Build an HMM profile from a (Stockholm) multiple sequence alignment.
     HmmerBuild(config::args::HmmerBuildArgs),
     /// Filter query HMM profiles by best score against reference HMM profiles.
-    HmmerSearch {
-        /// Query `.hmm` file(s) — the set being filtered.
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Reference `.hmm` file(s) — the filter criterion.
-        #[arg(short, long, num_args = 1..)]
-        reference: Vec<PathBuf>,
-        /// Output `.hmm` file (stdout if omitted).
-        /// Writes plain gzip if the path ends in `.gz`; `.bgz` is refused because
-        /// HMMER cannot read BGZF. Output to stdout is never compressed.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Keep queries whose best reference score is >= this. The default is 10.0
-        /// for amino acid profiles, scaled to the reference alphabet for nucleotides.
-        #[arg(long = "score_cutoff")]
-        score_cutoff: Option<f64>,
-        /// Keep at most this many queries, ranked by best score.
-        #[arg(long = "max_hits")]
-        max_hits: Option<usize>,
-        /// Worker threads (0 = all cores).
-        #[arg(long)]
-        cpu: Option<usize>,
-        /// Fail if projected HMM output exceeds this many GB (0 disables).
-        #[arg(long = "max_output_gb")]
-        max_output_gb: Option<f64>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    HmmerSearch(config::args::HmmerSearchArgs),
     /// Shard / BGZF-compress / .didx-index a domain_search database.
     FormatDb {
         /// GenBank or FASTA database file(s) to format (plain or BGZF).
@@ -793,79 +761,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::HmmerReport(args) => commands::hmmer_report::run(&args)?,
         Command::HmmerSelect(args) => commands::hmmer_select::run(&args)?,
         Command::HmmerBuild(args) => commands::hmmer_build::run(&args)?,
-        Command::HmmerSearch {
-            input,
-            reference,
-            output,
-            score_cutoff,
-            max_hits,
-            cpu,
-            max_output_gb,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            use domainator_core::tools::hmmer_search as hsr;
-            let cli = config::HmmerSearchConfig {
-                input: paths_to_strings(&input)?,
-                reference: paths_to_strings(&reference)?,
-                output: opt_path(&output)?,
-                score_cutoff,
-                max_hits,
-                cpu,
-                max_output_gb,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::HmmerSearchConfig>(p)?,
-                None => config::HmmerSearchConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            if cfg.reference.is_empty() {
-                anyhow::bail!("hmmer_search requires at least one -r/--reference .hmm file");
-            }
-            if cfg.input.is_empty() {
-                anyhow::bail!("hmmer_search requires at least one -i/--input .hmm file");
-            }
-            // The default --score_cutoff is scaled to the REFERENCE alphabet: profile
-            // scores are log-odds sums whose per-column ceiling is log(K), so a
-            // protein-tuned threshold is about twice as strict on nucleotides and
-            // silently returns nothing. An explicit value is always taken literally.
-            let score_cutoff = match cfg.score_cutoff {
-                Some(v) => v,
-                None => {
-                    let (resolved, abc) = hsr::default_score_cutoff_for(&cfg.reference)
-                        .map_err(|e| anyhow::anyhow!(e))?;
-                    eprintln!(
-                        "Using --score_cutoff {} (the default for {abc} profiles).",
-                        hsr::py_g(resolved)
-                    );
-                    resolved
-                }
-            };
-            let opts = hsr::HmmerSearchOptions {
-                score_cutoff,
-                max_hits: cfg.max_hits,
-                cpu: cfg.cpu.unwrap_or(0),
-                max_output_gb: cfg.max_output_gb,
-            };
-            let found = match &cfg.output {
-                Some(p) => write_hmm_output(p, |f| {
-                    hsr::hmmer_search(&cfg.input, &cfg.reference, &opts, f)
-                })
-                .map_err(|e| anyhow::anyhow!(e))?,
-                None => {
-                    let stdout = std::io::stdout();
-                    let mut h = stdout.lock();
-                    hsr::hmmer_search(&cfg.input, &cfg.reference, &opts, &mut h)
-                        .map_err(|e| anyhow::anyhow!(e))?
-                }
-            };
-            eprintln!("Kept {found} query profiles.");
-        }
+        Command::HmmerSearch(args) => commands::hmmer_search::run(&args)?,
         Command::FormatDb {
             input,
             shards,

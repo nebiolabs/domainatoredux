@@ -157,31 +157,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `hmmer_search` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct HmmerSearchConfig {
-    pub input: Vec<String>,
-    pub reference: Vec<String>,
-    pub output: Option<String>,
-    pub score_cutoff: Option<f64>,
-    pub max_hits: Option<usize>,
-    pub cpu: Option<usize>,
-    pub max_output_gb: Option<f64>,
-}
-
-impl HmmerSearchConfig {
-    pub fn merge_cli(&mut self, cli: HmmerSearchConfig) {
-        merge_vec!(self, cli, input);
-        merge_vec!(self, cli, reference);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, score_cutoff);
-        merge_scalar!(self, cli, max_hits);
-        merge_scalar!(self, cli, cpu);
-        merge_scalar!(self, cli, max_output_gb);
-    }
-}
-
 /// `format_db` (domainator_format_db) parameters (config-file shape).
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -319,7 +294,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
-        "hmmer_search" => hmmer_search_schema(),
         "format_db" => format_db_schema(),
         other => {
             anyhow::bail!("no schema for tool {other:?} (`domainatoredux --help` lists the tools)")
@@ -511,25 +485,6 @@ fn color_table_to_legend_schema() -> serde_json::Value {
     })
 }
 
-fn hmmer_search_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "hmmer_search config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}, "description": "Query .hmm file(s) (the set being filtered; optionally compressed)"},
-            "reference": {"type": "array", "items": {"type": "string"}, "description": "Reference .hmm file(s) (the filter criterion; optionally compressed)"},
-            "output": {"type": ["string", "null"], "description": "Output .hmm (stdout if omitted); '.gz' writes plain gzip, '.bgz' is refused (HMMER cannot read BGZF)"},
-            "score_cutoff": {"type": ["number", "null"], "default": 10.0, "description": "Keep queries whose best reference score is >= this"},
-            "max_hits": {"type": ["integer", "null"], "description": "Keep top-N queries by best score"},
-            "cpu": {"type": ["integer", "null"], "description": "Threads (0 = all cores)"},
-            "max_output_gb": {"type": ["number", "null"], "description": "Fail if projected HMM output exceeds this many GB (0 disables)"}
-        }
-    })
-}
-
 fn format_db_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -625,7 +580,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "hmmer_search" => HmmerSearchConfig,
             "format_db" => FormatDbConfig,
         ]
     }

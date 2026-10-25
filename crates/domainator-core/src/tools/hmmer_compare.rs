@@ -52,18 +52,21 @@ struct Hit {
 /// `tsv_out` (after a header), and the same row followed by its alignment and a blank
 /// line in `alignments_out`; either can be `None`.
 ///
-/// `queries` holds each query file's name and profiles, in order; a file's profiles
-/// must share the references' alphabet.
+/// `queries` and `references` hold each file's name and profiles, in order; the
+/// reference files must share one alphabet, and each query file must use it too.
 pub fn hmmer_compare(
     queries: &[(String, Vec<Hmm>)],
-    references: &[Hmm],
+    references: &[(String, Vec<Hmm>)],
     opts: &HmmerCompareOptions,
     mut tsv_out: Option<&mut dyn Write>,
     mut alignments_out: Option<&mut dyn Write>,
 ) -> io::Result<()> {
-    use crate::search::hmm_compare::{check_alphabets_match, common_hmm_alphabet};
+    use crate::search::hmm_compare::{
+        check_alphabets_match, common_file_alphabet, common_hmm_alphabet,
+    };
     let to_err = |m: String| io::Error::new(io::ErrorKind::InvalidInput, m);
-    let reference_alphabet = common_hmm_alphabet(references, "reference").map_err(to_err)?;
+    let reference_alphabet = common_file_alphabet(references, "reference").map_err(to_err)?;
+    let references: Vec<&Hmm> = references.iter().flat_map(|(_, h)| h).collect();
 
     let mut written: u64 = 0;
     let mut account = |bytes: u64| -> io::Result<()> {
@@ -101,7 +104,7 @@ pub fn hmmer_compare(
             use rayon::prelude::*;
             profiles
                 .par_iter()
-                .map(|q| query_hits(q, references, &bg, aligned, opts))
+                .map(|q| query_hits(q, &references, &bg, aligned, opts))
                 .collect()
         });
         for hit in per_query.into_iter().flatten() {
@@ -129,7 +132,7 @@ pub fn hmmer_compare(
 /// most `max_hits_per_query` of them.
 fn query_hits(
     query: &Hmm,
-    references: &[Hmm],
+    references: &[&Hmm],
     bg: &Bg,
     aligned: bool,
     opts: &HmmerCompareOptions,

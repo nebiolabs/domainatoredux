@@ -5,25 +5,19 @@ description: "Keep query profiles that score against a reference HMM set (writes
 fields:
   - name: input
     label: "Query HMM(s)"
-    role: input_files
     file_type: hmm
-    required: true
     sources: workspace_first
     select: first
   - name: reference
     label: "Reference HMM(s)"
-    role: input_files
     file_type: hmm
-    required: true
     sources: databases_first
     select: "database:pfam"
-  - name: output
+  - name: hmm_out
     label: "Output (HMM)"
-    role: output_file
-    required: true
     output_name: "{stem}.searched.hmm"
-  - name: score_cutoff
-    label: "Score cutoff"
+  - name: min_score
+    label: "Minimum score"
   - name: max_hits
     label: "Max hits"
   - name: cpu

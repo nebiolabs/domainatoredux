@@ -17,10 +17,7 @@ pub fn run(args: &HmmerCompareArgs) -> Result<()> {
         cpu: cpu_threads(args.cpu)?,
         max_output_bytes: crate::max_output_gb_to_bytes(args.max_output_gb.0)?,
     };
-    let references: Vec<_> = read_hmm_inputs(&args.reference)?
-        .into_iter()
-        .flat_map(|(_, profiles)| profiles)
-        .collect();
+    let references = read_hmm_inputs(&args.reference)?;
     let queries = read_hmm_inputs(&args.input)?;
 
     let mut tsv = args.tsv_out.as_deref().map(Output::create).transpose()?;

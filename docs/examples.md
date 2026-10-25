@@ -133,7 +133,7 @@ domainatoredux hmmer_build -i my_alignment.sto -o mine.hmm --name MyDomain --des
 domainatoredux hmmer_report -i nucleases.hmm mine.hmm --columns acc desc length -o profiles.tsv
 
 # keep only candidates related to something known
-domainatoredux hmmer_search -i candidates.hmm -r nucleases.hmm -o related.hmm --score_cutoff 20
+domainatoredux hmmer_search -i candidates.hmm -r nucleases.hmm -o related.hmm --min_score 20
 ```
 
 `hmmer_select` reproduces its input byte for byte for the profiles it keeps, including the

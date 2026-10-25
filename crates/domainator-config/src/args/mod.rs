@@ -25,6 +25,7 @@ mod genbank_to_fasta;
 mod hmmer_build;
 mod hmmer_compare;
 mod hmmer_report;
+mod hmmer_search;
 mod hmmer_select;
 mod matrix_report;
 mod select_by_cds;
@@ -55,6 +56,7 @@ pub use genbank_to_fasta::GenbankToFastaArgs;
 pub use hmmer_build::HmmerBuildArgs;
 pub use hmmer_compare::HmmerCompareArgs;
 pub use hmmer_report::HmmerReportArgs;
+pub use hmmer_search::HmmerSearchArgs;
 pub use hmmer_select::HmmerSelectArgs;
 pub use matrix_report::MatrixReportArgs;
 pub use select_by_cds::SelectByCdsArgs;
@@ -101,6 +103,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "hmmer_compare" => HmmerCompareArgs::augment_args(cmd),
         "hmmer_select" => HmmerSelectArgs::augment_args(cmd),
         "hmmer_build" => HmmerBuildArgs::augment_args(cmd),
+        "hmmer_search" => HmmerSearchArgs::augment_args(cmd),
         _ => return None,
     })
 }

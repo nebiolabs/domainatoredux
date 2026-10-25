@@ -254,11 +254,15 @@ pub const TOOLS: &[ToolInfo] = &[
             "Extract a subset of profiles from HMM files.",
         )
     },
-    tool(
-        "hmmer_search",
-        "profile",
-        "Select HMM profiles by their similarity to reference profiles.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["hmm_out"]),
+        ..tool(
+            "hmmer_search",
+            "profile",
+            "Select HMM profiles by their similarity to reference profiles.",
+        )
+    },
     ToolInfo {
         migrated: true,
         required_outputs: Some(&["tsv_out", "alignments_out"]),

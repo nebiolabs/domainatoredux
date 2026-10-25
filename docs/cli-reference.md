@@ -663,11 +663,12 @@ domainatoredux hmmer_select -i Pfam-A.hmm.gz -o nucleases.hmm --contains nucleas
 ### `hmmer_search`
 
 Keep the query profiles that score well against a set of reference profiles — a profile
-"search" rather than a sequence search. `--score_cutoff` and `--max_hits` control what is
-kept.
+"search" rather than a sequence search. `--min_score` (default 10 for amino acid
+references, the equivalent, about 4.63, for nucleotide ones) and `--max_hits` control what
+is kept. The kept profiles go to `-o/--hmm_out` (`-` for stdout, `.gz` for gzip).
 
 ```bash
-domainatoredux hmmer_search -i candidates.hmm -r known.hmm -o related.hmm --score_cutoff 20
+domainatoredux hmmer_search -i candidates.hmm -r known.hmm -o related.hmm --min_score 20
 ```
 
 ### `hmmer_compare`
