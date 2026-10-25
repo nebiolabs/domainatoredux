@@ -157,33 +157,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `hmmer_build` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct HmmerBuildConfig {
-    pub input: Option<String>,
-    pub output: Option<String>,
-    pub name: Option<String>,
-    pub acc: Option<String>,
-    pub desc: Option<String>,
-    pub alphabet: Option<String>,
-    pub window_length: Option<i32>,
-    pub window_beta: Option<f64>,
-}
-
-impl HmmerBuildConfig {
-    pub fn merge_cli(&mut self, cli: HmmerBuildConfig) {
-        merge_scalar!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, name);
-        merge_scalar!(self, cli, acc);
-        merge_scalar!(self, cli, desc);
-        merge_scalar!(self, cli, alphabet);
-        merge_scalar!(self, cli, window_length);
-        merge_scalar!(self, cli, window_beta);
-    }
-}
-
 /// `hmmer_search` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -346,7 +319,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
-        "hmmer_build" => hmmer_build_schema(),
         "hmmer_search" => hmmer_search_schema(),
         "format_db" => format_db_schema(),
         other => {
@@ -539,26 +511,6 @@ fn color_table_to_legend_schema() -> serde_json::Value {
     })
 }
 
-fn hmmer_build_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "hmmer_build config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": ["string", "null"], "description": "Stockholm MSA (stdin if omitted)"},
-            "output": {"type": ["string", "null"], "description": "Output .hmm (stdout if omitted); '.gz' writes plain gzip, '.bgz' is refused (HMMER cannot read BGZF)"},
-            "name": {"type": ["string", "null"], "description": "Profile NAME (required)"},
-            "acc": {"type": ["string", "null"]},
-            "desc": {"type": ["string", "null"]},
-            "alphabet": {"enum": ["amino", "dna", "rna", null], "description": "Inferred when omitted"},
-            "window_length": {"type": ["integer", "null"], "description": "Max expected hit length (the profile's MAXL field), used by nhmmer for windowed E-values. Nucleotide alphabets only"},
-            "window_beta": {"type": ["number", "null"], "description": "Tail mass from which to derive the window length. Nucleotide alphabets only; only one of window_length and window_beta may be given (deriving MAXL from a tail mass is not yet supported, so this is refused rather than silently ignored)"}
-        }
-    })
-}
-
 fn hmmer_search_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -673,7 +625,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "hmmer_build" => HmmerBuildConfig,
             "hmmer_search" => HmmerSearchConfig,
             "format_db" => FormatDbConfig,
         ]

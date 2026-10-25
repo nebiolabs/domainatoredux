@@ -70,7 +70,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | filter_domains.py | finished (parity-verified) | Tools menu ("Filter domains") |
 | find_features.py | deferred (too many torch dependencies) | — |
 | genbank_to_fasta.py | finished (byte-identical parity) | Tools menu ("GenBank → FASTA") |
-| hmmer_build.py | finished (gzip/BGZF `.hmm` read by magic bytes, `.gz` output as plain gzip, `.bgz` refused; Stockholm MSA -> HMM via hmmer-pure-rs build_hmm_from_msa; sets NAME/ACC/DESC; same NAME/LENG/DESC as Python and re-readable by pyhmmer. Limitations: Stockholm input only (no aligned-FASTA/Clustal yet); emissions not byte-identical to pyhmmer/hmmbuild — different builder/calibration) | Tools menu ("HMM build") — Stockholm `.sto`/`.stockholm`/`.sth` input (a GUI-only file type); output `.hmm` feeds the reference dropdowns |
+| hmmer_build.py | finished (gzip/BGZF `.hmm` read by magic bytes, `.gz` output as plain gzip, `.bgz` refused; Stockholm MSA -> HMM via hmmer-pure-rs build_hmm_from_msa; sets NAME/ACC/DESC; same NAME/LENG/DESC as Python and re-readable by pyhmmer. Limitations: Stockholm and aligned-FASTA input only (no Clustal/A2M/PHYLIP); emissions not byte-identical to pyhmmer/hmmbuild — different builder/calibration) | Tools menu ("HMM build") — Stockholm `.sto`/`.stockholm`/`.sth` input (a GUI-only file type); output `.hmm` feeds the reference dropdowns |
 | infernal_build.py | deferred (avoiding infernal dependency for now) | — |
 | kmer_dist.py | deferred (heavy; low priority per plan) | — |
 | hmmer_compare.py | finished | Tools menu ("HMM compare") — writes a scores/alignments table |

@@ -11,7 +11,7 @@
 
 use std::io::Write;
 
-use hmmer_pure_rs::msa::{read_stockholm, Msa};
+use hmmer_pure_rs::msa::{read_afa_from_reader, read_stockholm_from_reader, Msa};
 use hmmer_pure_rs::{Alphabet, Bg, Hmm};
 
 /// Options for [`hmmer_build`].
@@ -93,14 +93,37 @@ fn alphabet_from_name(name: &str) -> Result<Alphabet, String> {
     }
 }
 
-/// Build an HMM from the first alignment in the Stockholm file at `path`.
+/// Build an HMM from the first alignment in the file at `path` (see
+/// [`hmmer_build_from_bytes`]).
 pub fn hmmer_build(path: &std::path::Path, opts: &HmmerBuildOptions) -> Result<Hmm, String> {
-    let msas = read_stockholm(path).map_err(|e| {
-        format!(
-            "reading Stockholm MSA {}: {e:?} (only Stockholm-format MSAs are supported)",
-            path.display()
-        )
-    })?;
+    let text = std::fs::read(path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    hmmer_build_from_bytes(&text, &path.display().to_string(), opts)
+}
+
+/// Build an HMM from the first alignment in `text`, a Stockholm or aligned-FASTA MSA
+/// (told apart by the first line, as easel's format sniffing does); `source` names it
+/// in errors.
+pub fn hmmer_build_from_bytes(
+    text: &[u8],
+    source: &str,
+    opts: &HmmerBuildOptions,
+) -> Result<Hmm, String> {
+    let first_line = text
+        .split(|&b| b == b'\n')
+        .map(<[u8]>::trim_ascii)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default();
+    let msas = if first_line.starts_with(b"# STOCKHOLM") {
+        read_stockholm_from_reader(std::io::BufReader::new(text))
+    } else if first_line.starts_with(b">") {
+        read_afa_from_reader(&mut &text[..], "msa".to_string())
+    } else {
+        return Err(format!(
+            "reading MSA {source}: not a Stockholm or aligned FASTA alignment (the formats \
+             this port reads)"
+        ));
+    }
+    .map_err(|e| format!("reading MSA {source}: {e:?}"))?;
     let msa = msas
         .into_iter()
         .next()
@@ -116,7 +139,7 @@ pub fn hmmer_build(path: &std::path::Path, opts: &HmmerBuildOptions) -> Result<H
     // Fast model construction (symfrac 0.5), no hand architecture — pyhmmer's
     // Builder defaults.
     let mut hmm = build_from(&msa, &abc, &bg)
-        .map_err(|e| format!("building the profile from {}: {e}", path.display()))?;
+        .map_err(|e| format!("building the profile from {source}: {e}"))?;
 
     // MAXL / nhmmer search window. Both options are nucleotide-only and mutually
     // exclusive, matching Python.
@@ -192,5 +215,34 @@ mod tests {
     fn sanitize_replaces_bad_chars() {
         assert_eq!(sanitize("my/prot|name (1)"), "my_prot_name _1_");
         assert_eq!(sanitize("keep_-.;:x9 y"), "keep_-.;:x9 y");
+    }
+
+    fn options() -> HmmerBuildOptions {
+        HmmerBuildOptions {
+            name: "p".into(),
+            acc: None,
+            desc: None,
+            alphabet: None,
+            window_length: None,
+            window_beta: None,
+        }
+    }
+
+    #[test]
+    fn stockholm_and_aligned_fasta_build_the_same_profile() {
+        let stockholm = b"# STOCKHOLM 1.0\nseq1 ACGTACGT\nseq2 ACGTACGA\n//\n";
+        let afa = b"\n>seq1\nACGTACGT\n>seq2\nACGTACGA\n";
+        let from_stockholm = hmmer_build_from_bytes(stockholm, "s", &options()).unwrap();
+        let from_afa = hmmer_build_from_bytes(afa, "a", &options()).unwrap();
+        assert_eq!(from_stockholm.m, 8);
+        assert_eq!(from_afa.m, from_stockholm.m);
+        assert_eq!(from_afa.abc_type, from_stockholm.abc_type);
+        assert_eq!(from_afa.mat, from_stockholm.mat);
+    }
+
+    #[test]
+    fn an_unknown_msa_format_is_refused() {
+        let err = hmmer_build_from_bytes(b"CLUSTAL W\n", "x.aln", &options()).unwrap_err();
+        assert!(err.contains("not a Stockholm or aligned FASTA"), "{err}");
     }
 }

@@ -236,11 +236,15 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     // profile
-    tool(
-        "hmmer_build",
-        "profile",
-        "Build an HMM profile from a multiple sequence alignment.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["hmm_out"]),
+        ..tool(
+            "hmmer_build",
+            "profile",
+            "Build an HMM profile from a multiple sequence alignment.",
+        )
+    },
     ToolInfo {
         migrated: true,
         required_outputs: Some(&["hmm_out"]),

@@ -179,42 +179,7 @@ enum Command {
     /// Filter an HMM file by text matches on profile NAME/DESC/ACC fields.
     HmmerSelect(config::args::HmmerSelectArgs),
     /// Build an HMM profile from a (Stockholm) multiple sequence alignment.
-    HmmerBuild {
-        /// Input Stockholm MSA file (stdin if omitted).
-        #[arg(short, long)]
-        input: Option<PathBuf>,
-        /// Output `.hmm` file (stdout if omitted).
-        /// Writes plain gzip if the path ends in `.gz`; `.bgz` is refused because
-        /// HMMER cannot read BGZF. Output to stdout is never compressed.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Profile NAME (required).
-        #[arg(long)]
-        name: Option<String>,
-        /// Profile ACC.
-        #[arg(long)]
-        acc: Option<String>,
-        /// Profile DESC.
-        #[arg(long)]
-        desc: Option<String>,
-        /// Alphabet: amino | dna | rna (inferred if omitted).
-        #[arg(long)]
-        alphabet: Option<String>,
-        /// Max expected hit length (the profile's MAXL field), used by nhmmer for
-        /// windowed E-values. Nucleotide alphabets only.
-        #[arg(long = "window_length")]
-        window_length: Option<i32>,
-        /// Tail mass from which to derive the window length. Nucleotide alphabets only;
-        /// only one of --window_length and --window_beta may be given.
-        #[arg(long = "window_beta")]
-        window_beta: Option<f64>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    HmmerBuild(config::args::HmmerBuildArgs),
     /// Filter query HMM profiles by best score against reference HMM profiles.
     HmmerSearch {
         /// Query `.hmm` file(s) — the set being filtered.
@@ -827,66 +792,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::HmmerCompare(args) => commands::hmmer_compare::run(&args)?,
         Command::HmmerReport(args) => commands::hmmer_report::run(&args)?,
         Command::HmmerSelect(args) => commands::hmmer_select::run(&args)?,
-        Command::HmmerBuild {
-            input,
-            output,
-            name,
-            acc,
-            desc,
-            alphabet,
-            window_length,
-            window_beta,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            use domainator_core::tools::hmmer_build as hb;
-            let cli = config::HmmerBuildConfig {
-                input: opt_path(&input)?,
-                output: opt_path(&output)?,
-                name,
-                acc,
-                desc,
-                alphabet,
-                window_length,
-                window_beta,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::HmmerBuildConfig>(p)?,
-                None => config::HmmerBuildConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let name = cfg.name.clone().context("missing required `--name`")?;
-            let input = cfg.input.clone().context(
-                "missing required `input` (-i / --input); stdin MSA is not yet supported, pass a file",
-            )?;
-            let opts = hb::HmmerBuildOptions {
-                name,
-                acc: cfg.acc.clone(),
-                desc: cfg.desc.clone(),
-                alphabet: cfg.alphabet.clone(),
-                window_length: cfg.window_length,
-                window_beta: cfg.window_beta,
-            };
-            match &cfg.output {
-                Some(p) => write_hmm_output(p, |f| {
-                    let hmm = hb::hmmer_build(&PathBuf::from(&input), &opts)?;
-                    hb::write_hmm_out(&hmm, f)
-                })
-                .map_err(|e| anyhow::anyhow!(e))?,
-                None => {
-                    let hmm = hb::hmmer_build(&PathBuf::from(&input), &opts)
-                        .map_err(|e| anyhow::anyhow!(e))?;
-                    let stdout = std::io::stdout();
-                    let mut h = stdout.lock();
-                    hb::write_hmm_out(&hmm, &mut h).map_err(|e| anyhow::anyhow!(e))?;
-                }
-            }
-        }
+        Command::HmmerBuild(args) => commands::hmmer_build::run(&args)?,
         Command::HmmerSearch {
             input,
             reference,

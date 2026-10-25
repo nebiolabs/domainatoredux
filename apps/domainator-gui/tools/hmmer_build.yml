@@ -5,19 +5,14 @@ description: "Build an HMM profile from a Stockholm multiple-sequence alignment.
 fields:
   - name: input
     label: "Input MSA (Stockholm)"
-    role: input_file
     file_type: stockholm
-    required: true
     sources: workspace_first
     select: first
-  - name: output
+  - name: hmm_out
     label: "Output (HMM)"
-    role: output_file
-    required: true
     output_name: "{stem}.hmm"
   - name: name
     label: "Profile name"
-    required: true
   - name: acc
     label: "Accession"
   - name: desc

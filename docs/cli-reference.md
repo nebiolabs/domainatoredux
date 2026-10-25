@@ -636,15 +636,18 @@ plain gzip when `-o` ends in `.gz` and refuse `.bgz`, which HMMER cannot read â€
 
 ### `hmmer_build`
 
-Build a profile from a **Stockholm** multiple sequence alignment. `--name` is required.
+Build a profile from a multiple sequence alignment, **Stockholm** or **aligned FASTA**
+(told apart by the first line; `-i -` reads standard input). `--name` is required.
 `--acc` and `--desc` set the accession and description, `--alphabet` overrides alphabet
-detection, and `--window_length` applies to nucleotide models.
+detection, and `--window_length` applies to nucleotide models. The profile goes to
+`-o/--hmm_out` (`-` for stdout, `.gz` for gzip).
 
 ```bash
 domainatoredux hmmer_build -i alignment.sto -o profile.hmm --name MyDomain --desc "My domain"
 ```
 
-Stockholm is the only input format, and the alignment must be a file (not stdin).
+Upstream reads every format hmmbuild does; this port reads those two, and not
+`--window_beta`.
 
 ### `hmmer_select`
 
