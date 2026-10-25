@@ -41,7 +41,7 @@ convention, which is what makes the GUI able to reuse them directly.
   and `external.rs` (the `find_binary` locator for subprocess tools).
 - **`app_support/`** — the GUI seam: workspace file classification, the provenance/job DAG,
   contig view and edit, HMM logo, summary statistics.
-- **`parallel.rs`** — `with_threads(cpu, f)` (`cpu == 0` → all cores). Tools parallelize
+- **`parallel.rs`** — `with_threads(cpu, f)` (`cpu == 0` → one thread per physical core the process may use, upstream's `resolve_cpu`). Tools parallelize
   with rayon over their natural unit (profiles, references, partitions, rows), and output
   is **deterministic** regardless of thread count, because results funnel through
   order-independent maps and sorts.

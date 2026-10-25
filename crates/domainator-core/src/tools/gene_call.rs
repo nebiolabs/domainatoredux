@@ -297,9 +297,10 @@ fn run_orphos(opts: &GeneCallOptions, input: &Path, gff: &Path) -> io::Result<()
         cmd.arg("-m");
     }
     // Orphos has no threads flag; it runs on Rayon's global pool, which reads this.
-    if opts.cpu > 0 {
-        cmd.env("RAYON_NUM_THREADS", opts.cpu.to_string());
-    }
+    cmd.env(
+        "RAYON_NUM_THREADS",
+        crate::parallel::resolve_cpu(opts.cpu).to_string(),
+    );
     let out = cmd
         .output()
         .map_err(|e| spawn_error(e, &bin, INSTALL_HINT))?;

@@ -50,9 +50,10 @@ same usage error either way. See [Config files](config-and-agents.md).
 **`-i` is the file being edited, `-r` is what you're editing it by.** See
 [Concepts](concepts.md#the--i---r-convention).
 
-**`--cpu 0` means all cores**, and 0 is the default. Only `domainate`, `domain_search`,
-`gene_call`, `deduplicate_genbank`, `seq_dist`, `compare_contigs`, `hmmer_compare` and
-`hmmer_search` are threaded; output is deterministic regardless of thread count.
+**`--cpu 0` means one thread per physical core** this process may use, and 0 is the
+default. Only `domainate`, `domain_search`, `gene_call`, `deduplicate_genbank`,
+`seq_dist`, `compare_contigs`, `hmmer_compare` and `hmmer_search` are threaded; output
+is deterministic regardless of thread count.
 
 **stdin and stdout.** Tools that accept multiple inputs read GenBank from stdin when `-i`
 is omitted, and most tools write to stdout when `-o` is omitted, so they pipe:

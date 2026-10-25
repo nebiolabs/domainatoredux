@@ -597,14 +597,8 @@ fn run_diamond(
         )));
     }
 
-    // `--cpu 0` means "all cores"; resolve to a concrete count for diamond `-p`.
-    let threads = if opts.cpu > 0 {
-        opts.cpu
-    } else {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1)
-    };
+    // `--cpu 0` means "all cores"; resolve it to a concrete count for diamond `-p`.
+    let threads = crate::parallel::resolve_cpu(opts.cpu);
     // `--max-target-seqs 0` means "report all targets".
     let max_target_seqs = opts.max_hits_per_query.unwrap_or(0);
 

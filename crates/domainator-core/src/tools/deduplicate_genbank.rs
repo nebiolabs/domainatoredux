@@ -233,7 +233,7 @@ fn external_dedup(
         .collect();
     write_fasta_ids(&cleaned, &input_fasta).map_err(|e| e.to_string())?;
 
-    let cpus = if opts.cpu == 0 { num_cpus() } else { opts.cpu };
+    let cpus = crate::parallel::resolve_cpu(opts.cpu);
     let clusters_by_str = match tool {
         ExternalTool::Diamond => run_diamond(opts, &tmp, &input_fasta, cpus)?,
         ExternalTool::Usearch => run_usearch(opts, &tmp, &input_fasta, cpus, records)?,
@@ -694,12 +694,6 @@ fn extra_args(extra: &[String], set: &[&str], option: &str) -> Result<Vec<String
         conflicts.join(", "),
         if conflicts.len() == 1 { "it" } else { "them" }
     ))
-}
-
-fn num_cpus() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
 }
 
 #[cfg(test)]

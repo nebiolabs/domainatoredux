@@ -158,6 +158,26 @@ mod tests {
         );
     }
 
+    /// Upstream keeps tied contigs in input order, including at the `--max_hits` cut.
+    #[test]
+    fn ties_keep_input_order() {
+        let recs = vec![
+            rec_with_search("a", 10.0),
+            rec_with_search("b", 20.0),
+            rec_with_search("c", 10.0),
+            rec_with_search("d", 20.0),
+        ];
+        let opts = SortContigsOptions {
+            max_hits: Some(3),
+            ..Default::default()
+        };
+        let out = sort_contigs(recs, &opts).unwrap();
+        assert_eq!(
+            out.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            vec!["b", "d", "a"]
+        );
+    }
+
     #[test]
     fn errors_when_no_search_feature() {
         let mut r = rec_with_search("a", 10.0);

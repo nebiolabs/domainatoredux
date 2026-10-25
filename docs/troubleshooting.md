@@ -135,7 +135,7 @@ Use a release build if you built from source — a debug build is several times 
 cargo build --release -p domainator-cli
 ```
 
-Then check threading. `--cpu 0` (the default) uses all cores, but only `domainate`,
+Then check threading. `--cpu 0` (the default) uses one thread per physical core, but only `domainate`,
 `domain_search`, `deduplicate_genbank`, `seq_dist`, `compare_contigs`, `hmmer_compare` and
 `hmmer_search` are threaded. For large all-vs-all comparisons, DIAMOND is far faster than
 the built-in `hmmer` algorithm.
