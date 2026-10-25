@@ -408,45 +408,7 @@ enum Command {
     SelectByCoord(config::args::SelectByCoordArgs),
     /// Filter Domainator/Domain_Search annotations by evalue, overlap, database, name.
     #[command(allow_negative_numbers = true)]
-    FilterDomains {
-        /// Input GenBank file(s) (stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output GenBank file (stdout if omitted).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Threshold E-value (max) for a domain hit.
-        #[arg(short, long)]
-        evalue: Option<f64>,
-        /// Maximum fraction of overlap between kept domains.
-        #[arg(short = 'm', long = "max_overlap")]
-        max_overlap: Option<f64>,
-        /// Only keep domains with these names.
-        #[arg(long, num_args = 1..)]
-        domains: Vec<String>,
-        /// File of domain names to keep (one per line).
-        #[arg(long = "domains_file")]
-        domains_file: Option<String>,
-        /// Remove annotations from all databases except these (applied first).
-        #[arg(long = "databases_keep", num_args = 1..)]
-        databases_keep: Vec<String>,
-        /// Only apply filters to these databases (others kept as-is).
-        #[arg(long = "databases_filter", num_args = 1..)]
-        databases_filter: Vec<String>,
-        /// Which annotations to filter: domainator | domain_search | all.
-        #[arg(long = "annotation_type")]
-        annotation_type: Option<String>,
-        /// Only process contigs with these names.
-        #[arg(long, num_args = 1..)]
-        contigs: Vec<String>,
-        /// File of contig names to process.
-        #[arg(long = "contigs_file")]
-        contigs_file: Option<String>,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    FilterDomains(config::args::FilterDomainsArgs),
     /// Assign hex colors to domain and/or CDS features (Color qualifier).
     ColorGenbank {
         /// Input GenBank file(s) (stdin if omitted).
@@ -1350,7 +1312,7 @@ fn load_inputs(inputs: &[PathBuf]) -> Result<Vec<SeqRecord>> {
 
 /// Filter `records` in place to those whose LOCUS name (Python's `contig.id`) is
 /// in the `--contigs`/`--contigs_file` set. A no-op when both are empty.
-fn filter_contigs(
+pub(crate) fn filter_contigs(
     records: &mut Vec<SeqRecord>,
     contigs: &[String],
     contigs_file: Option<&str>,
@@ -2343,72 +2305,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Command::SortContigs(args) => commands::sort_contigs::run(&args)?,
         Command::SelectByCoord(args) => commands::select_by_coord::run(&args)?,
-        Command::FilterDomains {
-            input,
-            output,
-            evalue,
-            max_overlap,
-            domains,
-            domains_file,
-            databases_keep,
-            databases_filter,
-            annotation_type,
-            contigs,
-            contigs_file,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::FilterDomainsConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                evalue,
-                max_overlap,
-                domains,
-                domains_file,
-                databases_keep,
-                databases_filter,
-                annotation_type,
-                contigs,
-                contigs_file,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::FilterDomainsConfig>(p)?,
-                None => config::FilterDomainsConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let mut records = load_inputs_str(&cfg.input)?;
-            filter_contigs(&mut records, &cfg.contigs, cfg.contigs_file.as_deref())?;
-            let selected_domains = parse_name_list(&cfg.domains, cfg.domains_file.as_deref())?;
-            let databases_keep = if cfg.databases_keep.is_empty() {
-                None
-            } else {
-                Some(cfg.databases_keep.iter().cloned().collect())
-            };
-            let databases_filter = if cfg.databases_filter.is_empty() {
-                None
-            } else {
-                Some(cfg.databases_filter.iter().cloned().collect())
-            };
-            let annotation_type = tools::filter_domains::AnnotationType::parse(
-                cfg.annotation_type.as_deref().unwrap_or("all"),
-            )
-            .map_err(|e| anyhow::anyhow!(e))?;
-            let opts = tools::filter_domains::FilterDomainsOptions {
-                evalue: cfg.evalue.unwrap_or(100000000.0),
-                max_overlap: cfg.max_overlap.unwrap_or(1.0),
-                databases_keep,
-                databases_filter,
-                selected_domains,
-                annotation_type,
-            };
-            let out = tools::filter_domains::filter_domains(records, &opts);
-            write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-        }
+        Command::FilterDomains(args) => commands::filter_domains::run(&args)?,
         Command::ColorGenbank {
             input,
             output,

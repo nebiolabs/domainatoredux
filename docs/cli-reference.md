@@ -238,9 +238,10 @@ domainatoredux gene_call -i genome.fasta -o genes.gb --mode single
 Remove domain annotations without touching the sequences — the cleanup pass after
 annotating generously.
 
-Key flags: `-e/--evalue` and `-m/--max_overlap` thresholds; `--domains`/`--domains_file`
-to keep only named domains; `--databases_keep` and `--databases_filter` to act per
-database; `--annotation_type` to choose `Domainator`, `Domain_Search` or all.
+Key flags: `-e/--evalue` and `--max_overlap` thresholds; `--domains`/`--domains_file`
+to keep only named domains; `--keep_databases` (drop every other database's
+annotations) and `--databases` (filter only these databases) to act per database;
+`--annotation_type` to choose `domainator`, `domain_search` or `all`.
 
 ```bash
 domainatoredux filter_domains -i annotated.gb -o clean.gb -e 1e-10 --max_overlap 0.5

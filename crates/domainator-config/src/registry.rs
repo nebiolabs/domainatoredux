@@ -123,11 +123,15 @@ pub const TOOLS: &[ToolInfo] = &[
         "edit",
         "Extract the regions of proteins not covered by any domain annotation.",
     ),
-    tool(
-        "filter_domains",
-        "edit",
-        "Filter domain annotations by e-value, overlap, database, or name.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        ..tool(
+            "filter_domains",
+            "edit",
+            "Filter domain annotations by e-value, overlap, database, or name.",
+        )
+    },
     ToolInfo {
         migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),

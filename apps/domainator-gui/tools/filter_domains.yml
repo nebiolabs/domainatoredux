@@ -5,16 +5,14 @@ description: "Remove domain annotations from records by e-value, overlap, name, 
 fields:
   - name: input
     label: "Input sequences"
-    role: input_files
     file_type: sequence
-    required: true
     sources: workspace_first
     select: first
-  - name: output
+  - name: genbank_out
     label: "Output (GenBank)"
-    role: output_file
-    required: true
     output_name: "{stem}.filtered.gb"
+  - name: fasta_out
+    label: "Output (FASTA)"
   - name: evalue
     label: "Max E-value"
   - name: max_overlap
@@ -23,13 +21,12 @@ fields:
     label: "Keep domains"
   - name: domains_file
     label: "Keep domains file (.txt)"
-    role: input_file
     file_type: text
     sources: workspace_first
     select: none
-  - name: databases_keep
+  - name: keep_databases
     label: "Keep databases"
-  - name: databases_filter
+  - name: databases
     label: "Remove databases"
   - name: annotation_type
     label: "Annotation type"
@@ -37,7 +34,6 @@ fields:
     label: "Restrict to contigs"
   - name: contigs_file
     label: "Contigs file (.txt)"
-    role: input_file
     file_type: text
     sources: workspace_first
     select: none

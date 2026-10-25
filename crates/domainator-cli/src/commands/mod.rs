@@ -2,6 +2,7 @@
 //! wiring around the core library function.
 
 pub mod enum_report;
+pub mod filter_domains;
 pub mod hmmer_report;
 pub mod select_by_cds;
 pub mod select_by_contig;

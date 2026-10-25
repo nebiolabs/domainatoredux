@@ -362,39 +362,6 @@ impl GeneCallConfig {
     }
 }
 
-/// `filter_domains` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct FilterDomainsConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub evalue: Option<f64>,
-    pub max_overlap: Option<f64>,
-    pub domains: Vec<String>,
-    pub domains_file: Option<String>,
-    pub databases_keep: Vec<String>,
-    pub databases_filter: Vec<String>,
-    pub annotation_type: Option<String>,
-    pub contigs: Vec<String>,
-    pub contigs_file: Option<String>,
-}
-
-impl FilterDomainsConfig {
-    pub fn merge_cli(&mut self, cli: FilterDomainsConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, evalue);
-        merge_scalar!(self, cli, max_overlap);
-        merge_vec!(self, cli, domains);
-        merge_scalar!(self, cli, domains_file);
-        merge_vec!(self, cli, databases_keep);
-        merge_vec!(self, cli, databases_filter);
-        merge_scalar!(self, cli, annotation_type);
-        merge_vec!(self, cli, contigs);
-        merge_scalar!(self, cli, contigs_file);
-    }
-}
-
 /// `color_genbank` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -1135,7 +1102,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "genbank_to_fasta" => genbank_to_fasta_schema(),
         "clean_sequences" => clean_sequences_schema(),
         "gene_call" => gene_call_schema(),
-        "filter_domains" => filter_domains_schema(),
         "color_genbank" => color_genbank_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "trim_contigs" => trim_contigs_schema(),
@@ -1470,29 +1436,6 @@ fn gene_call_schema() -> serde_json::Value {
             "mask": {"type": "boolean", "default": false, "description": "No genes across runs of N"},
             "cpu": {"type": ["integer", "null"], "description": "Orphos threads (0 = all cores)"},
             "bin_path": {"type": ["string", "null"], "description": "Path to the orphos binary (else $DOMAINATOREDUX_ORPHOS, then PATH)"}
-        }
-    })
-}
-
-fn filter_domains_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "filter_domains config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "evalue": {"type": ["number", "null"], "default": 100000000.0},
-            "max_overlap": {"type": ["number", "null"], "default": 1.0},
-            "domains": {"type": "array", "items": {"type": "string"}},
-            "domains_file": {"type": ["string", "null"]},
-            "databases_keep": {"type": "array", "items": {"type": "string"}},
-            "databases_filter": {"type": "array", "items": {"type": "string"}},
-            "annotation_type": {"enum": ["domainator", "domain_search", "all", null], "default": "all"},
-            "contigs": {"type": "array", "items": {"type": "string"}},
-            "contigs_file": {"type": ["string", "null"]}
         }
     })
 }
@@ -2017,7 +1960,6 @@ mod tests {
             "genbank_to_fasta" => GenbankToFastaConfig,
             "clean_sequences" => CleanSequencesConfig,
             "gene_call" => GeneCallConfig,
-            "filter_domains" => FilterDomainsConfig,
             "color_genbank" => ColorGenbankConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
             "trim_contigs" => TrimContigsConfig,
