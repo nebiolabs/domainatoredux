@@ -73,6 +73,7 @@ DOMAINATOREDUX_ORPHOS=/path/to/orphos scripts/parity/differential.py --only doma
 | `scripts/parity/extra_invocations.tsv` | hand-written invocations for upstream tests the harvester cannot replay (inputs built at test time, loops over flag values) |
 | `scripts/parity/generated_fixtures.py` | builds those tests' inputs once per sweep with upstream's own `test/helpers.py`, into the `@GEN@` directory |
 | `scripts/parity/known_gaps.tsv` | the tracked list of invocations that do not yet reproduce |
+| `scripts/parity/upstream_manifest.json`, `manifest_allowlist.tsv` | upstream's interface, and every way ours differs (see [below](#the-interface-describe-against-upstreams-manifest)) |
 | `scripts/parity/sync_fixtures.py` | keeps `test/data/` in step with upstream's `test/data` |
 | `test/data/` | the committed fixture subset (see its `README.md`) |
 
@@ -137,11 +138,33 @@ deliberate deferral from a bug:
 | `gap:<tag>` | a real missing feature — the actual to-do list |
 | `upstream:<tag>` | the divergence is in a dependency, not in this port |
 | `harness:<tag>` | an artifact of how the invocation is replayed |
+| `pending:1.0-cli`, `pending:1.0-behavior` | transient, during the move to upstream 1.0: an option not renamed yet, or a 1.0 behavior change not ported yet. None may remain once that is done |
 
 A newly-appearing row arrives with an empty `class`; `--update_baseline` says how
 many need triage. Group several rows under one tag when they share a root cause —
 the tags are what makes the list read as a handful of problems rather than fifty
 failures.
+
+## The interface: `describe` against upstream's manifest
+
+The sweep compares what the tools *do*. What they *accept* is compared separately, and
+without conda: upstream's `domainator describe` lists every tool and option (flags, type,
+bounds, default, choices, role), `scripts/parity/refresh_manifest.py` snapshots it into
+`scripts/parity/upstream_manifest.json`, and the cargo test
+`crates/domainator-cli/tests/upstream_manifest.rs` diffs `domainatoredux describe`
+against it. Every difference must be a row of `scripts/parity/manifest_allowlist.tsv`,
+and every row must still be a difference: the same two-way rule as `known_gaps.tsv`.
+
+```bash
+scripts/parity/refresh_manifest.py --python /path/to/conda/env/bin/python   # at each sync
+UPDATE_MANIFEST_ALLOWLIST=1 cargo test -p domainator-cli --test upstream_manifest
+git diff scripts/parity/manifest_allowlist.tsv   # <- read this too
+```
+
+A row records the compared value on both sides, so an upstream change to an
+allowlisted option fails again. The regeneration keeps each row's hand-written `class`:
+`deferred:` (not ported, on purpose), `port-only:` (this port's alone), `upstream:`, or
+`todo:` (the 1.0 migration; none may remain once it is done).
 
 ## Keeping in sync when the upstream pin moves
 
@@ -153,6 +176,9 @@ scripts/parity/sync_fixtures.py --check       # did a fixture change, or a new o
 scripts/parity/sync_fixtures.py --update      # copy them over; --prune drops unused ones
 scripts/parity/differential.py --update_baseline
 git diff scripts/parity/known_gaps.tsv        # <- read this
+scripts/parity/refresh_manifest.py --python /path/to/conda/env/bin/python
+UPDATE_MANIFEST_ALLOWLIST=1 cargo test -p domainator-cli --test upstream_manifest
+git diff scripts/parity/manifest_allowlist.tsv
 ```
 
 That diff is the point of the exercise. New rows are upstream features the port

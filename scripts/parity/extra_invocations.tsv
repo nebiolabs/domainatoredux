@@ -89,3 +89,5 @@ domain_search	extra:test_domain_search_gene_annotate_fasta_1#0	extra_invocations
 domainate	extra:test_domainate_gene_call_partial_filter#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--gene_call	all	-Z	1000	--partial	include
 domainate	extra:test_domainate_gene_call_partial_filter#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--gene_call	all	-Z	1000	--partial	exclude
 domainate	extra:test_domainate_gene_call_partial_filter#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--gene_call	all	-Z	1000	--partial	only
+sort_contigs	extra:test_sort_contigs_by_domain_search_score#0	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/sorted.gb	--fasta_out	@TMP@/sorted.fasta
+sort_contigs	extra:test_sort_contigs_by_domain_search_score#1	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	@DATA@/CuSOD_enum_report_test.gb	-o	@TMP@/sorted.gb	--max_hits	5

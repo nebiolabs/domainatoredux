@@ -104,7 +104,11 @@ fn a_worker_reports_cli_errors_like_the_cli() {
     .unwrap();
     let exit = w.wait().unwrap();
     assert_eq!(exit.status.code(), Some(1));
-    assert!(exit.stderr.starts_with("Error: "), "{}", exit.stderr);
+    assert!(
+        exit.stderr.starts_with("domainatoredux domainate: error: "),
+        "{}",
+        exit.stderr
+    );
 
     // A command line clap rejects: its usage error, and its exit code.
     let exit = worker::spawn_exe(Path::new(BIN), &args(&["no-such-tool"]), None, None)

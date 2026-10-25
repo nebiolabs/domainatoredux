@@ -253,46 +253,25 @@ pub fn success_message(stdout: &str, stderr: &str) -> String {
 
 /// A failed run's message, from its stderr.
 ///
-/// The CLI reports an error as `Error: <msg>`, then `Caused by:` and one numbered
-/// line per cause (anyhow's `{:?}`). That is folded into one line,
-/// `<msg>: <cause>: <cause>`, the way the dialog showed errors before. The full
+/// The CLI reports an error as one line, `domainatoredux <tool>: error: <msg>: <cause>:
+/// ...` (`domainator_cli::report_error`), and a usage error as clap does, `error: <msg>`
+/// followed by the usage. Either way the message is what follows `error: `. The full
 /// text is in the job's `worker.log`.
 pub fn failure_message(stderr: &str, exit: &str) -> String {
-    let at = stderr
-        .rfind("\nError: ")
-        .map(|i| i + 1)
-        .or_else(|| stderr.starts_with("Error: ").then_some(0));
-    if let Some(at) = at {
-        let report = &stderr[at + "Error: ".len()..];
-        let mut parts: Vec<String> = Vec::new();
-        let mut in_causes = false;
-        for line in report.lines() {
-            let t = line.trim();
-            if t.is_empty() {
-                continue;
-            }
-            if t == "Caused by:" {
-                in_causes = true;
-                continue;
-            }
-            if t.starts_with("Stack backtrace:") {
-                break;
-            }
-            let t = if in_causes {
-                // "0: reading references" -> "reading references"
-                t.split_once(": ")
-                    .filter(|(n, _)| n.chars().all(|c| c.is_ascii_digit()))
-                    .map_or(t, |(_, r)| r)
-            } else {
-                t
-            };
-            parts.push(t.to_string());
-        }
-        if !parts.is_empty() {
-            return clip(&parts.join(": "));
-        }
+    let reported = stderr.lines().rev().find_map(|l| {
+        l.strip_prefix("domainatoredux")
+            .and_then(|rest| rest.split_once(": error: "))
+            .map(|(_, msg)| msg)
+    });
+    let usage = || stderr.lines().find_map(|l| l.strip_prefix("error: "));
+    if let Some(msg) = reported
+        .or_else(usage)
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+    {
+        return clip(msg);
     }
-    // A panic, a clap usage error, or a crash with nothing printed.
+    // A panic, or a crash with nothing printed.
     let tail: Vec<&str> = stderr
         .lines()
         .map(str::trim)
@@ -391,15 +370,16 @@ mod tests {
     }
 
     #[test]
-    fn the_cli_error_chain_becomes_one_line() {
-        let stderr = "warning: something\nError: reading references\n\nCaused by:\n    0: opening x.hmm\n    1: No such file or directory (os error 2)\n";
+    fn the_cli_error_line_is_the_message() {
+        let stderr = "warning: something\ndomainatoredux domainate: error: reading references: opening x.hmm: No such file or directory (os error 2)\n";
         assert_eq!(
             failure_message(stderr, "exited with code 1"),
             "reading references: opening x.hmm: No such file or directory (os error 2)"
         );
+        let usage = "error: No output specified. Give at least one of: --genbank_out, --fasta_out\n\nUsage: domainatoredux sort_contigs [OPTIONS] --input <INPUT>...\n";
         assert_eq!(
-            failure_message("Error: plain\n", "exited with code 1"),
-            "plain"
+            failure_message(usage, "exited with code 2"),
+            "No output specified. Give at least one of: --genbank_out, --fasta_out"
         );
         // No CLI error report: the tail of stderr, said to be a crash.
         let panic =

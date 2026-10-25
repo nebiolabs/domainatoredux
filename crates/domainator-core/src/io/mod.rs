@@ -138,8 +138,8 @@ pub fn detect_filetype(path: &Path) -> Option<FileType> {
         .unwrap_or(&name);
     let ext = stripped.rsplit('.').next()?;
     match ext {
-        "gb" | "gbk" | "genbank" => Some(FileType::Genbank),
-        "fasta" | "fa" | "faa" | "fna" => Some(FileType::Fasta),
+        "gb" | "gbk" | "genbank" | "gbff" => Some(FileType::Genbank),
+        "fasta" | "fa" | "faa" | "fna" | "pep" => Some(FileType::Fasta),
         _ => None,
     }
 }

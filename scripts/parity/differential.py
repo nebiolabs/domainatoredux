@@ -362,12 +362,14 @@ def main(argv=None):
 
     tally = {k: 0 for k in ("identical", "tolerated", "differs", "rust-failed", "error", "skipped")}
     found = {}
+    rejected = 0
     report = open(cfg.report, "w") if cfg.report else None
     if report:
         report.write("module\tkey\tsource\toutcome\tnote\n")
     for row in rows:
         outcome, note = run_one(row, cfg, helpers, SeqIO)
         tally[outcome] += 1
+        rejected += note == "python rejected the invocation"
         if report:
             report.write(f"{row[0]}\t{row[1]}\t{row[2]}\t{outcome}\t{note}\n")
             report.flush()
@@ -392,8 +394,10 @@ def main(argv=None):
 
     # A broken Python side does not fail loudly: an entry point that exits 0 having
     # written nothing turns every row into `skipped`, and a sweep that compared
-    # nothing would otherwise pass.
-    if rows and tally["skipped"] == len(rows):
+    # nothing would otherwise pass. An `--only` run of one tool can legitimately skip
+    # everything, when all its tests build their inputs at test time, but then Python
+    # rejected those invocations rather than running them.
+    if rows and tally["skipped"] == len(rows) and not (cfg.only and rejected):
         print("\nFAILED: every invocation was skipped -- the Python side ran nothing. "
               f"Check that `{cfg.python} -m domainator <tool>` works.")
         return 2

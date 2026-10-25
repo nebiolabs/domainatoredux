@@ -21,7 +21,12 @@ workspace = true
 domainator-core = { path = "../domainator-core" }
 domainator-config = { path = "../domainator-config" }
 clap.workspace = true
+clap_complete.workspace = true
+bgzf.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
+
+[dev-dependencies]
+flate2.workspace = true

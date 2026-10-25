@@ -11,10 +11,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 use config::{load_config, print_config, schema, ColumnSpec, EnumConfig, HmmerReportColumn};
 use domainator_config as config;
+
+mod commands;
+pub mod output;
 
 use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
@@ -39,7 +42,6 @@ use domainator_core::tools::select_by_cds::{pad_records, select_by_cds, SelectBy
 use domainator_core::tools::select_by_contig::{select_by_contig, SelectByContigOptions};
 use domainator_core::tools::select_common::parse_name_list;
 use domainator_core::tools::seq_dist::{detect_kind, seq_dist, SeqDistOptions};
-use domainator_core::tools::sort_contigs;
 use domainator_core::tools::ssn_bundle;
 use domainator_core::tools::ssn_navigator::ssn_navigator;
 use domainator_core::tools::transform_matrix::transform_matrix;
@@ -64,7 +66,10 @@ enum Command {
         verbose: bool,
     },
     /// Read a GenBank/FASTA file and write it back out as GenBank (round-trip).
-    Convert { input: PathBuf, output: PathBuf },
+    Convert {
+        input: PathBuf,
+        output: PathBuf,
+    },
     /// Annotate sequences with hits to reference HMMs (protein hmmsearch path).
     Domainate {
         /// Input sequence file (GenBank or FASTA).
@@ -401,28 +406,7 @@ enum Command {
         #[arg(long = "print_config")]
         print_config: bool,
     },
-    /// Sort contigs by best Domain_Search (or selected Domainator) score.
-    SortContigs {
-        /// Input GenBank file(s) (stdin if omitted).
-        #[arg(short, long, num_args = 1..)]
-        input: Vec<PathBuf>,
-        /// Output GenBank file (stdout if omitted).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Keep only the top-N contigs by score.
-        #[arg(long = "max_hits")]
-        max_hits: Option<usize>,
-        /// Sort by best Domainator score among these domain names.
-        #[arg(long, num_args = 1..)]
-        domains: Vec<String>,
-        /// With --domains, restrict to these databases.
-        #[arg(long, num_args = 1..)]
-        databases: Vec<String>,
-        #[arg(long)]
-        config: Option<String>,
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    SortContigs(config::args::SortContigsArgs),
     /// Extract contig regions using explicit 1-based coordinate ranges from a table.
     SelectByCoord {
         /// Input GenBank file(s) (stdin if omitted).
@@ -1123,6 +1107,20 @@ enum Command {
         #[arg(long = "print_config")]
         print_config: bool,
     },
+    /// Print a JSON description of every command and its options (the tool manifest).
+    Describe {
+        /// Describe only these commands.
+        #[arg(long, num_args = 1..)]
+        tool: Vec<String>,
+        /// Indent the JSON by this many spaces.
+        #[arg(long)]
+        indent: Option<usize>,
+    },
+    /// Print a shell completion script.
+    Completion {
+        /// The shell to complete for.
+        shell: clap_complete::Shell,
+    },
     /// Print a JSON Schema for a tool's `--config` file.
     Schema {
         /// Tool name: any of the tool subcommands (e.g. domainate, seq_dist, enum_report).
@@ -1532,8 +1530,10 @@ fn parse_knn(value: &str) -> std::result::Result<usize, String> {
 fn load(input: &Path) -> Result<Vec<SeqRecord>> {
     let path = input.to_str().context("non-UTF8 path")?;
     match detect_filetype(input) {
-        Some(FileType::Genbank) => read_genbank(path).context("reading GenBank"),
-        Some(FileType::Fasta) => fasta::read_fasta(path, Some("protein")).context("reading FASTA"),
+        Some(FileType::Genbank) => read_genbank(path).with_context(|| format!("reading {path}")),
+        Some(FileType::Fasta) => {
+            fasta::read_fasta(path, Some("protein")).with_context(|| format!("reading {path}"))
+        }
         None => anyhow::bail!(
             "could not detect file type from extension: {}",
             input.display()
@@ -2029,8 +2029,146 @@ where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
 {
-    let cli = Cli::try_parse_from(args)?;
-    dispatch(cli)
+    let mut argv: Vec<std::ffi::OsString> = args.into_iter().map(Into::into).collect();
+    let mut cmd = command();
+    let tool = argv
+        .get(1)
+        .and_then(|a| a.to_str())
+        .and_then(config::registry::tool_info)
+        .filter(|t| t.migrated);
+    if let Some(info) = tool {
+        let sub = cmd
+            .find_subcommand(info.name)
+            .context("registry tool without a subcommand")?;
+        let rest = config::config_file::expand(sub, &argv[2..])?;
+        argv.truncate(2);
+        argv.extend(rest);
+        if argv.iter().any(|a| a == "--print_config") {
+            // A config being printed need not be complete, as upstream's need not.
+            cmd = cmd.mut_subcommand(info.name, |c| c.mut_args(|a| a.required(false)));
+        }
+    }
+    let matches = cmd.clone().try_get_matches_from(&argv)?;
+    if let (Some(info), Some((name, sub_m))) = (tool, matches.subcommand()) {
+        let sub = cmd
+            .find_subcommand(name)
+            .context("parsed an unknown subcommand")?;
+        if sub_m.get_flag("print_config") {
+            print!("{}", config::config_file::print_config(sub, sub_m, info)?);
+            return Ok(());
+        }
+        check_io(sub, sub_m, info)?;
+    }
+    dispatch(Cli::from_arg_matches(&matches)?)
+}
+
+/// The command line, with each tool's one-line summary from the registry.
+pub fn command() -> clap::Command {
+    Cli::command().mut_subcommands(|c| match config::registry::tool_info(c.get_name()) {
+        Some(info) => c.about(info.summary),
+        None => c,
+    })
+}
+
+/// Upstream's `check_outputs` and `reject_stdin`: at least one of the required
+/// outputs, at most one output on standard output, `-` only where it is allowed.
+fn check_io(
+    sub: &clap::Command,
+    m: &clap::ArgMatches,
+    info: &config::registry::ToolInfo,
+) -> Result<()> {
+    let value = |id: &str| -> Vec<String> {
+        m.try_get_raw(id)
+            .ok()
+            .flatten()
+            .map(|v| v.map(|s| s.to_string_lossy().into_owned()).collect())
+            .unwrap_or_default()
+    };
+    let flag = |id: &str| {
+        sub.get_arguments()
+            .find(|a| a.get_id() == id)
+            .and_then(|a| a.get_long())
+            .map_or_else(|| id.to_string(), |l| format!("--{l}"))
+    };
+    let usage = |msg: String| -> anyhow::Error {
+        let mut sub = sub
+            .clone()
+            .bin_name(format!("domainatoredux {}", info.name));
+        sub.error(clap::error::ErrorKind::MissingRequiredArgument, msg)
+            .into()
+    };
+    let outputs: Vec<&clap::Arg> = sub
+        .get_arguments()
+        .filter(|a| a.get_id().as_str().ends_with("_out"))
+        .collect();
+    if let Some(required) = info.required_outputs {
+        if required.iter().all(|id| value(id).is_empty()) {
+            let names: Vec<String> = required.iter().map(|id| flag(id)).collect();
+            return Err(usage(format!(
+                "No output specified. Give at least one of: {}",
+                names.join(", ")
+            )));
+        }
+    }
+    let on_stdout: Vec<String> = outputs
+        .iter()
+        .map(|a| a.get_id().as_str())
+        .filter(|id| value(id).iter().any(|v| output::is_stdout(v)))
+        .map(flag)
+        .collect();
+    for id in info.no_stdout {
+        if value(id).iter().any(|v| output::is_stdout(v)) {
+            return Err(usage(format!(
+                "{} cannot be written to standard output. Give a file name.",
+                flag(id)
+            )));
+        }
+    }
+    if on_stdout.len() > 1 {
+        return Err(usage(format!(
+            "Only one output can be written to standard output, but got: {}",
+            on_stdout.join(", ")
+        )));
+    }
+    if !info.stdin && value("input").iter().any(|v| output::is_stdin(v)) {
+        return Err(usage(
+            "This command cannot read standard input, because it reads its input more than \
+             once. Give a file instead."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Print an error from [`run`] the way the binary does, and return the exit code: a
+/// usage error as clap prints it (exit 2, or 0 for `--help`), anything else as one
+/// line, `domainatoredux <tool>: error: <message: cause: ...>` (exit 1).
+pub fn report_error(e: &anyhow::Error, argv: &[std::ffi::OsString]) -> i32 {
+    if let Some(clap_err) = clap_error(e) {
+        let _ = clap_err.print();
+        return clap_err.exit_code();
+    }
+    let prog = match argv.get(1).and_then(|a| a.to_str()) {
+        Some(tool) if command().find_subcommand(tool).is_some() => {
+            format!("domainatoredux {tool}")
+        }
+        _ => "domainatoredux".to_string(),
+    };
+    eprintln!("{prog}: error: {e:#}");
+    1
+}
+
+/// What the binary does: [`run`], then [`report_error`] on failure.
+pub fn main_with<I, T>(args: I) -> i32
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let argv: Vec<std::ffi::OsString> = args.into_iter().map(Into::into).collect();
+    match run(argv.clone()) {
+        Ok(()) => 0,
+        Err(e) => report_error(&e, &argv),
+    }
 }
 
 /// The [`clap::Error`] inside an error from [`run`], when clap is where it came
@@ -2608,56 +2746,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             write_genbank_out(&records, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
             eprintln!("called {added} genes on {} records", records.len());
         }
-        Command::SortContigs {
-            input,
-            output,
-            max_hits,
-            domains,
-            databases,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::SortContigsConfig {
-                input: paths_to_strings(&input)?,
-                output: opt_path(&output)?,
-                max_hits,
-                domains,
-                databases,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::SortContigsConfig>(p)?,
-                None => config::SortContigsConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let records = load_inputs_str(&cfg.input)?;
-            // Python: --max_hits 0 means "return all"; databases only apply with domains.
-            let max_hits = match cfg.max_hits {
-                Some(0) | None => None,
-                Some(n) => Some(n),
-            };
-            let domains = if cfg.domains.is_empty() {
-                None
-            } else {
-                Some(cfg.domains.iter().cloned().collect())
-            };
-            let databases = if domains.is_none() || cfg.databases.is_empty() {
-                None
-            } else {
-                Some(cfg.databases.iter().cloned().collect())
-            };
-            let opts = sort_contigs::SortContigsOptions {
-                max_hits,
-                domains,
-                databases,
-            };
-            let out = sort_contigs::sort_contigs(records, &opts).map_err(|e| anyhow::anyhow!(e))?;
-            write_genbank_out(&out, cfg.output.as_ref().map(PathBuf::from).as_ref())?;
-        }
+        Command::SortContigs(args) => commands::sort_contigs::run(&args)?,
         Command::SelectByCoord {
             input,
             output,
@@ -3973,6 +4062,36 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Command::Schema { tool } => {
             println!("{}", schema(&tool)?);
+        }
+        Command::Describe { tool, indent } => {
+            for t in &tool {
+                if !config::registry::tool_info(t).is_some_and(|i| i.in_manifest) {
+                    return Err(commands::usage_error(format!(
+                        "describe: unknown tool '{t}'; `domainatoredux --help` lists the tools"
+                    )));
+                }
+            }
+            let only = (!tool.is_empty()).then_some(tool.as_slice());
+            let doc = config::manifest::manifest(&command(), only);
+            let mut out = std::io::stdout().lock();
+            match indent {
+                Some(n) => {
+                    let pad = vec![b' '; n];
+                    let fmt = serde_json::ser::PrettyFormatter::with_indent(&pad);
+                    let mut ser = serde_json::Serializer::with_formatter(&mut out, fmt);
+                    serde::Serialize::serialize(&doc, &mut ser)?;
+                }
+                None => serde_json::to_writer(&mut out, &doc)?,
+            }
+            writeln!(out)?;
+        }
+        Command::Completion { shell } => {
+            clap_complete::generate(
+                shell,
+                &mut command(),
+                "domainatoredux",
+                &mut std::io::stdout(),
+            );
         }
         Command::EnumReport { args } => {
             let EnumCli {

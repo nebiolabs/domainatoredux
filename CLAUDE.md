@@ -53,7 +53,21 @@ don't assume clap's kebab default. Subcommands are snake_case too (`rename_all` 
 hand in the CLI because column order follows flag order, which clap derive does not
 preserve.)
 
-**Config files / agent interface** (the `crates/domainator-config` crate — *not* a
+**The 1.0 interface (migration in progress, see the upstream-1.0 sync plan).** Each
+migrated tool's interface is one clap `Args` struct, `crates/domainator-config/src/args/<tool>.rs`,
+with upstream's parameter names (`rename_all = "snake_case"`, so id == long flag ==
+config key), `CommonArgs` flattened in (`-v/-q/--config/--print_config`), and a
+`registry.rs` entry with `migrated: true` (category, summary, required outputs, stdio
+rules). Its body is `crates/domainator-cli/src/commands/<tool>.rs`. `config_file.rs`
+turns a `--config` file (upstream's flat format) into command-line arguments before the
+one clap parse, so CLI flags win and every check applies to files too; `--print_config`
+and `domainatoredux describe` (`manifest.rs`, upstream's manifest v1 format) are read off
+the clap command. Outputs go through `crates/domainator-cli/src/output.rs` (`-` = stdout,
+atomic temp-file writes, `.gz`/`.bgz` = BGZF). Errors print as one line,
+`domainatoredux <tool>: error: ...` (`report_error`, shared with the GUI worker). Only
+`sort_contigs` is migrated so far; the rest still use the old layer below.
+
+**Config files / agent interface, unmigrated tools** (the `crates/domainator-config` crate — *not* a
 `config.rs` in the CLI): every tool accepts `--config <file.json|.yml>` (a **native Rust**
 serde schema, *not* byte-compatible with Python's jsonargparse files) and `--print_config`
 (dump resolved params as YAML). Merge order is config = base, CLI flags override (scalars
@@ -113,6 +127,15 @@ only one possible.** Parity can only ask "is this the same as Python"; everythin
 database registry, HMM logo, contig editor, summary dashboard), and the Tauri command layer.
 When adding to any of those, a test is the whole safety net. Two guards there earn their
 keep in particular:
+- **`describe_matches_upstream_up_to_the_allowlist`** (`crates/domainator-cli/tests/upstream_manifest.rs`)
+  — diffs `domainatoredux describe` against upstream's `domainator describe`
+  (`scripts/parity/upstream_manifest.json`, refreshed by `refresh_manifest.py`); every
+  difference is a row of `scripts/parity/manifest_allowlist.tsv`, enforced both ways
+  (`UPDATE_MANIFEST_ALLOWLIST=1` regenerates, keeping classes). `tests/interface.rs`
+  holds the generic rules for migrated tools (registry == subcommands, long == id,
+  outputs end `_out`, numbers reject nan/inf, `--print_config` round-trips). Both build
+  the CLI's `Command` on a 256 MB-stack thread: the derive overflows a test thread in
+  debug builds.
 - **`every_schema_matches_its_config_struct`** (`domainator-config`) — `domainatoredux schema
   <tool>` is the documented agent interface *and* what the GUI renders its tool dialogs
   from (`cmd_tools::tool_schema`), while the config struct is what actually deserializes.

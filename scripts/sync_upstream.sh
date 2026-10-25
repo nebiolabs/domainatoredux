@@ -157,6 +157,8 @@ echo "== reminders =="
 echo "  * Triage the changelog against UPSTREAM.md's file->owner map; port surfaces #2-#4."
 echo "  * Run the per-tool parity gates for any tool whose Python file changed."
 echo "  * Read the scripts/parity/known_gaps.tsv diff, and triage the class column on new rows."
+echo "  * After refresh_manifest.py, regenerate the interface allowlist and triage new rows:"
+echo "    UPDATE_MANIFEST_ALLOWLIST=1 cargo test -p domainator-cli --test upstream_manifest"
 echo "  * Advance the pin in UPSTREAM.md to ${TARGET:0:12} and note anything deferred;"
 echo "    set upstream_commit!() in crates/domainator-core/src/version.rs to match."
 

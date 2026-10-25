@@ -24,8 +24,13 @@ evalue: 1.0e-5
 cpu: 0
 ```
 
-The key names are the long flag names without the dashes. This is a **native Rust schema**
-and is deliberately *not* compatible with the Python suite's jsonargparse config files.
+The key names are the long flag names without the dashes.
+
+The tools are moving, one at a time, to the Domainator 1.0 interface, whose config files
+are **interchangeable with the Python suite's**; so far that is `sort_contigs`. The rest of
+this section describes the older, native format of the tools not yet moved, which is *not*
+compatible with the Python suite's files. See
+[Tools on the 1.0 interface](#tools-on-the-10-interface) for the new one.
 
 ### How a config file and the command line combine
 
@@ -84,7 +89,43 @@ The output is a valid config file, so this is also how you capture a working inv
 domainatoredux domainate -i contigs.gb -r pfam-A.hmm -o out.gb --print_config > annotate.yml
 ```
 
+### Tools on the 1.0 interface
+
+A migrated tool reads upstream's format: an object keyed by option name, exactly what
+`--print_config` prints (and what `python -m domainator <tool> --print_config` prints),
+so a file written for one implementation works with the other.
+
+```yaml
+# sort.yml
+input:
+- hits.gb
+genbank_out: sorted.gb
+max_hits: 100
+```
+
+The file is turned into command-line options and parsed with the rest, so every check
+that applies on the command line (types, bounds, choices) applies to the file too:
+
+- an option given on the command line **replaces** the file's value, lists included;
+- a switch is `true` or `false`, and `false` turns it off even if it defaults on;
+- `null` or a missing key leaves the default;
+- an unknown key is an error that names it.
+
+`--print_config` prints every option with the value it will have, defaults included, and
+does not require the required ones, so it can capture a partial config to finish later.
+
 ## Discovering a tool's parameters
+
+`domainatoredux describe` prints the tool manifest: every tool and every option, with its
+flags, type, bounds, default, choices, and whether it is a file to read (`role: input`) or
+write (`role: output`), in the format of upstream's `domainator describe`. It is built
+from the command-line parser itself, so it cannot disagree with it:
+
+```bash
+domainatoredux describe --tool sort_contigs --indent 1
+```
+
+`schema`, below, is the older per-tool view and will be replaced by `describe`.
 
 `domainatoredux schema <tool>` prints a draft-07 JSON Schema describing that tool's config
 file — every option, its type, its allowed values, and a description:

@@ -1,0 +1,281 @@
+//! The catalog of tools: what `describe` needs to know about each one that its clap
+//! arguments cannot say.
+//!
+//! Mirrors upstream's `domainator.cli.registry` (categories and one-line summaries)
+//! plus the per-parser facts upstream attaches to its argparse actions: which outputs
+//! may be standard output, whether `-i -` is allowed, which outputs a run needs at least
+//! one of. The CLI checks that every subcommand has an entry here and vice versa.
+
+/// `(key, heading)` pairs, in the order upstream's `domainator --help` lists them.
+pub const CATEGORIES: &[(&str, &str)] = &[
+    ("annotate", "Annotate and search sequences and structures"),
+    ("edit", "Select, filter, and edit annotated records"),
+    ("convert", "Convert between formats"),
+    ("profile", "Build, select, and compare HMM and CM profiles"),
+    ("compare", "Compute similarity and distance matrices"),
+    (
+        "network",
+        "Build, explore, and split similarity networks, trees, and projections",
+    ),
+    ("report", "Tables and summaries"),
+    ("plot", "Figures"),
+    ("database", "Download and prepare databases"),
+];
+
+/// One tool.
+#[derive(Clone, Copy, Debug)]
+pub struct ToolInfo {
+    /// The subcommand, equal to upstream's tool name.
+    pub name: &'static str,
+    /// One of [`CATEGORIES`]' keys.
+    pub category: &'static str,
+    /// One line, shown by `--help` and `describe`.
+    pub summary: &'static str,
+    /// Listed by `describe`. The dev commands `inspect` and `convert` are not.
+    pub in_manifest: bool,
+    /// The tool's interface is a `crate::args` struct, and its `--config` file is
+    /// expanded into command-line arguments (upstream's flat format). The rest still
+    /// read the old per-tool config structs until they are migrated.
+    pub migrated: bool,
+    /// Whether `-i -` (standard input) is accepted; tools that read their input more
+    /// than once need a file.
+    pub stdin: bool,
+    /// Outputs that cannot be written to standard output.
+    pub no_stdout: &'static [&'static str],
+    /// A run must give at least one of these outputs. `None`: no such rule.
+    pub required_outputs: Option<&'static [&'static str]>,
+    /// Options whose default depends on the machine (a path under the home or temp
+    /// directory), which `describe` leaves out, as upstream does.
+    pub dynamic_defaults: &'static [&'static str],
+    /// `--x`/`--no_x` switches whose default is on.
+    pub switches_on: &'static [&'static str],
+}
+
+const fn tool(name: &'static str, category: &'static str, summary: &'static str) -> ToolInfo {
+    ToolInfo {
+        name,
+        category,
+        summary,
+        in_manifest: true,
+        migrated: false,
+        stdin: true,
+        no_stdout: &[],
+        required_outputs: None,
+        dynamic_defaults: &[],
+        switches_on: &[],
+    }
+}
+
+/// Every subcommand of `domainatoredux` that is a tool (not `describe`, `completion`,
+/// `schema`), in upstream's order, then the port-only ones.
+pub const TOOLS: &[ToolInfo] = &[
+    // annotate
+    tool(
+        "domainate",
+        "annotate",
+        "Annotate contigs or proteins with hits to HMM, sequence, or CM references.",
+    ),
+    tool(
+        "domain_search",
+        "annotate",
+        "Search a large database with a few references and extract the hits.",
+    ),
+    // edit
+    tool(
+        "clean_sequences",
+        "edit",
+        "Clean sequence names and residues, and filter out sequences with non-canonical residues.",
+    ),
+    tool(
+        "color_genbank",
+        "edit",
+        "Add color qualifiers to CDS and domain features.",
+    ),
+    tool(
+        "deduplicate_genbank",
+        "edit",
+        "Reduce redundancy by clustering sequences (cd-hit, usearch, diamond, or exact hashes).",
+    ),
+    tool(
+        "extract_domains",
+        "edit",
+        "Extract annotated domains as their own records.",
+    ),
+    tool(
+        "extract_peptides",
+        "edit",
+        "Extract translated CDSs as protein records, keeping their domain annotations.",
+    ),
+    tool(
+        "extract_unannotated",
+        "edit",
+        "Extract the regions of proteins not covered by any domain annotation.",
+    ),
+    tool(
+        "filter_domains",
+        "edit",
+        "Filter domain annotations by e-value, overlap, database, or name.",
+    ),
+    tool(
+        "select_by_cds",
+        "edit",
+        "Extract contigs or neighborhoods around selected CDSs.",
+    ),
+    tool(
+        "select_by_contig",
+        "edit",
+        "Select whole contigs by their domain content and other properties.",
+    ),
+    tool(
+        "select_by_coord",
+        "edit",
+        "Extract contig regions listed in a coordinate table.",
+    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        ..tool(
+            "sort_contigs",
+            "edit",
+            "Sort contigs by their Domain_Search score.",
+        )
+    },
+    tool("trim_contigs", "edit", "Trim the ends of contigs."),
+    // convert
+    tool(
+        "genbank_to_fasta",
+        "convert",
+        "Convert GenBank files to FASTA.",
+    ),
+    // profile
+    tool(
+        "hmmer_build",
+        "profile",
+        "Build an HMM profile from a multiple sequence alignment.",
+    ),
+    tool(
+        "hmmer_select",
+        "profile",
+        "Extract a subset of profiles from HMM files.",
+    ),
+    tool(
+        "hmmer_search",
+        "profile",
+        "Select HMM profiles by their similarity to reference profiles.",
+    ),
+    tool(
+        "hmmer_compare",
+        "profile",
+        "Score and align pairs of HMM profiles.",
+    ),
+    // compare
+    tool(
+        "seq_dist",
+        "compare",
+        "Compute similarity scores between sequences or profiles.",
+    ),
+    tool(
+        "compare_contigs",
+        "compare",
+        "Compute similarities between gene neighborhoods from their domain content and order.",
+    ),
+    tool(
+        "transform_matrix",
+        "compare",
+        "Convert score matrices into normalized scores or distances.",
+    ),
+    // network
+    tool(
+        "build_ssn",
+        "network",
+        "Build a sequence similarity network as a Cytoscape file.",
+    ),
+    tool(
+        "build_ssn_viewer",
+        "network",
+        "Build a Domainator Similarity Network Viewer bundle and HTML page.",
+    ),
+    tool(
+        "ssn_navigator",
+        "network",
+        "Query a similarity network bundle: clusters, members, and metadata.",
+    ),
+    // report
+    tool(
+        "enum_report",
+        "report",
+        "Tabulate properties of each contig, CDS, or domain.",
+    ),
+    tool(
+        "hmmer_report",
+        "report",
+        "Tabulate properties of each HMM profile.",
+    ),
+    tool(
+        "summary_report",
+        "report",
+        "Summarize the domain and taxonomy content of a dataset.",
+    ),
+    tool("matrix_report", "report", "Summarize a similarity matrix."),
+    // plot
+    tool(
+        "color_table_to_legend",
+        "plot",
+        "Draw an SVG legend from a color table.",
+    ),
+    // database
+    tool(
+        "format_db",
+        "database",
+        "Shard, compress, and index a database for domain_search.",
+    ),
+    // port-only
+    tool(
+        "gene_call",
+        "annotate",
+        "Call genes with Orphos (Prodigal): add CDS features to contigs (domainatoredux only).",
+    ),
+    ToolInfo {
+        in_manifest: false,
+        ..tool(
+            "inspect",
+            "convert",
+            "Parse a sequence file and summarize each record (diagnostic).",
+        )
+    },
+    ToolInfo {
+        in_manifest: false,
+        ..tool(
+            "convert",
+            "convert",
+            "Read a GenBank or FASTA file and write it back as GenBank (round trip).",
+        )
+    },
+];
+
+/// The registry entry for a subcommand.
+pub fn tool_info(name: &str) -> Option<&'static ToolInfo> {
+    TOOLS.iter().find(|t| t.name == name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_tool_is_listed_once_in_a_known_category() {
+        let mut seen = std::collections::HashSet::new();
+        for t in TOOLS {
+            assert!(seen.insert(t.name), "{} listed twice", t.name);
+            assert!(
+                CATEGORIES.iter().any(|(k, _)| *k == t.category),
+                "{}: unknown category {}",
+                t.name,
+                t.category
+            );
+            for out in t.required_outputs.unwrap_or_default() {
+                assert!(out.ends_with("_out"), "{}: {out} is not an output", t.name);
+            }
+        }
+    }
+}

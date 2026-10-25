@@ -67,23 +67,14 @@ fn run_worker(args: Vec<OsString>) -> i32 {
         return code;
     }
     watch_lifeline();
-    let argv = std::iter::once(OsString::from("domainatoredux"))
+    let argv: Vec<OsString> = std::iter::once(OsString::from("domainatoredux"))
         .chain(args)
         .collect();
-    match run_cli(argv) {
+    match run_cli(argv.clone()) {
         Ok(()) => 0,
-        Err(e) => match domainator_cli::clap_error(&e) {
-            Some(clap_err) => {
-                let _ = clap_err.print();
-                clap_err.exit_code()
-            }
-            // What the `domainatoredux` binary prints for an error (`main` returning
-            // `Err`), so a job's message is the one the CLI would show.
-            None => {
-                eprintln!("Error: {e:?}");
-                1
-            }
-        },
+        // What the `domainatoredux` binary prints for an error, so a job's message is the
+        // one the CLI would show.
+        Err(e) => domainator_cli::report_error(&e, &argv),
     }
 }
 

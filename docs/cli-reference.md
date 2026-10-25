@@ -18,6 +18,22 @@ These trip people up, so read them once:
 `--add_annotations`. Both mirror the Python suite's names exactly: upstream's executable
 is `domainator`, this one is `domainatoredux`, so the two can be installed side by side.
 
+**The Domainator 1.0 interface, tool by tool.** Upstream 1.0 renamed many options and
+made every output its own `--<content>_out` option. This port is moving each tool to that
+interface, and these tools have moved so far: `sort_contigs`. On a migrated tool:
+
+- outputs are `-o/--genbank_out`, `--fasta_out`, `--tsv_out`, ... and at least one is
+  required. Nothing goes to stdout unless you ask for it with `-`, and at most one output
+  can be `-`. A path ending in `.gz` or `.bgz` is written compressed (BGZF), and a file
+  appears only once the run has succeeded.
+- `-i -` reads GenBank from stdin. Leaving out `-i` is an error.
+- `-v/--verbose` and `-q/--quiet` are accepted.
+- `--config` takes upstream's format: an object keyed by option name, as `--print_config`
+  writes it. See [Config files](config-and-agents.md).
+
+`domainatoredux describe` lists every tool's options exactly, including which ones a tool
+has not migrated yet.
+
 **There are no global flags.** `--config`, `--print_config`, `--cpu`, `--json` and
 `--max_output_gb` are declared per tool, so they must come *after* the tool name, and a
 tool that doesn't declare one doesn't accept it.
@@ -111,6 +127,25 @@ Write the sequences of GenBank records as FASTA, dropping annotations.
 
 ```bash
 domainatoredux genbank_to_fasta -i annotated.gb -o sequences.fasta
+```
+
+### `describe`
+
+Print the tool manifest: a JSON description of every tool and option (flags, type,
+bounds, default, choices, and which options are files to read or write), in upstream's
+`domainator describe` format. Meant for programs that drive the tools.
+
+```bash
+domainatoredux describe --indent 1 > manifest.json
+domainatoredux describe --tool domainate sort_contigs
+```
+
+### `completion`
+
+Print a shell completion script, for `bash`, `zsh`, `fish`, `powershell` or `elvish`.
+
+```bash
+domainatoredux completion bash > ~/.local/share/bash-completion/completions/domainatoredux
 ```
 
 ### `schema`
@@ -309,8 +344,11 @@ domainatoredux trim_contigs -i neighborhoods.gb -o trimmed.gb --cds_both 1
 
 ### `sort_contigs`
 
-Sort contigs by their best `Domain_Search` score, or by a selected `Domainator`
-annotation (`--domains`, `--databases`). `--max_hits` truncates to the best N.
+Sort contigs by their best `Domain_Search` score, or by their best `Domainator`
+annotation among `--domains` (and `--domains_file`, a text, HMM, FASTA or GenBank file
+whose names or ids are used), optionally only from `--databases`. A contig with no
+matching annotation is an error. `--max_hits` keeps the best N. Writes `-o/--genbank_out`,
+`--fasta_out`, or both.
 
 ```bash
 domainatoredux sort_contigs -i hits.gb -o sorted.gb --max_hits 100

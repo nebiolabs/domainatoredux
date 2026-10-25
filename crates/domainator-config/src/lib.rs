@@ -9,7 +9,12 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+pub mod args;
+pub mod config_file;
+pub mod manifest;
+pub mod registry;
 pub mod resolve;
+pub mod types;
 
 use domainator_core::tools::enum_report::{
     append_analysis, feature_count_analysis, motif_count_analysis, named_domain_count_analysis,
@@ -732,27 +737,6 @@ impl GeneCallConfig {
         self.mask |= cli.mask;
         merge_scalar!(self, cli, cpu);
         merge_scalar!(self, cli, bin_path);
-    }
-}
-
-/// `sort_contigs` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct SortContigsConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub max_hits: Option<usize>,
-    pub domains: Vec<String>,
-    pub databases: Vec<String>,
-}
-
-impl SortContigsConfig {
-    pub fn merge_cli(&mut self, cli: SortContigsConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, max_hits);
-        merge_vec!(self, cli, domains);
-        merge_vec!(self, cli, databases);
     }
 }
 
@@ -1531,6 +1515,10 @@ impl FormatDbConfig {
 
 /// A pragmatic JSON Schema (draft-07) describing a tool's config file.
 pub fn schema(tool: &str) -> Result<String> {
+    if let (Some(cmd), Some(info)) = (args::tool_command(tool), registry::tool_info(tool)) {
+        let schema = manifest_schema(&manifest::describe_tool(&cmd, info));
+        return serde_json::to_string_pretty(&schema).context("serializing schema");
+    }
     let s = match tool {
         "enum_report" => enum_schema(),
         "select_by_contig" => select_by_contig_schema(),
@@ -1541,7 +1529,6 @@ pub fn schema(tool: &str) -> Result<String> {
         "genbank_to_fasta" => genbank_to_fasta_schema(),
         "clean_sequences" => clean_sequences_schema(),
         "gene_call" => gene_call_schema(),
-        "sort_contigs" => sort_contigs_schema(),
         "select_by_coord" => select_by_coord_schema(),
         "filter_domains" => filter_domains_schema(),
         "color_genbank" => color_genbank_schema(),
@@ -1571,6 +1558,56 @@ pub fn schema(tool: &str) -> Result<String> {
     let mut s = s;
     fill_common_descriptions(&mut s);
     serde_json::to_string_pretty(&s).context("serializing schema")
+}
+
+/// The config-file schema of a migrated tool, from its manifest entry: a property per
+/// parameter, so the GUI's dialogs keep rendering from `schema` until they read the
+/// manifest itself.
+fn manifest_schema(tool: &serde_json::Value) -> serde_json::Value {
+    use serde_json::{json, Map, Value};
+    let mut props = Map::new();
+    for p in tool["parameters"].as_array().into_iter().flatten() {
+        let mut item = Map::new();
+        let ty = p["type"].clone();
+        if let Some(choices) = p["choices"].as_array() {
+            item.insert("enum".into(), Value::Array(choices.clone()));
+        }
+        for (ours, theirs) in [
+            ("min", "minimum"),
+            ("max", "maximum"),
+            ("exclusive_min", "exclusiveMinimum"),
+        ] {
+            if let Some(v) = p.get(ours) {
+                item.insert(theirs.into(), v.clone());
+            }
+        }
+        let mut prop = if p["kind"] == "flag" {
+            json!({"type": "boolean"})
+        } else if p["multiple"] == true {
+            item.insert("type".into(), ty);
+            json!({"type": ["array", "null"], "items": Value::Object(item)})
+        } else {
+            if let Some(Value::Array(e)) = item.get_mut("enum") {
+                e.push(Value::Null);
+            }
+            item.insert("type".into(), json!([ty, "null"]));
+            Value::Object(item)
+        };
+        if let Some(d) = p.get("default").filter(|d| !d.is_null()) {
+            prop["default"] = d.clone();
+        }
+        if let Some(h) = p["help"].as_str().filter(|h| !h.is_empty()) {
+            prop["description"] = json!(h);
+        }
+        props.insert(p["name"].as_str().unwrap_or_default().to_string(), prop);
+    }
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": format!("{} config", tool["name"].as_str().unwrap_or_default()),
+        "type": "object",
+        "additionalProperties": false,
+        "properties": props,
+    })
 }
 
 /// Fill in a `description` for any top-level property that lacks one, from the
@@ -2057,23 +2094,6 @@ fn gene_call_schema() -> serde_json::Value {
             "mask": {"type": "boolean", "default": false, "description": "No genes across runs of N"},
             "cpu": {"type": ["integer", "null"], "description": "Orphos threads (0 = all cores)"},
             "bin_path": {"type": ["string", "null"], "description": "Path to the orphos binary (else $DOMAINATOREDUX_ORPHOS, then PATH)"}
-        }
-    })
-}
-
-fn sort_contigs_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "sort_contigs config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "max_hits": {"type": ["integer", "null"], "description": "Keep top-N by score"},
-            "domains": {"type": "array", "items": {"type": "string"}, "description": "Sort by best Domainator score among these"},
-            "databases": {"type": "array", "items": {"type": "string"}, "description": "With domains: restrict to these databases"}
         }
     })
 }
@@ -2708,7 +2728,6 @@ mod tests {
             "genbank_to_fasta" => GenbankToFastaConfig,
             "clean_sequences" => CleanSequencesConfig,
             "gene_call" => GeneCallConfig,
-            "sort_contigs" => SortContigsConfig,
             "select_by_coord" => SelectByCoordConfig,
             "filter_domains" => FilterDomainsConfig,
             "color_genbank" => ColorGenbankConfig,
@@ -2809,7 +2828,7 @@ mod tests {
         );
         assert_eq!(
             listed.len(),
-            32,
+            31,
             "a tool was added or removed without updating this list"
         );
     }

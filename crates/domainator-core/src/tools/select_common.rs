@@ -10,10 +10,11 @@ use std::collections::{HashMap, HashSet};
 use crate::seq::{SeqFeature, SeqRecord};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
-/// `utils.list_and_file_to_dict_keys(input_list, input_file, as_set=True)`.
+/// `cli.common.list_and_file_to_dict_keys(input_list, input_file, as_set=True)`.
 /// Returns `None` when both inputs are empty (Python's "no filter"). `file` is
-/// read as a plain text file (one entry per non-empty line), additive with
-/// `list`. (The fasta/genbank/hmm file forms are not used by these tools.)
+/// additive with `list`, and is read by its extension like upstream's: an HMM file
+/// gives its profile names, a FASTA or GenBank file its record ids, and anything else
+/// one entry per non-empty line.
 pub fn parse_name_list(
     list: &[String],
     file: Option<&str>,
@@ -24,15 +25,49 @@ pub fn parse_name_list(
     }
     if let Some(path) = file {
         let set = out.get_or_insert_with(HashSet::new);
-        let text = std::fs::read_to_string(path)?;
-        for line in text.lines() {
-            let line = line.trim();
-            if !line.is_empty() {
-                set.insert(line.to_string());
-            }
-        }
+        set.extend(names_in_file(path)?);
     }
     Ok(out)
+}
+
+/// The names a `--*_file` option lists (see [`parse_name_list`]).
+fn names_in_file(path: &str) -> std::io::Result<Vec<String>> {
+    use crate::io::{detect_filetype, open_decompressed, FileType};
+    use std::io::{BufRead, BufReader};
+    let p = std::path::Path::new(path);
+    let lower = path.to_ascii_lowercase();
+    let stem = [".gz", ".bgz", ".bgzf"]
+        .iter()
+        .find_map(|c| lower.strip_suffix(c))
+        .unwrap_or(&lower);
+    if stem.ends_with(".hmm") || stem.ends_with(".hmmer") {
+        // Only the NAME lines, as upstream's `iter_hmm_names` reads them.
+        let mut names = Vec::new();
+        for line in BufReader::new(open_decompressed(p)?).lines() {
+            let line = line?;
+            if let Some(rest) = line.strip_prefix("NAME") {
+                let name = rest.trim();
+                if !name.is_empty() && rest.starts_with(char::is_whitespace) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+        return Ok(names);
+    }
+    let records = match detect_filetype(p) {
+        Some(FileType::Genbank) => crate::io::genbank::read_genbank(path)?,
+        Some(FileType::Fasta) => crate::io::fasta::read_fasta(path, None)?,
+        None => {
+            let text = std::fs::read_to_string(path)?;
+            return Ok(text
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(str::to_string)
+                .collect());
+        }
+    };
+    Ok(records.into_iter().map(|r| r.id).collect())
 }
 
 // ---------------------------------------------------------------------------
