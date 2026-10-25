@@ -110,6 +110,19 @@ pub fn read_matrix(path: &str) -> std::io::Result<DataMatrix> {
     }
 }
 
+/// Refuse a distance matrix where 0 must mean "no edge" (upstream
+/// `DataMatrix.require_similarity`).
+pub fn require_similarity(data_type: &str, tool: &str) -> Result<(), String> {
+    match data_type.strip_suffix("_dist") {
+        Some(score_type) => Err(format!(
+            "{tool} needs a similarity matrix (higher values mean more similar, 0 means no \
+             edge), but the input is a '{data_type}' distance matrix. Use the '{score_type}' \
+             matrix instead."
+        )),
+        None => Ok(()),
+    }
+}
+
 impl DataMatrix {
     pub fn nrows(&self) -> usize {
         self.rows.len()

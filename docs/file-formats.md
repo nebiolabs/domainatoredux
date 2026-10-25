@@ -200,8 +200,9 @@ web server with nothing else alongside it.
 ### `.xgmml` — Cytoscape
 
 Written by [`build_ssn`](cli-reference.md#build_ssn). A static network: the edges are
-fixed at the `--lb` cutoff you chose, unlike the `.dsnv` bundle. Node attributes carry any
-metadata you joined on with `--metadata`, and `--cluster` adds a cluster id.
+fixed at the `--threshold` cutoff you chose, unlike the `.dsnv` bundle. Node attributes carry any
+metadata you joined on with `--metadata`, and `--cluster` adds a cluster id; `--mark_mst`
+gives each edge a boolean `MST` attribute.
 
 ## HMM profiles
 

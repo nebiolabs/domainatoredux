@@ -14,8 +14,24 @@ use super::{build_sparse_max, csr_index, csr_row, DataMatrix, Storage};
 
 /// A canonical undirected pair, always `(min_index, max_index)`.
 type Pair = (usize, usize);
-/// The pairs an MST/kNN pass keeps, plus the symmetric score chosen for each.
-type KeptEdges = (HashSet<Pair>, HashMap<Pair, f64>);
+/// The pairs an MST/kNN pass keeps, in upstream's edge-dict insertion order (the MST
+/// in tree order, then each node's ranked neighbors in node order), plus the
+/// symmetric score chosen for each.
+type KeptEdges = (Vec<Pair>, HashMap<Pair, f64>);
+
+/// How the maximum spanning forest breaks ties between equal-scoring edges, which
+/// decides which of two equal edges joins the tree. Upstream builds it two ways and
+/// documents that they may pick different, equally valid forests: the batch
+/// `MaxTree` (`transform_matrix`, `build_ssn`) and the streaming accumulator
+/// (`seq_dist`, `compare_contigs`), so each port follows its tool's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TreeTies {
+    /// `MaxTree`'s order: score descending, ties by row-major index descending.
+    Batch,
+    /// Score descending, ties by (larger index, smaller index) ascending, which is
+    /// what the streaming accumulator ends with.
+    Streaming,
+}
 
 /// `score > lower_bound` (the `include_equal=False` gate used everywhere here).
 #[inline]
@@ -102,6 +118,7 @@ pub(crate) fn mst_knn_kept(
     k: usize,
     lower_bound: f64,
     include_mst: bool,
+    ties: TreeTies,
 ) -> KeptEdges {
     let n = m.nrows();
 
@@ -118,26 +135,34 @@ pub(crate) fn mst_knn_kept(
         }
     });
 
-    let mut kept: HashSet<(usize, usize)> = HashSet::new();
+    let mut seen: HashSet<Pair> = HashSet::new();
+    let mut kept: Vec<Pair> = Vec::new();
+    let mut keep = |pair: Pair| {
+        if seen.insert(pair) {
+            kept.push(pair);
+        }
+    };
 
     // --- MST (Kruskal over the maximum spanning forest) ---
     // Skipped entirely for a pure `--knn` graph, which therefore does NOT preserve
     // the connected components of the input.
-    if include_mst {
-        // Sort descending by score, ties broken by (larger index, smaller index)
-        // ascending — replicating `sorted_undirected_edges` (a stable `-score` sort
-        // over lower-triangular, row-major edges).
+    // The forest is built over all nonzero edges; an edge is kept only when it also
+    // passes the lower bound.
+    if include_mst && ties == TreeTies::Batch {
+        for e in &super::ssn::MaxTree::from_matrix(m).edges {
+            if passes_lb(e.weight, lower_bound) {
+                keep((e.i.min(e.j), e.i.max(e.j)));
+            }
+        }
+    }
+    if include_mst && ties == TreeTies::Streaming {
         let mut candidates: Vec<(f64, usize, usize)> =
             sym.iter().map(|(&(a, b), &s)| (s, b, a)).collect(); // (score, larger=b, smaller=a)
         candidates.sort_by(|x, y| y.0.total_cmp(&x.0).then(x.1.cmp(&y.1)).then(x.2.cmp(&y.2)));
-
         let mut uf = UnionFind::new(n);
         for &(score, larger, smaller) in &candidates {
-            // The forest is built over all nonzero edges; an MST edge is emitted
-            // only when it also passes the lower bound (matching the batch path,
-            // which filters MST edges by `lower_bound` after building the tree).
             if uf.union(larger, smaller) && passes_lb(score, lower_bound) {
-                kept.insert((smaller, larger));
+                keep((smaller, larger));
             }
         }
     }
@@ -164,7 +189,7 @@ pub(crate) fn mst_knn_kept(
             } else {
                 (neighbor, node)
             };
-            kept.insert(edge);
+            keep(edge);
             selected += 1;
             if selected >= k {
                 break;
@@ -184,7 +209,13 @@ pub(crate) fn mst_knn_kept(
 /// `max(M[i,j], M[j,i])`, the same score the kNN ranking and the spanning tree select
 /// on. The output is therefore symmetric, and the batch and streaming paths now agree
 /// on values, not just on which edges are kept.
-pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64, include_mst: bool) -> DataMatrix {
+pub fn apply_mst_knn(
+    m: &DataMatrix,
+    k: usize,
+    lower_bound: f64,
+    include_mst: bool,
+    ties: TreeTies,
+) -> DataMatrix {
     let n = m.nrows();
 
     // Directional off-diagonal values and the diagonal (random-access lookups).
@@ -201,7 +232,7 @@ pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64, include_mst: bo
         }
     });
 
-    let (kept, sym) = mst_knn_kept(m, k, lower_bound, include_mst);
+    let (kept, sym) = mst_knn_kept(m, k, lower_bound, include_mst, ties);
 
     // --- Assemble the pruned matrix ---
     let mut rows_v: Vec<i64> = Vec::new();
@@ -236,5 +267,68 @@ pub fn apply_mst_knn(m: &DataMatrix, k: usize, lower_bound: f64, include_mst: bo
         col_lengths: m.col_lengths.clone(),
         data_type: m.data_type.clone(),
         storage,
+    }
+}
+/// `--mst`/`--knn` as the user typed them, e.g. `--mst --knn 5`, for error messages
+/// (upstream `sparsify_option_label`).
+pub fn sparsify_option_label(mst: bool, knn: Option<usize>) -> String {
+    let mut parts = Vec::new();
+    if mst {
+        parts.push("--mst".to_string());
+    }
+    if let Some(k) = knn {
+        parts.push(format!("--knn {k}"));
+    }
+    parts.join(" ")
+}
+
+/// Refuse `--mst`/`--knn` on distance data (upstream `check_sparsify_data_type`): both
+/// keep the *highest* values, which in a distance matrix are the weakest
+/// relationships.
+pub fn check_sparsify_data_type(
+    data_type: &str,
+    mst: bool,
+    knn: Option<usize>,
+) -> Result<(), String> {
+    if !mst && knn.is_none() {
+        return Ok(());
+    }
+    match data_type.strip_suffix("_dist") {
+        Some(score_type) => Err(format!(
+            "{} keeps the highest-valued edges, so it cannot be applied to a '{data_type}' \
+             (distance) matrix. Sparsify the '{score_type}' matrix instead.",
+            sparsify_option_label(mst, knn)
+        )),
+        None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A triangle of equal scores has three spanning trees; the tie rule picks one.
+    /// Upstream's batch `MaxTree` (row-major index descending) and its streaming
+    /// accumulator settle on different ones, and each tool must match its own.
+    #[test]
+    fn tied_edges_follow_the_tools_tree() {
+        let names: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+        #[rustfmt::skip]
+        let m = DataMatrix {
+            rows: names.clone(),
+            cols: names,
+            row_lengths: None,
+            col_lengths: None,
+            data_type: "score".into(),
+            storage: Storage::Dense(vec![
+                0.0, 5.0, 5.0,
+                5.0, 0.0, 5.0,
+                5.0, 5.0, 0.0,
+            ]),
+        };
+        let (batch, _) = mst_knn_kept(&m, 0, 0.0, true, TreeTies::Batch);
+        assert_eq!(batch, [(1, 2), (0, 2)]);
+        let (streaming, _) = mst_knn_kept(&m, 0, 0.0, true, TreeTies::Streaming);
+        assert_eq!(streaming, [(0, 1), (0, 2)]);
     }
 }

@@ -390,7 +390,9 @@ pub fn mst_knn_edge_list(
     lower_bound: f64,
     include_mst: bool,
 ) -> Vec<(usize, usize, f64)> {
-    let (kept, sym) = super::mst_knn::mst_knn_kept(m, k, lower_bound, include_mst);
+    // Upstream's `build_ssn` selects with the batch `MaxTree`.
+    let ties = super::mst_knn::TreeTies::Batch;
+    let (kept, sym) = super::mst_knn::mst_knn_kept(m, k, lower_bound, include_mst, ties);
     kept.into_iter()
         .map(|(a, b)| (a, b, sym[&(a, b)]))
         .collect()

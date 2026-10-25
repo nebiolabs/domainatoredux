@@ -18,16 +18,6 @@
 #              1.0 behavior change not ported yet. None may remain once the migration ends.
 #
 # Columns: <python module> <test_fn#n> <outcome> <class> <note>
-build_ssn	test_build_ssn_3#0	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-build_ssn	test_build_ssn_4#0	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-build_ssn	test_build_ssn_max_color_groups#0	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-build_ssn	test_build_ssn_mst#0	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-build_ssn	test_build_ssn_mst#1	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-build_ssn	test_build_ssn_mst_knn#0	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-build_ssn	test_build_ssn_mst_knn#1	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-build_ssn	test_build_ssn_mst_knn#2	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-build_ssn	test_build_ssn_mst_knn_preserves_ssn_cluster_colors#0	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
-build_ssn	test_build_ssn_mst_knn_preserves_ssn_cluster_colors#1	rust-failed	pending:1.0-cli	error: unexpected argument '--xgmml_out' found
 compare_contigs	test_compare_contigs_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
 compare_contigs	test_compare_contigs_2#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
 compare_contigs	test_compare_contigs_database_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found

@@ -23,7 +23,6 @@ domains they contain.
 ```bash
 # annotate a set of plasmid contigs
 domainatoredux domainate -i pDONR201_multi_genemark.gb -r pdonr_hmms.hmm -o annotated.gb
-#> wrote 4 records to annotated.gb
 
 # what got annotated, gene by gene?
 domainatoredux enum_report -i annotated.gb --by cds --columns domains length -o genes.tsv
@@ -43,12 +42,10 @@ domainatoredux select_by_cds -i annotated.gb -o neighborhoods.gb \
 
 # compare those neighborhoods by shared domain content, not by sequence
 domainatoredux compare_contigs -i neighborhoods.gb -o similarity.hdf5 --ji 0.5 --ai 0.5
-#> wrote 4x4 matrix
 
 # cluster them and write a Cytoscape network
-domainatoredux build_ssn -i similarity.hdf5 --xgmml network.xgmml --lb 0 \
-  --cluster --cluster_tsv clusters.tsv
-#> wrote 4 nodes, 6 edges to network.xgmml
+domainatoredux build_ssn -i similarity.hdf5 -o network.xgmml \
+  --cluster_tsv_out clusters.tsv
 ```
 
 The extracted records are named for the region they came from:
@@ -75,7 +72,6 @@ distribution, then build a viewer.
 domainatoredux domainate -i FeSOD_20.gb -r FeSOD_pfam.hmm -o annotated.gb
 
 domainatoredux seq_dist -i annotated.gb -o dist.hdf5 --algorithm hmmer --mode score
-#> wrote 20x20 matrix
 
 # look before you choose a cutoff
 domainatoredux matrix_report -i dist.hdf5 -o report.txt

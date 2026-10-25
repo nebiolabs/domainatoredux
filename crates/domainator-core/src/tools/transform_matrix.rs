@@ -5,10 +5,11 @@
 
 use std::io;
 
-use crate::matrix::mst_knn::apply_mst_knn;
+use crate::matrix::mst_knn::{
+    apply_mst_knn, check_sparsify_data_type, sparsify_option_label, TreeTies,
+};
 use crate::matrix::transform::{apply_lower_bound, symmetrize, transform_values};
 use crate::matrix::DataMatrix;
-use crate::tools::seq_dist::sparsify_option_label;
 
 /// Pass-through mode name (`--mode none`): keep values and `data_type` as-is.
 pub const PASS_THROUGH_MODE: &str = "none";
@@ -70,6 +71,7 @@ fn sparsify(
         opts.knn.unwrap_or(0),
         lower_bound,
         opts.mst,
+        TreeTies::Batch,
     ))
 }
 
@@ -142,13 +144,7 @@ pub fn transform_matrix(
     }
 
     if sparsifying {
-        if let Some(score_type) = m.data_type.strip_suffix("_dist") {
-            return Err(invalid(format!(
-                "{label} keeps the highest-valued edges, so it cannot be applied to a '{}' \
-                 (distance) matrix. Sparsify the '{score_type}' matrix instead.",
-                m.data_type
-            )));
-        }
+        check_sparsify_data_type(&m.data_type, opts.mst, opts.knn).map_err(invalid)?;
         m = sparsify(&m, opts, opts.threshold.unwrap_or(0.0))?;
     }
 

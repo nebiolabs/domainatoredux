@@ -1,14 +1,16 @@
 //! `build_ssn`: build a Cytoscape XGMML sequence-similarity network from a
 //! symmetric score matrix. Mirrors `domainator.build_ssn`: three edge modes
-//! (all-edges above `--lb`, `--mst`, `--mst_knn`), optional connected-component
-//! clustering (`SSN_cluster`), TSV node metadata, and node coloring.
+//! (all edges above `--threshold`, `--mst`, `--knn`, the last two combinable),
+//! optional MST edge marks, connected-component clustering (`SSN_cluster`), TSV
+//! node metadata, and node coloring.
 
 use std::collections::{HashMap, HashSet};
 use std::io;
 
 use crate::matrix::cytoscape::{Cell, ColType, NodeTable};
+use crate::matrix::mst_knn::check_sparsify_data_type;
 use crate::matrix::ssn::{mst_knn_edge_list, MaxTree};
-use crate::matrix::{DataMatrix, Storage};
+use crate::matrix::{require_similarity, DataMatrix, Storage};
 
 pub const SCORE_COLUMN: &str = "SSN_SCORE";
 pub const CLUSTER_COLUMN: &str = "SSN_cluster";
@@ -16,19 +18,18 @@ pub const CLUSTER_COLUMN: &str = "SSN_cluster";
 /// Options for [`build_ssn`].
 #[derive(Default)]
 pub struct BuildSsnOptions {
-    /// Exclude edges with weight `<= lb`.
-    pub lb: f64,
+    /// `--threshold`: exclude edges with weight `<= threshold`.
+    pub threshold: f64,
     /// Add an `SSN_cluster` column of size-ranked connected-component ids.
     pub cluster: bool,
     /// Keep only maximum-spanning-tree edges.
     pub mst: bool,
-    /// Keep MST + OR-symmetric kNN edges. `--mst_knn k` is exact shorthand for
-    /// `--mst --knn k`, and `k == 0` reduces to `--mst`.
-    pub mst_knn: Option<usize>,
-    /// Keep OR-symmetric kNN edges (`k >= 1`). Combinable with `mst`, mutually
-    /// exclusive with `mst_knn`. On its own it may split a cluster the full graph
-    /// held together, since it does not preserve connected components.
+    /// Keep OR-symmetric kNN edges (`k >= 1`); with `mst`, the union. On its own it
+    /// may split a cluster the full graph held together, since it does not preserve
+    /// connected components.
     pub knn: Option<usize>,
+    /// `--mark_mst`: give every edge a boolean `MST` property.
+    pub mark_mst: bool,
     /// TSV metadata files keyed by node id (first column).
     pub metadata_files: Vec<String>,
     /// Keep only these labels (rows/cols) if set.
@@ -47,8 +48,14 @@ pub struct BuildSsnOptions {
 pub struct BuildSsnResult {
     pub table: NodeTable,
     pub edges: Vec<(usize, usize, f64)>,
+    /// With `--mark_mst`, whether each edge is in the maximum spanning tree.
+    pub edge_mst: Option<Vec<bool>>,
     pub node_fills: Option<Vec<Option<String>>>,
     pub resolved_color_table: Option<HashMap<String, String>>,
+    /// Whether some node has no `--color_by` value while the palette was built here
+    /// (not given with `--color_table`): upstream's palette then holds a `None` entry
+    /// in the neutral gray, which `--color_table_out` writes last.
+    pub palette_has_missing: bool,
     /// Size-ranked cluster id per node (aligned to `table.names`), when clustered.
     pub cluster_labels: Option<Vec<i64>>,
 }
@@ -62,7 +69,11 @@ use crate::palette::OTHER_COLOR as DEFAULT_COLOR;
 type MetadataTable = (Vec<String>, HashMap<String, Vec<Option<String>>>);
 /// `(per-node fill color, the resolved value -> color table)`; both `None`
 /// when `--color_by` was not given.
-type ResolvedColors = (Option<Vec<Option<String>>>, Option<HashMap<String, String>>);
+type ResolvedColors = (
+    Option<Vec<Option<String>>>,
+    Option<HashMap<String, String>>,
+    bool,
+);
 
 pub(crate) fn subset_matrix(m: &DataMatrix, subset: &Option<HashSet<String>>) -> DataMatrix {
     let subset = match subset {
@@ -274,41 +285,29 @@ fn infer_type(present: &[&str], has_missing: bool) -> ColType {
 
 /// Build the SSN. `matrix` must have symmetric labels after subsetting.
 pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<BuildSsnResult> {
+    let invalid = |msg: String| io::Error::new(io::ErrorKind::InvalidInput, msg);
+    check_sparsify_data_type(&matrix.data_type, opts.mst, opts.knn).map_err(invalid)?;
     let matrix = subset_matrix(matrix, &opts.subset_labels);
     if !matrix.symmetric_labels() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Input does not have symmetric axis labels. Can only build an SSN from a symmetric matrix.",
+        return Err(invalid(
+            "Input does not have symmetric axis labels. Can only build an SSN from a symmetric matrix."
+                .into(),
         ));
     }
+    require_similarity(&matrix.data_type, "build_ssn").map_err(invalid)?;
     let n = matrix.nrows();
     let names = matrix.rows.clone();
+    let (use_mst, knn_k) = (opts.mst, opts.knn);
 
-    // `--mst_knn k` is exact shorthand for `--mst --knn k`; normalize to (mst, knn)
-    // so the three flags collapse to one pair and the modes below stay readable.
-    if opts.mst_knn.is_some() && (opts.mst || opts.knn.is_some()) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "--mst_knn is shorthand for --mst --knn; pass one spelling or the other.",
-        ));
-    }
-    let (use_mst, knn_k) = match opts.mst_knn {
-        Some(k) => (true, (k > 0).then_some(k)),
-        None => (opts.mst, opts.knn),
-    };
-
-    let tree = if use_mst {
-        Some(MaxTree::from_matrix(&matrix))
-    } else {
-        None
-    };
+    // `--mark_mst` only annotates edges, so it keeps the graph-derived clustering.
+    let tree = (use_mst || opts.mark_mst).then(|| MaxTree::from_matrix(&matrix));
 
     // Edges per mode.
     let edges: Vec<(usize, usize, f64)> = if use_mst && knn_k.is_none() {
         let t = tree.as_ref().unwrap();
         let mut out = Vec::new();
         for e in &t.edges {
-            if e.weight <= opts.lb {
+            if e.weight <= opts.threshold {
                 break;
             }
             let (s, tt) = orient_by_name(&matrix, e.i, e.j);
@@ -316,7 +315,7 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
         }
         out
     } else if let Some(k) = knn_k {
-        mst_knn_edge_list(&matrix, k, opts.lb, use_mst)
+        mst_knn_edge_list(&matrix, k, opts.threshold, use_mst)
             .into_iter()
             .map(|(a, b, s)| {
                 let (x, y) = orient_by_name(&matrix, a, b);
@@ -324,8 +323,23 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
             })
             .collect()
     } else {
-        default_edges(&matrix, opts.lb)
+        default_edges(&matrix, opts.threshold)
     };
+
+    // `--mark_mst`: which edges are in the spanning tree (above the threshold).
+    let edge_mst = opts.mark_mst.then(|| {
+        let t = tree.as_ref().expect("a tree is built for --mark_mst");
+        let in_tree: HashSet<(usize, usize)> = t
+            .edges
+            .iter()
+            .take_while(|e| e.weight > opts.threshold)
+            .map(|e| (e.i.min(e.j), e.i.max(e.j)))
+            .collect();
+        edges
+            .iter()
+            .map(|&(a, b, _)| in_tree.contains(&(a.min(b), a.max(b))))
+            .collect()
+    });
 
     // Cluster labels (SSN_cluster column). A pure `--knn` graph drops edges the MST
     // would have kept, so its components have to be read off the edges actually
@@ -335,8 +349,8 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
             cluster_from_edges(n, &edges)
         } else {
             match &tree {
-                Some(t) => cluster_from_tree(t, opts.lb),
-                None => cluster_from_graph(&matrix, opts.lb),
+                Some(t) if use_mst => cluster_from_tree(t, opts.threshold),
+                _ => cluster_from_graph(&matrix, opts.threshold),
             }
         })
     } else {
@@ -398,13 +412,15 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
     };
 
     // Color resolution.
-    let (node_fills, resolved_color_table) = resolve_colors(&table, opts);
+    let (node_fills, resolved_color_table, palette_has_missing) = resolve_colors(&table, opts);
 
     Ok(BuildSsnResult {
         table,
         edges,
+        edge_mst,
         node_fills,
         resolved_color_table,
+        palette_has_missing,
         cluster_labels,
     })
 }
@@ -412,11 +428,11 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
 fn resolve_colors(table: &NodeTable, opts: &BuildSsnOptions) -> ResolvedColors {
     let color_by = match &opts.color_by {
         Some(c) => c,
-        None => return (None, None),
+        None => return (None, None, false),
     };
     let col_idx = match table.columns.iter().position(|c| c == color_by) {
         Some(i) => i,
-        None => return (None, None),
+        None => return (None, None, false),
     };
     let ct = table.coltypes[col_idx];
     let value_of = |i: usize| -> Option<String> {
@@ -457,5 +473,7 @@ fn resolve_colors(table: &NodeTable, opts: &BuildSsnOptions) -> ResolvedColors {
         })
         .collect();
 
-    (Some(fills), Some(table_map))
+    let palette_has_missing =
+        opts.color_table.is_none() && (0..table.names.len()).any(|i| value_of(i).is_none());
+    (Some(fills), Some(table_map), palette_has_missing)
 }

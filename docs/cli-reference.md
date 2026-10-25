@@ -484,16 +484,20 @@ domainatoredux transform_matrix -i scores.tsv -o pruned.hdf5 --mst --knn 5 --thr
 
 ### `build_ssn`
 
-Build a **Cytoscape XGMML** network from a matrix. `--lb` is the score cutoff — the single
-most important choice, so consult [`matrix_report`](#matrix_report) first. `--mst` keeps
-only maximum-spanning-tree edges and `--mst_knn` keeps MST plus k nearest neighbors,
-both of which keep a large network legible. `--cluster` assigns connected-component
-cluster ids and `--cluster_tsv` writes them out. `--metadata` joins TSV columns onto
-nodes, and `--color_by`/`--color_table`/`--color_table_out` color by one of them.
+Build a **Cytoscape XGMML** network (`-o/--xgmml_out`) from a similarity matrix (not a
+`_dist` one). `--threshold` is the score cutoff, keeping edges strictly above it — the
+single most important choice, so consult [`matrix_report`](#matrix_report) first. `--mst`
+keeps only maximum-spanning-tree edges and `--knn K` each node's K best; together they
+keep the union, which keeps a large network legible without splitting clusters.
+`--mark_mst` gives every edge a boolean `MST` attribute instead of pruning. `--cluster`
+assigns connected-component cluster ids and `--cluster_tsv_out` writes them out (with a
+`contig cluster` header unless `--no_cluster_header`). `--metadata` joins TSV columns
+onto nodes, and `--color_by`/`--color_table`/`--color_table_out` color by one of them;
+`--max_color_groups N` colors only the N largest groups.
 
 ```bash
-domainatoredux build_ssn -i dist.hdf5 --xgmml network.xgmml --lb 100 \
-  --cluster --cluster_tsv clusters.tsv --metadata annotations.tsv
+domainatoredux build_ssn -i dist.hdf5 -o network.xgmml --threshold 100 \
+  --cluster_tsv_out clusters.tsv --metadata annotations.tsv
 ```
 
 ### `build_ssn_viewer`
@@ -572,7 +576,7 @@ are not ported; the [desktop app's Summary tab](gui.md#viewers) covers that visu
 
 Summarize a similarity matrix: node and edge counts, score statistics, a histogram, and
 **suggested clustering thresholds** — the score values where the network structure
-changes. Run this before choosing `build_ssn --lb`.
+changes. Run this before choosing `build_ssn --threshold`.
 
 `--max_merge_events` (default 500, `0` = all) caps the merge-event table;
 `--merge_impact_metric min_child|product` changes how an event's significance is scored.

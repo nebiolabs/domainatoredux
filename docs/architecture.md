@@ -122,7 +122,7 @@ These gate parity. Grep the owning module before changing any of them.
   in score-descending order. This is why the pass-through tools reproduce the original's
   rollup string exactly.
 - **Threshold tables carry one row per distinct threshold**, each describing exactly the
-  graph `build_ssn --lb T` keeps (edges scoring *strictly above* T), with a trailing
+  graph `build_ssn --threshold T` keeps (edges scoring *strictly above* T), with a trailing
   synthetic `threshold = 0` row when every score is positive. Keying rows by MST edge
   position instead was an upstream bug.
 

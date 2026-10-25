@@ -85,11 +85,12 @@ pub fn write_xgmml(
     name: &str,
     table: &NodeTable,
     edges: &[(usize, usize, f64)],
+    edge_mst: Option<&[bool]>,
     node_fills: Option<&[Option<String>]>,
 ) -> io::Result<()> {
     let file = std::fs::File::create(path)?;
     let mut w = io::BufWriter::new(file);
-    write_xgmml_to(&mut w, name, table, edges, node_fills)
+    write_xgmml_to(&mut w, name, table, edges, edge_mst, node_fills)
 }
 
 /// Serialize the XGMML network to any writer (used by the CLI to render into a
@@ -99,6 +100,7 @@ pub fn write_xgmml_to<W: Write>(
     name: &str,
     table: &NodeTable,
     edges: &[(usize, usize, f64)],
+    edge_mst: Option<&[bool]>,
     node_fills: Option<&[Option<String>]>,
 ) -> io::Result<()> {
     w.write_all(b"<?xml version='1.0' encoding='utf-8'?>\n")?;
@@ -112,7 +114,7 @@ pub fn write_xgmml_to<W: Write>(
         writeln!(w, "  <node id=\"n{i}\" label=\"n{i}\">")?;
         writeln!(
             w,
-            "    <att type=\"string\" name=\"Description\" value=\"{}\"/>",
+            "    <att type=\"string\" name=\"Description\" value=\"{}\" />",
             xml_escape(node_name)
         )?;
         for (c, col) in table.columns.iter().enumerate() {
@@ -120,7 +122,7 @@ pub fn write_xgmml_to<W: Write>(
             let val = cell_value(&table.cells[i][c], ct);
             writeln!(
                 w,
-                "    <att type=\"{}\" name=\"{}\" value=\"{}\"/>",
+                "    <att type=\"{}\" name=\"{}\" value=\"{}\" />",
                 ct.xgmml(),
                 xml_escape(col),
                 xml_escape(&val)
@@ -130,12 +132,12 @@ pub fn write_xgmml_to<W: Write>(
         match fill {
             Some(color) => writeln!(
                 w,
-                "    <graphics type=\"ELLIPSE\" x=\"0.0\" y=\"0.0\" w=\"25\" h=\"25\" z=\"0.0\" fill=\"{}\"/>",
+                "    <graphics type=\"ELLIPSE\" x=\"0.0\" y=\"0.0\" w=\"25\" h=\"25\" z=\"0.0\" fill=\"{}\" />",
                 xml_escape(color)
             )?,
             None => writeln!(
                 w,
-                "    <graphics type=\"ELLIPSE\" x=\"0.0\" y=\"0.0\" w=\"25\" h=\"25\" z=\"0.0\"/>"
+                "    <graphics type=\"ELLIPSE\" x=\"0.0\" y=\"0.0\" w=\"25\" h=\"25\" z=\"0.0\" />"
             )?,
         }
         writeln!(w, "  </node>")?;
@@ -148,9 +150,16 @@ pub fn write_xgmml_to<W: Write>(
         )?;
         writeln!(
             w,
-            "    <att type=\"real\" name=\"SSN_SCORE\" value=\"{}\"/>",
+            "    <att type=\"real\" name=\"SSN_SCORE\" value=\"{}\" />",
             py_float_str(score)
         )?;
+        if let Some(mst) = edge_mst {
+            writeln!(
+                w,
+                "    <att type=\"boolean\" name=\"MST\" value=\"{}\" />",
+                mst[i]
+            )?;
+        }
         writeln!(w, "  </edge>")?;
     }
 

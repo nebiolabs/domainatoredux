@@ -1,6 +1,7 @@
 //! The bodies of the migrated tools, one module each: `run(&XArgs)` does the I/O
 //! wiring around the core library function.
 
+pub mod build_ssn;
 pub mod clean_sequences;
 pub mod color_genbank;
 pub mod compare_contigs;

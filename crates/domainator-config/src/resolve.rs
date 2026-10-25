@@ -7,38 +7,16 @@
 //! by the caller and passed in, so this module needs no filesystem access and the
 //! caller keeps control of I/O.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use domainator_core::tools::build_ssn::BuildSsnOptions;
 use domainator_core::tools::build_ssn_viewer::BuildSsnViewerOptions;
 use domainator_core::tools::ssn_navigator::{NavMode, SsnNavigatorOptions};
 
-use crate::{BuildSsnConfig, BuildSsnViewerConfig, SsnNavigatorConfig};
+use crate::{BuildSsnViewerConfig, SsnNavigatorConfig};
 
 /// Default lower bound / merge-event / metric constants (shared defaults).
 pub const DEFAULT_MERGE_IMPACT_METRIC: &str = "min_child";
 pub const DEFAULT_MAX_MERGE_EVENTS: usize = 500;
-
-/// Map a `BuildSsnConfig` to options. `subset_labels`/`color_table` are the
-/// caller-resolved file inputs (from `--subset`/`--subset_file`/`--color_table`).
-pub fn resolve_build_ssn(
-    cfg: &BuildSsnConfig,
-    subset_labels: Option<HashSet<String>>,
-    color_table: Option<HashMap<String, String>>,
-) -> BuildSsnOptions {
-    BuildSsnOptions {
-        lb: cfg.lb.unwrap_or(0.0),
-        cluster: cfg.cluster || cfg.cluster_tsv.is_some(),
-        mst: cfg.mst,
-        mst_knn: cfg.mst_knn,
-        knn: cfg.knn,
-        metadata_files: cfg.metadata.clone(),
-        subset_labels,
-        color_by: cfg.color_by.clone(),
-        color_table,
-        max_color_groups: cfg.max_color_groups,
-    }
-}
 
 /// Map a `BuildSsnViewerConfig` to options. `name` is caller-resolved (derived from
 /// the output/html stem in the CLI, or the input stem in the GUI); `subset_labels`

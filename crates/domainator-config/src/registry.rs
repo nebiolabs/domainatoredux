@@ -297,11 +297,17 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     // network
-    tool(
-        "build_ssn",
-        "network",
-        "Build a sequence similarity network as a Cytoscape file.",
-    ),
+    ToolInfo {
+        migrated: true,
+        stdin: false,
+        required_outputs: Some(&["xgmml_out"]),
+        no_stdout: &["xgmml_out", "color_table_out", "cluster_tsv_out"],
+        ..tool(
+            "build_ssn",
+            "network",
+            "Build a sequence similarity network as a Cytoscape file.",
+        )
+    },
     tool(
         "build_ssn_viewer",
         "network",

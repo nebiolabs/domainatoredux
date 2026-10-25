@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::io::{detect_filetype, fasta, genbank::read_genbank, FileType};
-use crate::matrix::mst_knn::apply_mst_knn;
+use crate::matrix::mst_knn::{apply_mst_knn, sparsify_option_label, TreeTies};
 use crate::matrix::transform::{apply_mode, symmetrize, transform_values};
 use crate::matrix::{build_sparse_max, DataMatrix};
 
@@ -213,19 +213,6 @@ impl Default for SeqDistOptions {
             cpu: 0,
         }
     }
-}
-
-/// `--mst`/`--knn` as the user typed them, e.g. `--mst --knn 5`, for error messages
-/// (upstream `sparsify_option_label`).
-pub fn sparsify_option_label(mst: bool, knn: Option<usize>) -> String {
-    let mut parts = Vec::new();
-    if mst {
-        parts.push("--mst".to_string());
-    }
-    if let Some(k) = knn {
-        parts.push(format!("--knn {k}"));
-    }
-    parts.join(" ")
 }
 
 /// Compute the similarity matrix. `input`/`reference` are paths; when `reference`
@@ -461,7 +448,13 @@ pub fn seq_dist(
         apply_mode(&mut matrix, &opts.mode);
     }
     let include_mst = opts.mst;
-    matrix = apply_mst_knn(&matrix, opts.knn.unwrap_or(0), 0.0, include_mst);
+    matrix = apply_mst_knn(
+        &matrix,
+        opts.knn.unwrap_or(0),
+        0.0,
+        include_mst,
+        TreeTies::Streaming,
+    );
     if opts.mode == "bool" {
         apply_mode(&mut matrix, "bool");
     }

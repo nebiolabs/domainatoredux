@@ -7,24 +7,6 @@
 #          upstream: (upstream should change)   todo: (the 1.0 migration; none may remain)
 tool	parameter	aspect	ours	upstream	class	note
 build_projection	-	tool	false	true	deferred:unported-tool	
-build_ssn	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
-build_ssn	-	required_outputs	null	["xgmml_out"]	todo:1.0-cli	
-build_ssn	cluster_tsv	extra	{"name":"cluster_tsv","flags":["--cluster_tsv"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-build_ssn	cluster_tsv_out	missing	null	{"default":null,"flags":["--cluster_tsv_out"],"kind":"path","name":"cluster_tsv_out","required":false,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
-build_ssn	color_table_out	stdout	true	false	todo:1.0-cli	
-build_ssn	input	required	false	true	todo:1.0-cli	
-build_ssn	input	stdin	true	false	todo:1.0-cli	
-build_ssn	knn	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":1,"max":null,"exclusive_min":null}	todo:1.0-cli	
-build_ssn	lb	extra	{"name":"lb","flags":["--lb"],"default":null,"kind":"value","type":"number","required":false}	null	todo:1.0-cli	
-build_ssn	mark_mst	missing	null	{"default":false,"flags":["--mark_mst"],"kind":"flag","name":"mark_mst","sets":true,"type":"boolean"}	todo:1.0-cli	
-build_ssn	max_color_groups	bounds	{"min":0,"max":null,"exclusive_min":null}	{"min":null,"max":null,"exclusive_min":null}	todo:1.0-cli	
-build_ssn	max_output_gb	default	null	25	todo:1.0-cli	
-build_ssn	mst_knn	extra	{"name":"mst_knn","flags":["--mst_knn"],"default":null,"kind":"value","type":"integer","min":0,"required":false}	null	todo:1.0-cli	
-build_ssn	quiet	missing	null	{"default":false,"flags":["-q","--quiet"],"kind":"flag","name":"quiet","sets":true,"type":"boolean"}	todo:1.0-cli	
-build_ssn	threshold	missing	null	{"default":0,"flags":["--threshold"],"kind":"value","name":"threshold","required":false,"type":"number"}	todo:1.0-cli	
-build_ssn	verbose	missing	null	{"default":false,"flags":["-v","--verbose"],"kind":"flag","name":"verbose","sets":true,"type":"boolean"}	todo:1.0-cli	
-build_ssn	xgmml	extra	{"name":"xgmml","flags":["--xgmml"],"default":null,"kind":"value","type":"string","required":false}	null	todo:1.0-cli	
-build_ssn	xgmml_out	missing	null	{"default":null,"flags":["-o","--xgmml_out"],"kind":"path","name":"xgmml_out","required":true,"role":"output","stdout":false,"type":"string"}	todo:1.0-cli	
 build_ssn_viewer	-	mutually_exclusive	[]	[["quiet","verbose"]]	todo:1.0-cli	
 build_ssn_viewer	-	required_outputs	null	["dsnv_out","html_out"]	todo:1.0-cli	
 build_ssn_viewer	color_table	missing	null	{"default":null,"flags":["--color_table"],"kind":"path","name":"color_table","required":false,"role":"input","type":"string"}	todo:1.0-cli	

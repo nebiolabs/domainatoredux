@@ -9,7 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::matrix::mst_knn::apply_mst_knn;
+use crate::matrix::mst_knn::{apply_mst_knn, TreeTies};
 use crate::matrix::{build_sparse_max, DataMatrix, Storage};
 use crate::seq::SeqRecord;
 use crate::DOMAIN_FEATURE_NAME;
@@ -293,6 +293,7 @@ pub fn compare_contigs(
             opts.knn.unwrap_or(0),
             opts.threshold,
             opts.mst,
+            TreeTies::Streaming,
         ));
     }
     Ok(matrix)

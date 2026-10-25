@@ -5,45 +5,39 @@ description: "Build a Cytoscape XGMML network from a similarity matrix."
 fields:
   - name: input
     label: "Input matrix"
-    role: input_file
     file_type: hdf5
-    required: true
     sources: workspace_first
     select: first
-  - name: xgmml
+  - name: xgmml_out
     label: "Output (XGMML)"
-    role: output_file
-    required: true
     output_name: "{stem}.xgmml"
   - name: metadata
     label: "Metadata (TSV)"
-    role: input_files
     file_type: table
     sources: workspace_first
     select: none
   - name: cluster
     label: "Cluster"
-  - name: cluster_tsv
+  - name: cluster_tsv_out
     label: "Cluster TSV"
-    role: output_file
     output_name: "{stem}.clusters.tsv"
-  - name: lb
-    label: "Lower bound"
+  - name: threshold
+    label: "Threshold"
   - name: mst
-    label: "MST only"
-  - name: mst_knn
-    label: "MST-kNN k"
+    label: "MST"
+  - name: knn
+    label: "kNN"
+  - name: mark_mst
+    label: "Mark MST edges"
   - name: color_by
     label: "Color by"
   - name: color_table
     label: "Color table (in)"
-    role: input_file
     file_type: table
     sources: workspace_first
     select: none
   - name: color_table_out
     label: "Color table (out)"
-    role: output_file
   - name: subset
     show: false
     label: "Subset"
@@ -56,9 +50,6 @@ fields:
   - name: no_cluster_header
     show: false
     label: "No cluster header"
-  - name: knn
-    show: false
-    label: "Knn"
   - name: max_output_gb
     show: false
     label: "Max output gb"

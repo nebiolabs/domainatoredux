@@ -27,7 +27,6 @@ use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools;
-use domainator_core::tools::build_ssn::build_ssn;
 use domainator_core::tools::build_ssn_viewer::{
     build_ssn_viewer_bundle, gzip, render_html, serialize_bundle,
 };
@@ -154,67 +153,7 @@ enum Command {
     /// Normalize / convert / sparsify a score matrix (dense<->sparse, --mode, --mst_knn).
     TransformMatrix(config::args::TransformMatrixArgs),
     /// Build a Cytoscape XGMML sequence-similarity network from a score matrix.
-    BuildSsn {
-        /// Input matrix file (HDF5 or dense TSV).
-        #[arg(short, long)]
-        input: Option<PathBuf>,
-        /// Write the Cytoscape XGMML network here (required).
-        #[arg(long)]
-        xgmml: Option<PathBuf>,
-        /// Exclude edges with weight <= this (default: 0).
-        #[arg(long)]
-        lb: Option<f64>,
-        /// TSV node metadata files keyed by node id.
-        #[arg(long, num_args = 1..)]
-        metadata: Vec<String>,
-        /// Only consider labels in this list (additive with --subset_file).
-        #[arg(long, num_args = 1..)]
-        subset: Vec<String>,
-        /// Text file of labels to retain.
-        #[arg(long = "subset_file")]
-        subset_file: Option<String>,
-        /// Color nodes by this metadata column.
-        #[arg(long = "color_by")]
-        color_by: Option<String>,
-        /// TSV (no header) mapping metadata values to hex colors.
-        #[arg(long = "color_table")]
-        color_table: Option<String>,
-        /// Write the resolved color table here.
-        #[arg(long = "color_table_out")]
-        color_table_out: Option<String>,
-        /// Give distinct colors only to this many of the largest --color_by groups;
-        /// every remaining group shares a neutral gray.
-        #[arg(long = "max_color_groups")]
-        max_color_groups: Option<usize>,
-        /// Add an SSN_cluster column of connected-component ids.
-        #[arg(long)]
-        cluster: bool,
-        /// Write a node->cluster TSV here (implies --cluster).
-        #[arg(long = "cluster_tsv")]
-        cluster_tsv: Option<String>,
-        /// Omit the header row from the cluster TSV.
-        #[arg(long = "no_cluster_header")]
-        no_cluster_header: bool,
-        /// Keep only maximum-spanning-tree edges.
-        #[arg(long)]
-        mst: bool,
-        /// Keep MST + OR-symmetric kNN edges (integer >= 0, 0 = spanning tree only).
-        #[arg(long = "mst_knn", value_parser = parse_mst_knn)]
-        mst_knn: Option<usize>,
-        /// Keep OR-symmetric kNN edges without the spanning tree. Unlike --mst_knn this
-        /// does not preserve connected components.
-        #[arg(long = "knn", value_parser = parse_knn)]
-        knn: Option<usize>,
-        /// Fail if the projected XGMML output exceeds this many GB (default 25; 0 disables).
-        #[arg(long = "max_output_gb")]
-        max_output_gb: Option<f64>,
-        /// Read parameters from a JSON/YAML config file (CLI flags override it).
-        #[arg(long)]
-        config: Option<String>,
-        /// Print the resolved parameters as YAML and exit.
-        #[arg(long = "print_config")]
-        print_config: bool,
-    },
+    BuildSsn(config::args::BuildSsnArgs),
     /// Build a compact `.dsnv` bundle (+ standalone HTML) for the interactive SSN viewer.
     BuildSsnViewer {
         /// Symmetric similarity matrix (HDF5 or dense TSV).
@@ -564,29 +503,6 @@ enum Command {
     },
 }
 
-/// Parse `--mst_knn`: an integer >= 1 (mirrors `transform_matrix._mst_knn_arg`).
-/// `k == 1` reduces to the MST plus each node's single nearest neighbor.
-/// `--mst_knn k` is exact shorthand for `--mst --knn k`, so `0` is legal and means
-/// the spanning tree alone.
-fn parse_mst_knn(value: &str) -> std::result::Result<usize, String> {
-    let v: i64 = value
-        .parse()
-        .map_err(|_| format!("`{value}` is not an integer"))?;
-    usize::try_from(v)
-        .map_err(|_| "--mst_knn must be an integer >= 0 (0 reduces to --mst)".to_string())
-}
-
-/// A pure kNN graph with `k = 0` would have no edges at all, so `--knn` starts at 1.
-fn parse_knn(value: &str) -> std::result::Result<usize, String> {
-    let v: i64 = value
-        .parse()
-        .map_err(|_| format!("`{value}` is not an integer"))?;
-    match usize::try_from(v) {
-        Ok(k) if k >= 1 => Ok(k),
-        _ => Err("--knn must be an integer >= 1".to_string()),
-    }
-}
-
 fn load(input: &Path) -> Result<Vec<SeqRecord>> {
     let path = input.to_str().context("non-UTF8 path")?;
     match detect_filetype(input) {
@@ -647,7 +563,7 @@ fn paths_to_strings(paths: &[PathBuf]) -> Result<Vec<String>> {
 }
 
 /// Read a color table: a TSV with no header mapping a value to a hex color.
-fn read_color_table(path: &str) -> Result<std::collections::HashMap<String, String>> {
+pub(crate) fn read_color_table(path: &str) -> Result<std::collections::HashMap<String, String>> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading color table {path}"))?;
     let mut map = std::collections::HashMap::new();
@@ -1119,155 +1035,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::SeqDist(args) => commands::seq_dist::run(&args)?,
         Command::CompareContigs(args) => commands::compare_contigs::run(&args)?,
         Command::TransformMatrix(args) => commands::transform_matrix::run(&args)?,
-        Command::BuildSsn {
-            input,
-            xgmml,
-            lb,
-            metadata,
-            subset,
-            subset_file,
-            color_by,
-            color_table,
-            color_table_out,
-            max_color_groups,
-            cluster,
-            cluster_tsv,
-            no_cluster_header,
-            mst,
-            mst_knn,
-            knn,
-            max_output_gb,
-            config: config_path,
-            print_config: do_print,
-        } => {
-            let cli = config::BuildSsnConfig {
-                input: opt_path(&input)?,
-                xgmml: opt_path(&xgmml)?,
-                lb,
-                metadata,
-                subset,
-                subset_file,
-                color_by,
-                color_table,
-                color_table_out,
-                max_color_groups,
-                cluster,
-                cluster_tsv,
-                no_cluster_header,
-                mst,
-                mst_knn,
-                knn,
-                max_output_gb,
-            };
-            let mut cfg = match &config_path {
-                Some(p) => load_config::<config::BuildSsnConfig>(p)?,
-                None => config::BuildSsnConfig::default(),
-            };
-            cfg.merge_cli(cli);
-            config::reject_non_finite(&cfg)?;
-            if do_print {
-                print!("{}", print_config(&cfg)?);
-                return Ok(());
-            }
-            let input = cfg
-                .input
-                .clone()
-                .context("missing required `input` (-i / --input or config)")?;
-            let xgmml = cfg
-                .xgmml
-                .clone()
-                .context("missing required `xgmml` (--xgmml or config)")?;
-            if cfg.mst && cfg.mst_knn.is_some() {
-                anyhow::bail!("--mst and --mst_knn are mutually exclusive");
-            }
-            let matrix = read_matrix(&input).with_context(|| format!("reading matrix {input}"))?;
-
-            // Resolve subset labels and the optional color table.
-            let subset_labels = if cfg.subset.is_empty() && cfg.subset_file.is_none() {
-                None
-            } else {
-                let mut set: std::collections::HashSet<String> =
-                    cfg.subset.iter().cloned().collect();
-                if let Some(f) = &cfg.subset_file {
-                    for line in std::fs::read_to_string(f)?.lines() {
-                        let l = line.trim();
-                        if !l.is_empty() {
-                            set.insert(l.to_string());
-                        }
-                    }
-                }
-                Some(set)
-            };
-            let color_table = match &cfg.color_table {
-                Some(f) => Some(read_color_table(f)?),
-                None => None,
-            };
-            let opts = config::resolve::resolve_build_ssn(&cfg, subset_labels, color_table);
-            let result = build_ssn(&matrix, &opts).context("running build_ssn")?;
-
-            let name = Path::new(&xgmml)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
-            // Serialize the XGMML to a buffer first so the output-size guardrail
-            // (default 25 GB, 0 disables) can reject it before touching disk.
-            let mut xgmml_buf: Vec<u8> = Vec::new();
-            domainator_core::matrix::cytoscape::write_xgmml_to(
-                &mut xgmml_buf,
-                &name,
-                &result.table,
-                &result.edges,
-                result.node_fills.as_deref(),
-            )?;
-            enforce_bytes_gb(
-                xgmml_buf.len() as u64,
-                cfg.max_output_gb.unwrap_or(25.0),
-                &format!("XGMML network output '{xgmml}'"),
-                "--lb, --mst, --mst_knn, --subset",
-            )?;
-            std::fs::write(&xgmml, &xgmml_buf)?;
-
-            if let Some(path) = &cfg.cluster_tsv {
-                let labels = result
-                    .cluster_labels
-                    .as_ref()
-                    .expect("cluster labels present");
-                let mut out = String::new();
-                if !cfg.no_cluster_header {
-                    out.push_str("contig\tcluster\n");
-                }
-                for (name, id) in result.table.names.iter().zip(labels) {
-                    out.push_str(name);
-                    out.push('\t');
-                    out.push_str(&id.to_string());
-                    out.push('\n');
-                }
-                std::fs::write(path, out)?;
-            }
-
-            if let Some(path) = &cfg.color_table_out {
-                if let Some(ct) = &result.resolved_color_table {
-                    let mut items: Vec<(&String, &String)> = ct.iter().collect();
-                    items.sort_by(|a, b| a.0.cmp(b.0));
-                    let mut out = String::new();
-                    for (k, v) in items {
-                        out.push_str(k);
-                        out.push('\t');
-                        out.push_str(v);
-                        out.push('\n');
-                    }
-                    std::fs::write(path, out)?;
-                }
-            }
-
-            println!(
-                "wrote {} nodes, {} edges to {}",
-                result.table.names.len(),
-                result.edges.len(),
-                xgmml
-            );
-        }
+        Command::BuildSsn(args) => commands::build_ssn::run(&args)?,
         Command::BuildSsnViewer {
             input,
             output,

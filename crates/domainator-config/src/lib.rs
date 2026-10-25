@@ -158,51 +158,6 @@ impl ColorTableToLegendConfig {
     }
 }
 
-/// `build_ssn` parameters.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct BuildSsnConfig {
-    pub input: Option<String>,
-    pub xgmml: Option<String>,
-    pub lb: Option<f64>,
-    pub metadata: Vec<String>,
-    pub subset: Vec<String>,
-    pub subset_file: Option<String>,
-    pub color_by: Option<String>,
-    pub max_color_groups: Option<usize>,
-    pub color_table: Option<String>,
-    pub color_table_out: Option<String>,
-    pub cluster: bool,
-    pub cluster_tsv: Option<String>,
-    pub no_cluster_header: bool,
-    pub mst: bool,
-    pub mst_knn: Option<usize>,
-    pub knn: Option<usize>,
-    pub max_output_gb: Option<f64>,
-}
-
-impl BuildSsnConfig {
-    pub fn merge_cli(&mut self, cli: BuildSsnConfig) {
-        merge_scalar!(self, cli, input);
-        merge_scalar!(self, cli, xgmml);
-        merge_scalar!(self, cli, lb);
-        merge_vec!(self, cli, metadata);
-        merge_vec!(self, cli, subset);
-        merge_scalar!(self, cli, subset_file);
-        merge_scalar!(self, cli, color_by);
-        merge_scalar!(self, cli, max_color_groups);
-        merge_scalar!(self, cli, color_table);
-        merge_scalar!(self, cli, color_table_out);
-        self.cluster |= cli.cluster;
-        merge_scalar!(self, cli, cluster_tsv);
-        self.no_cluster_header |= cli.no_cluster_header;
-        self.mst |= cli.mst;
-        merge_scalar!(self, cli, mst_knn);
-        merge_scalar!(self, cli, knn);
-        merge_scalar!(self, cli, max_output_gb);
-    }
-}
-
 /// `matrix_report` parameters.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -566,7 +521,6 @@ fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
         "gene_call" => gene_call_schema(),
         "color_table_to_legend" => color_table_to_legend_schema(),
         "hmmer_compare" => hmmer_compare_schema(),
-        "build_ssn" => build_ssn_schema(),
         "build_ssn_viewer" => build_ssn_viewer_schema(),
         "matrix_report" => matrix_report_schema(),
         "ssn_navigator" => ssn_navigator_schema(),
@@ -849,35 +803,6 @@ fn ssn_navigator_schema() -> serde_json::Value {
     })
 }
 
-fn build_ssn_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "build_ssn config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "input": {"type": ["string", "null"], "description": "Input matrix (HDF5 or dense TSV)"},
-            "xgmml": {"type": ["string", "null"], "description": "Cytoscape XGMML output path"},
-            "lb": {"type": "number", "default": 0.0, "description": "Exclude edges with weight <= lb"},
-            "metadata": {"type": "array", "items": {"type": "string"}, "description": "TSV node metadata files"},
-            "subset": {"type": "array", "items": {"type": "string"}},
-            "subset_file": {"type": ["string", "null"]},
-            "color_by": {"type": ["string", "null"]},
-            "color_table": {"type": ["string", "null"]},
-            "color_table_out": {"type": ["string", "null"]},
-            "max_color_groups": {"type": ["integer", "null"], "description": "Give distinct colors only to this many of the largest color_by groups; the rest share a neutral gray"},
-            "cluster": {"type": "boolean", "default": false},
-            "cluster_tsv": {"type": ["string", "null"]},
-            "no_cluster_header": {"type": "boolean", "default": false},
-            "mst": {"type": "boolean", "default": false},
-            "mst_knn": {"type": ["integer", "null"], "description": "MST + OR-symmetric kNN; integer >= 0 (0 reduces to the MST alone). Mutually exclusive with knn"},
-            "knn": {"type": ["integer", "null"], "description": "OR-symmetric kNN without the spanning tree; integer >= 1. Unlike mst_knn this does not preserve connected components"},
-            "max_output_gb": {"type": ["number", "null"], "default": 25.0, "description": "Fail if the projected XGMML output exceeds this many GB (0 disables)"}
-        }
-    })
-}
-
 fn hmmer_compare_schema() -> serde_json::Value {
     use serde_json::json;
     json!({
@@ -1052,7 +977,6 @@ mod tests {
         tools![
             "gene_call" => GeneCallConfig,
             "color_table_to_legend" => ColorTableToLegendConfig,
-            "build_ssn" => BuildSsnConfig,
             "build_ssn_viewer" => BuildSsnViewerConfig,
             "matrix_report" => MatrixReportConfig,
             "ssn_navigator" => SsnNavigatorConfig,
