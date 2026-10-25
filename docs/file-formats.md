@@ -163,20 +163,30 @@ A pairwise matrix of scores between sequences, profiles or contigs, produced by
 [`compare_contigs`](cli-reference.md#compare_contigs) and
 [`transform_matrix`](cli-reference.md#transform_matrix).
 
-Two outputs, chosen by which flag you pass (the tools that still take the older
-`--dense`/`--sparse`/`--dense_text` flags write the same files):
+Two outputs, chosen by which flag you pass:
 
 | Flag | Form | Use when |
 | --- | --- | --- |
 | `-o/--hdf_out` | CSR (sparse) HDF5 | the usual choice; most pairs score zero |
 | `--dense_text_out` | TSV, every cell | you want to read it in R, Excel or by eye |
 
-Dense HDF5 files, which older versions wrote, are still read.
+The HDF5 format is the Python suite's matrix file format 2.0: same layout and attributes,
+readable by its `DataMatrix.from_file`, and the file extension selects the reader. Row
+and column labels are stored with the data; a matrix with column labels is asymmetric
+(query × reference), one without has the same labels on both axes (all-vs-all). Zeros
+are not stored. A matrix whose values are also exactly symmetric is stored as its upper
+triangle, diagonal included (`ARRAY_TYPE=SPARSE_CSR_UPPER_TRIANGLE`), which roughly
+halves the file; one that is only nearly symmetric, like raw DIAMOND bit scores, is
+stored in full. Versions before 2.0 of either suite cannot read a triangle file, and
+fail rather than misreading it.
 
-The format is the Python suite's: same HDF5 layout and attributes, readable by its
-`DataMatrix.from_file`, and the file extension selects the reader. Row and column labels
-are stored with the data; a matrix with column labels is asymmetric (query × reference),
-one without is symmetric (all-vs-all).
+Version 1.x files, including the dense HDF5 files older versions wrote, are still read.
+A file from a later major version is refused.
+
+What a missing (zero) cell means depends on the matrix's `DATA_TYPE`: for scores it
+means "no hit", and the network tools treat it as "no edge"; for distances (a
+`DATA_TYPE` ending in `_dist`) it means distance 0. The network tools refuse distance
+matrices.
 
 `transform_matrix` reads any of them, so `transform_matrix -i m.tsv -o m.hdf5` is a
 conversion.

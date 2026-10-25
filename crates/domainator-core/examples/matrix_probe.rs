@@ -1,4 +1,4 @@
-//! E3 de-risk: write dense + sparse + TSV matrices and let Python read them back.
+//! Write a symmetric and an asymmetric HDF5 matrix plus a TSV, for Python to read back.
 use domainator_core::matrix::{build_sparse_max, hdf5_io, text, DataMatrix, Storage};
 
 fn main() {
@@ -16,8 +16,7 @@ fn main() {
         data_type: "score".to_string(),
         storage,
     };
-    hdf5_io::write_sparse("/tmp/claude-1000/probe_sparse.hdf5", &m).unwrap();
-    hdf5_io::write_dense("/tmp/claude-1000/probe_dense.hdf5", &m).unwrap();
+    hdf5_io::write("/tmp/claude-1000/probe_sym.hdf5", &m).unwrap();
     text::write_dense_text("/tmp/claude-1000/probe.tsv", &m).unwrap();
 
     // Asymmetric variant (different labels) to exercise COL_* datasets.
@@ -41,6 +40,6 @@ fn main() {
         data_type: "score".to_string(),
         storage: storage2,
     };
-    hdf5_io::write_dense("/tmp/claude-1000/probe_dense_asym.hdf5", &m2).unwrap();
+    hdf5_io::write("/tmp/claude-1000/probe_asym.hdf5", &m2).unwrap();
     println!("wrote probe matrices");
 }

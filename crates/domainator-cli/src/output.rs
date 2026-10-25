@@ -239,7 +239,7 @@ pub fn write_matrix_outputs(
         check("hdf", "sparse", path, mitigation)?;
         let target = PathBuf::from(path);
         let temp = temp_path(&target);
-        let written = hdf5_io::write_sparse(&temp.to_string_lossy(), matrix)
+        let written = hdf5_io::write(&temp.to_string_lossy(), matrix)
             .and_then(|()| std::fs::rename(&temp, &target));
         if written.is_err() {
             let _ = std::fs::remove_file(&temp);
