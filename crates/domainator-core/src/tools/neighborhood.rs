@@ -419,12 +419,31 @@ pub(crate) struct SliceLoc {
     pub(crate) dist_to_end: i64,
 }
 
-/// An extracted region plus the distance from the region start to the focus CDS
-/// (what `pad_records` aligns on). Both `select_by_cds` and `domain_search`'s
-/// neighborhood path produce these.
+/// An extracted region plus where its focus CDS sits in it (what `pad_records`
+/// aligns on; upstream's `dist_to_start`/`dist_to_end`/`focus_strand` record
+/// annotations). Both `select_by_cds` and `domain_search`'s neighborhood path produce
+/// these.
 pub struct Region {
     pub record: SeqRecord,
+    /// Bases from the start of the region to the start of the focus CDS's envelope.
     pub dist_to_start: i64,
+    /// Bases from the end of the focus CDS's envelope to the end of the region.
+    pub dist_to_end: i64,
+    /// The focus CDS's strand in region coordinates: -1 only when `--keep_direction`
+    /// kept a reverse-strand focus as it was.
+    pub focus_strand: i32,
+}
+
+impl Region {
+    /// A region whose focus is the whole record (a protein, or a translated peptide).
+    pub fn whole(record: SeqRecord) -> Region {
+        Region {
+            record,
+            dist_to_start: 0,
+            dist_to_end: 0,
+            focus_strand: 1,
+        }
+    }
 }
 
 impl SliceLoc {
@@ -602,6 +621,22 @@ pub(crate) fn slice_record(
         annotations,
         features: new_features,
     }
+}
+
+/// `get_cds_neighborhood` keeps a neighborhood that is the whole of a circular
+/// contig (rotated to start at its focus) circular; every other slice is linear.
+pub(crate) fn neighborhood_record(
+    rec: &SeqRecord,
+    slice: &SliceLoc,
+    keep_features: &[SeqFeature],
+) -> SeqRecord {
+    let mut region = slice_record(rec, slice, keep_features);
+    let len: i64 = slice.parts.iter().map(|p| p.end - p.start).sum();
+    if rec.topology == Topology::Circular && len == rec.seq.len() as i64 {
+        region.topology = Topology::Circular;
+        region.annotations.topology = Some(Topology::Circular);
+    }
+    region
 }
 
 /// The annotations a sliced record keeps. `slice_record_from_location` keeps only
@@ -1022,7 +1057,7 @@ pub fn select_by_cds_hits(
             }
         }
 
-        let mut region = slice_record(rec, &slice, &keep);
+        let mut region = neighborhood_record(rec, &slice, &keep);
 
         // Coordinate renaming and reverse-complement handling.
         let (start, end) = (slice.name_start, slice.name_end);
@@ -1042,15 +1077,16 @@ pub fn select_by_cds_hits(
             region.id.push_str("rc");
         }
 
-        // `dist_to_start` travels with the region so `--pad` can align the focus CDSs
-        // after the whole search completes; it is 0 for circular contigs, where padding
-        // is unsupported. Read before `slice` can be moved into `selected` below, and
-        // swapped with `dist_to_end` on an un-normalized reverse region, which was
-        // flipped back to the original orientation above.
-        let dist_to_start = if !normalize_direction && strand == -1 {
-            slice.dist_to_end
+        // The focus position travels with the region so `--pad` can align the focus
+        // CDSs after the whole search completes; it is 0 for circular contigs, where
+        // padding is unsupported. Read before `slice` can be moved into `selected`
+        // below, and swapped on an un-normalized reverse region, which was flipped
+        // back to the original orientation above.
+        let flipped = !normalize_direction && strand == -1;
+        let (dist_to_start, dist_to_end) = if flipped {
+            (slice.dist_to_end, slice.dist_to_start)
         } else {
-            slice.dist_to_start
+            (slice.dist_to_start, slice.dist_to_end)
         };
         if max_region_overlap < 1.0 {
             let loc_len: i64 = slice.parts.iter().map(|p| p.end - p.start).sum();
@@ -1069,6 +1105,8 @@ pub fn select_by_cds_hits(
         out.push(Region {
             record: region,
             dist_to_start,
+            dist_to_end,
+            focus_strand: if flipped { -1 } else { 1 },
         });
         if max_hits_per_contig.is_some_and(|m| out.len() >= m) {
             break;
@@ -1546,7 +1584,10 @@ mod tests {
             vec![(29, 0), (49, 20), (29, 20)]
         );
 
-        crate::tools::select_by_cds::pad_records(&mut out);
+        crate::tools::select_by_cds::pad_records(
+            &mut out,
+            crate::tools::select_by_cds::Anchor::Start,
+        );
 
         // Every region is now the same length, and every focus CDS starts at the same
         // offset -- the largest original distance.

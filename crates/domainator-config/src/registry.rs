@@ -128,11 +128,16 @@ pub const TOOLS: &[ToolInfo] = &[
         "edit",
         "Filter domain annotations by e-value, overlap, database, or name.",
     ),
-    tool(
-        "select_by_cds",
-        "edit",
-        "Extract contigs or neighborhoods around selected CDSs.",
-    ),
+    ToolInfo {
+        migrated: true,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        switches_on: &["deduplicate"],
+        ..tool(
+            "select_by_cds",
+            "edit",
+            "Extract contigs or neighborhoods around selected CDSs.",
+        )
+    },
     ToolInfo {
         migrated: true,
         required_outputs: Some(&["genbank_out", "fasta_out"]),

@@ -83,8 +83,8 @@ The distinction matters for ranking. `domain_search --max_hits` ranks by the
 neighborhood would be scored by whatever strong gene happened to sit next to your weak
 hit.
 
-Several tools let you choose which to act on (`--annotation_type domainator|domain_search|all`,
-`--search_hits`).
+Several tools let you choose which to act on (`--annotation_type`, which is
+`domainator`, `domain_search` or, on `select_by_contig`, `all`).
 
 ## The `domainator_<db>` rollup
 

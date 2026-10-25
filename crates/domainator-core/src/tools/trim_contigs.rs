@@ -109,14 +109,8 @@ fn trim_contig(
     }
 
     // DomainatorCDS list, sorted by feature.location.start.
-    let mut cdss = DomainatorCds::list_from_contig(
-        record,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        false,
-        None,
-        false,
-    );
+    let mut cdss =
+        DomainatorCds::list_from_contig(record, None, f64::NEG_INFINITY, false, None, false);
     cdss.sort_by_key(|c| c.feature.location.start());
 
     let mut left_cds = 0i64;

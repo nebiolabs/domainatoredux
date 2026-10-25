@@ -349,8 +349,7 @@ fn get_domain_architecture_detailed(rec: &SeqRecord) -> String {
             .join("/");
     }
     // nucleic acid
-    let mut cdss =
-        DomainatorCds::list_from_contig(rec, f64::INFINITY, f64::NEG_INFINITY, true, None, true);
+    let mut cdss = DomainatorCds::list_from_contig(rec, None, f64::NEG_INFINITY, true, None, true);
     cdss.sort_by_key(|c| stranded_start_loc(&c.feature.location, rec.seq.len() as i64));
     let mut parts: Vec<String> = Vec::new();
     for cds in &cdss {
@@ -399,8 +398,7 @@ fn single_protein_sequence(rec: &SeqRecord) -> Option<Vec<u8>> {
         }
         return Some(s);
     }
-    let cdss =
-        DomainatorCds::list_from_contig(rec, f64::INFINITY, f64::NEG_INFINITY, true, None, false);
+    let cdss = DomainatorCds::list_from_contig(rec, None, f64::NEG_INFINITY, true, None, false);
     if cdss.len() == 1 {
         let cds = &cdss[0];
         let pep = match cds.feature.get_first("translation") {
@@ -745,14 +743,8 @@ fn process_record(
     } else {
         let sources: Vec<SeqFeature> = get_sources(rec).into_iter().cloned().collect();
         if !rec.is_protein() {
-            let mut cdss = DomainatorCds::list_from_contig(
-                rec,
-                f64::INFINITY,
-                f64::NEG_INFINITY,
-                false,
-                None,
-                true,
-            );
+            let mut cdss =
+                DomainatorCds::list_from_contig(rec, None, f64::NEG_INFINITY, false, None, true);
             cdss.sort_by_key(|c| stranded_start_loc(&c.feature.location, rec.seq.len() as i64));
             for cds in &cdss {
                 if by == By::Cds {

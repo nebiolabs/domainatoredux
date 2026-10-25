@@ -112,13 +112,9 @@ hmmer_select	test_hmmer_select_case_sensitivity_3#0	rust-failed	pending:1.0-cli	
 hmmer_select	test_hmmer_select_case_sensitivity_4#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hmm_out' found
 matrix_report	test_matrix_report_default_excludes_mst_knn#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 matrix_report	test_matrix_report_text_includes_mst_knn_projection#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
-select_by_cds	test_domain_search_hit_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--annotation_type' found
 select_by_cds	test_select_by_cds_3#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:44
 select_by_cds	test_select_by_cds_4#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:44
 select_by_cds	test_select_by_cds_align_1#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:44
-select_by_cds	test_select_by_cds_circular_cds_range_2#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:55
-select_by_cds	test_select_by_cds_circular_kb_range_2#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:55
-select_by_cds	test_select_by_cds_circular_whole_contig_stays_circular#0	differs	pending:1.0-behavior	extraction.gb: compare_seqfiles failed at helpers.py:55
 select_by_cds	test_select_by_cds_invert_1#0	differs	pending:1.0-behavior	extraction.gb: 2 feature location/type, 0 LOCUS name
 seq_dist	test_hmm_compare_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--dense_text_out' found
 seq_dist	test_seq_dist_1#0	rust-failed	pending:1.0-cli	error: unexpected argument '--hdf_out' found

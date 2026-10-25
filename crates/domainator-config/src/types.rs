@@ -77,23 +77,23 @@ pub fn type_info(id: &clap::builder::ValueParser) -> TypeInfo {
 }
 
 /// A finite `f64` (no `nan`, no `inf`), for float options without bounds.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct Finite(pub f64);
 
 /// An integer of at least 1 (upstream `PositiveInt`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PositiveInt(pub u64);
 
 /// A finite float greater than 0 (upstream `PositiveFloat`).
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct PositiveFloat(pub f64);
 
 /// A finite float of at least 0 (upstream `NonNegativeFloat`).
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct NonNegFloat(pub f64);
 
 /// A float in [0, 1] (upstream `ClosedUnitInterval`).
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct UnitInterval(pub f64);
 
 fn parse_finite(s: &str) -> Result<f64, String> {

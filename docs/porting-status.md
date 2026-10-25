@@ -80,7 +80,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | matrix_report.py | finished (`--json` matches upstream's agent contract; a separate GUI payload feeds the viewer tab) | **Matrix Report viewer** tab (histogram + suggested cutoffs) + Tools menu export ("Matrix report (export)", text) |
 | ssn_navigator.py | finished (all five `--mode`s verified against Python on both implementations' bundles, at three `--max_merge_events` caps, on v5 and v6 files) | — (the SSN viewer tab covers interactive exploration; the navigator writes stdout JSON with no workspace artifact) |
 | partition_seqfile.py | deferred | — |
-| select_by_cds.py | finished | Tools menu ("Select by CDS") — name/domain/`domain_expr`/`search_hits`/`unannotated` + neighborhood extraction + pad/dedup/strand/invert |
+| select_by_cds.py | finished | Tools menu ("Select by CDS") — name/domain/`domain_expr`/`annotation_type`/`unannotated` + neighborhood extraction + pad/dedup/strand/invert |
 | select_by_coord.py | finished (parity-verified) | Tools menu ("Select by coordinate") — coordinate table is a `table` file (`.tsv`/`.csv`) |
 | select_by_contig.py | finished | Tools menu ("Select by contig") — name/regex, domain content, taxonomy, length/CDS-count filters; GenBank and/or FASTA output |
 | seq_dist.py | finished (`--progress` intentionally not ported) | Tools menu ("Sequence distance") — `diamond_*` algorithms need the `diamond` binary, **auto-downloadable** from the External tools panel |

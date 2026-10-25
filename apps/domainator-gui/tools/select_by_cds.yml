@@ -5,21 +5,18 @@ description: "Extract CDSs (and optionally their genomic neighborhoods) by name,
 fields:
   - name: input
     label: "Input sequences"
-    role: input_files
     file_type: sequence
-    required: true
     sources: workspace_first
     select: first
-  - name: output
+  - name: genbank_out
     label: "Output (GenBank)"
-    role: output_file
-    required: true
     output_name: "{stem}.selected_cds.gb"
+  - name: fasta_out
+    label: "Output (FASTA)"
   - name: cds
     label: "CDS names"
   - name: cds_file
     label: "CDS names file (.txt)"
-    role: input_file
     file_type: text
     sources: workspace_first
     select: none
@@ -27,7 +24,6 @@ fields:
     label: "Domain names"
   - name: domains_file
     label: "Domain names file (.txt)"
-    role: input_file
     file_type: text
     sources: workspace_first
     select: none
@@ -35,8 +31,8 @@ fields:
     label: "Domain expr"
   - name: databases
     label: "Databases"
-  - name: search_hits
-    label: "Search hits"
+  - name: annotation_type
+    label: "Annotation type"
   - name: unannotated
     label: "Unannotated"
   - name: invert
@@ -47,7 +43,6 @@ fields:
     label: "Restrict to contigs"
   - name: contigs_file
     label: "Contigs file (.txt)"
-    role: input_file
     file_type: text
     sources: workspace_first
     select: none
@@ -71,8 +66,10 @@ fields:
     label: "Keep direction"
   - name: pad
     label: "Pad to equal length"
-  - name: skip_deduplicate
-    label: "Skip dedup"
+  - name: anchor
+    label: "Pad anchor"
+  - name: deduplicate
+    label: "Deduplicate"
   - name: max_region_overlap
     label: "Max region overlap"
   - name: include_nucleic_acids

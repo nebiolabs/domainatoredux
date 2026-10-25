@@ -297,7 +297,7 @@ impl DomainatorCds {
     /// `DomainatorCDS.list_from_contig`.
     pub fn list_from_contig(
         contig: &SeqRecord,
-        domain_evalue: f64,
+        domain_evalue: Option<f64>,
         domain_score: f64,
         skip_pseudo: bool,
         name_precedence: Option<&[&str]>,
@@ -335,7 +335,7 @@ impl DomainatorCds {
             if feature.kind != DOMAIN_FEATURE_NAME && feature.kind != DOMAIN_SEARCH_BEST_HIT_NAME {
                 continue;
             }
-            if !(feature_evalue(feature) < domain_evalue && feature_score(feature) > domain_score) {
+            if !(evalue_passes(feature, domain_evalue) && feature_score(feature) > domain_score) {
                 continue;
             }
             let cds_id_qual = feature.get_first("cds_id");
@@ -521,14 +521,8 @@ mod tests {
             dom_feat("C1", "D2", 150, 300, "1e-3"),
             dom_feat(".", "Nuc", 400, 500, "1e-2"),
         ]);
-        let cdss = DomainatorCds::list_from_contig(
-            &rec,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-            false,
-            None,
-            true,
-        );
+        let cdss =
+            DomainatorCds::list_from_contig(&rec, None, f64::NEG_INFINITY, false, None, true);
         assert_eq!(cdss.len(), 2);
         assert_eq!(cdss[0].num, "C1");
         assert_eq!(cdss[0].name, "geneA"); // gene_id precedence
@@ -548,19 +542,13 @@ mod tests {
             dom_feat("C1", "D1", 0, 150, "1e-9"),
             dom_feat("C1", "D2", 150, 300, "1e-3"),
         ]);
-        // Only domains with evalue < 1e-5 survive (D1).
+        // Only domains with evalue <= 1e-5 survive (D1).
         let cdss =
-            DomainatorCds::list_from_contig(&rec, 1e-5, f64::NEG_INFINITY, false, None, true);
+            DomainatorCds::list_from_contig(&rec, Some(1e-5), f64::NEG_INFINITY, false, None, true);
         assert_eq!(cdss[0].domain_names, set(&["D1"]));
         // get_domain_names db restriction.
-        let full = DomainatorCds::list_from_contig(
-            &rec,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-            false,
-            None,
-            true,
-        );
+        let full =
+            DomainatorCds::list_from_contig(&rec, None, f64::NEG_INFINITY, false, None, true);
         assert_eq!(
             full[0].get_domain_names(Some(&set(&["DB"])), None),
             set(&["D1", "D2"])

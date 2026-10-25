@@ -258,11 +258,13 @@ search.
 
 Select CDSs by `--cds`/`--cds_file` (name), `--domains`/`--domains_file` (domain content),
 `--domain_expr` (a boolean expression such as `'Sod_Fe_N and not Sod_Fe_C'`),
-`--search_hits` (CDSs carrying a `Domain_Search` feature), or `--unannotated`. Then set
-the window with `--whole_contig`, `--cds_range`/`--cds_up`/`--cds_down` or
+or `--unannotated`; `--annotation_type domain_search` selects by the `Domain_Search`
+best hits instead of the `Domainator` domains. Then set the window with
+`--whole_contig`, `--cds_range`/`--cds_up`/`--cds_down` or
 `--kb_range`/`--kb_up`/`--kb_down`. `--invert` selects the complement,
-`--include_nucleic_acids` keeps nucleotide records, `--skip_deduplicate` keeps
-overlapping windows separate.
+`--include_nucleic_acids` keeps nucleotide records, `--no_deduplicate` keeps a region
+extracted for several hits once per hit, and `--pad` pads the regions with `N` so the
+focus CDSs line up (at their start, end or center: `--anchor`).
 
 ```bash
 domainatoredux select_by_cds -i annotated.gb -o operons.gb \

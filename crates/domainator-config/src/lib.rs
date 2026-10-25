@@ -103,74 +103,6 @@ macro_rules! merge_vec {
     };
 }
 
-/// `select_by_cds` parameters (config-file shape).
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct SelectByCdsConfig {
-    pub input: Vec<String>,
-    pub output: Option<String>,
-    pub kb_range: Option<f64>,
-    pub kb_up: Option<f64>,
-    pub kb_down: Option<f64>,
-    pub cds_range: Option<i64>,
-    pub cds_up: Option<i64>,
-    pub cds_down: Option<i64>,
-    pub whole_contig: bool,
-    pub contigs: Vec<String>,
-    pub contigs_file: Option<String>,
-    pub cds: Vec<String>,
-    pub cds_file: Option<String>,
-    pub domains: Vec<String>,
-    pub domains_file: Option<String>,
-    pub domain_expr: Option<String>,
-    pub databases: Vec<String>,
-    pub strand: Option<String>,
-    pub unannotated: bool,
-    pub search_hits: bool,
-    pub pad: bool,
-    pub keep_direction: bool,
-    pub skip_deduplicate: bool,
-    pub max_region_overlap: Option<f64>,
-    pub evalue: Option<f64>,
-    pub invert: bool,
-    pub include_nucleic_acids: bool,
-    /// `--partial`: `include` (default) | `exclude` | `only`, by fragment status.
-    pub partial: Option<String>,
-}
-
-impl SelectByCdsConfig {
-    pub fn merge_cli(&mut self, cli: SelectByCdsConfig) {
-        merge_vec!(self, cli, input);
-        merge_scalar!(self, cli, output);
-        merge_scalar!(self, cli, kb_range);
-        merge_scalar!(self, cli, kb_up);
-        merge_scalar!(self, cli, kb_down);
-        merge_scalar!(self, cli, cds_range);
-        merge_scalar!(self, cli, cds_up);
-        merge_scalar!(self, cli, cds_down);
-        self.whole_contig |= cli.whole_contig;
-        merge_vec!(self, cli, contigs);
-        merge_scalar!(self, cli, contigs_file);
-        merge_vec!(self, cli, cds);
-        merge_scalar!(self, cli, cds_file);
-        merge_vec!(self, cli, domains);
-        merge_scalar!(self, cli, domains_file);
-        merge_scalar!(self, cli, domain_expr);
-        merge_vec!(self, cli, databases);
-        merge_scalar!(self, cli, strand);
-        self.unannotated |= cli.unannotated;
-        self.search_hits |= cli.search_hits;
-        self.pad |= cli.pad;
-        self.keep_direction |= cli.keep_direction;
-        self.skip_deduplicate |= cli.skip_deduplicate;
-        merge_scalar!(self, cli, max_region_overlap);
-        merge_scalar!(self, cli, evalue);
-        self.invert |= cli.invert;
-        self.include_nucleic_acids |= cli.include_nucleic_acids;
-        merge_scalar!(self, cli, partial);
-    }
-}
-
 // ---------------------------------------------------------------------------
 // domainate / domain_search / seq_dist / compare_contigs / hmmer_compare
 // ---------------------------------------------------------------------------
@@ -1214,7 +1146,6 @@ fn legacy_parameter(name: &str, prop: &serde_json::Value) -> serde_json::Value {
 /// its tool is migrated.
 fn legacy_schema(tool: &str) -> Result<serde_json::Value> {
     let s = match tool {
-        "select_by_cds" => select_by_cds_schema(),
         "domainate" => domainate_schema(),
         "domain_search" => domain_search_schema(),
         "deduplicate_genbank" => deduplicate_schema(),
@@ -2041,46 +1972,6 @@ fn format_db_schema() -> serde_json::Value {
     })
 }
 
-fn select_by_cds_schema() -> serde_json::Value {
-    use serde_json::json;
-    json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "select_by_cds config",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "partial": {"enum": ["include", "exclude", "only"], "default": "include"},
-            "input": {"type": "array", "items": {"type": "string"}},
-            "output": {"type": ["string", "null"]},
-            "kb_range": {"type": ["number", "null"]},
-            "kb_up": {"type": ["number", "null"]},
-            "kb_down": {"type": ["number", "null"]},
-            "cds_range": {"type": ["integer", "null"]},
-            "cds_up": {"type": ["integer", "null"]},
-            "cds_down": {"type": ["integer", "null"]},
-            "whole_contig": {"type": "boolean", "default": false},
-            "contigs": {"type": "array", "items": {"type": "string"}},
-            "contigs_file": {"type": ["string", "null"]},
-            "cds": {"type": "array", "items": {"type": "string"}},
-            "cds_file": {"type": ["string", "null"]},
-            "domains": {"type": "array", "items": {"type": "string"}},
-            "domains_file": {"type": ["string", "null"]},
-            "domain_expr": {"type": ["string", "null"]},
-            "databases": {"type": "array", "items": {"type": "string"}},
-            "strand": {"enum": ["f", "r", null]},
-            "unannotated": {"type": "boolean", "default": false},
-            "search_hits": {"type": "boolean", "default": false},
-            "pad": {"type": "boolean", "default": false},
-            "keep_direction": {"type": "boolean", "default": false},
-            "skip_deduplicate": {"type": "boolean", "default": false},
-            "max_region_overlap": {"type": "number", "default": 1.0},
-            "evalue": {"type": "number", "default": 100000000.0},
-            "invert": {"type": "boolean", "default": false},
-            "include_nucleic_acids": {"type": "boolean", "default": false}
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2153,7 +2044,6 @@ mod tests {
 
     fn every_tool() -> Vec<(&'static str, serde_json::Value)> {
         tools![
-            "select_by_cds" => SelectByCdsConfig,
             "domainate" => DomainateConfig,
             "domain_search" => DomainSearchConfig,
             "deduplicate_genbank" => DeduplicateConfig,

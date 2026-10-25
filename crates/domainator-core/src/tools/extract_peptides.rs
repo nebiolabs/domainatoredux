@@ -47,7 +47,7 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
     for contig in records {
         let cdss = DomainatorCds::list_from_contig(
             contig,
-            opts.evalue,
+            Some(opts.evalue),
             f64::NEG_INFINITY,
             true, // skip_pseudo
             Some(&prec_owned),

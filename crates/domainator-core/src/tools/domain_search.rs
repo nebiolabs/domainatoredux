@@ -254,18 +254,12 @@ pub fn domain_search(
                             // A whole-protein hit is not a neighborhood, so there is
                             // nothing to align: `--pad` only right-pads these to a common
                             // length, and the CLI refuses the combination anyway.
-                            emitted.push(Region {
-                                record: rec,
-                                dist_to_start: 0,
-                            });
+                            emitted.push(Region::whole(rec));
                         } else if opts.translate {
                             emitted.extend(
                                 crate::tools::neighborhood::translate_peptides(&rec, opts.strand)
                                     .into_iter()
-                                    .map(|record| Region {
-                                        record,
-                                        dist_to_start: 0,
-                                    }),
+                                    .map(Region::whole),
                             );
                         } else {
                             emitted.extend(select_by_cds_hits(
@@ -316,7 +310,10 @@ pub fn domain_search(
         if opts.max_hits.is_none() {
             out.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
         }
-        crate::tools::select_by_cds::pad_records(&mut out);
+        crate::tools::select_by_cds::pad_records(
+            &mut out,
+            crate::tools::select_by_cds::Anchor::Start,
+        );
     }
     Ok(out.into_iter().map(|r| r.record).collect())
 }

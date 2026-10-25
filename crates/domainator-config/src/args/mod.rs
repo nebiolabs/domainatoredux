@@ -10,12 +10,14 @@
 mod common;
 mod enum_report;
 mod hmmer_report;
+mod select_by_cds;
 mod select_by_contig;
 mod sort_contigs;
 
 pub use common::CommonArgs;
 pub use enum_report::EnumReportArgs;
 pub use hmmer_report::HmmerReportArgs;
+pub use select_by_cds::SelectByCdsArgs;
 pub use select_by_contig::SelectByContigArgs;
 pub use sort_contigs::SortContigsArgs;
 
@@ -29,6 +31,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "enum_report" => EnumReportArgs::augment_args(cmd),
         "hmmer_report" => HmmerReportArgs::augment_args(cmd),
         "select_by_contig" => SelectByContigArgs::augment_args(cmd),
+        "select_by_cds" => SelectByCdsArgs::augment_args(cmd),
         _ => return None,
     })
 }
