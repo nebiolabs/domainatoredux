@@ -117,6 +117,10 @@ bytes — `serde_json` is built with `preserve_order` and Python sorts keys); XG
 → parse-equal node/edge/att sets; `.hmm` → text with `DATE`/`COM` normalized out;
 everything else → exact text.
 
+Python runs with `TZ=UTC`. Both writers stamp a record that has no `date` with
+today's date, ours in UTC and Python's in local time, so without it every such
+record would differ in the hours around midnight.
+
 ## `known_gaps.tsv` is the to-do list, and it is enforced
 
 Every invocation that is not `identical`/`tolerated`/`skipped` must appear in

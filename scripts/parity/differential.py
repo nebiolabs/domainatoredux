@@ -210,10 +210,12 @@ def run_one(row, cfg, helpers, SeqIO):
             # Upstream 1.0 runs every tool through its dispatcher; the per-module
             # `python -m domainator.<module>` form exits 0 having done nothing.
             # An `-i -` invocation (upstream feeds it through monkeypatch) must see an
-            # empty stdin, not wait on the sweep's own.
+            # empty stdin, not wait on the sweep's own. Python stamps undated records
+            # with the local date and we stamp the UTC one, so Python runs in UTC:
+            # otherwise every such record differs in the hours around midnight.
             py = subprocess.run([cfg.python, "-m", "domainator", module] + py_argv,
                                 capture_output=True, timeout=cfg.timeout, cwd=py_dir,
-                                stdin=subprocess.DEVNULL)
+                                stdin=subprocess.DEVNULL, env={**os.environ, "TZ": "UTC"})
             rs = subprocess.run([cfg.rust, module] + rs_argv,
                                 capture_output=True, timeout=cfg.timeout, cwd=rs_dir,
                                 stdin=subprocess.DEVNULL)
