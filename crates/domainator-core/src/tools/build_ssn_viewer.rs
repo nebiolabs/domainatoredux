@@ -371,6 +371,10 @@ fn base64_encode(data: &[u8]) -> String {
     out
 }
 
+/// The shell's bundle slot when nothing is embedded: a key of its `dsnv-config` block,
+/// written by `json.dumps` with the default `": "` separator.
+const EMBEDDED_BUNDLE_NULL: &str = "\"embeddedBundleBase64\": null";
+
 /// Render the standalone HTML viewer. When `embedded_bundle_gzip` is provided the
 /// gzip bundle is base64-embedded so the viewer autoloads it; otherwise the shell
 /// opens local `.dsnv` files via its built-in picker.
@@ -382,11 +386,14 @@ pub fn render_html(title: &str, embedded_bundle_gzip: Option<&[u8]>) -> String {
             "@@SSN_VIEWER_HEADING@@",
             &html_escape(&viewer_heading(title)),
         );
+    // The key sits in the page's `dsnv-config` JSON block; base64 needs no JSON
+    // escaping and holds no `<`, so it cannot close the `<script>` element.
     if let Some(gz) = embedded_bundle_gzip {
         let b64 = base64_encode(gz);
-        html = html.replace(
-            "const EMBEDDED_BUNDLE_BASE64 = null;",
-            &format!("const EMBEDDED_BUNDLE_BASE64 = \"{b64}\";"),
+        html = html.replacen(
+            EMBEDDED_BUNDLE_NULL,
+            &format!("\"embeddedBundleBase64\": \"{b64}\""),
+            1,
         );
     }
     html
@@ -415,7 +422,7 @@ mod tests {
         assert!(!html.contains("@@SSN_VIEWER_HEADING@@"));
         // A named network gets "<app>: <name>"; the escaping applies to the heading too.
         assert!(html.contains("Domainator Similarity Network Viewer: My &lt;SSN&gt;"));
-        assert!(html.contains("const EMBEDDED_BUNDLE_BASE64 = null;"));
+        assert_eq!(html.matches(EMBEDDED_BUNDLE_NULL).count(), 1);
         // A title naming no particular network collapses to the bare app name rather
         // than "...Viewer: Domainator SSN Viewer" -- which the CLI's default name,
         // one of upstream's generic titles, would otherwise produce.
@@ -428,7 +435,7 @@ mod tests {
         );
 
         let html2 = render_html("x", Some(b"gzipbytes"));
-        assert!(html2.contains("const EMBEDDED_BUNDLE_BASE64 = \""));
-        assert!(!html2.contains("const EMBEDDED_BUNDLE_BASE64 = null;"));
+        assert!(html2.contains("\"embeddedBundleBase64\": \"Z3ppcGJ5dGVz\""));
+        assert!(!html2.contains(EMBEDDED_BUNDLE_NULL));
     }
 }

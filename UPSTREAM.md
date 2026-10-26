@@ -7,53 +7,42 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `02a31c1` — *handling bare /partial qualifiers* (2026-10-04; upstream
-  `__version__` 0.12.0). The nine commits since `9c70934`:
-- **Wheels / CI** (`4b67f66`, `e55c56c`, `6aa216f`): packaging only; nothing to port.
-- **Partial features** (`8bf3c42`), ported. `slice_record_from_location` now truncates
-  every feature a slice cuts and marks the cut ends with `<`/`>`. The exceptions: `source`
-  never gets new markers, a cut `Domainator`/`Domain_Search` hit is dropped, and a feature
-  split across a rotated origin is not cut. A cut CDS gets an updated `/codon_start` and a
-  trimmed `/translation`, `merge_parts` keeps markers, and `get_cds_neighborhood` lost
-  its containment pre-filter. The port had six slicers; they are now one,
-  `neighborhood::slice_features` (with `slice_record` / `slice_linear_features` /
-  `extract_common::slice_from_location` around it). `/codon_start` is honored when
-  `domainate` places a hit (`overlay`, which now refuses out-of-bounds spans the way
-  Python raises), and in fallback translations and `extract_peptides` coordinates. An
-  overlong partial-CDS translation is trimmed (`seq/partial.rs`, `on_contig_translation`).
-  Fragment status and `--partial` on `domainate`/`domain_search` come from this commit,
-  as does `enum_report --fragment`.
-- **Fragment support in more tools** (`bdc74bb`), ported. `--partial` is now also on
-  `select_by_cds`, `select_by_contig`, `extract_peptides`, `extract_domains`,
-  `enum_report` (a row filter) and `summary_report`, and `enum_report` gains
-  `--partial_count`. `summary_report` reports `partial_cdss`/`fragment_proteins`. Fragment
-  status also reads `NON_TER` features and `Flags: Fragment`. The `find_features` and
-  `domainator_db_download` halves have no counterpart, since both tools are unported.
-- **Gene calling keeps partial genes** (`f39ec15`), ported along with `--gene_call`
-  itself. Prodigal genes running off a linear contig become `<`/`>` partial CDSs, and
-  origin-crossing genes on circular contigs are called from a window across the origin.
-  The port runs the external Orphos binary in place of pyrodigal and rebuilds every one of
-  these rules from its GFF (`tools/gene_call.rs`).
-- **Gene-caller `/partial` codes** (`0a8ba4c`), ported. On every GenBank read, a
-  prodigal/GeneMark `/partial="10"` code becomes `<`/`>` markers and is removed. An end
-  within 2 bases of the contig edge is extended to the edge, with `/codon_start` moved if
-  the 5' end moved. Existing markers win, and a bare `/partial` is kept. See
-  `seq/partial.rs` (`normalize_partial_codes`), called at the end of
-  `io/genbank/parse.rs::parse_record`, the one place every GenBank read goes through.
-  `pDONR201_multi_genemark*.gb` carry these codes, so many existing invocations now
-  see partial CDSs.
-- **Bare `/partial`** (`02a31c1`), ported. A CDS with the legacy `/partial` qualifier with
-  no value, and no `<`/`>`, is a `?` fragment. This is one change to
-  `seq/partial.rs::feature_fragment_status`, which every `--partial` filter, count and
-  column reads. The `extra:test_bare_partial_qualifier_is_a_fragment` invocations cover it.
-- **Version bump** (`0394886`): 0.12.0. The viewer shell was regenerated (only
-  `DOMAINATOR_VERSION` changed).
-- **Found while syncing** (pre-existing, now fixed):
-  - GenBank header wrapping now follows Biopython's `_split_multi_line`, with 68 columns
-    after the indent; it was 67.
-  - A reverse-strand CDS ending at a contig's last base sorted first in `select_by_cds`.
-  - `trim_contigs`/`clean_sequences --strip` kept header annotations Python's slice drops.
-  - `extract_domains` let a `--domains` match skip `--evalue`/`--score`.
+- **Caught up to:** `f18dc15` — *bugfix* (2026-10-25; upstream `__version__` 1.0.0rc1, on
+  the `version_one` branch). The 29 commits since `02a31c1` are upstream's 1.0 refactor
+  and the features it gathered. The port followed it in eight phases on the
+  `upstream-1.0-sync` branch; `CHANGELOG.md` (1.0.0) lists what changed for users.
+- **The 1.0 interface** (`9207113`, `e7af752`, `8519ff8`), ported. Upstream adopted one
+  dispatcher, `domainator <tool>` (so ours is now `domainatoredux`), renamed options per
+  its `MIGRATION.md`, made every output an explicit `--<content>_out` option, and added
+  `domainator describe`, a manifest of every command. Each tool's interface is now one
+  clap struct (`crates/domainator-config/src/args/`), `describe` writes upstream's
+  manifest format, and `--config` files are interchangeable with upstream's. The
+  manifest golden test (`crates/domainator-cli/tests/upstream_manifest.rs`, against
+  `scripts/parity/upstream_manifest.json`) fails on any option difference not listed
+  in `scripts/parity/manifest_allowlist.tsv`. `completion` and `doctor` are ported too.
+- **File formats** (`7bcb10e`, `a5a6fba`, `3bb5c00`), ported. HDF5 matrices are
+  version 2.0: sparse only, canonical CSR, and a symmetric matrix stored as its upper
+  triangle. Versions 1 and 2 are read. `.dsnv` and dense text are unchanged.
+- **Behavior changes**, ported: region names follow `model.region_id` (`3b75ce2`); `-e`
+  keeps hits with E-value `<=` the cutoff; `--max_overlap` rejects only overlaps
+  strictly above it; boolean expressions parse with `~` > `&` > `|` and fail at startup
+  when malformed; XGMML escapes once; mgnify `FL=0` means fragment status `?`
+  (`d9003f8`); `--cpu 0` means physical cores; upstream's stderr logging levels.
+- **New behavior**, ported: `domain_search --deduplicate_by_sequence` (`109be05`) and
+  circular `--whole_contig` (`7866f33`); `--mst` and `--knn` as one union and
+  `--symmetrize` (`b0db413`); `rotate_contigs` (`1f7d215`); `compare_contigs`'s
+  sorted `--genbank_out` with `--linkage`/`--leaf_ordering` (`af4f675`), through a
+  port of scipy's hierarchy code (`matrix/hierarchy.rs`).
+- **Upstream Biopython** (`8801d78`): upstream dropped its vendored Biopython for the
+  stock package plus subclass patches. Our GenBank writer was already byte-identical;
+  the comparison turned up one difference, in structured comments, now fixed.
+- **Not ported, nothing to port:** library API (`fd8c78e`), performance (`923361d`,
+  `ad4b37d`'s free-threaded pools), packaging and conda (`bfa0026`, `359353c`,
+  `93ff59d`), docs (`9a8efb2`, `f902c98`, `9389c89`), tests (`2bbf8d7`, harvested by the
+  sweep), `db_download` (`1bf7f72`, the tool is unported). The SSN viewer moved into
+  `ssn_viewer/` (`5421906`); the shell was regenerated from it.
+- **Upstream bug found while syncing:** `seq_dist --algorithm hmmer` all-vs-all raised
+  "phmmer result stream yielded query … out of order"; fixed upstream in `f18dc15`.
 - **Vendored copy:** `external/domainator/` (gitignored; a git clone of upstream, kept at
   the pin above). It is the deterministic, repo-local source for regeneration and drift
   checks. Refresh it with `scripts/sync_upstream.sh` (fast-forwards to a target ref).
@@ -72,7 +61,7 @@ honest:
 |---|---------|-----------|-------|
 | 1 | **Literal vendored artifacts** | Files copied/rendered verbatim from Python. Today the **only** one is the SSN viewer HTML shell (`crates/domainator-core/assets/ssn_viewer_shell.html`), rendered from `ssn_viewer_html.py`. | Regenerated by `scripts/regen_ssn_viewer_shell.py`; `--check` mode is the drift guard. **Never hand-edit the asset.** |
 | 2 | **On-disk format contracts** | GenBank, HDF5, `.didx`, shards, BGZF, `.dsnv` bundle, XGMML, TSV number formatting. | Byte/semantic **parity gates** (`external/domainator/test`, `test/helpers.py`). A format change requires Rust code changes in the owning module. |
-| 3 | **Tool / flag / algorithm coverage** | New tools, flags, or modes (e.g. `mst_knn`, `efi_score`, treemap). | The `README.md` per-tool table is the coverage ledger; new behavior needs a port + a parity gate. |
+| 3 | **Tool / flag / algorithm coverage** | New tools, flags, or modes (e.g. `rotate_contigs`, `--symmetrize`, treemap). | The manifest golden test fails on every option upstream adds; `docs/porting-status.md` is the per-tool ledger; new behavior needs a port + a parity gate. |
 | 4 | **Hand-ported logic tables** | Genetic code, PROSITE patterns, protein chemistry, taxonomy. | Fixture-free `cargo test`s against documented reference values (BioPython etc.). |
 
 ## Python file → Rust owner map
@@ -81,16 +70,22 @@ Use this to triage which module a changed upstream file lands in:
 
 | Python (`src/domainator/…`) | Rust owner |
 |---|---|
-| `ssn_viewer_html.py` | `crates/domainator-core/assets/ssn_viewer_shell.html` (via `scripts/regen_ssn_viewer_shell.py`) |
+| `ssn_viewer_html.py`, `ssn_viewer/` (its HTML, CSS and JS sources) | `crates/domainator-core/assets/ssn_viewer_shell.html` (via `scripts/regen_ssn_viewer_shell.py`) |
+| `cli/registry.py`, `cli/manifest.py`, `cli/common.py` (each tool's `build_parser`) | `crates/domainator-config/src/{registry,manifest,config_file,types}.rs`, `.../args/<tool>.rs`; the I/O and error rules in `crates/domainator-cli/src/{lib,output}.rs`. Refresh `scripts/parity/upstream_manifest.json` and the allowlist on any change |
+| `cli/doctor.py`, `cli/completion.py` | `crates/domainator-cli/src/commands/doctor.rs` (programs from `crates/domainator-core/src/tools/external.rs`), `completion` in `crates/domainator-cli/src/lib.rs` |
+| `report_columns.py`, `table_writers.py` | `crates/domainator-config/src/columns.rs` (the catalogs and token parser), the TSV/NDJSON writers in `crates/domainator-core/src/tools/{enum_report,hmmer_report}.rs` |
+| `external.py` | `crates/domainator-core/src/tools/external.rs` (`find_binary`, `EXTERNAL_PROGRAMS`) |
+| `output_guardrails.py` | `crates/domainator-core/src/tools/output_guardrails.rs`, `.../matrix/estimate.rs` |
 | `docs/algorithms.md` | **reference, not ported** — read `external/domainator/docs/algorithms.md` for the SSN internals (MST, threshold tables, split-event scanning, the cap/window/pin selection, the moving sum, slider stops, dendrogram cutting). Its "Ports that must stay in step" table is the authority on which functions mirror which; this port is a third implementation of that same list. |
 | `build_ssn_viewer.py`, `ssn_hierarchy.py` | `crates/domainator-core/src/tools/build_ssn_viewer.rs`, `.../matrix/ssn.rs` |
 | `ssn_bundle.py` | `.../tools/ssn_bundle.rs` (the `.dsnv` reader) |
 | `ssn_navigator.py` | `.../tools/ssn_navigator.rs` |
 | `summary_report.py` | `.../tools/summary_report.rs` (data path only; HTML deferred) |
-| `utils.py` palette helpers | `.../palette.rs` |
+| `colors.py` | `.../palette.rs` |
 | `structure_*.py`, `structure_lib.py`, `foldseek.py` | **deferred** — see below |
 | `build_ssn.py` | `.../tools/build_ssn.rs` |
-| `ssn_edges.py`, `mst_knn` helpers | `.../matrix/ssn.rs`, `.../matrix/mst_knn.rs` |
+| `ssn_edges.py`, `edge_types.py` | `.../matrix/ssn.rs` |
+| `sparsify.py` (`--mst`/`--knn`), `matrix_output.py`, `sparse_scores.py` | `.../matrix/mst_knn.rs`, `.../matrix/hdf5_io.rs`, and each matrix tool's output path |
 | `transform_matrix.py`, `data_matrix.py` (HDF5/TSV) | `.../tools/transform_matrix.rs`, `.../matrix/{hdf5_io,text,transform}.rs` |
 | `seq_dist.py` | `.../tools/seq_dist.rs` |
 | `compare_contigs.py` | `.../tools/compare_contigs.rs`; its sort's scipy calls (`linkage`, `leaves_list`, `optimal_leaf_ordering`) are `.../matrix/hierarchy.rs` |
@@ -100,10 +95,13 @@ Use this to triage which module a changed upstream file lands in:
 | `select_by_contig.py`, `enum_report.py` | `.../tools/{select_by_contig,enum_report,select_common}.rs` |
 | `matrix_report.py` | `.../tools/matrix_report.rs` |
 | `hmmer_compare.py` | `.../tools/hmmer_compare.rs`, `.../search/hmm_compare.rs` |
-| GenBank/FASTA/BGZF/didx/shards utils | `.../io/{genbank,fasta,bgzf,didx,shards,partition}.rs` |
-| `utils.py` protein/taxonomy helpers | `.../seq/{protein_analysis,taxonomy,taxid,translate}.rs` |
-| `utils.py` fragment/partial helpers (`get_fragment_status`, `on_contig_translation`, `codon_offset`, ...) | `.../seq/partial.rs` |
-| `utils.slice_record_from_location`, `slice_record`, `_truncate_cds_qualifiers`; `CompoundLocation.merge_parts` | `.../tools/neighborhood.rs` (`slice_features`), `.../seq/location.rs` (`merge_touching_parts`) |
+| `seqio.py`, `genbank.py` (Biopython subclasses), `lean_record.py`, `offsets.py`, `db_index.py`, `bgzf_compress.py` | `.../io/{genbank,fasta,bgzf,didx,shards,partition}.rs` |
+| `hmmio.py` | `.../search/{hmm_read,hmm_write,references}.rs` |
+| `expr.py` | `.../tools/select_common.rs` (`BooleanEvaluator`), `.../seq/taxonomy.rs` (`--taxonomy_expr`) |
+| `model.py` (`region_id`, the per-CDS view) | `.../tools/neighborhood.rs` (`region_id`), `.../tools/select_common.rs` |
+| `taxonomy/`, the protein chemistry in `enum_report.py` | `.../seq/{protein_analysis,taxonomy,taxid,translate}.rs` |
+| `partial.py` (`get_fragment_status`, `on_contig_translation`, `codon_offset`, ...) | `.../seq/partial.rs` |
+| `locations.py` (`slice_record_from_location`, `slice_record`, `_truncate_cds_qualifiers`), `location_ops.py` (`merge_parts`) | `.../tools/neighborhood.rs` (`slice_features`), `.../seq/location.rs` (`merge_touching_parts`) |
 | `rotate_contigs.py` | `.../tools/rotate_contigs.rs` (the search is `domainate`, the slice `extract_common`) |
 | `extract_domains.py`, `extract_peptides.py`, `extract_unannotated.py` | `.../tools/{extract_domains,extract_peptides,extract_unannotated,extract_common}.rs` |
 
@@ -170,8 +168,14 @@ Tracked so a later sync does not mistake them for oversights:
   rejected `--diamond_args` option, unreadable input: `build_diamond_failure_message`); a
   failed run reports diamond's own stderr instead. The advisory before a large all-vs-all
   search is ported without its free-disk-space note, which needs a disk-usage call.
-- **`--partial` on `find_features` and `domainator_db_download`** (`bdc74bb`). Neither tool
+- **`--partial` on `find_features` and `db_download`** (`bdc74bb`). Neither tool
   is ported. The GUI's managed UniProt download could take the same filter later.
+- **Unported tools:** `kmer_dist`, `split_by_cluster`, `build_tree`, `build_projection`,
+  `plot_contigs` (the app's contig viewer covers it on screen), `db_download` (the app's
+  managed downloads cover UniProt, Pfam and NCBI Taxonomy), `infernal_build`,
+  `find_features` (torch), and the structure tools above. Their manifest entries are
+  `deferred:` rows of `scripts/parity/manifest_allowlist.tsv`.
+- **`matrix_report --knn_projection`**, which only feeds the deferred HTML report.
 
 ## What the parity sweep still tracks
 

@@ -12,12 +12,12 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 // handed to clap, which wants a `&'static str`.
 macro_rules! upstream_version {
     () => {
-        "0.12.0"
+        "1.0.0rc1"
     };
 }
 macro_rules! upstream_commit {
     () => {
-        "02a31c1"
+        "f18dc15"
     };
 }
 
@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn upstream_version_matches_the_generated_viewer_shell() {
         let shell = include_str!("../assets/ssn_viewer_shell.html");
-        let needle = format!("const DOMAINATOR_VERSION = \"{UPSTREAM_VERSION}\";");
+        let needle = format!("\"domainatorVersion\": \"{UPSTREAM_VERSION}\"");
         assert!(
             shell.contains(&needle),
             "the regenerated ssn_viewer_shell.html does not say `{needle}`: upstream's \
