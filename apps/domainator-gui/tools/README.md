@@ -270,9 +270,8 @@ written. Every required output needs an `output_name`.
 ## Help text
 
 The hint under a field is the manifest parameter's `help`, the same text
-`domainatoredux describe` gives agents. On a tool on the 1.0 interface it is the doc
-comment of the option in `crates/domainator-config/src/args/<tool>.rs`; on the others, the
-description in its old config schema in `crates/domainator-config/src/lib.rs`.
+`domainatoredux describe` gives agents: the doc comment of the option in
+`crates/domainator-config/src/args/<tool>.rs`.
 
 - Setting `help:` replaces the hint in the dialog only. Leave the key out to keep the
   manifest's text.

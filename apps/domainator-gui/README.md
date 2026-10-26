@@ -421,10 +421,7 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   `taxname_self` columns were dropped from the export; `taxid`/`taxname` with rank
   `self` report the record's own taxon from the taxonomy instead.
 - **Every tool option has help text.** `ToolDialog` renders each option's manifest
-  `help` as a hint. On a migrated tool that is the option's `--help` text; on the
-  others it comes from the old config schema, where a shared dictionary
-  (`common_help` in `domainator-config`) fills a one-line description for any property
-  a per-tool schema left blank.
+  `help` as a hint, which is the option's `--help` text.
 - **domainate / domain_search accept HMM *and* FASTA references.** The references
   field uses a `reference` pseudo file-type (`typeMatches` → hmm | fasta), matching
   what the core `read_references` accepts (protein/nucleotide HMM or FASTA; `.cm` and

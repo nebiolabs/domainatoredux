@@ -71,9 +71,33 @@ domainatoredux describe --tool sort_contigs --indent 1
 A report's `columns` option also lists its columns, each with its argument names
 (`{"name": "qualifier", "args": ["feature", "qualifier"], ...}`).
 
+The header says what the manifest describes: `manifest_version` (1, upstream's format),
+`domainator_version` (the Python release this build reproduces), `domainatoredux_version`
+(this build), and `invocation`, which says how to run a tool (`["domainatoredux",
+"{tool}"]`), that `--config` takes an object keyed by parameter name, and that `-` means
+stdin or stdout.
+
 This is the interface to use when generating invocations programmatically: the desktop
 app renders its tool dialogs from the same manifest, so anything an agent can discover
 here is exactly what the GUI exposes.
+
+### How it differs from upstream's
+
+A test compares this manifest with the one upstream's `domainator describe` prints, so
+the two differ only where a difference is deliberate and listed. An agent written against
+upstream's manifest can expect the same tool names, parameter names, types, defaults and
+choices here, with these exceptions:
+
+- tools upstream has and this port does not (the structure tools, `kmer_dist`,
+  `split_by_cluster`, `build_tree`, `build_projection`, `plot_contigs`, `db_download`,
+  `infernal_build`, `find_features`; see [Porting status](porting-status.md));
+- options of ported tools that are not ported, such as the reports' `--html_out`. They are
+  absent from this manifest, but a config file may still name one at its upstream default;
+- `gene_call`, `inspect` and `convert`, which upstream does not have (`inspect` and
+  `convert` take no config and are not in the manifest).
+
+`domainatoredux doctor` reports which optional external programs (diamond, cd-hit,
+usearch, Orphos) this installation can find, and which tools need each one.
 
 ## JSON output
 

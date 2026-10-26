@@ -166,8 +166,14 @@ git diff scripts/parity/manifest_allowlist.tsv   # <- read this too
 
 A row records the compared value on both sides, so an upstream change to an
 allowlisted option fails again. The regeneration keeps each row's hand-written `class`:
-`deferred:` (not ported, on purpose), `port-only:` (this port's alone), `upstream:`, or
-`todo:` (the 1.0 migration; none may remain once it is done).
+`deferred:` (not ported, on purpose), `port-only:` (this port's alone), or `upstream:`.
+(The 1.0 migration also used `todo:`; none remain.)
+
+The docs get a guard of their own: `crates/domainator-cli/tests/doc_examples.rs` parses
+every `domainatoredux` command in the fenced blocks of `docs/` and `README.md` with the
+real clap command. A renamed option or a dropped choice therefore fails a test instead of
+leaving an example that no longer runs. A line commented `# error` is a counterexample,
+and must fail to parse.
 
 A tool on the 1.0 interface may lack an upstream option only through its registry entry's
 `unsupported` list (`crates/domainator-config/src/registry.rs`), which names the option

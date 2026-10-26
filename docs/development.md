@@ -88,6 +88,9 @@ in particular:
   `domainatoredux describe` against upstream's own manifest; every difference must be a
   row of `scripts/parity/manifest_allowlist.tsv`, and every row a real difference. See
   [Parity](parity.md).
+- **`every_documented_command_parses`** (`domainator-cli`) — parses every
+  `domainatoredux` command in the fenced blocks of `docs/` and `README.md`, so an example
+  using a renamed option or a dropped choice fails here rather than for a reader.
 - **`every_offered_tool_is_dispatched`** and
   **`every_tools_dialog_params_parse_as_its_cli_config`** (`domainator-gui`) — GUI jobs
   run `<tool> --config <params>` through the CLI in a worker process, so a menu entry

@@ -113,7 +113,7 @@ chart and legend exports open a Save dialog. Select nodes and click **Open seque
 
 ## Running tools
 
-The **Tools** menu runs 29 of the command-line tools, grouped as upstream groups them:
+The **Tools** menu runs 30 of the command-line tools, grouped as upstream groups them:
 Annotation & search, Selection & editing, Conversion, HMM profiles, Comparison,
 Networks, Reports and Figures. The **Tools** button in the middle of the toolbar offers the same groups cut
 down to the tools that can take the selected files as inputs, and the dialog it opens

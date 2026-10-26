@@ -125,7 +125,7 @@ Piped input is spilled to a temporary file first, so a read-only or very small `
 will fail on large inputs. Point it somewhere with room:
 
 ```bash
-TMPDIR=/scratch/tmp domainatoredux select_by_contig --domains Cas9 < big.gb > hits.gb
+TMPDIR=/scratch/tmp domainatoredux select_by_contig -i - -o - --domains Cas9 < big.gb > hits.gb
 ```
 
 ## The run is slower than expected

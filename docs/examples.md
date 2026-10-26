@@ -158,12 +158,12 @@ Remember the [`-i`/`-r` convention](concepts.md#the--i---r-convention): the *dat
 Then collapse near-identical hits before building a network:
 
 ```bash
-domainatoredux deduplicate_genbank -i hits.gb -o representatives.gb --id 0.9 \
-  --cluster_table clusters.tsv
+domainatoredux deduplicate_genbank -i hits.gb -o representatives.gb --identity 0.9 \
+  --cluster_tsv_out clusters.tsv
 ```
 
 `deduplicate_genbank` defaults to the cd-hit backend, which needs an external binary. For exact
-deduplication with nothing installed, use `--algorithm hash --id 1`.
+deduplication with nothing installed, use `--algorithm hash --identity 1`.
 
 ## 6. Reporting for a paper or a spreadsheet
 

@@ -76,7 +76,8 @@ the Python suite's underscore spellings (`--max_overlap`), and so do subcommands
 | **Reports** | `enum_report` per contig/CDS/domain tables · `summary_report` · `matrix_report` score distribution and suggested cutoffs · `ssn_navigator` query a network as JSON |
 | **HMM profiles** | `hmmer_build` · `hmmer_select` · `hmmer_search` · `hmmer_compare` · `hmmer_report` |
 | **Color** | `color_genbank` · `color_table_to_legend` |
-| **I/O and database prep** | `format_db` shard/compress/index for fast searching · `genbank_to_fasta` · `convert` · `inspect` · `schema` |
+| **I/O and database prep** | `format_db` shard/compress/index for fast searching · `genbank_to_fasta` · `convert` · `inspect` |
+| **Interface** | `describe` the machine-readable manifest of every tool · `completion` shell completion · `doctor` which external programs are installed |
 
 Every tool documented with examples in the
 **[command-line reference](docs/cli-reference.md)**; complete pipelines in
@@ -94,8 +95,8 @@ the command line just appear, and vice versa.
   layouts, chart and edit metadata, and jump from selected nodes back to their sequences.
 - **Enum Report, Summary, Matrix Report, HMM Profiles and Logo** tabs for the other file
   types, plus table, text and SVG viewers.
-- **Tools menu** — 29 of the tools, with dialogs generated from the same JSON Schema the
-  CLI publishes, so the two cannot drift. Outputs land next to your inputs and chain by
+- **Tools menu** — 30 of the tools, with dialogs generated from the same manifest the
+  CLI publishes (`describe`), so the two cannot drift. Outputs land next to your inputs and chain by
   file type.
 - **Jobs, Databases and External tools panels** — run history with provenance, a reusable
   registry of reference databases, and one-click download of `diamond`, `cdhit`,
@@ -112,7 +113,7 @@ See **[the desktop app](docs/gui.md)**, including its current limitations.
 - [Example workflows](docs/examples.md)
 - [The desktop app](docs/gui.md)
 - [File formats](docs/file-formats.md)
-- [Config files and agent output](docs/config-and-agents.md) — `--config`, `schema`, JSON
+- [Config files and agent output](docs/config-and-agents.md) — `--config`, `describe`, JSON
 - [Troubleshooting](docs/troubleshooting.md)
 
 Developers: [Developing Domainator](docs/development.md) ·

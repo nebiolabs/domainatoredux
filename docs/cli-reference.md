@@ -56,8 +56,8 @@ default. Only `domainate`, `domain_search`, `gene_call`, `deduplicate_genbank`,
 `seq_dist`, `compare_contigs`, `hmmer_compare` and `hmmer_search` are threaded; output
 is deterministic regardless of thread count.
 
-**stdin and stdout.** Tools that accept multiple inputs read GenBank from stdin when `-i`
-is omitted, and most tools write to stdout when `-o` is omitted, so they pipe:
+**stdin and stdout.** `-i -` reads GenBank from stdin and `-o -` writes to stdout, so
+tools pipe:
 
 ```bash
 domainatoredux select_by_contig -i in.gb --domains Sod_Fe_N | domainatoredux enum_report -i - --columns domains -o -
