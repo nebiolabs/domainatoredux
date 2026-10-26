@@ -12,7 +12,7 @@ A virtual Cargo workspace: three library/binary crates, two Tauri apps, one WASM
 | `crates/domainator-core/` | the data model, all I/O, and every tool's logic as library functions. Also `app_support/`, the GUI-facing seam. |
 | `crates/domainator-config/` | the interface: each tool's clap `Args` struct (`args/`), the registry, the `describe` manifest, `--config` files and `--print_config`, and the report column catalogs, shared by the CLI **and** the GUI so the two cannot drift. |
 | `crates/domainator-cli/` | thin clap front end — arg parsing and I/O wiring only. Binary name `domainatoredux`. |
-| `apps/domainator-gui/` | the Tauri v2 + Svelte 5 desktop app. Its Rust side is a thin `#[tauri::command]` layer over `app_support`. |
+| `apps/domainatoredux-gui/` | the Tauri v2 + Svelte 5 desktop app. Its Rust side is a thin `#[tauri::command]` layer over `app_support`. |
 | `apps/genbank-summary/`, `wasm_apps/genbank-summary/` | a small standalone Tauri app and its browser/WASM twin. |
 | `vendor/hdf5-pure/` | a patched dependency (below). |
 

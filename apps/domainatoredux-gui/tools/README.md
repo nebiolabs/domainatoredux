@@ -276,8 +276,9 @@ The hint under a field is the manifest parameter's `help`, the same text
 - Setting `help:` replaces the hint in the dialog only. Leave the key out to keep the
   manifest's text.
 - A `help` on a hidden field, or an empty one, is a test failure.
-- On a `columns` field, `help` is the hint under the whole builder. Each row's own hint
-  comes from its column (see [Column builder](#column-builder)).
+- On a `columns` field, `help` is the hint under the whole builder, and it is
+  required: the manifest's is the command line's list of every column. Each row's own
+  hint comes from its column (see [Column builder](#column-builder)).
 
 ## What checks these files
 
@@ -294,6 +295,6 @@ The hint under a field is the manifest parameter's `help`, the same text
 | `every_tools_dialog_params_parse_as_its_cli_config` (`cmd_tools.rs`) | a dialog whose default params (seeded values, files filled, default columns) the CLI rejects |
 | `derived_provenance_roles_match_the_golden_table` (`cmd_tools.rs`) | a `file_type` or field-name change that alters an input role the SSN tracing follows |
 
-Run them with `cargo test -p domainator-gui`. Where selected files land is tested by
+Run them with `cargo test -p domainatoredux-gui`. Where selected files land is tested by
 `src/lib/toolInputs.test.ts`, and the column tokens by `src/lib/columns.test.ts`
 (`npm test`).

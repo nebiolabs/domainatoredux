@@ -1,4 +1,4 @@
-//! Worker-mode tests against the real `domainator-gui` binary (see `src/worker.rs`).
+//! Worker-mode tests against the real `domainatoredux-gui` binary (see `src/worker.rs`).
 //!
 //! Tools-menu jobs run in a copy of the GUI executable started with
 //! `--domainatoredux-worker`. Nothing but these tests exercises that path end to end:
@@ -12,13 +12,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use domainator_gui::worker::{self, WORKER_FLAG};
+use domainatoredux_gui::worker::{self, WORKER_FLAG};
 
-const BIN: &str = env!("CARGO_BIN_EXE_domainator-gui");
+const BIN: &str = env!("CARGO_BIN_EXE_domainatoredux-gui");
 
 fn scratch(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!(
-        "domainator-gui-worker-{}-{name}",
+        "domainatoredux-gui-worker-{}-{name}",
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&d);

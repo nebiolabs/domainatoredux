@@ -337,7 +337,8 @@ mod tests {
     /// same `.didx` the in-process `registry::build_database_index` did.
     #[test]
     fn indexing_runs_format_db_and_writes_the_index() {
-        let dir = std::env::temp_dir().join(format!("domainator-gui-index-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("domainatoredux-gui-index-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db = dir.join("db.fasta");

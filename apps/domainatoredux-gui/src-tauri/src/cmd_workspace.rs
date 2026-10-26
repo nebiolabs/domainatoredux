@@ -374,8 +374,10 @@ mod tests {
     /// workspace is simply not remembered, never an error.
     #[test]
     fn enum_report_view_round_trips_through_the_sidecar() {
-        let root =
-            std::env::temp_dir().join(format!("domainator-gui-{}-enum-view", std::process::id()));
+        let root = std::env::temp_dir().join(format!(
+            "domainatoredux-gui-{}-enum-view",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join(DOT_DIR)).unwrap();
         let file = root.join("a.gb").to_string_lossy().into_owned();

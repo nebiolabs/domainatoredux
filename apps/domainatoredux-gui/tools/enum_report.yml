@@ -15,6 +15,7 @@ fields:
     label: "By"
   - name: columns
     label: "Columns"
+    help: "One row per output column, top to bottom. Each column's description is under its row."
     gui_default: [domains, architecture, length]
     # Columns and their arguments come from `domainatoredux describe --tool
     # enum_report`; this only relabels and seeds them (see README.md, "Column builder").

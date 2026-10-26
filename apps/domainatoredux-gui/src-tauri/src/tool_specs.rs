@@ -1,4 +1,4 @@
-//! The GUI's tool registry: one spec file per tool in `apps/domainator-gui/tools/`,
+//! The GUI's tool registry: one spec file per tool in `apps/domainatoredux-gui/tools/`,
 //! embedded at compile time by `build.rs` (which also refuses a file that does
 //! not parse). See `tools/README.md` for the format.
 //!
@@ -393,6 +393,12 @@ mod tests {
                         "{at}: an empty `help` hides the manifest's; delete the key instead"
                     );
                 }
+                // The manifest's help for `--columns` is the command line's catalog of
+                // every column, which the builder already shows a row at a time.
+                assert!(
+                    !(f.show && f.role == "columns" && f.help.is_none()),
+                    "{at}: a column builder needs its own `help`"
+                );
             }
         }
     }

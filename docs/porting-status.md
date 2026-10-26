@@ -48,7 +48,7 @@ translation table, `--closed` and `--mask`; it is in the GUI's Tools menu as "Ge
 
 ## Legend
 
-GUI column: how each tool is reachable in the Tauri app (`apps/domainator-gui/`).
+GUI column: how each tool is reachable in the Tauri app (`apps/domainatoredux-gui/`).
 **Tools menu** = a run dialog built from the tool's manifest entry (the label in quotes); **Viewer** = a
 file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 

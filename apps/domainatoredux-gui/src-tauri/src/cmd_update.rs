@@ -83,7 +83,7 @@ fn fetch_latest() -> Result<Option<domainator_core::app_support::version_check::
         // GitHub 403s a request with no User-Agent, so this line is load-bearing.
         .set(
             "User-Agent",
-            &format!("domainator-gui/{}", env!("CARGO_PKG_VERSION")),
+            &format!("domainatoredux-gui/{}", env!("CARGO_PKG_VERSION")),
         )
         .set("Accept", "application/vnd.github+json")
         .set("X-GitHub-Api-Version", "2022-11-28")

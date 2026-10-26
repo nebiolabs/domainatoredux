@@ -45,7 +45,8 @@ Parity: Python domainator 1.0.0rc1 @ `f18dc15`.
   cutoff; `--max_overlap` rejects only overlaps above the fraction; boolean domain
   expressions bind `~` before `&` before `|`, and a malformed one fails at startup;
   `--cpu 0` uses one thread per physical core; MGnify `FL=0` headers mark fragments.
-- **Renamed with the executable:** the app is **Domainatoredux**, its workspace
+- **Renamed with the executable:** the app is **Domainatoredux**, its executable and
+  release downloads are `domainatoredux-gui`, its workspace
   folder is `.domainatoredux/`, and the environment variables are `DOMAINATOREDUX_*`
   (`DOMAINATOREDUX_DIAMOND`, `_CDHIT`, `_USEARCH`, `_ORPHOS`). The app's identifier
   changed too, so its preferences and recent-workspace list start fresh.

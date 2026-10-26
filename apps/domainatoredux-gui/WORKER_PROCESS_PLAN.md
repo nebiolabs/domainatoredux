@@ -88,23 +88,23 @@ Alternatives considered and rejected:
   it) must take the same argument list instead of reading `std::env::args()`.
 - `src/main.rs` becomes `fn main() -> anyhow::Result<()> { domainator_cli::run(std::env::args_os()) }`.
 - Add a `[lib]` section to `crates/domainator-cli/Cargo.toml`, and make
-  `domainator-cli` a dependency of `apps/domainator-gui/src-tauri`.
+  `domainator-cli` a dependency of `apps/domainatoredux-gui/src-tauri`.
 - Gate: the full differential parity sweep and `cargo test --workspace` must still
   pass, with the CLI's behavior unchanged byte for byte. This step is mostly moving
   code.
 
 ### 3.2 Worker mode in the GUI binary
 
-`apps/domainator-gui/src-tauri/src/main.rs`:
+`apps/domainatoredux-gui/src-tauri/src/main.rs`:
 
 ```rust
 fn main() {
     // Must stay the first thing main does: nothing before it may touch Tauri,
     // GTK, WebView2 or the window-state plugin, or every worker opens a window.
-    if let Some(code) = domainator_gui::worker::maybe_run_worker() {
+    if let Some(code) = domainatoredux_gui::worker::maybe_run_worker() {
         std::process::exit(code);
     }
-    domainator_gui::run()
+    domainatoredux_gui::run()
 }
 ```
 
@@ -275,7 +275,7 @@ mention it in the changelog.
 This is GUI-only code with no Python counterpart, so `cargo test` is the only
 safety net (see `CLAUDE.md`, "Verification model"). Put tests that need the real
 binary under `src-tauri/tests/`, where Cargo provides the path as
-`env!("CARGO_BIN_EXE_domainator-gui")`.
+`env!("CARGO_BIN_EXE_domainatoredux-gui")`.
 
 | Test | Guards against |
 | --- | --- |
@@ -296,7 +296,7 @@ Existing tests to adapt:
 
 **Windows smoke list** (add to `README.md`'s list):
 - Cancel a diamond `seq-dist` run. In Task Manager, check that neither
-  `domainator-gui.exe` (the worker) nor `diamond.exe` is left behind.
+  `domainatoredux-gui.exe` (the worker) nor `diamond.exe` is left behind.
 - Kill the GUI from Task Manager in the middle of a job. Check that the worker dies.
 - Confirm no console window appears when a job starts.
 

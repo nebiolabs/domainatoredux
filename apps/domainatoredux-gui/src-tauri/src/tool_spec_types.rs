@@ -1,4 +1,4 @@
-//! The shape of a GUI tool spec file (`apps/domainator-gui/tools/<id>.yml`).
+//! The shape of a GUI tool spec file (`apps/domainatoredux-gui/tools/<id>.yml`).
 //!
 //! Shared with `build.rs` through `#[path]`, which parses every spec file before
 //! embedding it, so a misspelled key or a malformed file fails the build rather

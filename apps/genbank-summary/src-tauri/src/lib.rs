@@ -66,7 +66,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    /// Same guard as domainator-gui's: with no `version` key the bundler reads
+    /// Same guard as domainatoredux-gui's: with no `version` key the bundler reads
     /// `workspace.package.version`, so the installer cannot disagree with the
     /// workspace release it was built from.
     #[test]

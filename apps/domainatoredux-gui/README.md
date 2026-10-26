@@ -13,7 +13,7 @@ every viewer, running tools, the panels, and current limitations) is
 ## Run
 
 ```bash
-cd apps/domainator-gui
+cd apps/domainatoredux-gui
 npm install          # first time
 npm run tauri dev    # launches the desktop window (needs a display)
 ```
@@ -23,7 +23,7 @@ Frontend-only checks (no display needed):
 ```bash
 npm run build        # vite production build
 npm run check        # svelte-check (type checking)
-cargo build -p domainator-gui   # backend
+cargo build -p domainatoredux-gui   # backend
 ```
 
 Then: **Open workspace…** → pick a folder of data files → click a folder in the
@@ -56,7 +56,7 @@ Linux) and use Windows only to *validate the GUI*:
   relaunch to confirm the workspace and window geometry come back. After touching
   job running (`worker.rs`, `cmd_tools.rs`):
   - Cancel a diamond `seq_dist` run. In Task Manager, check that neither
-    `domainator-gui.exe` (the worker) nor `diamond.exe` is left behind.
+    `domainatoredux-gui.exe` (the worker) nor `diamond.exe` is left behind.
   - Kill the GUI from Task Manager in the middle of a job; check that the worker
     dies.
   - Confirm no console window appears when a job starts.

@@ -4,7 +4,7 @@
   // columns come from the tool's manifest; see `columns.ts`.
   import { listHas, newRow, retype, toggleListValue, type ColumnRow, type ColumnType } from "./columns";
 
-  let { types, rows = $bindable([]) }: { types: ColumnType[]; rows: ColumnRow[] } = $props();
+  let { types, rows = $bindable() }: { types: ColumnType[]; rows: ColumnRow[] } = $props();
 
   // Distinct ids for the text boxes' suggestion lists, per builder instance.
   const uid = Math.random().toString(36).slice(2, 8);

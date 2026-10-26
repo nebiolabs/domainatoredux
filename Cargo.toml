@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "apps/genbank-summary/src-tauri", "apps/domainator-gui/src-tauri"]
+members = ["crates/*", "apps/genbank-summary/src-tauri", "apps/domainatoredux-gui/src-tauri"]
 exclude = ["wasm_apps/genbank-summary/wasm"]
 
 [workspace.package]

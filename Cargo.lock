@@ -1010,7 +1010,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "domainator-gui"
+name = "domainatoredux-gui"
 version = "1.0.0"
 dependencies = [
  "anyhow",

@@ -758,7 +758,7 @@ mod tests {
     }
 
     /// Live check against the publishers, run by hand:
-    /// `cargo test -p domainator-gui -- --ignored refs_are_live`.
+    /// `cargo test -p domainatoredux-gui -- --ignored refs_are_live`.
     ///
     /// Ignored by default because it needs the network, and CI must not go red
     /// because an FTP mirror is slow. But it is the only thing that can catch the

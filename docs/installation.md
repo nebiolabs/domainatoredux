@@ -62,7 +62,7 @@ You additionally need [Node.js](https://nodejs.org/) 20.19+ or 22.12+ (vite 8's 
 [Tauri v2 prerequisites](https://tauri.app/start/prerequisites/) for your platform.
 
 ```bash
-cd apps/domainator-gui
+cd apps/domainatoredux-gui
 npm install
 npm run tauri dev     # run it
 npm run tauri build   # produce an installer for your platform

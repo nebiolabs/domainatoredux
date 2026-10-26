@@ -95,7 +95,7 @@ jobs:
       # is gitignored, so both frontends must be built before cargo sees the crates.
       - name: Build the frontends
         run: |
-          for app in apps/domainator-gui apps/genbank-summary; do
+          for app in apps/domainatoredux-gui apps/genbank-summary; do
             (cd "$app" && npm ci && npm run build)
           done
 
@@ -108,7 +108,7 @@ jobs:
         run: cargo doc --no-deps --workspace
 
       - name: Test the apps
-        run: cargo test -p domainator-gui -p domainator-genbank-summary
+        run: cargo test -p domainatoredux-gui -p domainator-genbank-summary
 
   # Type checks and the frontend's unit tests; no Rust toolchain needed. genbank-summary has no svelte-check,
   # but its `build` script runs `tsc`, which is the same gate.
@@ -122,14 +122,14 @@ jobs:
         with:
           node-version: 24
 
-      - name: svelte-check (domainator-gui)
-        working-directory: apps/domainator-gui
+      - name: svelte-check (domainatoredux-gui)
+        working-directory: apps/domainatoredux-gui
         run: |
           npm ci
           npx svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
 
-      - name: vitest (domainator-gui)
-        working-directory: apps/domainator-gui
+      - name: vitest (domainatoredux-gui)
+        working-directory: apps/domainatoredux-gui
         run: npm test
 
       - name: tsc (genbank-summary, desktop and wasm)
@@ -142,7 +142,7 @@ jobs:
       # never reach a user and often need a major bump to clear.
       - name: npm audit (runtime dependencies)
         run: |
-          for app in apps/domainator-gui apps/genbank-summary wasm_apps/genbank-summary; do
+          for app in apps/domainatoredux-gui apps/genbank-summary wasm_apps/genbank-summary; do
             (cd "$app" && npm audit --omit=dev --audit-level=high)
           done
 

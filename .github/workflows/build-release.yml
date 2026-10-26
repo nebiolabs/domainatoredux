@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       gui:
-        description: domainator-gui installers
+        description: domainatoredux-gui installers
         type: boolean
         default: true
       cli:
@@ -89,13 +89,13 @@ jobs:
           gui=""
           if [ "$BUILD_GUI" = true ]; then
             gui=$(pick <<'EOF'
-          {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "target": "aarch64-apple-darwin", "bundle_args": "--bundles dmg", "artifact": "domainator-gui-macos-arm64", "artifact_globs": "target/aarch64-apple-darwin/release/bundle/dmg/*.dmg"}
-          {"family": "windows", "platform": "windows-msvc-x64", "os": "windows-latest", "target": "x86_64-pc-windows-msvc", "bundle_args": "--bundles nsis", "artifact": "domainator-gui-windows-msvc-x64-setup", "artifact_globs": "target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe"}
-          {"family": "linux", "platform": "linux-x64", "os": "ubuntu-24.04", "target": "x86_64-unknown-linux-gnu", "bundle_args": "--bundles deb,appimage", "artifact": "domainator-gui-linux-x64", "artifact_globs": "target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb\ntarget/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage"}
+          {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "target": "aarch64-apple-darwin", "bundle_args": "--bundles dmg", "artifact": "domainatoredux-gui-macos-arm64", "artifact_globs": "target/aarch64-apple-darwin/release/bundle/dmg/*.dmg"}
+          {"family": "windows", "platform": "windows-msvc-x64", "os": "windows-latest", "target": "x86_64-pc-windows-msvc", "bundle_args": "--bundles nsis", "artifact": "domainatoredux-gui-windows-msvc-x64-setup", "artifact_globs": "target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe"}
+          {"family": "linux", "platform": "linux-x64", "os": "ubuntu-24.04", "target": "x86_64-unknown-linux-gnu", "bundle_args": "--bundles deb,appimage", "artifact": "domainatoredux-gui-linux-x64", "artifact_globs": "target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb\ntarget/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage"}
           # Linux -> Windows GNU cross-build (experimental, unsigned; verified to build +
           # bundle an NSIS installer from Ubuntu). Cheaper than a Windows runner, but ship
           # signed MSVC builds. Uncomment to enable.
-          # {"family": "windows", "platform": "windows-gnu-x64", "os": "ubuntu-24.04", "target": "x86_64-pc-windows-gnu", "bundle_args": "--bundles nsis", "artifact": "domainator-gui-windows-gnu-x64", "artifact_globs": "target/x86_64-pc-windows-gnu/release/domainator-gui.exe\ntarget/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe"}
+          # {"family": "windows", "platform": "windows-gnu-x64", "os": "ubuntu-24.04", "target": "x86_64-pc-windows-gnu", "bundle_args": "--bundles nsis", "artifact": "domainatoredux-gui-windows-gnu-x64", "artifact_globs": "target/x86_64-pc-windows-gnu/release/domainatoredux-gui.exe\ntarget/x86_64-pc-windows-gnu/release/bundle/nsis/*.exe"}
           EOF
             )
           fi
@@ -120,7 +120,7 @@ jobs:
           echo "cli=$cli" >> "$GITHUB_OUTPUT"
 
   gui:
-    name: domainator-gui (${{ matrix.platform }})
+    name: domainatoredux-gui (${{ matrix.platform }})
     needs: [version, setup]
     if: needs.setup.outputs.gui != ''
     runs-on: ${{ matrix.os }}
@@ -136,7 +136,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: apps/domainator-gui/package-lock.json
+          cache-dependency-path: apps/domainatoredux-gui/package-lock.json
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -184,14 +184,14 @@ jobs:
         with:
           workspaces: |
             . -> target
-          key: domainator-gui-${{ matrix.target }}
+          key: domainatoredux-gui-${{ matrix.target }}
 
       - name: Install frontend dependencies
-        working-directory: apps/domainator-gui
+        working-directory: apps/domainatoredux-gui
         run: npm ci
 
       - name: Build app
-        working-directory: apps/domainator-gui
+        working-directory: apps/domainatoredux-gui
         run: npm run tauri build -- --target ${{ matrix.target }} ${{ matrix.bundle_args }}
 
       - name: Upload app artifacts
@@ -205,9 +205,9 @@ jobs:
         if: matrix.target == 'x86_64-pc-windows-msvc'
         uses: actions/upload-artifact@v7
         with:
-          name: domainator-gui-windows-msvc-x64-portable
+          name: domainatoredux-gui-windows-msvc-x64-portable
           if-no-files-found: error
-          path: target/x86_64-pc-windows-msvc/release/domainator-gui.exe
+          path: target/x86_64-pc-windows-msvc/release/domainatoredux-gui.exe
 
   # The GUI installers carry no command-line tool, but the README sends users to the
   # Releases page for both. These are the pure-Rust crates, so this job needs none of

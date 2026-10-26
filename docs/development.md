@@ -36,8 +36,8 @@ typos-cli`), plus the frontend type checks:
 cargo deny check      # deny.toml: license allowlist, RustSec advisories, git sources
 typos                 # _typos.toml: spelling, including the American-English rule
 mdbook build          # the docs book; a SUMMARY.md entry with no file fails
-(cd apps/domainator-gui && npm run check)                  # svelte-check
-(cd apps/domainator-gui && npm test)                       # vitest (tool-dialog file placement)
+(cd apps/domainatoredux-gui && npm run check)                  # svelte-check
+(cd apps/domainatoredux-gui && npm test)                       # vitest (tool-dialog file placement)
 (cd apps/genbank-summary && npx tsc --noEmit)
 (cd wasm_apps/genbank-summary && npx tsc --noEmit)
 ```
@@ -92,20 +92,20 @@ in particular:
   `domainatoredux` command in the fenced blocks of `docs/` and `README.md`, so an example
   using a renamed option or a dropped choice fails here rather than for a reader.
 - **`every_offered_tool_is_dispatched`** and
-  **`every_tools_dialog_params_parse_as_its_cli_config`** (`domainator-gui`) — GUI jobs
+  **`every_tools_dialog_params_parse_as_its_cli_config`** (`domainatoredux-gui`) — GUI jobs
   run `<tool> --config <params>` through the CLI in a worker process, so a menu entry
   the CLI does not know, or a dialog whose params the CLI rejects, fails only when the
   user presses Run. The tests feed each tool's dialog params to `domainator_cli::run`
   with `--print_config`.
-- **`derived_provenance_roles_match_the_golden_table`** (`domainator-gui`) — a job's
+- **`derived_provenance_roles_match_the_golden_table`** (`domainatoredux-gui`) — a job's
   provenance inputs are derived from its tool spec, and `trace_source_sequences` follows
   their roles. A spec edit that changes a role breaks SSN node → sequence tracing without
   any error.
-- **`tests/worker.rs`** (`domainator-gui`) — runs the real binary in worker mode: it must
+- **`tests/worker.rs`** (`domainatoredux-gui`) — runs the real binary in worker mode: it must
   never start Tauri, Cancel must kill the whole process tree, a worker must exit when the
   GUI's end of its stdin closes, and a worker run must produce the CLI's output.
 - **`the_managed_diamond_is_new_enough_for_deduplicate`** and
-  **`managed_tools_match_the_core_locator`** (`domainator-gui`) — the External tools panel
+  **`managed_tools_match_the_core_locator`** (`domainatoredux-gui`) — the External tools panel
   must not install a binary older than `MIN_DIAMOND_VERSION`, and every `ToolSpec`'s
   `bin_name`/`env_var` must equal the core's constants, since a rename on either side
   installs the binary where nothing looks for it.
@@ -253,32 +253,32 @@ than a silently generated blank page.
 ## Working on the desktop app
 
 ```bash
-cd apps/domainator-gui
+cd apps/domainatoredux-gui
 npm install
 npm run tauri dev    # needs a display
 npm run build        # frontend only, no display needed
 npm run check        # svelte-check
 npm test             # vitest
-cargo build -p domainator-gui
+cargo build -p domainatoredux-gui
 ```
 
-`apps/domainator-gui/README.md` has the architecture, the persistence model, and the
+`apps/domainatoredux-gui/README.md` has the architecture, the persistence model, and the
 WSL2-versus-Windows validation guidance — Tauri uses **WebView2 on Windows** and
 **WebKitGTK on Linux**, and Windows is a hard-requirement target, so validate there before
 shipping.
 
 The tool dialogs are described by one spec file per tool,
-`apps/domainator-gui/tools/<id>.yml`, embedded at compile time, layered over the tool's
+`apps/domainatoredux-gui/tools/<id>.yml`, embedded at compile time, layered over the tool's
 manifest entry (`domainatoredux describe`). The spec gives the fields' labels, their
 order, and which files each input offers, and a GUI default can override the CLI's for
 the dialog alone; types, choices, defaults, help and roles come from the manifest. The
-format is in `apps/domainator-gui/tools/README.md`. The tests in `tool_specs.rs` check each
+format is in `apps/domainatoredux-gui/tools/README.md`. The tests in `tool_specs.rs` check each
 spec against the manifest: every option is listed, and every GUI default fits.
 
 Three internal design notes live alongside it:
-`apps/domainator-gui/PERSISTENT_CACHE_PLAN.md` (a deferred on-disk report cache),
-`apps/domainator-gui/EMBEDDED_DB_NOTES.md` (whether `.domainatoredux/` should use an embedded
-database; conclusion: not yet) and `apps/domainator-gui/LARGE_FILE_EDITING_PLAN.md` (how
+`apps/domainatoredux-gui/PERSISTENT_CACHE_PLAN.md` (a deferred on-disk report cache),
+`apps/domainatoredux-gui/EMBEDDED_DB_NOTES.md` (whether `.domainatoredux/` should use an embedded
+database; conclusion: not yet) and `apps/domainatoredux-gui/LARGE_FILE_EDITING_PLAN.md` (how
 the Text / Table editors would lift their 64 MB cap — a windowed document model, staged so
 the read-only phase ships on its own).
 

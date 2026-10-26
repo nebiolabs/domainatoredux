@@ -280,7 +280,11 @@
           {#if field.role === "columns"}
             <div class="field builder-field">
               <span class="flabel">{field.label}</span>
-              <ColumnBuilder types={columnTypes(field)} bind:rows={values[field.name]} />
+              <!-- The first render comes before the seeding effect: `bind:` to an
+                   unset value throws, and the dead dialog's backdrop eats every click. -->
+              {#if Array.isArray(values[field.name])}
+                <ColumnBuilder types={columnTypes(field)} bind:rows={values[field.name]} />
+              {/if}
               {#if field.help}<span class="hint">{field.help}</span>{/if}
             </div>
           {:else}

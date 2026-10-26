@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A from-scratch **pure-Rust** rewrite of `domainator`, a Python bioinformatics suite for protein-domain / genome-neighborhood analysis and building sequence similarity networks (SSNs). Goals (see `README.md`, now a user-facing front page): cross-platform (incl. Windows), a single `domainatoredux <tool> [opts]` executable, a Tauri GUI (**built** — `apps/domainator-gui/`), and easier agentic integration.
+A from-scratch **pure-Rust** rewrite of `domainator`, a Python bioinformatics suite for protein-domain / genome-neighborhood analysis and building sequence similarity networks (SSNs). Goals (see `README.md`, now a user-facing front page): cross-platform (incl. Windows), a single `domainatoredux <tool> [opts]` executable, a Tauri GUI (**built** — `apps/domainatoredux-gui/`), and easier agentic integration.
 
 **Hard requirement:** on-disk compatibility with files produced by the original Python tool — GenBank, HDF5 matrices, and formatted databases (shards / BGZF / `.didx` indexes). Compatibility is **semantic** (re-readable by the original, equal under the Python suite's comparators), *not* byte-identical — see the `preserve_order` note under Architecture for why JSON is compared parsed.
 
@@ -132,7 +132,7 @@ keep in particular:
   outputs end `_out`, numbers reject nan/inf, `--print_config` round-trips). Both build
   the CLI's `Command` on a 256 MB-stack thread: the derive overflows a test thread in
   debug builds.
-- **`every_offered_tool_is_dispatched`** (`domainator-gui`) — the GUI tool registry and the
+- **`every_offered_tool_is_dispatched`** (`domainatoredux-gui`) — the GUI tool registry and the
   CLI's subcommands are two hand-maintained lists. A Tools-menu job runs
   `<tool> --config <dialog params>` through `domainator_cli::run` in a **worker process**
   (a copy of the GUI executable started with `--domainatoredux-worker`,
@@ -146,7 +146,7 @@ keep in particular:
   must never start Tauri, and Cancel must kill the whole process tree.
   `ToolField::role` must be one of `ROLES`, because a role `ToolDialog.svelte` cannot
   render makes the field silently disappear from the form. The registry is the tool
-  spec files, `apps/domainator-gui/tools/<id>.yml`, one per tool and embedded by
+  spec files, `apps/domainatoredux-gui/tools/<id>.yml`, one per tool and embedded by
   `build.rs`, which fails the build on a malformed file. A spec is GUI policy over the
   tool's manifest entry (`domainator_config::tool_manifest`, resolved in
   `tool_specs::specs`): it lists **every** manifest parameter but `-v`/`-q`, with labels,
@@ -161,7 +161,7 @@ keep in particular:
   parses `--columns` with, and send `name:arg` tokens (`columns.ts`, tested by
   `columns.test.ts`).
 - **`storage_format_matches_what_the_readers_require`** and
-  **`a_gzipped_fasta_is_installed_as_an_indexed_bgzf_database`** (`domainator-gui`,
+  **`a_gzipped_fasta_is_installed_as_an_indexed_bgzf_database`** (`domainatoredux-gui`,
   `reference_dbs.rs`) — the managed UniProt/Pfam downloads have no upstream counterpart,
   and every way of getting their storage wrong still puts a plausible file on disk: a
   FASTA kept as plain gzip is unseekable (so `domain_search` cannot use the `.didx`
@@ -171,7 +171,7 @@ keep in particular:
   `.didx` out, one record read back at each recorded offset. `refs_are_live` (`#[ignore]`d, hits UniProt and EBI) is the only
   thing that notices a publisher moving a path or changing a release file's shape.
 - **`the_managed_diamond_is_new_enough_for_deduplicate`** and
-  **`managed_tools_match_the_core_locator`** (`domainator-gui`) — the External tools panel
+  **`managed_tools_match_the_core_locator`** (`domainatoredux-gui`) — the External tools panel
   must not install a binary older than `MIN_DIAMOND_VERSION`, or the app hands the user a
   diamond that fails and then tells them to upgrade it; and every `ToolSpec`'s
   `bin_name`/`env_var` must equal the core's `*_BIN_NAME`/`*_ENV_VAR`, since the two lists
@@ -239,7 +239,7 @@ WASM app.
 - **`crates/domainator-core/`** — the data model, all I/O, and all tool logic as library functions (GUI-reusable; mirrors the Python convention that every tool is also a library function). Also holds `app_support/` — the GUI-facing seam (workspace file classification, provenance/job DAG, contig view + edit, HMM logo, summary stats).
 - **`crates/domainator-config/`** — the interface: the 1.0 layer (`args/`, `registry.rs`, `manifest.rs`, `config_file.rs`, `columns.rs`, `tool_manifest`).
 - **`crates/domainator-cli/`** — thin clap front-end; arg parsing + I/O wiring only, calls into core. Binary name `domainatoredux` (upstream's is `domainator`; the subcommand names are identical).
-- **`apps/domainator-gui/`** — the Tauri v2 + Svelte 5 desktop app: manifest-driven tool dialogs, a workspace/job model, and a dozen viewers (contig, SSN, matrix report, enum report, HMM logo, summary dashboard, …). Its Rust side is a thin `#[tauri::command]` layer over `app_support`.
+- **`apps/domainatoredux-gui/`** — the Tauri v2 + Svelte 5 desktop app: manifest-driven tool dialogs, a workspace/job model, and a dozen viewers (contig, SSN, matrix report, enum report, HMM logo, summary dashboard, …). Its Rust side is a thin `#[tauri::command]` layer over `app_support`.
 - **`apps/genbank-summary/`** and **`wasm_apps/genbank-summary/`** — a small standalone Tauri app and its browser/WASM twin.
 
 `serde_json` is built with **`preserve_order`** workspace-wide, so JSON object key order

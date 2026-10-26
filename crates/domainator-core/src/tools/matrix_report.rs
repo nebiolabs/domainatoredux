@@ -260,7 +260,7 @@ fn merge_event_json(e: &MergeEvent) -> Value {
 /// ranked merge events, and a short list of suggested cutoffs.
 ///
 /// This is deliberately **not** parity-locked — it is shaped for the Matrix Report
-/// viewer tab (`apps/domainator-gui`), which draws the per-threshold curves that
+/// viewer tab (`apps/domainatoredux-gui`), which draws the per-threshold curves that
 /// upstream's `--json` does not carry. The agent-facing contract is [`to_json`],
 /// which matches Python's `SummaryJSONWriter` exactly; keep the two separate rather
 /// than trying to serve both from one shape.

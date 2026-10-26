@@ -317,7 +317,7 @@ mod tests {
 
     fn scratch(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!(
-            "domainator-gui-jobio-{}-{name}",
+            "domainatoredux-gui-jobio-{}-{name}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&d);

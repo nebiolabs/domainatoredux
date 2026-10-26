@@ -4,7 +4,7 @@
 //! [`run`] takes a whole command line and does exactly what the `domainator`
 //! binary does with it (`src/main.rs` is nothing else). The GUI calls it too: its
 //! Tools-menu jobs run in a copy of the GUI executable started in a hidden worker
-//! mode (`apps/domainator-gui/src-tauri/src/worker.rs`), which hands the worker's
+//! mode (`apps/domainatoredux-gui/src-tauri/src/worker.rs`), which hands the worker's
 //! arguments straight to [`run`], so a GUI run and a CLI run take the same code.
 
 use std::io::Write;
