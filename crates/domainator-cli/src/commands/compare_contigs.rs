@@ -1,10 +1,13 @@
 use anyhow::{anyhow, Result};
 use domainator_config::args::CompareContigsArgs;
-use domainator_core::tools::compare_contigs::{compare_contigs, CompareContigsOptions};
+use domainator_core::tools::compare_contigs::{
+    check_sort_feasible, compare_contigs, hierarchical_order, sorted_records, unique_records,
+    CompareContigsOptions, LeafOrdering,
+};
 use domainator_core::tools::select_common::parse_name_list;
 
 use super::{cpu_threads, load_seq_inputs};
-use crate::output::{check_hdf_out, write_matrix_outputs};
+use crate::output::{check_hdf_out, write_matrix_outputs, write_seq_outputs};
 
 pub fn run(args: &CompareContigsArgs) -> Result<()> {
     let max_bytes = crate::max_output_gb_to_bytes(args.max_output_gb.0)?;
@@ -30,12 +33,26 @@ pub fn run(args: &CompareContigsArgs) -> Result<()> {
     if let Some(contigs) = &contigs {
         records.retain(|r| contigs.contains(&r.id));
     }
-    let matrix = compare_contigs(records, &opts).map_err(|e| anyhow!(e))?;
+    let records = unique_records(records);
+    let leaf_ordering: LeafOrdering = args.leaf_ordering.parse().map_err(|e: String| anyhow!(e))?;
+    if args.genbank_out.is_some() {
+        // Fail before scoring if the GenBank output can't be sorted.
+        check_sort_feasible(records.len(), leaf_ordering, !args.skip_sort_memory_check)
+            .map_err(|e| anyhow!(e))?;
+    }
+    let matrix = compare_contigs(&records, &opts).map_err(|e| anyhow!(e))?;
     write_matrix_outputs(
         &matrix,
         args.hdf_out.as_deref(),
         args.dense_text_out.as_deref(),
         max_bytes,
         &["--max_hits_per_query", "--mst", "--knn"],
-    )
+    )?;
+    if let Some(path) = &args.genbank_out {
+        let linkage = args.linkage.parse().map_err(|e: String| anyhow!(e))?;
+        let order = hierarchical_order(&matrix, linkage, leaf_ordering).map_err(|e| anyhow!(e))?;
+        let sorted = sorted_records(&records, &order, args.name_by_order);
+        write_seq_outputs(&sorted, Some(path), None)?;
+    }
+    Ok(())
 }

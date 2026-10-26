@@ -93,7 +93,7 @@ Use this to triage which module a changed upstream file lands in:
 | `ssn_edges.py`, `mst_knn` helpers | `.../matrix/ssn.rs`, `.../matrix/mst_knn.rs` |
 | `transform_matrix.py`, `data_matrix.py` (HDF5/TSV) | `.../tools/transform_matrix.rs`, `.../matrix/{hdf5_io,text,transform}.rs` |
 | `seq_dist.py` | `.../tools/seq_dist.rs` |
-| `compare_contigs.py` | `.../tools/compare_contigs.rs` |
+| `compare_contigs.py` | `.../tools/compare_contigs.rs`; its sort's scipy calls (`linkage`, `leaves_list`, `optimal_leaf_ordering`) are `.../matrix/hierarchy.rs` |
 | `domainate.py` | `.../tools/domainate.rs`, `.../search/hmmer.rs` |
 | `domainate.py` gene calling (`prodigal_CDS_annotate`, `_prodigal_linear_location`, `_prodigal_origin_genes`) | `.../tools/gene_call.rs` (drives the external Orphos binary; also the port-only `gene_call` tool) |
 | `domain_search.py`, `select_by_cds.py` | `.../tools/{domain_search,select_by_cds,neighborhood}.rs` |
@@ -163,17 +163,13 @@ Tracked so a later sync does not mistake them for oversights:
 - **HTML output** for `enum_report`, `hmmer_report`, `matrix_report` and `summary_report`.
   `--json` is offered instead, which is upstream's own recommendation for agents.
   (`deferred:html` in `known_gaps.tsv`.)
-- **`compare_contigs --genbank_out`**, the contigs sorted by hierarchical clustering
-  (`--linkage`, `--leaf_ordering`, `--name_by_order`, `--skip_sort_memory_check`), which
-  the sync's phase 6 ports. Until then those options are accepted at their defaults in
-  config files. (`deferred:ward-report`.)
 - **`--progress`** draws no progress bar: `seq_dist` and `compare_contigs` accept and
   ignore it.
 - **Infernal `.cm` references** in `domainate`/`domain_search`. (`deferred:infernal`.)
-- **`seq_dist`'s diamond diagnostics**: the advisory before a large all-vs-all diamond
-  search (`build_diamond_preflight_warning`) and the explained failures (out of disk or
-  memory, a rejected `--diamond_args` option, unreadable input:
-  `build_diamond_failure_message`). A failed run reports diamond's own stderr instead.
+- **`seq_dist`'s diamond diagnostics**: the explained failures (out of disk or memory, a
+  rejected `--diamond_args` option, unreadable input: `build_diamond_failure_message`); a
+  failed run reports diamond's own stderr instead. The advisory before a large all-vs-all
+  search is ported without its free-disk-space note, which needs a disk-usage call.
 - **`--partial` on `find_features` and `domainator_db_download`** (`bdc74bb`). Neither tool
   is ported. The GUI's managed UniProt download could take the same filter later.
 
@@ -181,15 +177,13 @@ Tracked so a later sync does not mistake them for oversights:
 
 `scripts/parity/known_gaps.tsv` holds every upstream invocation that does not reproduce,
 machine-checked on each sweep so none can be quietly forgotten. One open `gap:` row remains
-(five invocations of it); everything else is a deliberate deferral, or `pending:` while the
-1.0 migration runs:
+(five invocations of it); everything else is a deliberate deferral:
 
 | class | rows | |
 |---|---|---|
 | `deferred:html` | 9 | `--html` for `enum_report`, `matrix_report`, `summary_report`; `--json` is offered instead |
 | `gap:feature-order` | 5 | `domain_search` emits tied-coordinate features in the other order, below |
-| `deferred:ward-report` | 8 | `compare_contigs --genbank_out`, the sorted GenBank output |
-| `deferred:infernal` | 2 | `.cm` references |
+| `deferred:infernal` | 3 | `.cm` references |
 
 A `tolerated` row is one where the semantic comparator passed but the **bytes differ**, so
 the gap list structurally cannot hold it. Diffing those bytes is the single most productive

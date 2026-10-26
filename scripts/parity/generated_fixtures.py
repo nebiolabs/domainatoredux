@@ -75,6 +75,22 @@ def generate(data_dir, test_dir, out_dir):
     _single_sequence_hmm(str(first.seq), str(out / "sod.hmm"), b"sod")
 
     _rotate_contigs_fixtures(data, out)
+    _compare_contigs_fixtures(out)
+
+
+def _compare_contigs_fixtures(out):
+    """The inputs test_compare_contigs.py builds with its own record helper."""
+    from domainator.seqio import write_genbank
+    from test_compare_contigs import _make_compare_contig_record as contig
+
+    # test_compare_contigs_name_by_order_reorders_clustered_records
+    with open(out / "compare_reorder.gb", "w") as handle:
+        write_genbank([contig("different", ["C"]), contig("similar_1", ["A", "B"]),
+                       contig("similar_2", ["A", "B"])], handle)
+    # test_compare_contigs_sorts_with_max_hits_per_query
+    with open(out / "compare_max_hits.gb", "w") as handle:
+        write_genbank([contig(f"rec{i}", doms) for i, doms in enumerate(
+            [["A", "B"], ["C", "D"], ["A", "B", "E"], ["C", "D", "F"], ["A", "E"], ["C", "F"]])], handle)
 
 
 def _rotate_contigs_fixtures(data, out):

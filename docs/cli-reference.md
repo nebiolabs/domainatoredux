@@ -479,11 +479,22 @@ neighborhoods rather than single proteins. Scores by Jaccard index (`--ji`) and 
 index (`--ai`), weighted; at least one must be non-zero and neither negative. Restrict to
 particular `--databases`, or to some contigs with `--contigs`/`--contigs_file`; `-i -`
 reads standard input. The same `-o/--hdf_out`/`--dense_text_out` outputs and
-`--threshold`/`--max_hits_per_query`/`--mst`/`--knn` pruning as `seq_dist`. Upstream's
-`--genbank_out` (the contigs sorted by similarity) is not ported yet.
+`--threshold`/`--max_hits_per_query`/`--mst`/`--knn` pruning as `seq_dist`.
+
+`--genbank_out` writes the contigs themselves, ordered so that similar neighborhoods sit
+together: hierarchical clustering (`--linkage`: `average` by default, or `ward`,
+`complete`, `single`, `weighted`) on the distance `1 - score / max(score)`, a pair with no
+score at distance 1, then `--leaf_ordering`: `greedy` (the default) flips subtrees so the
+most similar contigs meet at each junction, `optimal` is scipy's optimal leaf ordering
+(very slow beyond a few thousand contigs), `none` keeps the plain dendrogram order. The
+order is the one upstream's scipy-based sort gives, tie for tie. `--name_by_order`
+prefixes each id with its position. The sort holds every pairwise distance in memory, so
+a run that would need more than is available fails before scoring
+(`--skip_sort_memory_check` tries anyway).
 
 ```bash
 domainatoredux compare_contigs -i neighborhoods.gb -o similarity.hdf5 --ji 0.5 --ai 0.5
+domainatoredux compare_contigs -i neighborhoods.gb --genbank_out sorted.gb --name_by_order
 ```
 
 ### `transform_matrix`

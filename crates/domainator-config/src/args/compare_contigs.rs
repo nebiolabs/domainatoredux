@@ -11,6 +11,31 @@ pub struct CompareContigsArgs {
     /// Genbank filenames. Use - to read standard input.
     #[arg(short, long, required = true, num_args = 1..)]
     pub input: Vec<String>,
+    /// Write the contigs to this GenBank file, sorted hierarchically by similarity.
+    /// Use - for standard output.
+    #[arg(long)]
+    pub genbank_out: Option<String>,
+    /// Will rename contigs in the genbank file such that they have a prefix that can be
+    /// sorted to restore the sorted order.
+    #[arg(long)]
+    pub name_by_order: bool,
+    /// Hierarchical clustering linkage method used to sort contigs for the genbank
+    /// output (-o). Distances are 1 - score/max(score); pairs with no score have
+    /// distance 1.
+    #[arg(long, default_value = "average",
+          value_parser = ["average", "ward", "complete", "single", "weighted"])]
+    pub linkage: String,
+    /// How to order the leaves of the clustering tree for the genbank output (-o).
+    /// greedy: flip subtrees so that the most similar contigs meet at each junction;
+    /// fast and usually about as good as optimal. optimal: scipy's optimal leaf
+    /// ordering; very slow (minutes to hours) beyond a few thousand contigs. none: plain
+    /// dendrogram order.
+    #[arg(long, default_value = "greedy", value_parser = ["greedy", "optimal", "none"])]
+    pub leaf_ordering: String,
+    /// Don't fail early when sorting the contigs for the genbank output (-o) is
+    /// estimated to need more memory than is available.
+    #[arg(long)]
+    pub skip_sort_memory_check: bool,
     /// Only annotate contigs with ids in this list. Additive with --contigs_file.
     /// default: all contigs.
     #[arg(long, num_args = 1..)]

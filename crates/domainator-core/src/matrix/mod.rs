@@ -6,6 +6,7 @@
 pub mod cytoscape;
 pub mod estimate;
 pub mod hdf5_io;
+pub mod hierarchy;
 pub mod mst_knn;
 pub mod ssn;
 pub mod text;

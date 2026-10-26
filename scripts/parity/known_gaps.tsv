@@ -15,14 +15,6 @@
 #   harness    an artifact of how the invocation is replayed, not a divergence
 #
 # Columns: <python module> <test_fn#n> <outcome> <class> <note>
-compare_contigs	test_compare_contigs_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_contigs_2#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_contigs_database_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_contigs_sort_memory_check_fails_early#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_contigs_sort_memory_check_fails_early#2	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_contigs_warns_for_slow_optimal_leaf_ordering#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_contigs_warns_for_slow_optimal_leaf_ordering#1	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
-compare_contigs	test_compare_no_annotations_1#0	rust-failed	deferred:ward-report	error: unexpected argument '--genbank_out' found
 domain_search	test_domain_search_nucleotide_multi_hit_max_hits_per_contig#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
 domain_search	test_domain_search_nucleotide_multi_hit_whole_contig#0	differs	gap:feature-order	out.gb: compare_seqfiles failed at helpers.py:67
 domain_search	test_domain_search_nucleotide_query_defaults_to_annotation_span#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name

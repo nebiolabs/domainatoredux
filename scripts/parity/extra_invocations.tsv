@@ -116,3 +116,5 @@ rotate_contigs	extra:test_rotate_nucleotide_query_spanning_origin#0	extra_invoca
 rotate_contigs	extra:test_rotate_nucleotide_fasta_circularize#0	extra_invocations.tsv	-i	@DATA@/simple_dna_target.fna	-r	@DATA@/simple_dna_queries.fna	--circularize	--cpu	1	-e	0.1	--keep_annotation	-o	@TMP@/out.gb
 rotate_contigs	extra:test_rotate_infernal#0	extra_invocations.tsv	-i	@DATA@/pANT_R100.fa	-r	@DATA@/RF00042.cm	--circularize	--cpu	1	--keep_annotation	-o	@TMP@/out.gb
 rotate_contigs	extra:test_rotate_fasta_out#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--fasta_out	@TMP@/out.fasta
+compare_contigs	extra:test_compare_contigs_name_by_order_reorders_clustered_records#0	extra_invocations.tsv	-i	@GEN@/compare_reorder.gb	--ji	1.0	--ai	0.0	--genbank_out	@TMP@/sorted.gb	--name_by_order
+compare_contigs	extra:test_compare_contigs_sorts_with_max_hits_per_query#0	extra_invocations.tsv	-i	@GEN@/compare_max_hits.gb	--ji	1.0	--ai	0	--max_hits_per_query	2	--genbank_out	@TMP@/sorted.gb

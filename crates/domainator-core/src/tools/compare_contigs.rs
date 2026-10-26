@@ -3,14 +3,17 @@
 //! (shared consecutive domain *pairs*) indices, combined by weight. Mirrors
 //! `domainator.compare_contigs` (the matrix path).
 //!
-//! Scope: the JI/AI similarity matrix, including `--mst`/`--knn` (MST ∪
-//! OR-symmetric kNN pruning). The hierarchically sorted `--genbank_out` is not
-//! ported yet.
+//! Also the hierarchically sorted `--genbank_out`: [`hierarchical_order`] clusters the
+//! contigs on `1 - score / max(score)` (with [`crate::matrix::hierarchy`], a port of
+//! scipy's) and orders the leaves.
 
 use std::collections::{HashMap, HashSet};
 
+use crate::matrix::hierarchy::{
+    condensed_index, leaves_list, linkage, optimal_leaf_ordering, Merge, Method,
+};
 use crate::matrix::mst_knn::{apply_mst_knn, TreeTies};
-use crate::matrix::{build_sparse_max, DataMatrix, Storage};
+use crate::matrix::{build_sparse_max, csr_index, DataMatrix, Storage};
 use crate::seq::SeqRecord;
 use crate::DOMAIN_FEATURE_NAME;
 
@@ -247,10 +250,26 @@ fn combined_matrix(
     }
 }
 
+/// `records` with only the first of the records sharing an id, warning about the rest
+/// (upstream `unique_records`).
+pub fn unique_records(records: Vec<SeqRecord>) -> Vec<SeqRecord> {
+    let mut seen: HashSet<String> = HashSet::new();
+    records
+        .into_iter()
+        .filter(|rec| {
+            let first = seen.insert(rec.id.clone());
+            if !first {
+                crate::log::warn(format_args!("Duplicate contig names !!! :{}", rec.id));
+            }
+            first
+        })
+        .collect()
+}
+
 /// The combined JI/AI similarity matrix of `records`. Of records sharing an id only
-/// the first is scored (upstream `unique_records`).
+/// the first is scored ([`unique_records`]).
 pub fn compare_contigs(
-    records: Vec<SeqRecord>,
+    records: &[SeqRecord],
     opts: &CompareContigsOptions,
 ) -> Result<DataMatrix, String> {
     if opts.ji_weight < 0.0 || opts.ai_weight < 0.0 {
@@ -259,15 +278,14 @@ pub fn compare_contigs(
     if opts.ji_weight == 0.0 && opts.ai_weight == 0.0 {
         return Err("Please specify a non-zero weight for at least one metric.".into());
     }
-    let mut recs: Vec<SeqRecord> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-    for rec in records {
-        if seen.insert(rec.id.clone()) {
-            recs.push(rec);
-        } else {
-            crate::log::warn(format_args!("Duplicate contig names !!! :{}", rec.id));
-        }
-    }
+    let mut ids = HashSet::new();
+    let deduplicated;
+    let recs: &[SeqRecord] = if records.iter().all(|r| ids.insert(r.id.as_str())) {
+        records
+    } else {
+        deduplicated = unique_records(records.to_vec());
+        &deduplicated
+    };
 
     // A cap of 0 keeps nothing, not even the diagonal (upstream's early return).
     if opts.max_hits_per_query == Some(0) {
@@ -286,7 +304,7 @@ pub fn compare_contigs(
         });
     }
 
-    let matrix = combined_matrix(&recs, opts, opts.max_hits_per_query);
+    let matrix = combined_matrix(recs, opts, opts.max_hits_per_query);
     if opts.mst || opts.knn.is_some() {
         return Ok(apply_mst_knn(
             &matrix,
@@ -297,6 +315,203 @@ pub fn compare_contigs(
         ));
     }
     Ok(matrix)
+}
+
+/// How the leaves of the clustering tree are ordered for `--genbank_out`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LeafOrdering {
+    /// Flip subtrees so the most similar contigs meet at each junction.
+    #[default]
+    Greedy,
+    /// scipy's `optimal_leaf_ordering`; slow beyond a few thousand contigs.
+    Optimal,
+    /// Plain dendrogram order.
+    None,
+}
+
+impl std::str::FromStr for LeafOrdering {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "greedy" => Ok(LeafOrdering::Greedy),
+            "optimal" => Ok(LeafOrdering::Optimal),
+            "none" => Ok(LeafOrdering::None),
+            _ => Err(format!(
+                "Unknown leaf ordering {s:?}, expected one of greedy, optimal, none"
+            )),
+        }
+    }
+}
+
+/// Beyond this many contigs, `--leaf_ordering optimal` warns that it is slow.
+const OPTIMAL_LEAF_ORDERING_WARN_CONTIGS: usize = 5000;
+
+/// Peak memory of sorting `n` contigs: the condensed distances plus the copy the
+/// linkage makes (upstream `estimate_sort_memory_bytes`).
+pub fn estimate_sort_memory_bytes(n: usize) -> u64 {
+    (n * n.saturating_sub(1) / 2) as u64 * 8 * 2
+}
+
+/// Fail before scoring when sorting `n` contigs for `--genbank_out` would need more
+/// memory than is available (unless `check_memory` is off), and warn when the leaf
+/// ordering will be very slow (upstream `_check_sort_feasible`).
+pub fn check_sort_feasible(
+    n: usize,
+    ordering: LeafOrdering,
+    check_memory: bool,
+) -> Result<(), String> {
+    use crate::tools::output_guardrails::format_bytes;
+    if check_memory {
+        let needed = estimate_sort_memory_bytes(n);
+        let mut system = sysinfo::System::new();
+        system.refresh_memory();
+        let available = system.available_memory();
+        if needed > available {
+            return Err(format!(
+                "Sorting {n} contigs for genbank output (-o) needs about {} of memory, but \
+                 only {} is available. To avoid this, drop -o and write a matrix with \
+                 --hdf_out instead, sort a subset of contigs with --contigs or \
+                 --contigs_file, or deduplicate the input first. Use \
+                 --skip_sort_memory_check to try anyway.",
+                format_bytes(needed),
+                format_bytes(available)
+            ));
+        }
+    }
+    if ordering == LeafOrdering::Optimal && n > OPTIMAL_LEAF_ORDERING_WARN_CONTIGS {
+        crate::log::warn(format_args!(
+            "--leaf_ordering optimal on {n} contigs may take many minutes to hours. Consider \
+             --leaf_ordering greedy, which is much faster and usually about as good."
+        ));
+    }
+    Ok(())
+}
+
+/// The stored entries of `m` as `(row, col, value)`; a dense matrix stores its
+/// nonzeros, as scipy's `csr_array` of it does.
+fn stored_entries(m: &DataMatrix) -> Vec<(usize, usize, f64)> {
+    let ncols = m.ncols();
+    match &m.storage {
+        Storage::Dense(values) => values
+            .iter()
+            .enumerate()
+            .filter(|(_, &v)| v != 0.0)
+            .map(|(i, &v)| (i / ncols, i % ncols, v))
+            .collect(),
+        Storage::Sparse {
+            values,
+            indices,
+            indptr,
+        } => (0..m.nrows())
+            .flat_map(|row| {
+                let (lo, hi) = (csr_index(indptr[row]), csr_index(indptr[row + 1]));
+                (lo..hi).map(move |e| (row, csr_index(indices[e]), values[e]))
+            })
+            .collect(),
+    }
+}
+
+/// The order to write the rows of the square score matrix `scores` in, so that
+/// similar contigs are adjacent (upstream `_hierarchical_order`): hierarchical
+/// clustering on the distance `1 - score / max(score)`, clipped to `[0, 1]`, where a
+/// pair with no score is 1 and an asymmetric pair takes its smaller distance.
+pub fn hierarchical_order(
+    scores: &DataMatrix,
+    method: Method,
+    ordering: LeafOrdering,
+) -> Result<Vec<usize>, String> {
+    let n = scores.nrows();
+    let identity: Vec<usize> = (0..n).collect();
+    if n <= 2 {
+        return Ok(identity);
+    }
+    let entries = stored_entries(scores);
+    let Some(min_score) = entries.iter().map(|e| e.2).reduce(f64::min) else {
+        return Ok(identity);
+    };
+    if min_score < 0.0 {
+        return Err(format!(
+            "compare_contigs scores must be non-negative to sort contigs, but the minimum \
+             score is {min_score:?}."
+        ));
+    }
+    let max_score = entries
+        .iter()
+        .map(|e| e.2)
+        .fold(f64::NEG_INFINITY, f64::max);
+    if max_score <= 0.0 {
+        return Ok(identity);
+    }
+    let mut condensed = vec![1.0f64; n * (n - 1) / 2];
+    for &(row, col, value) in &entries {
+        if row != col {
+            let cell = &mut condensed[condensed_index(n, row, col)];
+            *cell = cell.min(1.0 - value / max_score);
+        }
+    }
+    for d in &mut condensed {
+        *d = d.clamp(0.0, 1.0);
+    }
+    if condensed.iter().all(|&d| d == 0.0) {
+        return Ok(identity);
+    }
+    let z = linkage(&condensed, method);
+    Ok(match ordering {
+        LeafOrdering::Optimal => leaves_list(&optimal_leaf_ordering(&z, &condensed)),
+        LeafOrdering::Greedy => greedy_leaf_order(&z, &condensed, n),
+        LeafOrdering::None => leaves_list(&z),
+    })
+}
+
+/// Order the leaves of the dendrogram `z` by flipping subtrees: at each merge the two
+/// children are oriented so the leaves meeting at the junction are as close as
+/// possible, ties going to the earliest option (Gruvaeus and Wainer, 1972; upstream
+/// `_greedy_leaf_order`).
+fn greedy_leaf_order(z: &[Merge], condensed: &[f64], n: usize) -> Vec<usize> {
+    let dist = |i: usize, j: usize| condensed[condensed_index(n, i, j)];
+    let mut clusters: Vec<Vec<usize>> = (0..n).map(|i| vec![i]).collect();
+    clusters.resize(2 * n - 1, Vec::new());
+    for (k, merge) in z.iter().enumerate() {
+        let mut a = std::mem::take(&mut clusters[merge.left]);
+        let mut b = std::mem::take(&mut clusters[merge.right]);
+        let (a0, a1, b0, b1) = (a[0], a[a.len() - 1], b[0], b[b.len() - 1]);
+        // a+b, a+rev(b), rev(a)+b, rev(a)+rev(b)
+        let options = [dist(a1, b0), dist(a1, b1), dist(a0, b0), dist(a0, b1)];
+        let best = (1..4).fold(
+            0,
+            |best, i| if options[i] < options[best] { i } else { best },
+        );
+        if best >= 2 {
+            a.reverse();
+        }
+        if best % 2 == 1 {
+            b.reverse();
+        }
+        a.extend(b);
+        clusters[n + k] = a;
+    }
+    std::mem::take(&mut clusters[2 * n - 2])
+}
+
+/// `records` in `order`, each renamed with a zero-padded position prefix if
+/// `name_by_order` (upstream `write_sorted_genbank`).
+pub fn sorted_records(
+    records: &[SeqRecord],
+    order: &[usize],
+    name_by_order: bool,
+) -> Vec<SeqRecord> {
+    let digits = order.len().to_string().len();
+    order
+        .iter()
+        .enumerate()
+        .map(|(position, &i)| {
+            let mut rec = records[i].clone();
+            if name_by_order {
+                rec.id = format!("{position:0digits$}_{}", rec.id);
+            }
+            rec
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -382,5 +597,91 @@ mod tests {
         assert_eq!(d[1], 0.0);
         assert_eq!(d[2], 0.0);
         assert!((d[0] - 1.0).abs() < 1e-9); // diagonal still 1.0 (0.5+0.5)
+    }
+
+    /// A dense score matrix: 1 within a block, 0.1 between blocks.
+    fn block_scores(block_ids: &[usize]) -> DataMatrix {
+        let n = block_ids.len();
+        let mut values = vec![0.0; n * n];
+        for i in 0..n {
+            for j in 0..n {
+                values[i * n + j] = if block_ids[i] == block_ids[j] {
+                    1.0
+                } else {
+                    0.1
+                };
+            }
+        }
+        let names: Vec<String> = (0..n).map(|i| i.to_string()).collect();
+        DataMatrix {
+            rows: names.clone(),
+            cols: names,
+            row_lengths: None,
+            col_lengths: None,
+            data_type: "score".into(),
+            storage: Storage::Dense(values),
+        }
+    }
+
+    /// Upstream `test_hierarchical_order_keeps_blocks_contiguous`.
+    #[test]
+    fn hierarchical_order_keeps_blocks_contiguous() {
+        let block_ids = [0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2];
+        for method in ["average", "ward", "complete", "single", "weighted"] {
+            for ordering in [
+                LeafOrdering::Greedy,
+                LeafOrdering::Optimal,
+                LeafOrdering::None,
+            ] {
+                let order = hierarchical_order(
+                    &block_scores(&block_ids),
+                    method.parse().unwrap(),
+                    ordering,
+                )
+                .unwrap();
+                let mut sorted = order.clone();
+                sorted.sort_unstable();
+                assert_eq!(sorted, (0..block_ids.len()).collect::<Vec<_>>());
+                let blocks: Vec<usize> = order.iter().map(|&i| block_ids[i]).collect();
+                let changes = blocks.windows(2).filter(|w| w[0] != w[1]).count();
+                assert_eq!(changes, 2, "{method} {ordering:?}: {blocks:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn hierarchical_order_keeps_input_order_without_distances() {
+        let order =
+            |m: &DataMatrix| hierarchical_order(m, Method::Average, LeafOrdering::Greedy).unwrap();
+        assert_eq!(order(&block_scores(&[0, 1])), [0, 1]);
+        // Every score equal: every distance 0.
+        assert_eq!(order(&block_scores(&[0, 0, 0, 0])), [0, 1, 2, 3]);
+        let mut zero = block_scores(&[0, 1, 2]);
+        zero.storage = Storage::Dense(vec![0.0; 9]);
+        assert_eq!(order(&zero), [0, 1, 2]);
+    }
+
+    #[test]
+    fn hierarchical_order_rejects_negative_scores() {
+        let mut m = block_scores(&[0, 0, 1, 1]);
+        if let Storage::Dense(values) = &mut m.storage {
+            values[2] = -0.1;
+            values[8] = -0.1;
+        }
+        let err = hierarchical_order(&m, Method::Average, LeafOrdering::Greedy).unwrap_err();
+        assert!(err.contains("non-negative"), "{err}");
+    }
+
+    #[test]
+    fn sorted_records_prefix_their_position() {
+        let recs = vec![contig("a", &[]), contig("b", &[])];
+        let ids: Vec<String> = sorted_records(&recs, &[1, 0], true)
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        assert_eq!(ids, ["0_b", "1_a"]);
+        assert_eq!(estimate_sort_memory_bytes(0), 0);
+        assert_eq!(estimate_sort_memory_bytes(3), 48);
+        assert!(check_sort_feasible(3, LeafOrdering::Greedy, true).is_ok());
     }
 }

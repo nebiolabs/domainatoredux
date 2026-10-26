@@ -20,6 +20,19 @@ fields:
   - name: hdf_out
     label: "Output (matrix)"
     output_name: "{stem}.compare.hdf5"
+  - name: genbank_out
+    label: "Output (sorted GenBank)"
+    help: "The contigs, ordered by hierarchical clustering so that similar neighborhoods are adjacent."
+  - name: linkage
+    label: "Linkage"
+  - name: leaf_ordering
+    label: "Leaf ordering"
+  - name: name_by_order
+    show: false
+    label: "Name by order"
+  - name: skip_sort_memory_check
+    show: false
+    label: "Skip sort memory check"
   - name: ji
     label: "Jaccard weight"
   - name: ai

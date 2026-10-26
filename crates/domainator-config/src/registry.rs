@@ -274,15 +274,8 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        required_outputs: Some(&["hdf_out", "dense_text_out"]),
+        required_outputs: Some(&["hdf_out", "dense_text_out", "genbank_out"]),
         no_stdout: &["hdf_out"],
-        unsupported: &[
-            ("genbank_out", "null"),
-            ("name_by_order", "false"),
-            ("linkage", "\"average\""),
-            ("leaf_ordering", "\"greedy\""),
-            ("skip_sort_memory_check", "false"),
-        ],
         ..tool(
             "compare_contigs",
             "compare",
