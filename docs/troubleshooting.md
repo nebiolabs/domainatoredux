@@ -3,7 +3,8 @@
 ## "diamond not found" / "cdhit not found" / "usearch not found"
 
 `seq_dist`'s default algorithm (`diamond_us`) and `deduplicate_genbank`'s default (`cd-hit`) both
-call an external program. Either install it, or switch to an algorithm that needs nothing:
+call an external program. `domainatoredux doctor` shows which of them it can find, and where
+it looked. Either install the missing one, or switch to an algorithm that needs nothing:
 
 ```bash
 domainatoredux seq_dist -i in.fasta -o out.hdf5 --algorithm hmmer

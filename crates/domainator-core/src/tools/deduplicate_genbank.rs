@@ -21,7 +21,7 @@ use std::process::Command;
 use crate::seq::translate::{complement, revcomp};
 use crate::seq::SeqRecord;
 
-use super::external::{find_binary, spawn_error, write_fasta_ids, TempDir};
+use super::external::{spawn_error, write_fasta_ids, TempDir};
 
 /// Options for [`deduplicate`].
 pub struct DeduplicateOptions {
@@ -291,7 +291,7 @@ fn run_diamond(
 ) -> Result<Vec<(String, Vec<String>)>, String> {
     let bin = match &opts.bin_path {
         Some(p) => PathBuf::from(p),
-        None => find_binary(DIAMOND_BIN_NAME, &[DIAMOND_ENV_VAR, "DIAMOND"], "diamond"),
+        None => super::external::DIAMOND.find(),
     };
     let out_tsv = tmp.path().join("output.tsv");
     let mut cmd = Command::new(&bin);
@@ -461,7 +461,7 @@ fn run_cdhit(
     };
     let bin = match path {
         Some(p) => PathBuf::from(p),
-        None => find_binary(CDHIT_BIN_NAME, &[CDHIT_ENV_VAR, "CDHIT"], "cdhit"),
+        None => super::external::CDHIT.find(),
     };
     let word_size = cdhit_word_size(opts.id, est)?;
     // cd-hit derives the cluster file's name from `-o`, so both live in the temp dir.
@@ -593,7 +593,7 @@ fn run_usearch(
 ) -> Result<Vec<(String, Vec<String>)>, String> {
     let bin = match &opts.bin_path {
         Some(p) => PathBuf::from(p),
-        None => find_binary(USEARCH_BIN_NAME, &[USEARCH_ENV_VAR, "USEARCH"], "usearch"),
+        None => super::external::USEARCH.find(),
     };
     let centroids = tmp.path().join("output.fasta");
     let uc = tmp.path().join("output.uc");

@@ -113,6 +113,8 @@ enum Command {
         /// The shell to complete for.
         shell: clap_complete::Shell,
     },
+    /// List the optional external programs, and which of them are installed.
+    Doctor,
     EnumReport(config::args::EnumReportArgs),
     /// Extract contig regions around selected CDSs (by name/domain/expr/hits).
     SelectByCds(config::args::SelectByCdsArgs),
@@ -496,6 +498,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 &mut std::io::stdout(),
             );
         }
+        Command::Doctor => commands::doctor::run(),
         Command::EnumReport(args) => commands::enum_report::run(&args)?,
         Command::SelectByCds(args) => commands::select_by_cds::run(&args)?,
         Command::SelectByContig(args) => commands::select_by_contig::run(&args)?,

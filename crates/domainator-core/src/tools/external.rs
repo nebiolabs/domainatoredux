@@ -117,3 +117,74 @@ impl Drop for TempDir {
         let _ = std::fs::remove_dir_all(&self.path);
     }
 }
+
+/// An optional external program some tools run, and how it is found.
+pub struct ExternalProgram {
+    /// The executable's name.
+    pub name: &'static str,
+    /// Environment variables naming it, checked in order.
+    pub env_vars: &'static [&'static str],
+    /// A bundled copy lives in `external/<bundled_dir>/`.
+    pub bundled_dir: &'static str,
+    /// The commands that need it.
+    pub needed_by: &'static str,
+    /// How to get it.
+    pub install: &'static str,
+}
+
+impl ExternalProgram {
+    /// What a tool runs: an environment variable's path, else a bundled copy, else the
+    /// bare name, which the OS looks up on `PATH`.
+    pub fn find(&self) -> PathBuf {
+        find_binary(self.name, self.env_vars, self.bundled_dir)
+    }
+
+    /// The file a tool would run, if there is one.
+    pub fn locate(&self) -> Option<PathBuf> {
+        let path = self.find();
+        if path.components().count() > 1 {
+            return path.is_file().then_some(path);
+        }
+        std::env::split_paths(&std::env::var_os("PATH")?)
+            .map(|dir| dir.join(&path))
+            .find(|candidate| candidate.is_file())
+    }
+}
+
+/// Every external program, in the order `doctor` lists them.
+pub const EXTERNAL_PROGRAMS: &[ExternalProgram] = &[DIAMOND, CDHIT, USEARCH, ORPHOS];
+
+pub const DIAMOND: ExternalProgram = ExternalProgram {
+    name: super::deduplicate_genbank::DIAMOND_BIN_NAME,
+    env_vars: &[super::deduplicate_genbank::DIAMOND_ENV_VAR, "DIAMOND"],
+    bundled_dir: "diamond",
+    needed_by: "seq_dist --algorithm diamond_* (the default), deduplicate_genbank --algorithm \
+                diamond",
+    install: "conda install -c bioconda diamond, or https://github.com/bbuchfink/diamond/releases",
+};
+
+pub const CDHIT: ExternalProgram = ExternalProgram {
+    name: super::deduplicate_genbank::CDHIT_BIN_NAME,
+    env_vars: &[super::deduplicate_genbank::CDHIT_ENV_VAR, "CDHIT"],
+    bundled_dir: "cdhit",
+    needed_by: "deduplicate_genbank --algorithm cd-hit (the default)",
+    install: "https://github.com/seanrjohnson-neb/cdhit-rust/releases (or C cd-hit, as \
+              cd-hit/cd-hit-est)",
+};
+
+pub const USEARCH: ExternalProgram = ExternalProgram {
+    name: super::deduplicate_genbank::USEARCH_BIN_NAME,
+    env_vars: &[super::deduplicate_genbank::USEARCH_ENV_VAR, "USEARCH"],
+    bundled_dir: "usearch",
+    needed_by: "deduplicate_genbank --algorithm usearch",
+    install: "https://github.com/rcedgar/usearch12/releases",
+};
+
+pub const ORPHOS: ExternalProgram = ExternalProgram {
+    name: super::gene_call::ORPHOS_BIN_NAME,
+    env_vars: &[super::gene_call::ORPHOS_ENV_VAR, "ORPHOS"],
+    bundled_dir: "orphos",
+    needed_by: "gene_call, domainate/domain_search/rotate_contigs --gene_call",
+    install: "https://github.com/FullHuman/orphos/releases (0.4.0 or newer), or cargo install \
+              orphos-cli",
+};

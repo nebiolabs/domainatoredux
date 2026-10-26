@@ -34,7 +34,7 @@ codebase, silence it with a narrow `#[allow(...)]` **plus a one-line reason** (t
 existing ones cover Tauri IPC signatures, parity-mirroring parameter lists, and HMMER's
 1-based node indices); never add a crate-wide allow.
 
-**35 tools** (`domainatoredux <tool>`) plus the `describe` and `completion` builtins,
+**35 tools** (`domainatoredux <tool>`) plus the `describe`, `completion` and `doctor` builtins,
 grouped: I/O and dev (`inspect`, `convert`, `genbank_to_fasta`, `format_db`); annotation
 and search (`domainate`,
 `domain_search`, `gene_call`, `filter_domains`); selection and extraction (`select_by_cds`,

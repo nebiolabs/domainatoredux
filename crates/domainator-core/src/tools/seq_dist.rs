@@ -788,8 +788,7 @@ fn write_diamond_fasta(records: &[(String, Vec<u8>)], path: &Path) -> std::io::R
 /// bundled `external/diamond/diamond` (searched upward from the running
 /// executable and in the current directory), then bare `diamond` on `PATH`.
 fn find_diamond() -> PathBuf {
-    use super::deduplicate_genbank::{DIAMOND_BIN_NAME, DIAMOND_ENV_VAR};
-    super::external::find_binary(DIAMOND_BIN_NAME, &[DIAMOND_ENV_VAR, "DIAMOND"], "diamond")
+    super::external::DIAMOND.find()
 }
 
 /// Turn a "diamond not found" spawn failure into an actionable error.

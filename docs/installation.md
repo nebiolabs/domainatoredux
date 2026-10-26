@@ -113,6 +113,7 @@ orphos-cli` and point `$DOMAINATOREDUX_ORPHOS` at the result (usually `~/.cargo/
 domainatoredux --version
 domainatoredux --help          # lists all 35 tools
 domainatoredux domainate --help
+domainatoredux doctor          # which optional external programs it can find
 ```
 
 If a `diamond_*` or clustering run fails with a "not found" error, see

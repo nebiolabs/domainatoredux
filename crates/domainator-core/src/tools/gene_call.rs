@@ -20,7 +20,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::{Mutex, OnceLock};
 
-use super::external::{find_binary, spawn_error, write_fasta_ids, TempDir};
+use super::external::{spawn_error, write_fasta_ids, TempDir};
 use super::neighborhood::cds_unique_name;
 use crate::seq::location::{CompoundOp, Location, Part};
 use crate::seq::translate::{genetic_code, is_searchable_cds, revcomp, translate_codon_with};
@@ -261,7 +261,7 @@ fn table_code(table: u8) -> io::Result<&'static [u8; 64]> {
 fn orphos_binary(opts: &GeneCallOptions) -> PathBuf {
     match &opts.bin_path {
         Some(p) => PathBuf::from(p),
-        None => find_binary(ORPHOS_BIN_NAME, &[ORPHOS_ENV_VAR, "ORPHOS"], "orphos"),
+        None => super::external::ORPHOS.find(),
     }
 }
 

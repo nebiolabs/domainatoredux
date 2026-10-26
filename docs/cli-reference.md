@@ -4,7 +4,7 @@
 domainatoredux <tool> [options]
 ```
 
-`domainatoredux --help` lists all 35 tools, plus `describe` and `completion`;
+`domainatoredux --help` lists all 35 tools, plus `describe`, `completion` and `doctor`;
 `domainatoredux <tool> --help` is the exhaustive,
 always-current list of that tool's flags. This page gives each tool's purpose, the flags
 that matter in practice, and a worked example. Filenames in the examples are
@@ -90,7 +90,7 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 
 | Role | Tools |
 | --- | --- |
-| [I/O and diagnostics](#io-and-diagnostics) | `inspect`, `convert`, `genbank_to_fasta`, `describe`, `completion` |
+| [I/O and diagnostics](#io-and-diagnostics) | `inspect`, `convert`, `genbank_to_fasta`, `describe`, `completion`, `doctor` |
 | [Annotation and search](#annotation-and-search) | `domainate`, `domain_search`, `gene_call`, `filter_domains` |
 | [Selection and extraction](#selection-and-extraction) | `select_by_cds`, `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `rotate_contigs`, `sort_contigs`, `clean_sequences`, `deduplicate_genbank` |
 | [Color](#color) | `color_genbank`, `color_table_to_legend` |
@@ -147,6 +147,17 @@ Print a shell completion script, for `bash`, `zsh`, `fish`, `powershell` or `elv
 
 ```bash
 domainatoredux completion bash > ~/.local/share/bash-completion/completions/domainatoredux
+```
+
+### `doctor`
+
+List the optional external programs (`diamond`, `cdhit`, `usearch`, `orphos`): for each,
+whether a tool would find it and where (by the lookup order in
+[Installation](installation.md#optional-external-programs)), the commands that need it,
+and how to install it.
+
+```bash
+domainatoredux doctor
 ```
 
 ---

@@ -9,7 +9,7 @@ use domainator_config::registry::{tool_info, TOOLS};
 use domainator_config::types::type_info;
 
 /// The dispatcher's own commands, which are not tools.
-const BUILTINS: &[&str] = &["describe", "completion"];
+const BUILTINS: &[&str] = &["describe", "completion", "doctor"];
 
 fn with_big_stack(f: impl FnOnce() + Send + 'static) {
     // The CLI's `Command` is one large derive; building it overflows a test thread's

@@ -8,6 +8,7 @@ pub mod color_genbank;
 pub mod color_table_to_legend;
 pub mod compare_contigs;
 pub mod deduplicate_genbank;
+pub mod doctor;
 pub mod domain_search;
 pub mod domainate;
 pub mod enum_report;
