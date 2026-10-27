@@ -114,8 +114,10 @@ a feature-coordinate/type and LOCUS-name check the upstream comparator does not
 do (that blind spot is where the origin-crossing slice bugs lived); HDF5 →
 `DataMatrix` + `np.allclose`; JSON/`.dsnv` → `scripts/json_parity.py` (parsed, not
 bytes — `serde_json` is built with `preserve_order` and Python sorts keys); XGMML
-→ parse-equal node/edge/att sets; `.hmm` → text with `DATE`/`COM` normalized out;
-everything else → exact text.
+→ parse-equal node/edge/att sets; `.hmm` → text with `DATE`/`COM` normalized out; an
+`--html_out` report page → exact text outside its `report-data` envelope and
+`report-rows` block (both sides fill the same generated shell), and `json_parity` inside
+them, gzip+base64 data decoded; everything else → exact text.
 
 Python runs with `TZ=UTC`. Both writers stamp a record that has no `date` with
 today's date, ours in UTC and Python's in local time, so without it every such

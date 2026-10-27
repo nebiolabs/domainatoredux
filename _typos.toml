@@ -3,10 +3,11 @@
 # spelling is reported as a typo. Local run: `cargo install typos-cli && typos`.
 
 [files]
-# Not ours to edit (see CLAUDE.md): the generated viewer shell, the synced upstream
-# fixtures, the vendored hdf5-pure, and the upstream clone. Plus build output.
+# Not ours to edit (see CLAUDE.md): the generated viewer and report shells, the synced
+# upstream fixtures, the vendored hdf5-pure, and the upstream clone. Plus build output.
 extend-exclude = [
     "crates/domainator-core/assets/ssn_viewer_shell.html",
+    "crates/domainator-core/assets/report_shells/",
     "test/data/",
     "vendor/",
     "external/",

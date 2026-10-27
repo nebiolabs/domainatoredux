@@ -15,6 +15,7 @@ use crate::matrix::ssn::{
 };
 use crate::matrix::DataMatrix;
 use crate::tools::build_ssn::{read_metadata, subset_matrix};
+use crate::tools::report_html::{base64_encode, html_escape};
 
 pub const SSN_VIEWER_BUNDLE_FORMAT: &str = "domainator_ssn_viewer_bundle";
 /// Bundle schema version. v3 added the per-event `merge_size_counts`/`largest_merge`/
@@ -340,37 +341,6 @@ pub fn viewer_heading(network_name: &str) -> String {
     }
 }
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-fn base64_encode(data: &[u8]) -> String {
-    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
-        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
-        let n = (b0 << 16) | (b1 << 8) | b2;
-        out.push(B64[(n >> 18 & 63) as usize] as char);
-        out.push(B64[(n >> 12 & 63) as usize] as char);
-        out.push(if chunk.len() > 1 {
-            B64[(n >> 6 & 63) as usize] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            B64[(n & 63) as usize] as char
-        } else {
-            '='
-        });
-    }
-    out
-}
-
 /// The shell's bundle slot when nothing is embedded: a key of its `dsnv-config` block,
 /// written by `json.dumps` with the default `": "` separator.
 const EMBEDDED_BUNDLE_NULL: &str = "\"embeddedBundleBase64\": null";
@@ -402,17 +372,6 @@ pub fn render_html(title: &str, embedded_bundle_gzip: Option<&[u8]>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn base64_matches_reference_vectors() {
-        assert_eq!(base64_encode(b""), "");
-        assert_eq!(base64_encode(b"f"), "Zg==");
-        assert_eq!(base64_encode(b"fo"), "Zm8=");
-        assert_eq!(base64_encode(b"foo"), "Zm9v");
-        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
-        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
-        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
-    }
 
     #[test]
     fn html_render_substitutes_tokens() {

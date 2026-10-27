@@ -27,6 +27,7 @@ of the CI check job. See `docs/parity.md`.
 import argparse
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -100,6 +101,52 @@ def _compare_json(a, b):
     return "differs", detail[-1][:110] if detail else "json differs"
 
 
+_REPORT_DATA = re.compile(r'(<script type="application/json" id="report-data">)(.*?)(</script>)', re.S)
+_REPORT_ROWS = re.compile(r'(<script type="application/x-ndjson" id="report-rows">\n)(.*?)(</script>)', re.S)
+
+
+def _compare_html(a, b):
+    """An --html_out report page (upstream report_html.py). Both sides fill the same
+    generated shell (crates/domainator-core/assets/report_shells/), so the page outside its
+    report-data envelope and report-rows block must match byte for byte; the envelope
+    (gzip+base64 data decoded) and the rows are compared parsed, like any JSON output."""
+    import base64
+    import gzip
+    import importlib.util
+    import json
+
+    spec = importlib.util.spec_from_file_location("json_parity", REPO / "scripts" / "json_parity.py")
+    json_parity = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(json_parity)
+
+    def split(path):
+        text = pathlib.Path(path).read_text(encoding="utf-8")
+        data = _REPORT_DATA.search(text)
+        if data is None:
+            return text, None, None
+        envelope = json.loads(data.group(2))
+        if envelope.get("encoding") == "gzip+base64":
+            envelope["data"] = json.loads(gzip.decompress(base64.b64decode(envelope["data"])))
+        rows = _REPORT_ROWS.search(text)
+        row_list = None if rows is None else [json.loads(l) for l in rows.group(2).splitlines()]
+        shell = _REPORT_DATA.sub(r"\1@@REPORT_DATA@@\3", text)
+        shell = _REPORT_ROWS.sub(r"\1@@REPORT_ROWS@@\3", shell)
+        return shell, envelope, row_list
+
+    (shell_a, env_a, rows_a), (shell_b, env_b, rows_b) = split(a), split(b)
+    if env_a is None or env_b is None:
+        return _compare_text(a, b)  # not a report page
+    if shell_a != shell_b:
+        la, lb = shell_a.splitlines(), shell_b.splitlines()
+        first = next((i for i, (x, y) in enumerate(zip(la, lb)) if x != y), min(len(la), len(lb)))
+        return "differs", f"page outside its data differs at line {first + 1}"
+    problems = json_parity.compare(env_a, env_b, 1e-3, 1e-12, "$report-data")
+    problems += json_parity.compare(rows_a, rows_b, 1e-3, 1e-12, "$report-rows")
+    if problems:
+        return "differs", problems[0][:110]
+    return "tolerated", ""
+
+
 def _compare_xgmml(a, b):
     import xml.etree.ElementTree as ET
 
@@ -161,6 +208,8 @@ def compare(a, b, helpers, SeqIO):
             return _compare_xgmml(a, b)
         if ext == ".hmm":
             return _compare_text(a, b, _normalize_hmm)
+        if ext in (".html", ".htm"):
+            return _compare_html(a, b)
         return _compare_text(a, b)
     except Exception as exc:
         return "error", f"comparator raised: {type(exc).__name__}: {exc}"[:110]

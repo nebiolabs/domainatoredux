@@ -587,8 +587,14 @@ Columns with arguments: `taxid:<rank>[:<rank>...]`, `taxname:<rank>[:<rank>...]`
 `append:<name>:<str|int|float>:<value>`, a constant column. The last argument keeps any
 `:` it contains.
 
-Outputs are `-o/--tsv_out` and `--json_out` (streaming NDJSON, one object per row); give
-at least one. `--partial` filters rows by fragment status. The taxonomy columns read
+Outputs are `-o/--tsv_out`, `--html_out` and `--json_out` (streaming NDJSON, one object
+per row); give at least one. `--html_out` writes a table page that opens in any browser,
+offline: sort, filter each column (`> 10` on a number column), page, move and resize
+columns, right-click a cell to copy its value, and download the filtered rows as
+CSV/TSV/JSON. It shows floats to one decimal place, as the TSV does; the page holds the
+same rows as `--json_out`, so copies and downloads keep every digit.
+`--html_max_height` caps the table's height in pixels. `--partial` filters rows by
+fragment status. The taxonomy columns read
 `--ncbi_taxonomy_path` (extracted `.dmp` files or a `taxdump.tar.gz`), which is never
 downloaded.
 
@@ -598,8 +604,8 @@ domainatoredux enum_report -i annotated.gb --by cds \
   -o table.tsv
 ```
 
-HTML output (`--html_out`) and `--taxonomy_update` are not ported. A config file may
-still name them at their defaults (`null`, `false`), so upstream's configs load.
+`--taxonomy_update` is not ported. A config file may still name it at its default
+(`false`), so upstream's configs load.
 
 ### `summary_report`
 
@@ -734,14 +740,14 @@ and then to [`build_ssn_viewer`](#build_ssn_viewer).
 
 Tabulate profile metadata. Like `enum_report`, `--columns` takes the columns in output
 order: `source`, `acc`, `desc`, `length`, `consensus`, `alphabet`, and
-`append:<name>:<str|int|float>:<value>`. Outputs are `-o/--tsv_out` and `--json_out`
+`append:<name>:<str|int|float>:<value>`. Outputs are `-o/--tsv_out`, `--html_out` (the
+same interactive table page as `enum_report`'s, with `--html_max_height`) and `--json_out`
 (streaming NDJSON).
 
 ```bash
-domainatoredux hmmer_report -i pfam-A.hmm --columns acc desc length -o profiles.tsv
+domainatoredux hmmer_report -i pfam-A.hmm --columns acc desc length -o profiles.tsv \
+  --html_out profiles.html
 ```
-
-HTML output is not ported.
 
 ---
 

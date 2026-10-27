@@ -49,6 +49,12 @@ pub fn run(args: &EnumReportArgs) -> Result<()> {
     let mut outputs = Vec::new();
     for (path, format) in [
         (&args.tsv_out, OutputFormat::Tsv),
+        (
+            &args.html_out,
+            OutputFormat::Html {
+                max_height: args.html_max_height,
+            },
+        ),
         (&args.json_out, OutputFormat::Json),
     ] {
         if let Some(path) = path {

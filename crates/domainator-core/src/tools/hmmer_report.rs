@@ -1,6 +1,5 @@
-//! `hmmer_report`: tabulate HMM-profile metadata to TSV (or a JSON array). A port
-//! of `domainator.hmmer_report` (TSV output; the HTML writer is out of scope,
-//! mirroring how `enum_report`'s HTML was deferred — `--json` is offered instead).
+//! `hmmer_report`: tabulate HMM-profile metadata as TSV, NDJSON or an HTML table. A port
+//! of `domainator.hmmer_report`.
 //!
 //! Columns follow flag order, exactly like `enum_report`. The leading `name`
 //! column is always present; the requested analyses append after it.
@@ -9,6 +8,8 @@ use std::io::Write;
 use std::path::Path;
 
 use hmmer_pure_rs::Hmm;
+
+use crate::tools::report_html::TablePage;
 
 /// Column value type (drives TSV/JSON serialization).
 #[derive(Clone, Copy, PartialEq)]
@@ -158,8 +159,32 @@ impl Analysis {
 pub enum OutputFormat {
     /// Tab-separated values (the Python-parity format).
     Tsv,
-    /// A JSON array of row objects (agent-friendly; native to this port).
+    /// Streaming NDJSON, one object per profile (upstream's agent contract).
     Json,
+    /// The interactive table page (upstream `HTMLTableWriter`): the NDJSON rows inside
+    /// [`report_html`](crate::tools::report_html)'s table shell, with the table's maximum
+    /// height in pixels.
+    Html { max_height: Option<i64> },
+}
+
+impl ColType {
+    /// The column type as upstream's table writers name it.
+    pub fn name(self) -> &'static str {
+        match self {
+            ColType::Str => "str",
+            ColType::Int => "int",
+            ColType::Float => "float",
+        }
+    }
+}
+
+/// One row as the JSON object NDJSON and the HTML table both carry.
+fn row_object(row: &[Value], headers: &[String]) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    for (i, v) in row.iter().enumerate() {
+        obj.insert(headers[i].clone(), json_value(v));
+    }
+    serde_json::Value::Object(obj)
 }
 
 /// Format one value for TSV output.
@@ -252,14 +277,25 @@ pub fn hmmer_report<W: Write>(
             // Streaming NDJSON, one compact object per profile -- upstream's agent
             // contract, not a JSON array.
             for row in rows.iter() {
-                let mut obj = serde_json::Map::new();
-                for (i, v) in row.iter().enumerate() {
-                    obj.insert(headers[i].clone(), json_value(v));
-                }
-                let line = serde_json::to_string(&serde_json::Value::Object(obj))
-                    .map_err(|e| e.to_string())?;
+                let line =
+                    serde_json::to_string(&row_object(row, &headers)).map_err(|e| e.to_string())?;
                 writeln!(out, "{line}").map_err(|e| e.to_string())?;
             }
+        }
+        OutputFormat::Html { max_height } => {
+            let types = std::iter::once(ColType::Str).chain(analyses.iter().map(|a| a.col_type));
+            let columns: Vec<(String, &str)> = headers
+                .iter()
+                .zip(types)
+                .map(|(name, t)| (name.clone(), t.name()))
+                .collect();
+            let page = TablePage::start(out, "HMMER Report", "hmmer_report", &columns, max_height)
+                .map_err(|e| e.to_string())?;
+            for row in &rows {
+                page.row(out, &row_object(row, &headers))
+                    .map_err(|e| e.to_string())?;
+            }
+            page.finish(out).map_err(|e| e.to_string())?;
         }
     }
     Ok(())

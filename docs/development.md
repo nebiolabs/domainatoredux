@@ -224,8 +224,13 @@ full workflow. The essentials:
   `crates/domainator-core/assets/ssn_viewer_shell.html` is the render of Python's
   `ssn_viewer_html(...)` plus one local patch (the GUI host hook that posts node selection
   to the Tauri host). Regenerate with `scripts/regen_ssn_viewer_shell.py`; `--check` is the
-  drift guard. It is the *only* literal-copy artifact — everything else is hand-ported
-  logic under parity gates.
+  drift guard.
+- **So are the `--html_out` report shells** in `crates/domainator-core/assets/report_shells/`:
+  upstream's `report_html.report_shell(page)`, unpatched, written by
+  `scripts/regen_report_shells.py` (`--check` is the drift guard) and filled by
+  `tools/report_html.rs`. Porting a report's HTML means producing its payload, not its
+  page. These and the viewer shell are the only literal-copy artifacts — everything else
+  is hand-ported logic under parity gates.
 - **The GUI reuses that same shell** via `include_str!`, so viewer changes reach the app on
   a rebuild.
 - **On-disk format changes** upstream require parallel Rust changes in the owning module.

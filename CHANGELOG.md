@@ -6,9 +6,12 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `44acbce`.
+Parity: Python domainator 1.0.0rc1 @ `460f120`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
+- **`enum_report` and `hmmer_report --html_out`** (and `--html_max_height`): upstream's
+  new interactive table page, which works offline. It is generated from upstream's own
+  page (`scripts/regen_report_shells.py`), so the two write the same file.
 - **Upstream's 1.0 interface.** Python domainator 1.0 adopted a single `domainator <tool>`
   command, as this port had. The two would clash, so **the executable is now
   `domainatoredux`**, and its tools take **upstream's names and options**:

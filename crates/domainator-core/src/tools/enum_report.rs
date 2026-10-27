@@ -1,6 +1,6 @@
-//! `enum_report`: write a TSV table describing each contig / CDS / domain of a
-//! Domainator-annotated GenBank (or FASTA) file. Faithful port of
-//! `domainator.enum_report` (TSV output; the HTML writer is out of scope).
+//! `enum_report`: tabulate each contig / CDS / domain of a Domainator-annotated GenBank
+//! (or FASTA) file as TSV, NDJSON or an HTML table. Faithful port of
+//! `domainator.enum_report`.
 
 use std::collections::HashSet;
 use std::io::Write;
@@ -16,6 +16,7 @@ use crate::seq::taxid::record_taxid;
 use crate::seq::taxonomy::{NCBITaxonomy, TaxonomyData};
 use crate::seq::{SeqFeature, SeqRecord};
 use crate::tools::neighborhood::{slice_record, SliceLoc};
+use crate::tools::report_html::TablePage;
 use crate::tools::select_common::{filter_domains_databases, get_sources, DomainatorCds};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
@@ -858,8 +859,32 @@ fn format_value(v: &Value, ctype: ColType) -> String {
 pub enum OutputFormat {
     /// Tab-separated values (the Python-parity format).
     Tsv,
-    /// A JSON array of row objects (agent-friendly; native to this port).
+    /// Streaming NDJSON, one object per row (upstream's agent contract).
     Json,
+    /// The interactive table page (upstream `HTMLTableWriter`): the NDJSON rows inside
+    /// [`report_html`](crate::tools::report_html)'s table shell, with the table's maximum
+    /// height in pixels.
+    Html { max_height: Option<i64> },
+}
+
+impl ColType {
+    /// The column type as upstream's table writers name it.
+    pub fn name(self) -> &'static str {
+        match self {
+            ColType::Str => "str",
+            ColType::Int => "int",
+            ColType::Float => "float",
+        }
+    }
+}
+
+/// One row as the JSON object NDJSON and the HTML table both carry.
+fn row_object(row: &[Value], headers: &[String], types: &[ColType]) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    for (i, v) in row.iter().enumerate() {
+        obj.insert(headers[i].clone(), json_value(v, types[i]));
+    }
+    serde_json::Value::Object(obj)
 }
 
 /// Convert a cell to a typed JSON value (numbers for int/float columns, `null`
@@ -1006,14 +1031,24 @@ pub fn enum_report_with_targets<W: Write>(
             // agent contract specifies. Missing values are null, so the key set is
             // stable across rows.
             for row in &rows {
-                let mut obj = serde_json::Map::new();
-                for (i, v) in row.iter().enumerate() {
-                    obj.insert(headers[i].clone(), json_value(v, types[i]));
-                }
-                let line = serde_json::to_string(&serde_json::Value::Object(obj))
+                let line = serde_json::to_string(&row_object(row, &headers, &types))
                     .map_err(|e| e.to_string())?;
                 writeln!(out, "{line}").map_err(|e| e.to_string())?;
             }
+        }
+        OutputFormat::Html { max_height } => {
+            let columns: Vec<(String, &str)> = headers
+                .iter()
+                .zip(&types)
+                .map(|(name, t)| (name.clone(), t.name()))
+                .collect();
+            let page = TablePage::start(out, "Enum Report", "enum_report", &columns, max_height)
+                .map_err(|e| e.to_string())?;
+            for row in &rows {
+                page.row(out, &row_object(row, &headers, &types))
+                    .map_err(|e| e.to_string())?;
+            }
+            page.finish(out).map_err(|e| e.to_string())?;
         }
     }
     Ok(targets)

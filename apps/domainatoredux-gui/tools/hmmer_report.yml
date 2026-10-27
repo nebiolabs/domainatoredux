@@ -15,6 +15,12 @@ fields:
     label: "Columns"
     help: "A leading name column is always included; the columns below follow it."
     gui_default: [source, length]
+  - name: html_out
+    label: "HTML table (optional)"
+    help: "An interactive table page that opens in any browser, offline."
+  - name: html_max_height
+    show: false
+    label: "HTML table height (px)"
   - name: json_out
     label: "JSON output (optional)"
   - name: column_names

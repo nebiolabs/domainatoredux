@@ -324,14 +324,10 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // report
     ToolInfo {
-        required_outputs: Some(&["tsv_out", "json_out"]),
+        required_outputs: Some(&["tsv_out", "html_out", "json_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
         columns: Some(ENUM_COLUMNS),
-        unsupported: &[
-            ("html_out", "null"),
-            ("html_max_height", "null"),
-            ("taxonomy_update", "false"),
-        ],
+        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "enum_report",
             "report",
@@ -339,9 +335,8 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
-        required_outputs: Some(&["tsv_out", "json_out"]),
+        required_outputs: Some(&["tsv_out", "html_out", "json_out"]),
         columns: Some(HMMER_COLUMNS),
-        unsupported: &[("html_out", "null"), ("html_max_height", "null")],
         ..tool(
             "hmmer_report",
             "report",

@@ -102,9 +102,9 @@ the upstream pin.
 labels and status strings alike (`color`, `behavior`, `neighbor`, `center`, `labeled`,
 `gray`, `canceled`/`canceling` but `cancellation`, `catalog`, `honor`, `favor`,
 `analyze`, `-ize`/`-ization`). The repo was converted in one pass, so a British spelling
-now reads as a typo; match the existing words when you add code or docs. Three places are
+now reads as a typo; match the existing words when you add code or docs. Four places are
 exempt because they are not ours to edit: the generated
-`crates/domainator-core/assets/ssn_viewer_shell.html`, the synced fixtures under
+`crates/domainator-core/assets/ssn_viewer_shell.html` and `assets/report_shells/`, the synced fixtures under
 `test/data/`, and `vendor/hdf5-pure/`. Upstream Python names (`--color_by`, `color_genbank`)
 were already American and are unaffected.
 
@@ -309,7 +309,8 @@ tolerance.
 
 See `UPSTREAM.md` for the full workflow. Key points:
 - **Pin.** `UPSTREAM.md` records the upstream commit the port is caught up to; `external/domainator/` (gitignored) is a git clone kept at that pin — the repo-local source for regeneration and drift checks.
-- **The SSN viewer shell is a generated artifact, never hand-edited.** `crates/domainator-core/assets/ssn_viewer_shell.html` is the render of Python's `ssn_viewer_html(title='@@SSN_VIEWER_TITLE@@', embedded_bundle_json=None)` **plus** one local patch (the "GUI host hook" that `postMessage`s node selection to the Tauri host — load-bearing for `SsnView.svelte`). Regenerate with `scripts/regen_ssn_viewer_shell.py`; `--check` is the drift guard. It is the **only** literal-copy artifact; everything else is hand-ported logic under parity gates + fixture-free `cargo test`s.
+- **The SSN viewer shell is a generated artifact, never hand-edited.** `crates/domainator-core/assets/ssn_viewer_shell.html` is the render of Python's `ssn_viewer_html(title='@@SSN_VIEWER_TITLE@@', embedded_bundle_json=None)` **plus** one local patch (the "GUI host hook" that `postMessage`s node selection to the Tauri host — load-bearing for `SsnView.svelte`). Regenerate with `scripts/regen_ssn_viewer_shell.py`; `--check` is the drift guard.
+- **So are the `--html_out` report shells**, `crates/domainator-core/assets/report_shells/<page>.html`: upstream's `report_html.report_shell(page)` with no local patches, written by `scripts/regen_report_shells.py` (`--check` is the drift guard) and filled by `tools/report_html.rs` (`@@REPORT_TITLE@@`, `@@REPORT_DATA@@` = the `report-data` envelope, `@@REPORT_ROWS@@` = a table's NDJSON rows, `<` escaped as `\u003c`). The page's JS is upstream's; a report's port is only its payload. The viewer shell and these are the **only** literal-copy artifacts; everything else is hand-ported logic under parity gates + fixture-free `cargo test`s.
 - **The GUI reuses the same shell** via `render_html`'s `include_str!` — no separate copy — so viewer changes reach the GUI on a rebuild.
 - **On-disk format changes** on the Python side (`.dsnv` bundle, HDF5, GenBank, XGMML, TSV) require parallel Rust changes in the owning module (the treemap did **not** — it is pure client-side JS on the existing bundle).
 - **Routine:** `scripts/sync_upstream.sh` fast-forwards the vendored copy, prints the `<pin>..<target>` changelog to triage against `UPSTREAM.md`'s file→owner map, runs the guards, and reminds you to advance the pin.
@@ -339,6 +340,6 @@ comparison alone would happily reproduce the same misunderstanding on both sides
 
 Deferred (per plan / no clean path, all tracked in `UPSTREAM.md`): Infernal/ESM, the
 `structure_*` subsystem (portable — foldseek/reseek subprocess, no torch — but out of scope;
-`SearchResult` already carries its four optional metrics), HTML output for `enum_report` /
-`hmmer_report` / `matrix_report` / `summary_report` (JSON offered instead), `matrix_report`'s
+`SearchResult` already carries its four optional metrics), HTML output for `matrix_report` /
+`summary_report` (JSON offered instead; `enum_report`/`hmmer_report` have theirs), `matrix_report`'s
 `--knn_projection` (it only feeds the HTML report), and `hmmer_build --window_beta`.

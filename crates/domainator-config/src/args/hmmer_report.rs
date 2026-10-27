@@ -13,10 +13,16 @@ pub struct HmmerReportArgs {
     /// Write the table to this tab-separated file. Use - for standard output.
     #[arg(short = 'o', long)]
     pub tsv_out: Option<String>,
+    /// Write the table in html format to this file. Use - for standard output.
+    #[arg(long)]
+    pub html_out: Option<String>,
     /// Write streaming NDJSON (one compact JSON object per profile) to this file. Use -
     /// for standard output.
     #[arg(long)]
     pub json_out: Option<String>,
+    /// Max height in pixels to set the html output to.
+    #[arg(long)]
+    pub html_max_height: Option<i64>,
     /// If supplied, then this list will be used instead of the default column names.
     #[arg(long, num_args = 1..)]
     pub column_names: Option<Vec<String>>,

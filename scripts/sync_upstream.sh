@@ -73,6 +73,11 @@ echo "== guard: regen_ssn_viewer_shell.py --check =="
 "$PY" "$REPO_ROOT/scripts/regen_ssn_viewer_shell.py" --check \
   || { echo "  -> viewer shell is STALE; run scripts/regen_ssn_viewer_shell.py"; FAILED=1; }
 
+echo
+echo "== guard: regen_report_shells.py --check =="
+"$PY" "$REPO_ROOT/scripts/regen_report_shells.py" --check \
+  || { echo "  -> a report shell is STALE; run scripts/regen_report_shells.py"; FAILED=1; }
+
 # Upstream's `domainator describe` is its complete interface; the committed snapshot is
 # what the `upstream_manifest` cargo test diffs this port's `describe` against.
 echo

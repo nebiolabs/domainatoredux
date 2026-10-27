@@ -13,10 +13,16 @@ pub struct EnumReportArgs {
     /// Write the table to this tab-separated file. Use - for standard output.
     #[arg(short = 'o', long)]
     pub tsv_out: Option<String>,
+    /// Write the table in html format to this file. Use - for standard output.
+    #[arg(long)]
+    pub html_out: Option<String>,
     /// Write streaming NDJSON (one compact JSON object per record) to this file. Use -
     /// for standard output.
     #[arg(long)]
     pub json_out: Option<String>,
+    /// Max height in pixels to set the html output to.
+    #[arg(long)]
+    pub html_max_height: Option<i64>,
     /// only examine contigs with ids in this list. Additive with --contigs_file.
     /// default: all contigs.
     #[arg(long, num_args = 1..)]

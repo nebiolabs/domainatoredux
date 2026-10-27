@@ -11,6 +11,12 @@ fields:
   - name: tsv_out
     label: "Output (TSV)"
     output_name: "{stem}.enum.tsv"
+  - name: html_out
+    label: "HTML table (optional)"
+    help: "An interactive table page that opens in any browser, offline."
+  - name: html_max_height
+    show: false
+    label: "HTML table height (px)"
   - name: by
     label: "By"
   - name: columns
