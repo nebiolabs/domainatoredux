@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `fb6b947`.
+Parity: Python domainator 1.0.0rc1 @ `d7a75a4`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **`enum_report` and `hmmer_report --html_out`** (and `--html_max_height`): upstream's
@@ -19,6 +19,12 @@ Parity: Python domainator 1.0.0rc1 @ `fb6b947`.
   clusters at the chosen threshold, and (with `--knn_projection`) the edges
   `build_ssn --mst --knn k` would keep at that threshold for each `k`. The text report's
   score histogram is now upstream's, so `-o` writes the same file as `domainator`.
+- **`plot_contigs`**, a new tool: upstream's contig plot, an offline page that draws each
+  contig with its features stacked above it, colored by `--metadata` with `--color_by`.
+- **GenBank COMMENT lines are read as Biopython reads them**: without trailing spaces,
+  blank lines skipped, and the structured comment split out even when its lines are
+  padded, as NCBI pads them. Such a record used to be written back with its structured
+  comment inside the free text.
 - **Upstream's 1.0 interface.** Python domainator 1.0 adopted a single `domainator <tool>`
   command, as this port had. The two would clash, so **the executable is now
   `domainatoredux`**, and its tools take **upstream's names and options**:

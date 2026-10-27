@@ -372,6 +372,14 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // plot
     ToolInfo {
+        required_outputs: Some(&["html_out"]),
+        ..tool(
+            "plot_contigs",
+            "plot",
+            "Draw contigs and their annotations as an interactive HTML page.",
+        )
+    },
+    ToolInfo {
         required_outputs: Some(&["svg_out"]),
         ..tool(
             "color_table_to_legend",

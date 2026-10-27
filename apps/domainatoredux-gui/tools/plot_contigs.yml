@@ -1,0 +1,42 @@
+# GUI dialog for `domainatoredux plot_contigs`. Format: see README.md in this directory.
+id: plot_contigs
+label: "Plot contigs (HTML)"
+description: "Draw contigs and their annotations as an interactive page that opens in any browser, offline."
+fields:
+  - name: input
+    label: "Input sequences"
+    file_type: sequence
+    sources: workspace_first
+    select: first
+  - name: html_out
+    label: "Output (HTML)"
+    output_name: "{stem}.contigs.html"
+  - name: types
+    label: "Feature types"
+  - name: metadata
+    label: "Metadata (TSV)"
+    file_type: table
+    sources: workspace_first
+    select: none
+  - name: color_by
+    label: "Color by"
+  - name: color_table
+    label: "Color table (in)"
+    file_type: table
+    sources: workspace_first
+    select: none
+  - name: width
+    show: false
+    label: "Width"
+  - name: height
+    show: false
+    label: "Height"
+  - name: feature_height
+    show: false
+    label: "Feature height"
+  - name: feature_font_size
+    show: false
+    label: "Feature font size"
+  - name: palette_offset
+    show: false
+    label: "Palette offset"

@@ -21,7 +21,6 @@ find_features	-	tool	false	true	deferred:unported-tool
 gene_call	-	tool	true	false	port-only:	
 infernal_build	-	tool	false	true	deferred:infernal	
 kmer_dist	-	tool	false	true	deferred:unported-tool	
-plot_contigs	-	tool	false	true	deferred:unported-tool	
 select_by_contig	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 split_by_cluster	-	tool	false	true	deferred:unported-tool	
 structure_dist	-	tool	false	true	deferred:structure	

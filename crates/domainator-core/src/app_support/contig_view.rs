@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::seq::taxid::record_taxid;
 use crate::seq::{Location, SeqFeature, SeqRecord, Topology};
-use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME, UNIDENTIFIED_TAXID};
+use crate::UNIDENTIFIED_TAXID;
 
 /// One span of a feature location (0-based half-open), named for JSON clarity
 /// instead of the core tuple `Part = (i64,i64,i32,bool,bool)`.
@@ -101,19 +101,6 @@ pub struct ContigFileView {
     pub evalue_range: Option<[f64; 2]>,
 }
 
-/// Per-kind default fill, mirroring `plot_contigs.py` `feature_to_dict`'s
-/// `default_color` map (fallback `#CCCCCC`).
-fn default_color(kind: &str) -> &'static str {
-    match kind {
-        "CDS" | "exon" => "#CCCCCC",
-        "repeat_region" => "#0000FF",
-        "source" => "#2626FF",
-        k if k == DOMAIN_FEATURE_NAME => "#00FFFF",
-        k if k == DOMAIN_SEARCH_BEST_HIT_NAME => "#06FF0D",
-        _ => "#CCCCCC",
-    }
-}
-
 /// Normalize a `(#?)([A-Fa-f0-9]{6})` hex string to `#RRGGBB` (uppercase), matching
 /// `color_genbank.normalize_color_hex`. Returns `None` if the value isn't a valid
 /// 6-digit hex (the Python raises; here we fall back to the default instead).
@@ -169,7 +156,12 @@ fn feature_view(feat_index: usize, f: &SeqFeature) -> FeatureView {
         .or_else(|| f.get_first("Color"))
         .and_then(normalize_color_hex)
         .map(|c| (c, "qualifier".to_string()))
-        .unwrap_or_else(|| (default_color(&f.kind).to_string(), "default".to_string()));
+        .unwrap_or_else(|| {
+            (
+                crate::tools::plot_contigs::default_feature_color(&f.kind).to_string(),
+                "default".to_string(),
+            )
+        });
 
     let qualifiers = f
         .qualifiers
@@ -373,6 +365,7 @@ pub fn build_contig_file_view(path: &str, records: &[SeqRecord]) -> ContigFileVi
 mod tests {
     use super::*;
     use crate::seq::{Annotations, Location, Reference};
+    use crate::DOMAIN_FEATURE_NAME;
 
     fn feat(kind: &str, quals: &[(&str, &str)]) -> SeqFeature {
         let mut f = SeqFeature::new(kind, Location::range(0, 100, 1));

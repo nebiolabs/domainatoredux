@@ -111,7 +111,7 @@ orphos-cli` and point `$DOMAINATOREDUX_ORPHOS` at the result (usually `~/.cargo/
 
 ```bash
 domainatoredux --version
-domainatoredux --help          # lists all 35 tools
+domainatoredux --help          # lists all 36 tools
 domainatoredux domainate --help
 domainatoredux doctor          # which optional external programs it can find
 ```

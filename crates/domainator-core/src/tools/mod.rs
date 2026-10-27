@@ -26,6 +26,7 @@ pub mod hmmer_select;
 pub mod matrix_report;
 pub mod neighborhood;
 pub mod output_guardrails;
+pub mod plot_contigs;
 pub mod report_html;
 pub mod rotate_contigs;
 pub mod select_by_cds;

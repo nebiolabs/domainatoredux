@@ -31,6 +31,7 @@ mod hmmer_report;
 mod hmmer_search;
 mod hmmer_select;
 mod matrix_report;
+mod plot_contigs;
 mod rotate_contigs;
 mod select_by_cds;
 mod select_by_contig;
@@ -66,6 +67,7 @@ pub use hmmer_report::HmmerReportArgs;
 pub use hmmer_search::HmmerSearchArgs;
 pub use hmmer_select::HmmerSelectArgs;
 pub use matrix_report::MatrixReportArgs;
+pub use plot_contigs::PlotContigsArgs;
 pub use rotate_contigs::RotateContigsArgs;
 pub use select_by_cds::SelectByCdsArgs;
 pub use select_by_contig::SelectByContigArgs;
@@ -115,6 +117,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "hmmer_search" => HmmerSearchArgs::augment_args(cmd),
         "format_db" => FormatDbArgs::augment_args(cmd),
         "color_table_to_legend" => ColorTableToLegendArgs::augment_args(cmd),
+        "plot_contigs" => PlotContigsArgs::augment_args(cmd),
         "gene_call" => GeneCallArgs::augment_args(cmd),
         _ => return None,
     })

@@ -72,6 +72,8 @@ enum Command {
     ColorGenbank(config::args::ColorGenbankArgs),
     /// Generate an SVG legend from a color table.
     ColorTableToLegend(config::args::ColorTableToLegendArgs),
+    /// Draw contigs and their annotations as an interactive HTML page.
+    PlotContigs(config::args::PlotContigsArgs),
     /// Trim contig ends by kb, CDS count, or by stripping end CDSs by domain.
     TrimContigs(config::args::TrimContigsArgs),
     RotateContigs(config::args::RotateContigsArgs),
@@ -455,6 +457,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::FilterDomains(args) => commands::filter_domains::run(&args)?,
         Command::ColorGenbank(args) => commands::color_genbank::run(&args)?,
         Command::ColorTableToLegend(args) => commands::color_table_to_legend::run(&args)?,
+        Command::PlotContigs(args) => commands::plot_contigs::run(&args)?,
         Command::TrimContigs(args) => commands::trim_contigs::run(&args)?,
         Command::RotateContigs(args) => commands::rotate_contigs::run(&args)?,
         Command::ExtractDomains(args) => commands::extract_domains::run(&args)?,

@@ -7,8 +7,17 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `fb6b947` — *Offline HTML page for matrix_report*
+- **Caught up to:** `d7a75a4` — *Offline HTML page for plot_contigs*
   (2026-10-27; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`d7a75a4`**, ported: `plot_contigs` is a new tool here (`tools/plot_contigs.rs`). Its
+  page moved onto `report_html.py` (`report_shells/plot_contigs.html`), and upstream's
+  Python now builds only the data: each contig's details and line color, each drawn
+  feature's name, type, color, parts and qualifiers. The page stacks the features
+  itself, so nothing layout-sensitive is left to reproduce. Contig details read the
+  record's annotations, and matching Biopython's `comment` exposed a reader bug: COMMENT
+  lines kept their trailing spaces, and a padded structured comment was never split out
+  (fixed in `parse_comment`). The six harvested invocations reproduce; `differential.py`
+  now recognizes a page by its first bytes, since these tests name it with no extension.
 - **`fb6b947`**, ported. matrix_report's `--html_out` page moved onto `report_html.py`
   (`report_shells/matrix_report.html`, new shared scripts `common/line_chart.js` and
   `common/pack.js`). Its data is the `--json_out` document plus the MST, the threshold
@@ -207,7 +216,7 @@ Tracked so a later sync does not mistake them for oversights:
 - **`--partial` on `find_features` and `db_download`** (`bdc74bb`). Neither tool
   is ported. The GUI's managed UniProt download could take the same filter later.
 - **Unported tools:** `kmer_dist`, `split_by_cluster`, `build_tree`, `build_projection`,
-  `plot_contigs` (the app's contig viewer covers it on screen), `db_download` (the app's
+  `db_download` (the app's
   managed downloads cover UniProt, Pfam and NCBI Taxonomy), `infernal_build`,
   `find_features` (torch), and the structure tools above. Their manifest entries are
   `deferred:` rows of `scripts/parity/manifest_allowlist.tsv`.

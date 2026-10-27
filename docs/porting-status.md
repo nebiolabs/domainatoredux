@@ -15,9 +15,9 @@ Three counts appear in this project and they measure different things:
 
 | Count | What it is |
 | --- | --- |
-| **38** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 35 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
-| **33** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
-| **30** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator` and `summary_report`, which the app covers with panels and viewers |
+| **39** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 36 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
+| **34** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
+| **31** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator` and `summary_report`, which the app covers with panels and viewers |
 | **44 rows below** | upstream's tools (`domainator describe`), ported *and* deliberately unported |
 
 Related: [deliberate deferrals and the upstream pin](https://github.com/nebiolabs/domainatoredux/blob/main/UPSTREAM.md),
@@ -84,7 +84,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | infernal_build | deferred (avoiding infernal dependency for now) | — |
 | kmer_dist | deferred (heavy; low priority per plan) | — |
 | matrix_report | finished (text, `--json_out` (upstream's agent contract) and `--html_out` (upstream's generated page) all match upstream, `--knn_projection` included; a separate GUI payload feeds the viewer tab) | **Matrix Report viewer** tab (histogram + suggested cutoffs) + Tools menu export ("Matrix report (export)", text) |
-| plot_contigs | superseded on screen by the GUI contig viewer; no CLI equivalent and no static image export yet | **Contig viewer** — the GUI centerpiece (SVG, viewport virtualization + LOD, db/e-value filters, tooltips, editing); already supersedes the Python plotter for on-screen use (static image export still TODO) |
+| plot_contigs | finished (`--html_out` is upstream's generated page; its data match upstream's on every harvested invocation) | Tools menu ("Plot contigs (HTML)") writes the page; the **Contig viewer** — the GUI centerpiece (SVG, viewport virtualization + LOD, db/e-value filters, tooltips, editing) — is the on-screen equivalent |
 | rotate_contigs | finished (parity-verified; Infernal `.cm` references deferred, as for domainate) | Tools menu ("Rotate contigs") |
 | select_by_cds | finished | Tools menu ("Select by CDS") — name/domain/`domain_expr`/`annotation_type`/`unannotated` + neighborhood extraction + pad/dedup/strand/invert |
 | select_by_contig | finished | Tools menu ("Select by contig") — name/regex, domain content, taxonomy, length/CDS-count filters; GenBank and/or FASTA output |

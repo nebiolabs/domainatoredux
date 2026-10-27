@@ -25,6 +25,7 @@ pub mod hmmer_report;
 pub mod hmmer_search;
 pub mod hmmer_select;
 pub mod matrix_report;
+pub mod plot_contigs;
 pub mod rotate_contigs;
 pub mod select_by_cds;
 pub mod select_by_contig;

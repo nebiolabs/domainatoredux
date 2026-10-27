@@ -4,7 +4,7 @@
 domainatoredux <tool> [options]
 ```
 
-`domainatoredux --help` lists all 35 tools, plus `describe`, `completion` and `doctor`;
+`domainatoredux --help` lists all 36 tools, plus `describe`, `completion` and `doctor`;
 `domainatoredux <tool> --help` is the exhaustive,
 always-current list of that tool's flags. This page gives each tool's purpose, the flags
 that matter in practice, and a worked example. Filenames in the examples are
@@ -93,7 +93,7 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 | [I/O and diagnostics](#io-and-diagnostics) | `inspect`, `convert`, `genbank_to_fasta`, `describe`, `completion`, `doctor` |
 | [Annotation and search](#annotation-and-search) | `domainate`, `domain_search`, `gene_call`, `filter_domains` |
 | [Selection and extraction](#selection-and-extraction) | `select_by_cds`, `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `rotate_contigs`, `sort_contigs`, `clean_sequences`, `deduplicate_genbank` |
-| [Color](#color) | `color_genbank`, `color_table_to_legend` |
+| [Color and plots](#color-and-plots) | `color_genbank`, `color_table_to_legend`, `plot_contigs` |
 | [Matrices and networks](#matrices-and-networks) | `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer` |
 | [Reports](#reports) | `enum_report`, `summary_report`, `matrix_report`, `ssn_navigator` |
 | [HMM profiles](#hmm-profiles) | `hmmer_build`, `hmmer_select`, `hmmer_search`, `hmmer_compare`, `hmmer_report` |
@@ -431,7 +431,7 @@ domainatoredux deduplicate_genbank -i proteins.fasta --fasta_out representatives
 
 ---
 
-## Color
+## Color and plots
 
 ### `color_genbank`
 
@@ -453,6 +453,22 @@ Render a color table as an SVG legend to accompany a figure.
 
 ```bash
 domainatoredux color_table_to_legend -i colors.tsv -o legend.svg --title "Domains"
+```
+
+### `plot_contigs`
+
+Draw contigs and their annotations as an HTML page that works offline: each contig is a
+line with its features drawn above it as arrows, stacked so overlapping features stay
+visible. Zoom with the mouse wheel, drag to pan, and click a contig or feature to list
+its details. `--types` picks the feature types drawn (CDS, exon, repeat, RNA and domain
+features by default), and a feature's `Color` qualifier sets its fill. `--color_by`
+colors the contig lines by a column of the `--metadata` tables, using the automatic
+palette or a `--color_table`. The page is upstream's own, so `domainator plot_contigs`
+writes the same plot. It reads best for a few hundred contigs of up to tens of kilobases.
+
+```bash
+domainatoredux plot_contigs -i colored.gb -o contigs.html \
+  --metadata contigs.tsv --color_by species
 ```
 
 ---

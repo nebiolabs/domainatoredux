@@ -42,7 +42,6 @@ const DEFERRED_TOOLS: &[(&str, &str)] = &[
     ("find_features", "deferred:unported-tool"),
     ("infernal_build", "deferred:infernal"),
     ("kmer_dist", "deferred:unported-tool"),
-    ("plot_contigs", "deferred:unported-tool"),
     ("split_by_cluster", "deferred:unported-tool"),
     ("structure_dist", "deferred:structure"),
     ("structure_domainate", "deferred:structure"),

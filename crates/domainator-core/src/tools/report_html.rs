@@ -34,6 +34,8 @@ pub const SUMMARY_REPORT_SHELL: &str =
     include_str!("../../assets/report_shells/summary_report.html");
 /// `matrix_report`'s page.
 pub const MATRIX_REPORT_SHELL: &str = include_str!("../../assets/report_shells/matrix_report.html");
+/// `plot_contigs`' page.
+pub const PLOT_CONTIGS_SHELL: &str = include_str!("../../assets/report_shells/plot_contigs.html");
 
 /// How the envelope carries `data`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -257,6 +259,7 @@ mod tests {
             (TABLE_REPORT_SHELL, 1),
             (SUMMARY_REPORT_SHELL, 0),
             (MATRIX_REPORT_SHELL, 0),
+            (PLOT_CONTIGS_SHELL, 0),
         ] {
             assert_eq!(shell.matches(TITLE_TOKEN).count(), 2);
             assert_eq!(shell.matches(DATA_TOKEN).count(), 1);

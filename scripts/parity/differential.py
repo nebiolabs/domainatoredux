@@ -208,7 +208,9 @@ def compare(a, b, helpers, SeqIO):
             return _compare_xgmml(a, b)
         if ext == ".hmm":
             return _compare_text(a, b, _normalize_hmm)
-        if ext in (".html", ".htm"):
+        # A test may name its page with no extension (an @OUT@ the harvester could not
+        # resolve), so a page is also recognized by its first bytes.
+        if ext in (".html", ".htm") or pathlib.Path(a).read_bytes()[:15].lower() == b"<!doctype html>":
             return _compare_html(a, b)
         return _compare_text(a, b)
     except Exception as exc:

@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>@@REPORT_TITLE@@</title>
+<style>
+:root {
+    color-scheme: light;
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --ink: #1e2a2f;
+    --muted: #5c6a70;
+    --accent: #c8553d;
+    --accent-soft: #f3cdb9;
+    --line: #d8dce2;
+    --row-alt: #f8f9fa;
+    --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    color: var(--ink);
+    min-height: 100vh;
+    background: linear-gradient(180deg, #ffffff 0%, var(--bg) 100%) fixed;
+}
+.shell {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 24px;
+}
+h1 {
+    margin: 0 0 16px;
+    font-size: 1.8rem;
+    font-weight: 600;
+}
+h2 {
+    margin: 0 0 12px;
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 16px 18px;
+    margin-bottom: 18px;
+}
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+}
+.toolbar .spacer { flex: 1; }
+.pager {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.toolbar input.page-input {
+    width: 4.5em;
+    text-align: center;
+    font-size: 0.9rem;
+    padding: 3px 4px;
+}
+.status { color: var(--muted); font-size: 0.9rem; }
+button, select {
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--ink);
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 4px 10px;
+    cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { color: var(--muted); cursor: default; }
+input[type="search"], input[type="text"] {
+    font: inherit;
+    font-size: 0.85rem;
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+.error {
+    color: #8f1d1d;
+    background: #fdecec;
+    border: 1px solid #f2b8b8;
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+
+/* table.js */
+.report-table-wrap {
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+table.report-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    table-layout: fixed;
+}
+.report-table th, .report-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+.report-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #eef0f3;
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    font-weight: 600;
+    vertical-align: top;
+}
+.report-table th .column-title {
+    display: flex;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.report-table th .column-title span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.report-table th .sort-mark { color: var(--accent); }
+.report-table th.drop-target { box-shadow: inset 3px 0 0 var(--accent); }
+.report-table th .resize-handle {
+    position: absolute;
+    top: 0;
+    right: -1px;
+    width: 7px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 2;
+}
+.report-table th .resize-handle:hover,
+.report-table th .resize-handle:focus-visible,
+.report-table th.resizing .resize-handle {
+    background: var(--accent-soft);
+    outline: none;
+}
+body.resizing-column { cursor: col-resize; user-select: none; }
+.context-menu {
+    position: fixed;
+    z-index: 10;
+    min-width: 160px;
+    padding: 4px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    font-size: 0.9rem;
+}
+.context-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    border-radius: 6px;
+    padding: 6px 10px;
+    background: transparent;
+}
+.context-menu button:hover, .context-menu button:focus {
+    background: var(--accent-soft);
+    outline: none;
+}
+.report-table th input { margin-top: 4px; font-weight: normal; }
+.report-table td.number { text-align: right; }
+.report-table tbody tr:nth-child(even) td { background: var(--row-alt); }
+.report-table tbody tr:hover td { background: var(--accent-soft); }
+
+/* charts.js and the summary page */
+.chart { overflow-x: auto; }
+.chart rect[data-tip]:not([fill-opacity="0"]):hover { fill-opacity: 1; }
+.chart-tooltip {
+    position: fixed;
+    z-index: 10;
+    max-width: 420px;
+    padding: 6px 10px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    font-size: 0.85rem;
+    white-space: pre-line;
+    pointer-events: none;
+}
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px 18px;
+    margin: 0 0 16px;
+}
+.stat-grid div { display: flex; flex-direction: column-reverse; gap: 2px; }
+.stat-grid dt { color: var(--muted); font-size: 0.85rem; }
+.stat-grid dd { margin: 0; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.panel p.note { color: var(--muted); font-size: 0.9rem; margin: 0 0 12px; }
+
+/* The matrix report */
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 18px;
+}
+.chart-grid > div { min-width: 0; }
+.slider-controls { margin: 4px 0 16px; }
+.slider-controls label { display: block; margin: 10px 0 6px; font-size: 0.95rem; }
+.slider-track input[type="range"] { width: 100%; margin: 0; accent-color: #d62728; }
+#threshold-slider { direction: rtl; }
+
+/* The contig plot */
+.contig-details {
+    max-width: 100%;
+    overflow: auto;
+    resize: vertical;
+    padding: 6px 10px;
+    margin-bottom: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 0.85rem;
+}
+.contig-details .details-heading { font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+.contig-details dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; }
+.contig-details dt { font-weight: 600; }
+.contig-details dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.color-swatch {
+    display: inline-block;
+    width: 0.8em;
+    height: 0.8em;
+    margin-right: 6px;
+    border-radius: 2px;
+    vertical-align: -0.05em;
+}
+svg.contig-plot { border: 1px solid var(--line); border-radius: 8px; cursor: grab; touch-action: none; }
+svg.contig-plot.panning { cursor: grabbing; }
+svg.contig-plot [data-contig] > line, svg.contig-plot [data-contig] text, svg.contig-plot [data-feature] { cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="shell">
+    <h1>@@REPORT_TITLE@@</h1>
+    <div id="report-root"><div class="status">Loading the report...</div></div>
+</div>
+<script type="application/json" id="report-data">@@REPORT_DATA@@</script>
+<script>
+// The contig plot (plot_contigs): each contig as a line, with its features drawn above it as
+// arrows, stacked so that overlapping features do not cover each other.
+//
+// report-data's data is {types, color_by, layout, contigs}:
+// - types are the feature types drawn, in stacking order: features of earlier types are drawn
+//   closer to their contig.
+// - color_by is the metadata column the contig lines are colored by, or null.
+// - layout holds plot_contigs' size options: width, height, feature_height, arrow_width,
+//   contig_thickness, contig_label_font, contig_label_px, feature_label_font,
+//   feature_font_size, details_width and details_height.
+// - contigs are {name, length, color, details, features}. details are [label, text] pairs: the
+//   record's name, description, length, annotations, cross-references and metadata. features
+//   are {name, type, color, parts, qualifiers}, parts being [start, end, strand] with 0-based,
+//   end-exclusive positions and strand "+" or "-", and qualifiers [key, [values]] pairs.
+
+// Reading the data a report was built with.
+//
+// report_html.py puts one envelope in <script type="application/json" id="report-data">:
+// {"report": <name>, "payload_version": <n>, "encoding": "json" | "gzip+base64", "data": ...}.
+// With "gzip+base64", data is a base64 string of gzipped JSON. A table report also has a
+// <script type="application/x-ndjson" id="report-rows"> block, one JSON object per line.
+
+async function gunzipBase64Json(base64Text) {
+    if (typeof DecompressionStream === "undefined") {
+        throw new Error("This browser cannot read the report's compressed data (DecompressionStream is unavailable).");
+    }
+    const binary = atob(base64Text);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return JSON.parse(await new Response(stream).text());
+}
+
+async function readReportData() {
+    const element = document.getElementById("report-data");
+    const envelope = JSON.parse(element.textContent);
+    if (envelope.encoding === "gzip+base64") {
+        envelope.data = await gunzipBase64Json(envelope.data);
+    } else if (envelope.encoding !== "json") {
+        throw new Error(`Unknown report data encoding: ${envelope.encoding}`);
+    }
+    return envelope;
+}
+
+function readNdjsonRows(elementId) {
+    const element = document.getElementById(elementId);
+    const rows = [];
+    for (const line of element.textContent.split("\n")) {
+        if (line.trim() !== "") {
+            rows.push(JSON.parse(line));
+        }
+    }
+    return rows;
+}
+
+function showReportError(container, error) {
+    const message = document.createElement("div");
+    message.className = "error";
+    message.textContent = `This report could not be shown: ${error && error.message ? error.message : error}`;
+    container.replaceChildren(message);
+}
+
+// Saving data from a report: text files built in the page, handed to the browser as a download,
+// and text copied to the clipboard.
+
+function downloadText(fileName, mimeType, text) {
+    downloadBlob(fileName, new Blob([text], {type: mimeType}));
+}
+
+function downloadBlob(fileName, blob) {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function csvField(value) {
+    if (value === null || value === undefined) {
+        return "";
+    }
+    const text = String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function tsvField(value) {
+    if (value === null || value === undefined) {
+        return "";
+    }
+    return String(value).replace(/[\t\r\n]/g, " ");
+}
+
+// rows: arrays of cell values, in the order of header.
+function delimitedText(header, rows, delimiter) {
+    const field = delimiter === "\t" ? tsvField : csvField;
+    const lines = [header.map(field).join(delimiter)];
+    for (const row of rows) {
+        lines.push(row.map(field).join(delimiter));
+    }
+    return lines.join("\n") + "\n";
+}
+
+// Resolves to whether the text reached the clipboard. The Clipboard API needs a secure context
+// (a file:// page is one in Chromium, not everywhere), so this falls back to a hidden textarea.
+async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (error) {
+            // Refused (no permission, or the page lost focus): try the fallback.
+        }
+    }
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    let copied = false;
+    try {
+        copied = document.execCommand("copy");
+    } catch (error) {
+        copied = false;
+    }
+    area.remove();
+    return copied;
+}
+
+// SVG charts drawn without a charting library: axes with round-number ticks, a hover tooltip,
+// a histogram of precomputed bins, and buttons that save a chart as SVG or PNG.
+//
+// Colors and fonts are set as attributes, not by the page's stylesheet, so a saved SVG looks
+// the same outside the page.
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const CHART_FONT = "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif";
+const CHART_INK = "#1e2a2f";
+const CHART_MUTED = "#5c6a70";
+const CHART_GRID = "#e3e6ea";
+const CHART_ACCENT = "#c8553d";
+
+function svgElement(tag, attributes = {}, parent = null) {
+    const element = document.createElementNS(SVG_NS, tag);
+    for (const [name, value] of Object.entries(attributes)) {
+        element.setAttribute(name, String(value));
+    }
+    if (parent) {
+        parent.appendChild(element);
+    }
+    return element;
+}
+
+// The step, 1, 2 or 5 times a power of ten, that splits [lo, hi] into about `count` parts.
+function niceStep(lo, hi, count) {
+    const span = hi - lo;
+    if (!(span > 0)) {
+        return 1;
+    }
+    const raw = span / Math.max(1, count);
+    const power = 10 ** Math.floor(Math.log10(raw));
+    for (const factor of [1, 2, 5, 10]) {
+        if (power * factor >= raw) {
+            return power * factor;
+        }
+    }
+    return power * 10;
+}
+
+// The multiples of niceStep(lo, hi, count) in [lo, hi].
+function niceTicks(lo, hi, count) {
+    const step = niceStep(lo, hi, count);
+    const ticks = [];
+    for (let i = Math.ceil(lo / step); i * step <= hi + step * 1e-9; i += 1) {
+        // Rounded so 0.1 * 3 is shown as 0.3.
+        ticks.push(Number((i * step).toPrecision(12)));
+    }
+    return ticks;
+}
+
+function formatChartNumber(value) {
+    return value.toLocaleString("en-US", {maximumFractionDigits: 3});
+}
+
+function linearScale(domainLo, domainHi, rangeLo, rangeHi) {
+    const span = domainHi - domainLo || 1;
+    return value => rangeLo + (value - domainLo) / span * (rangeHi - rangeLo);
+}
+
+// One tooltip per page, shown beside the pointer.
+function chartTooltip() {
+    let tooltip = document.querySelector(".chart-tooltip");
+    if (!tooltip) {
+        tooltip = document.createElement("div");
+        tooltip.className = "chart-tooltip";
+        tooltip.setAttribute("role", "tooltip");
+        tooltip.hidden = true;
+        document.body.appendChild(tooltip);
+    }
+    return {
+        show(event, text) {
+            tooltip.textContent = text;
+            tooltip.hidden = false;
+            const x = Math.min(event.clientX + 14, window.innerWidth - tooltip.offsetWidth - 4);
+            const y = Math.min(event.clientY + 14, window.innerHeight - tooltip.offsetHeight - 4);
+            tooltip.style.left = `${Math.max(0, x)}px`;
+            tooltip.style.top = `${Math.max(0, y)}px`;
+        },
+        hide() {
+            tooltip.hidden = true;
+        },
+    };
+}
+
+// Shows `text(element)` while the pointer is over an element of `group` that has data-tip.
+function attachTooltip(group, text) {
+    const tooltip = chartTooltip();
+    group.addEventListener("pointermove", event => {
+        const target = event.target.closest("[data-tip]");
+        if (target && group.contains(target)) {
+            tooltip.show(event, text(target));
+        } else {
+            tooltip.hide();
+        }
+    });
+    group.addEventListener("pointerleave", () => tooltip.hide());
+}
+
+function svgMarkup(svg) {
+    const copy = svg.cloneNode(true);
+    copy.setAttribute("xmlns", SVG_NS);
+    const box = svg.viewBox.baseVal;
+    copy.setAttribute("width", String(box.width));
+    copy.setAttribute("height", String(box.height));
+    copy.removeAttribute("style");
+    return `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(copy)}\n`;
+}
+
+function downloadSvg(svg, fileStem) {
+    downloadText(`${fileStem}.svg`, "image/svg+xml", svgMarkup(svg));
+}
+
+// At twice the chart's size, on white.
+function downloadPng(svg, fileStem, scale = 2) {
+    const box = svg.viewBox.baseVal;
+    const url = URL.createObjectURL(new Blob([svgMarkup(svg)], {type: "image/svg+xml"}));
+    const image = new Image();
+    image.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(box.width * scale);
+        canvas.height = Math.round(box.height * scale);
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(blob => downloadBlob(`${fileStem}.png`, blob), "image/png");
+    };
+    image.src = url;
+}
+
+// "Download SVG" and "Download PNG" buttons for the chart `getSvg()` returns when clicked.
+function chartDownloadButtons(getSvg, fileStem, idPrefix = "") {
+    return [["SVG", downloadSvg], ["PNG", downloadPng]].map(([label, save]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.id = `${idPrefix}download-${label.toLowerCase()}`;
+        button.textContent = `Download ${label}`;
+        button.addEventListener("click", () => save(getSvg(), fileStem));
+        return button;
+    });
+}
+
+// A chart's toolbar (its download buttons) above the chart.
+function chartFigure(container, svg, fileStem, idPrefix) {
+    const toolbar = document.createElement("div");
+    toolbar.className = "toolbar";
+    toolbar.append(...chartDownloadButtons(() => svg, fileStem, idPrefix));
+    const figure = document.createElement("div");
+    figure.className = "chart";
+    figure.appendChild(svg);
+    container.replaceChildren(toolbar, figure);
+}
+
+function drawAxes(svg, {x, y, xTicks, yTicks, left, right, top, bottom, xLabel, yLabel}) {
+    const axes = svgElement("g", {"font-family": CHART_FONT, "font-size": 11, fill: CHART_MUTED}, svg);
+    for (const tick of yTicks) {
+        const ty = y(tick);
+        svgElement("line", {x1: left, x2: right, y1: ty, y2: ty, stroke: CHART_GRID}, axes);
+        const label = svgElement("text", {x: left - 6, y: ty, "text-anchor": "end", "dominant-baseline": "middle"}, axes);
+        label.textContent = formatChartNumber(tick);
+    }
+    svgElement("line", {x1: left, x2: right, y1: bottom, y2: bottom, stroke: CHART_INK}, axes);
+    for (const tick of xTicks) {
+        const tx = x(tick);
+        svgElement("line", {x1: tx, x2: tx, y1: bottom, y2: bottom + 4, stroke: CHART_INK}, axes);
+        const label = svgElement("text", {x: tx, y: bottom + 16, "text-anchor": "middle"}, axes);
+        label.textContent = formatChartNumber(tick);
+    }
+    const titles = svgElement("g", {"font-family": CHART_FONT, "font-size": 12, fill: CHART_INK}, svg);
+    const xTitle = svgElement("text", {x: (left + right) / 2, y: bottom + 36, "text-anchor": "middle"}, titles);
+    xTitle.textContent = xLabel;
+    const yTitle = svgElement("text", {
+        transform: `translate(14 ${(top + bottom) / 2}) rotate(-90)`, "text-anchor": "middle",
+    }, titles);
+    yTitle.textContent = yLabel;
+}
+
+// binEdges: n + 1 numbers, bin i holding the values in [binEdges[i], binEdges[i + 1]);
+// counts: n counts. With integerBins, a bin is labeled by the integers it holds.
+function drawHistogram(container, {binEdges, counts, xLabel, yLabel, itemLabel = "items",
+    integerBins = false, fileStem = "histogram", idPrefix = ""}) {
+    const width = 760;
+    const height = 300;
+    const margin = {top: 12, right: 20, bottom: 48, left: 64};
+    const svg = svgElement("svg", {
+        viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `Histogram of ${xLabel}`,
+        style: `width: 100%; max-width: ${width}px; height: auto;`,
+    });
+    const lo = binEdges[0];
+    const hi = binEdges[binEdges.length - 1];
+    const maxCount = Math.max(1, ...counts);
+    // Counts get whole-number ticks.
+    const yTicks = niceTicks(0, maxCount, 5).filter(Number.isInteger);
+    const yTop = Math.max(maxCount, yTicks[yTicks.length - 1]);
+    const x = linearScale(lo, hi, margin.left, width - margin.right);
+    const y = linearScale(0, yTop, height - margin.bottom, margin.top);
+    // Integer bins get integer ticks.
+    const xTicks = niceTicks(lo, hi, 8).filter(tick => !integerBins || Number.isInteger(tick));
+    drawAxes(svg, {
+        x, y, xTicks, yTicks, xLabel, yLabel,
+        left: margin.left, right: width - margin.right, top: margin.top, bottom: height - margin.bottom,
+    });
+
+    const bars = svgElement("g", {fill: CHART_ACCENT}, svg);
+    counts.forEach((count, i) => {
+        const x0 = x(binEdges[i]);
+        const x1 = x(binEdges[i + 1]);
+        const bar = svgElement("rect", {
+            x: x0 + 0.5, y: y(count), width: Math.max(1, x1 - x0 - 1), height: y(0) - y(count),
+            "fill-opacity": 0.85,
+        }, bars);
+        const start = binEdges[i];
+        const end = binEdges[i + 1];
+        const range = integerBins
+            ? (end - start === 1 ? formatChartNumber(start) : `${formatChartNumber(start)}–${formatChartNumber(end - 1)}`)
+            : `${formatChartNumber(start)}–${formatChartNumber(end)}`;
+        bar.dataset.tip = `${range}: ${formatChartNumber(count)} ${itemLabel}`;
+        // Empty bins can still be pointed at: a transparent strip the height of the plot.
+        if (count === 0) {
+            bar.setAttribute("y", margin.top);
+            bar.setAttribute("height", y(0) - margin.top);
+            bar.setAttribute("fill-opacity", 0);
+        }
+    });
+    attachTooltip(bars, bar => bar.dataset.tip);
+    chartFigure(container, svg, fileStem, idPrefix);
+    return svg;
+}
+
+
+// Feature types that share one level above a contig however they overlap, so that a contig's
+// genes stay on one line.
+const SQUASHED_TYPES = new Set(["CDS", "exon"]);
+// Pixels between the bottom of a feature and its label's baseline.
+const FEATURE_LABEL_INSET = 7;
+// Pixels between a contig's label and the features of the contig below it.
+const CONTIG_GAP = 5;
+// Longest qualifier value a tooltip shows in full; the details box shows all of it.
+const TOOLTIP_VALUE_LENGTH = 120;
+// A press that moves less than this many pixels is a click, not a drag.
+const CLICK_SLOP = 3;
+const MIN_SCALE = 1e-4;
+const MAX_SCALE = 100;
+
+function featureSpan(feature) {
+    return {
+        start: Math.min(...feature.parts.map(part => part[0])),
+        end: Math.max(...feature.parts.map(part => part[1])),
+    };
+}
+
+// True if the features share a position (touching does not count).
+function partsOverlap(a, b) {
+    return a.parts.some(([aStart, aEnd]) => b.parts.some(([bStart, bEnd]) => Math.min(aEnd, bEnd) - Math.max(aStart, bStart) > 0));
+}
+
+// The features with their span and a level, 0 being next to the contig. Features are placed
+// by type (in `types` order), then by start, each on the lowest level that no feature placed
+// before it and overlapping it is on; but a SQUASHED_TYPES feature goes on the level of the
+// first one placed.
+function stackFeatures(features, types) {
+    const rank = new Map(types.map((type, i) => [type, i]));
+    const order = type => (rank.has(type) ? rank.get(type) : types.length + 1);
+    const stacked = features.map(feature => ({...feature, ...featureSpan(feature), level: 0}))
+        .sort((a, b) => order(a.type) - order(b.type) || a.start - b.start);
+    const placed = [];
+    for (const feature of stacked) {
+        const occupied = new Set();
+        let shared = null;
+        for (const other of placed) {
+            if (SQUASHED_TYPES.has(feature.type) && SQUASHED_TYPES.has(other.type)) {
+                shared = other.level;
+                break;
+            }
+            if (partsOverlap(feature, other)) {
+                occupied.add(other.level);
+            }
+        }
+        if (shared !== null) {
+            feature.level = shared;
+        } else {
+            while (occupied.has(feature.level)) {
+                feature.level += 1;
+            }
+        }
+        placed.push(feature);
+    }
+    return stacked;
+}
+
+// The contigs with stacked features, and each one's offset: the y of its line, below its
+// features and the contig above's label.
+function layoutContigs(contigs, types, layout) {
+    const gap = layout.contig_label_px + layout.contig_thickness / 2 + CONTIG_GAP;
+    let offset = 0;
+    return contigs.map(contig => {
+        const features = stackFeatures(contig.features, types);
+        const levels = Math.max(0, ...features.map(feature => feature.level)) + 1;
+        offset += levels * layout.feature_height + gap;
+        return {...contig, features, offset};
+    });
+}
+
+// An arrow `length` long and `height` high from (0, 0) up, pointing right on "+" and left on
+// "-". Its head is at most as long as the arrow.
+function arrowPath(length, strand, arrowWidth, height) {
+    const head = Math.min(arrowWidth, length);
+    if (strand === "-") {
+        return `M${head},0 L${length},0 L${length},${-height} L${head},${-height} L0,${-height / 2} Z`;
+    }
+    return `M0,0 L${length - head},0 L${length},${-height / 2} L${length - head},${-height} L0,${-height} Z`;
+}
+
+function featureDetails(feature) {
+    const strands = new Set(feature.parts.map(part => part[2]));
+    return [
+        ["start", String(feature.start)],
+        ["end", String(feature.end)],
+        ["strand", strands.size === 1 ? [...strands][0] : "mixed"],
+        ...feature.qualifiers.map(([key, values]) => [key, values.join(";")]),
+    ];
+}
+
+function tooltipText({heading, lines}) {
+    const shorten = text => (text.length > TOOLTIP_VALUE_LENGTH ? `${text.slice(0, TOOLTIP_VALUE_LENGTH - 1)}…` : text);
+    return [heading, ...lines.map(([label, text]) => `${label}: ${shorten(text)}`)].join("\n");
+}
+
+// Fills the details box with `lines`, the `swatch` label's value marked with its color.
+function showDetails(box, {heading, lines, swatch}) {
+    const title = document.createElement("div");
+    title.className = "details-heading";
+    title.textContent = heading;
+    const list = document.createElement("dl");
+    for (const [label, text] of lines) {
+        const term = document.createElement("dt");
+        term.textContent = label;
+        const value = document.createElement("dd");
+        if (swatch && label === swatch.label) {
+            const mark = document.createElement("span");
+            mark.className = "color-swatch";
+            mark.style.background = swatch.color;
+            value.appendChild(mark);
+        }
+        value.appendChild(document.createTextNode(text));
+        list.append(term, value);
+    }
+    box.replaceChildren(title, list);
+}
+
+// Wheel zooms around the pointer, dragging pans, and double-click zooms in, as d3-zoom does.
+// A drag that ends on a feature is not a click on it.
+function panZoom(svg, layer, initialScale, center) {
+    let view = {k: initialScale, x: 0, y: 0};
+    const apply = () => layer.setAttribute("transform", `translate(${view.x},${view.y}) scale(${view.k})`);
+    const toSvg = event => {
+        const point = svg.createSVGPoint();
+        point.x = event.clientX;
+        point.y = event.clientY;
+        return point.matrixTransform(svg.getScreenCTM().inverse());
+    };
+    const zoomAt = (factor, x, y) => {
+        const k = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.k * factor));
+        view = {k, x: x - (x - view.x) * k / view.k, y: y - (y - view.y) * k / view.k};
+        apply();
+    };
+    svg.addEventListener("wheel", event => {
+        event.preventDefault();
+        const point = toSvg(event);
+        const delta = -event.deltaY * (event.deltaMode === 1 ? 0.05 : event.deltaMode ? 1 : 0.002);
+        zoomAt(2 ** delta, point.x, point.y);
+    }, {passive: false});
+    svg.addEventListener("dblclick", event => {
+        const point = toSvg(event);
+        zoomAt(event.shiftKey ? 0.5 : 2, point.x, point.y);
+    });
+
+    let press = null;
+    let dragged = false;
+    svg.addEventListener("pointerdown", event => {
+        if (event.button !== 0) {
+            return;
+        }
+        press = {id: event.pointerId, clientX: event.clientX, clientY: event.clientY, from: toSvg(event), view};
+        dragged = false;
+    });
+    svg.addEventListener("pointermove", event => {
+        if (!press || event.pointerId !== press.id) {
+            return;
+        }
+        if (!dragged) {
+            if (Math.hypot(event.clientX - press.clientX, event.clientY - press.clientY) < CLICK_SLOP) {
+                return;
+            }
+            dragged = true;
+            svg.setPointerCapture(event.pointerId);
+            svg.classList.add("panning");
+        }
+        const point = toSvg(event);
+        view = {...press.view, x: press.view.x + point.x - press.from.x, y: press.view.y + point.y - press.from.y};
+        apply();
+    });
+    const release = () => {
+        press = null;
+        svg.classList.remove("panning");
+    };
+    svg.addEventListener("pointerup", release);
+    svg.addEventListener("pointercancel", release);
+    svg.addEventListener("click", event => {
+        if (dragged) {
+            event.stopPropagation();
+            dragged = false;
+        }
+    }, true);
+
+    apply();
+    return {
+        zoomBy: factor => zoomAt(factor, center.x, center.y),
+        reset: () => {
+            view = {k: initialScale, x: 0, y: 0};
+            apply();
+        },
+        view: () => ({...view}),
+        isPanning: () => dragged && press !== null,
+    };
+}
+
+function toolbarButton(id, label, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = id;
+    button.textContent = label;
+    button.addEventListener("click", onClick);
+    return button;
+}
+
+function drawContigPlot(container, data, detailsBox) {
+    const {layout} = data;
+    const contigs = layoutContigs(data.contigs, data.types, layout);
+    const widest = Math.max(...contigs.map(contig => contig.length));
+    // Fit the widest contig, but never shrink the plot below a tenth of its size.
+    const initialScale = Math.max(0.1, Math.min(1, layout.width / widest));
+
+    const svg = svgElement("svg", {
+        viewBox: `0 0 ${layout.width} ${layout.height}`, role: "img",
+        "aria-label": `Plot of ${contigs.length} contigs`, class: "contig-plot",
+        style: `width: 100%; max-width: ${layout.width}px; height: auto;`,
+    });
+    // Something to press on between the contigs, so that every part of the plot pans.
+    svgElement("rect", {width: layout.width, height: layout.height, fill: "#ffffff"}, svg);
+    const layer = svgElement("g", {}, svg);
+    contigs.forEach((contig, contigIndex) => {
+        const group = svgElement("g", {transform: `translate(0,${contig.offset})`, "data-contig": contigIndex}, layer);
+        svgElement("line", {
+            x1: 0, x2: contig.length, y1: 0, y2: 0, stroke: contig.color, "stroke-width": layout.contig_thickness,
+        }, group);
+        contig.features.forEach((feature, featureIndex) => {
+            const shape = svgElement("g", {"data-feature": featureIndex}, group);
+            const y = -layout.feature_height * feature.level;
+            for (const [start, end, strand] of feature.parts) {
+                svgElement("path", {
+                    d: arrowPath(end - start, strand, layout.arrow_width, layout.feature_height),
+                    transform: `translate(${start},${y})`, fill: feature.color, stroke: "#000000",
+                }, shape);
+            }
+            const label = svgElement("text", {
+                x: feature.start + layout.arrow_width, y: y - FEATURE_LABEL_INSET, fill: "#000000",
+                "font-family": layout.feature_label_font, "font-size": layout.feature_font_size,
+            }, shape);
+            label.textContent = feature.name;
+        });
+        const label = svgElement("text", {
+            x: 0, y: layout.contig_label_px + layout.contig_thickness / 2, fill: "#000000",
+            "font-family": layout.contig_label_font, "font-size": layout.contig_label_px,
+        }, group);
+        label.textContent = contig.name;
+    });
+
+    const describe = element => {
+        const featureElement = element.closest("[data-feature]");
+        const contigElement = element.closest("[data-contig]");
+        if (!contigElement) {
+            return null;
+        }
+        const contig = contigs[Number(contigElement.dataset.contig)];
+        if (featureElement) {
+            const feature = contig.features[Number(featureElement.dataset.feature)];
+            return {heading: feature.type, lines: featureDetails(feature)};
+        }
+        const swatch = data.color_by === null ? null : {label: data.color_by, color: contig.color};
+        return {heading: "Contig", lines: contig.details, swatch};
+    };
+
+    const view = panZoom(svg, layer, initialScale, {x: layout.width / 2, y: layout.height / 2});
+    const tooltip = chartTooltip();
+    layer.addEventListener("pointermove", event => {
+        const described = view.isPanning() ? null : describe(event.target);
+        if (described) {
+            tooltip.show(event, tooltipText(described));
+        } else {
+            tooltip.hide();
+        }
+    });
+    layer.addEventListener("pointerleave", () => tooltip.hide());
+    layer.addEventListener("click", event => {
+        const described = describe(event.target);
+        if (described) {
+            showDetails(detailsBox, described);
+        }
+    });
+
+    chartFigure(container, svg, "contigs", "");
+    container.querySelector(".toolbar").prepend(
+        toolbarButton("zoom-in", "Zoom in", () => view.zoomBy(1.5)),
+        toolbarButton("zoom-out", "Zoom out", () => view.zoomBy(1 / 1.5)),
+        toolbarButton("reset-view", "Reset view", () => view.reset()),
+    );
+    return {contigs, view, svg};
+}
+
+(async () => {
+    const root = document.getElementById("report-root");
+    try {
+        const {data} = await readReportData();
+        const section = document.createElement("section");
+        section.className = "panel";
+        root.replaceChildren(section);
+        if (data.contigs.length === 0) {
+            const status = document.createElement("div");
+            status.className = "status";
+            status.textContent = "No contigs to plot.";
+            section.appendChild(status);
+            return;
+        }
+        const detailsBox = document.createElement("div");
+        detailsBox.id = "details";
+        detailsBox.className = "contig-details";
+        detailsBox.style.width = `${data.layout.details_width}px`;
+        detailsBox.style.height = `${data.layout.details_height}px`;
+        detailsBox.textContent = "Click a contig or a feature to show its details here.";
+        const note = document.createElement("p");
+        note.className = "note";
+        note.textContent = "Zoom with the mouse wheel or double-click (shift to zoom out), drag to pan, and click a contig or a feature to show its details above.";
+        const plot = document.createElement("div");
+        plot.id = "contig-plot";
+        section.append(detailsBox, note, plot);
+        window.contigPlot = drawContigPlot(plot, data, detailsBox);
+    } catch (error) {
+        showReportError(root, error);
+    }
+})();
+</script>
+</body>
+</html>

@@ -1029,6 +1029,7 @@ pub(crate) mod tests {
         ("hmmer_search", "reference", "reference"),
         ("hmmer_select", "input", "hmm"),
         ("matrix_report", "input", "matrix"),
+        ("plot_contigs", "input", "sequence"),
         ("rotate_contigs", "input", "sequence"),
         ("select_by_cds", "input", "sequence"),
         ("select_by_contig", "input", "sequence"),

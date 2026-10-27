@@ -409,48 +409,44 @@ fn parse_reference(sec: &Section) -> Reference {
     r
 }
 
+/// Biopython's COMMENT scanner. Every line is read with its trailing whitespace stripped,
+/// lines left blank are skipped, and the text starts at column 12 (more indentation is
+/// kept). A structured comment runs from a `##<Name>-START##` line to a `##<Name>-END##`
+/// line, with `key :: value` lines between; a line between them without `::` continues
+/// the previous value.
 fn parse_comment(sec: &Section, ann: &mut Annotations) {
-    // Lines after the COMMENT keyword. A structured comment is delimited by
-    // "##<Name>-START##" / "##<Name>-END##" with "key :: value" lines between.
-    let mut raw: Vec<String> = Vec::new();
-    for (i, line) in sec.lines.iter().enumerate() {
-        let text = if i == 0 {
-            line["COMMENT".len()..].trim_start()
-        } else {
-            line.trim_start()
-        };
-        raw.push(text.to_string());
-    }
     let mut free: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < raw.len() {
-        let line = &raw[i];
-        if let Some(name) = line
+    let mut block: Option<(String, Vec<(String, String)>)> = None;
+    for line in &sec.lines {
+        let line = line.trim_end();
+        if line.is_empty() {
+            continue;
+        }
+        let text = line.get(12..).unwrap_or_else(|| line.trim_start());
+        if let Some(name) = text
             .strip_prefix("##")
             .and_then(|s| s.strip_suffix("-START##"))
         {
-            let mut entries: Vec<(String, String)> = Vec::new();
-            i += 1;
-            while i < raw.len() {
-                let inner = &raw[i];
-                if inner.starts_with("##") && inner.ends_with("-END##") {
-                    break;
-                }
-                if let Some((k, v)) = inner.split_once("::") {
-                    entries.push((k.trim().to_string(), v.trim().to_string()));
-                }
-                i += 1;
-            }
-            ann.structured_comment.push((name.to_string(), entries));
-        } else {
-            free.push(line.clone());
+            ann.structured_comment.extend(block.take());
+            block = Some((name.to_string(), Vec::new()));
+            continue;
         }
-        i += 1;
+        let Some((_, entries)) = block.as_mut() else {
+            free.push(text.to_string());
+            continue;
+        };
+        if let Some((key, value)) = text.split_once("::") {
+            entries.push((key.trim_end().to_string(), value.trim_start().to_string()));
+        } else if text.contains("-END##") {
+            ann.structured_comment.extend(block.take());
+        } else if let Some((_, value)) = entries.last_mut() {
+            value.push(' ');
+            value.push_str(text.trim());
+        }
     }
-    let joined = free.join("\n");
-    let trimmed = joined.trim_matches('\n');
-    if !trimmed.is_empty() {
-        ann.comment = Some(trimmed.to_string());
+    ann.structured_comment.extend(block);
+    if !free.is_empty() {
+        ann.comment = Some(free.join("\n"));
     }
 }
 
@@ -604,6 +600,54 @@ mod tests {
             Some("E. coli.")
         );
         assert_eq!(source_of("SOURCE      E. coli").as_deref(), Some("E. coli"));
+    }
+
+    fn comment_of(section: &str) -> Annotations {
+        let mut ann = Annotations::default();
+        parse_comment(
+            &Section {
+                keyword: "COMMENT".into(),
+                lines: lines(section),
+            },
+            &mut ann,
+        );
+        ann
+    }
+
+    /// What Biopython reads: lines without their trailing whitespace, blank lines
+    /// skipped, extra indentation kept, and the structured comment split out even when
+    /// its lines are padded (as NCBI pads them).
+    #[test]
+    fn comments_read_as_biopython_reads_them() {
+        let ann = comment_of(
+            "COMMENT     first line   \n            second   \n               \n\n\
+             \x20             indented  two\n\
+             \x20           ##X-START##   \n\
+             \x20           Long Key :: a value   \n\
+             \x20           K  :: v\n\
+             \x20               continued  \n\
+             \x20           ##X-END##   \n\
+             \x20           last",
+        );
+        assert_eq!(
+            ann.comment.as_deref(),
+            Some("first line\nsecond\n  indented  two\nlast")
+        );
+        let entries = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect()
+        };
+        assert_eq!(
+            ann.structured_comment,
+            vec![(
+                "X".to_string(),
+                entries(&[("Long Key", "a value"), ("K", "v continued")])
+            )]
+        );
+        let ann = comment_of("COMMENT     ##X-START##\n            K :: v\n            ##X-END##");
+        assert_eq!(ann.comment, None);
     }
 
     #[test]
