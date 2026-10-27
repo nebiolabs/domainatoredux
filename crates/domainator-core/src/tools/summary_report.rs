@@ -1,14 +1,15 @@
 //! `summary_report`: dataset-level statistics over a domainator-annotated GenBank file.
 //!
-//! Port of `domainator.summary_report`'s data path: contig/CDS counts and length stats,
-//! per-domain frequency with average score, focus-domain co-occurrence, and (optionally)
-//! taxonomy counts.
+//! Port of `domainator.summary_report`: contig/CDS counts and length stats, per-domain
+//! frequency with average score, focus-domain co-occurrence, and (optionally) taxonomy
+//! counts.
 //!
-//! HTML output stays deferred — it is matplotlib/seaborn plots with no clean pure-Rust
-//! path, the same reason the tool as a whole was deferred before. The JSON payload
-//! is one of upstream's four documented agent contracts and needs no plotting, so it is
-//! ported in full; the text report reproduces everything except the ASCII length
-//! histogram (bashplotlib is not replicated, as in `matrix_report`).
+//! The JSON payload is one of upstream's four documented agent contracts. The HTML page
+//! is upstream's generated shell ([`report_html`](crate::tools::report_html)) filled with
+//! [`to_html_data`]: that document plus the contig length histogram and the taxonomy
+//! tree the page draws, both computed here by upstream's integer rules. The text report
+//! reproduces everything except the ASCII length histogram (bashplotlib is not
+//! replicated, as in `matrix_report`).
 
 use std::collections::{HashMap, HashSet};
 
@@ -40,6 +41,17 @@ pub struct TaxonRow {
     pub name: String,
     pub rank: String,
     pub count: u64,
+    /// `(taxid, name, rank)` from the root to this taxon (upstream `TaxonomyData`'s
+    /// `lineage`/`names`/`ranks`, ranks lowercased), for the HTML page's tree.
+    pub lineage: Vec<(i64, String, String)>,
+}
+
+/// Contig lengths binned for the HTML page: bin `i` counts the lengths in
+/// `[bin_edges[i], bin_edges[i + 1])`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LengthHistogram {
+    pub bin_edges: Vec<i64>,
+    pub counts: Vec<u64>,
 }
 
 /// Length statistics over the contigs; `None` when there are no records.
@@ -62,6 +74,8 @@ pub struct SummaryReport {
     pub fragment_proteins: usize,
     pub cds_per_10kb: f64,
     pub length: Option<LengthStats>,
+    /// `None` when there are no records.
+    pub length_histogram: Option<LengthHistogram>,
     pub domains: Vec<DomainRow>,
     /// `(row_domain, [(col_domain, percent)])` for the requested focus domains, each
     /// row's columns in the order upstream's dict holds them (the order the pairs were
@@ -326,11 +340,24 @@ pub fn summary_report(
                     )
                 })
                 .unwrap_or_default();
+            let lineage = taxonomy
+                .map(|t| {
+                    t.lineage(taxid)
+                        .into_iter()
+                        .rev()
+                        .map(|id| {
+                            let name = t.name(id).unwrap_or_default().to_string();
+                            (id, name, t.rank(id).unwrap_or_default().to_lowercase())
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
             TaxonRow {
                 taxid,
                 name,
                 rank,
                 count: taxa_counts[&taxid],
+                lineage,
             }
         })
         .collect();
@@ -342,6 +369,7 @@ pub fn summary_report(
         fragment_proteins: num_fragment_proteins,
         cds_per_10kb,
         length,
+        length_histogram: length_histogram(&lengths.iter().map(|&l| l as i64).collect::<Vec<_>>()),
         domains: rows,
         cooccurrence,
         cooccurrence_domains,
@@ -519,6 +547,152 @@ pub fn to_json(r: &SummaryReport) -> Value {
     Value::Object(payload)
 }
 
+/// At most this many bins in the length histogram (upstream `MAX_HISTOGRAM_BINS`).
+pub const MAX_HISTOGRAM_BINS: u64 = 50;
+
+/// Upstream `length_histogram`, integer arithmetic only: `n` lengths from `lo` to `hi` aim
+/// for `min(50, max(ceil(log2(n)) + 1, isqrt(n)))` bins; the width is the smallest 1, 2 or
+/// 5 times a power of ten that is at least `ceil((hi - lo + 1) / target)`, and the first
+/// edge is `lo` rounded down to a multiple of it.
+pub fn length_histogram(lengths: &[i64]) -> Option<LengthHistogram> {
+    let lo = *lengths.iter().min()?;
+    let hi = *lengths.iter().max()?;
+    let n = lengths.len() as u64;
+    // Python's `(n - 1).bit_length() + 1`.
+    let sturges = u64::from(u64::BITS - (n - 1).leading_zeros()) + 1;
+    let target = MAX_HISTOGRAM_BINS.min(sturges.max(n.isqrt())) as i64;
+    let raw = (hi - lo + 1 + target - 1) / target;
+    let width = nice_bin_width(raw);
+    let start = lo.div_euclid(width) * width;
+    let bins = (hi - start) / width + 1;
+    // Every length is at least `start`, so no bin index is negative.
+    let bin = |length: i64| usize::try_from((length - start) / width).expect("length >= start");
+    let mut counts = vec![0u64; bin(hi) + 1];
+    for &length in lengths {
+        counts[bin(length)] += 1;
+    }
+    Some(LengthHistogram {
+        bin_edges: (0..=bins).map(|i| start + i * width).collect(),
+        counts,
+    })
+}
+
+/// The smallest 1, 2 or 5 times a power of ten that is at least `raw` (>= 1).
+fn nice_bin_width(raw: i64) -> i64 {
+    let mut power = 1;
+    loop {
+        for factor in [1, 2, 5] {
+            if factor * power >= raw {
+                return factor * power;
+            }
+        }
+        power *= 10;
+    }
+}
+
+/// Ranks kept in the taxonomy tree even when they add nothing (upstream `TREE_KEPT_RANKS`).
+const TREE_KEPT_RANKS: [&str; 4] = ["superkingdom", "domain", "realm", "kingdom"];
+
+#[derive(Default)]
+struct TreeNode {
+    taxid: i64,
+    name: String,
+    rank: String,
+    count: u64,
+    /// In insertion order; [`TreeNode::finish`] sorts them.
+    children: Vec<TreeNode>,
+}
+
+impl TreeNode {
+    fn child(&mut self, taxid: i64, name: &str, rank: &str) -> &mut TreeNode {
+        let i = match self.children.iter().position(|c| c.taxid == taxid) {
+            Some(i) => i,
+            None => {
+                self.children.push(TreeNode {
+                    taxid,
+                    name: name.to_string(),
+                    rank: rank.to_string(),
+                    ..TreeNode::default()
+                });
+                self.children.len() - 1
+            }
+        };
+        &mut self.children[i]
+    }
+
+    /// The node as JSON, and its total count.
+    fn finish(self) -> (Value, u64) {
+        let mut children: Vec<(Value, u64, String, i64)> = self
+            .children
+            .into_iter()
+            .map(|mut child| {
+                while child.children.len() == 1
+                    && child.count == 0
+                    && !TREE_KEPT_RANKS.contains(&child.rank.as_str())
+                {
+                    child = child.children.pop().expect("one child");
+                }
+                let (name, taxid) = (child.name.clone(), child.taxid);
+                let (value, total) = child.finish();
+                (value, total, name, taxid)
+            })
+            .collect();
+        children.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| a.2.cmp(&b.2))
+                .then(a.3.cmp(&b.3))
+        });
+        let total = self.count + children.iter().map(|c| c.1).sum::<u64>();
+        let value = json!({
+            "taxid": self.taxid,
+            "name": self.name,
+            "rank": self.rank,
+            "count": self.count,
+            "children": children.into_iter().map(|c| c.0).collect::<Vec<_>>(),
+        });
+        (value, total)
+    }
+}
+
+/// Upstream `taxonomy_tree`: nodes `{taxid, name, rank, count, children}`, `count` being
+/// the contigs assigned to that taxon itself, under a root `{taxid: 1, name: "All"}`. A
+/// taxon hangs from its nearest ancestor with a rank; a node with one child and no contigs
+/// of its own is replaced by that child unless its rank is in `TREE_KEPT_RANKS`; children
+/// are ordered by total contigs, most first, then by name and taxid.
+pub fn taxonomy_tree(taxa: &[TaxonRow]) -> Value {
+    let mut root = TreeNode {
+        taxid: 1,
+        name: "All".into(),
+        rank: "no rank".into(),
+        ..TreeNode::default()
+    };
+    for taxon in taxa {
+        let last = taxon.lineage.len().saturating_sub(1);
+        let mut node = &mut root;
+        for (i, (taxid, name, rank)) in taxon.lineage.iter().enumerate() {
+            if *taxid == 1 || (i < last && rank == "no rank") {
+                continue;
+            }
+            node = node.child(*taxid, name, rank);
+        }
+        node.count += taxon.count;
+    }
+    root.finish().0
+}
+
+/// The data of the `--html_out` page (upstream `SummaryHTMLWriter`): the `--json_out`
+/// document, the length histogram, and with `--taxonomy` the taxonomy tree.
+pub fn to_html_data(r: &SummaryReport) -> Value {
+    json!({
+        "summary": to_json(r),
+        "length_histogram": r.length_histogram.as_ref().map(|h| json!({
+            "bin_edges": h.bin_edges,
+            "counts": h.counts,
+        })),
+        "taxonomy_tree": if r.report_taxonomy { taxonomy_tree(&r.taxonomy) } else { Value::Null },
+    })
+}
+
 /// The human-readable text report.
 ///
 /// Reproduces every section except the ASCII contig-length histogram, which bashplotlib
@@ -587,4 +761,85 @@ pub fn render_text(r: &SummaryReport) -> String {
         }
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn length_histogram_follows_upstreams_integer_rule() {
+        assert_eq!(length_histogram(&[]), None);
+        let one = length_histogram(&[7]).unwrap();
+        assert_eq!((one.bin_edges, one.counts), (vec![7, 8], vec![1]));
+        // 20 lengths aim for max(6, 4) = 6 bins: ceil(1000 / 6) = 167, rounded up to 200.
+        let lengths: Vec<i64> = (0..20).map(|i| 1000 + 50 * i).collect();
+        let h = length_histogram(&lengths).unwrap();
+        assert_eq!(h.bin_edges, vec![1000, 1200, 1400, 1600, 1800, 2000]);
+        assert_eq!(h.counts, vec![4, 4, 4, 4, 4]);
+        // 4 lengths aim for max(3, 2) = 3 bins: ceil(46 / 3) = 16, rounded up to 20.
+        let h = length_histogram(&[95, 96, 113, 140]).unwrap();
+        assert_eq!(h.bin_edges, vec![80, 100, 120, 140, 160]);
+        assert_eq!(h.counts, vec![2, 1, 0, 1]);
+        let lengths: Vec<i64> = (0..100_000).collect();
+        let h = length_histogram(&lengths).unwrap();
+        assert!(h.counts.len() as u64 <= MAX_HISTOGRAM_BINS);
+        assert_eq!(h.counts.iter().sum::<u64>(), 100_000);
+    }
+
+    fn taxon(lineage: &[(i64, &str, &str)], count: u64) -> TaxonRow {
+        let &(taxid, name, rank) = lineage.last().unwrap();
+        TaxonRow {
+            taxid,
+            name: name.into(),
+            rank: rank.into(),
+            count,
+            lineage: lineage
+                .iter()
+                .map(|&(id, n, r)| (id, n.to_string(), r.to_string()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn taxonomy_tree_skips_unranked_and_single_child_taxa() {
+        let bacteria = [
+            (1, "root", "no rank"),
+            (131567, "cellular organisms", "no rank"),
+            (2, "Bacteria", "domain"),
+        ];
+        let bacillus = [
+            (1239, "Bacillota", "phylum"),
+            (91061, "Bacilli", "class"),
+            (1386, "Bacillus", "genus"),
+        ];
+        let escherichia = [
+            (1224, "Pseudomonadota", "phylum"),
+            (1236, "Gammaproteobacteria", "class"),
+            (561, "Escherichia", "genus"),
+        ];
+        let taxa = [
+            taxon(&[&bacteria[..], &bacillus[..]].concat(), 3),
+            taxon(&[&bacteria[..], &escherichia[..]].concat(), 5),
+            // An unranked taxon of its own is kept.
+            taxon(
+                &[
+                    (1, "root", "no rank"),
+                    (12908, "unclassified sequences", "no rank"),
+                ],
+                1,
+            ),
+        ];
+        let leaf = |taxid: i64, name: &str, rank: &str, count: u64| json!({"taxid": taxid, "name": name, "rank": rank, "count": count, "children": []});
+        assert_eq!(
+            taxonomy_tree(&taxa),
+            json!({"taxid": 1, "name": "All", "rank": "no rank", "count": 0, "children": [
+                {"taxid": 2, "name": "Bacteria", "rank": "domain", "count": 0, "children": [
+                    leaf(561, "Escherichia", "genus", 5),
+                    leaf(1386, "Bacillus", "genus", 3),
+                ]},
+                leaf(12908, "unclassified sequences", "no rank", 1),
+            ]})
+        );
+    }
 }

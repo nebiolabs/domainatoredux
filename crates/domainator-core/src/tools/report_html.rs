@@ -29,6 +29,9 @@ pub const ROWS_TOKEN: &str = "@@REPORT_ROWS@@";
 
 /// The table page of `enum_report` and `hmmer_report`.
 pub const TABLE_REPORT_SHELL: &str = include_str!("../../assets/report_shells/table_report.html");
+/// `summary_report`'s page.
+pub const SUMMARY_REPORT_SHELL: &str =
+    include_str!("../../assets/report_shells/summary_report.html");
 
 /// How the envelope carries `data`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,6 +84,29 @@ pub fn report_envelope(report: &str, data: Value, encoding: Encoding) -> String 
     envelope.insert("encoding".into(), Value::String(encoding.name().into()));
     envelope.insert("data".into(), data);
     script_json(&Value::Object(envelope))
+}
+
+/// A page with no rows block, filled in (upstream `render_report`).
+pub fn render_report(
+    shell: &str,
+    title: &str,
+    report: &str,
+    data: Value,
+    encoding: Encoding,
+) -> String {
+    assert!(
+        !shell.contains(ROWS_TOKEN),
+        "a table shell streams rows; use report_parts"
+    );
+    let title = html_escape(title);
+    let envelope = report_envelope(report, data, encoding);
+    fill(
+        shell,
+        &[
+            (TITLE_TOKEN, title.as_str()),
+            (DATA_TOKEN, envelope.as_str()),
+        ],
+    )
 }
 
 /// A table page as the text before its rows and the text after them (upstream
@@ -224,13 +250,30 @@ mod tests {
     }
 
     #[test]
-    fn the_shell_has_each_token_once_where_upstream_puts_it() {
-        assert_eq!(TABLE_REPORT_SHELL.matches(TITLE_TOKEN).count(), 2);
-        assert_eq!(TABLE_REPORT_SHELL.matches(DATA_TOKEN).count(), 1);
-        assert_eq!(TABLE_REPORT_SHELL.matches(ROWS_TOKEN).count(), 1);
-        assert!(
-            !TABLE_REPORT_SHELL.contains("http://") && !TABLE_REPORT_SHELL.contains("https://")
+    fn the_shells_have_each_token_once_where_upstream_puts_it() {
+        for (shell, rows) in [(TABLE_REPORT_SHELL, 1), (SUMMARY_REPORT_SHELL, 0)] {
+            assert_eq!(shell.matches(TITLE_TOKEN).count(), 2);
+            assert_eq!(shell.matches(DATA_TOKEN).count(), 1);
+            assert_eq!(shell.matches(ROWS_TOKEN).count(), rows);
+            // The SVG namespace is a name, never fetched.
+            let shell = shell.replace("\"http://www.w3.org/2000/svg\"", "");
+            assert!(!shell.contains("http://") && !shell.contains("https://"));
+        }
+    }
+
+    #[test]
+    fn a_page_without_rows_is_filled_once() {
+        let page = render_report(
+            SUMMARY_REPORT_SHELL,
+            "S & <S>",
+            "summary_report",
+            json!({"summary": {"note": "@@REPORT_TITLE@@"}}),
+            Encoding::Json,
         );
+        assert_eq!(page.matches("S &amp; &lt;S&gt;").count(), 2);
+        assert!(page.contains(
+            r#"{"report":"summary_report","payload_version":1,"encoding":"json","data":{"summary":{"note":"@@REPORT_TITLE@@"}}}"#
+        ));
     }
 
     #[test]

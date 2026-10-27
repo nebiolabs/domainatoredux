@@ -25,7 +25,7 @@ domainate	test_domainator_infernal_cm_query#0	rust-failed	deferred:infernal	doma
 matrix_report	test_matrix_report_default_excludes_mst_knn#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 matrix_report	test_matrix_report_text_includes_mst_knn_projection#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 rotate_contigs	extra:test_rotate_infernal#0	rust-failed	deferred:infernal	domainatoredux rotate_contigs: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/
-summary_report	test_contig_stats_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
-summary_report	test_contig_stats_empty_input#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
-summary_report	test_contig_stats_taxonomy_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
-summary_report	test_summary_report_database_1#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
+summary_report	test_contig_stats_1#0	differs	deferred:text-report	contig_stats_test.txt: 45 vs 21 lines
+summary_report	test_contig_stats_empty_input#0	differs	deferred:text-report	contig_stats_test.txt: 17 vs 14 lines
+summary_report	test_contig_stats_taxonomy_1#0	differs	deferred:text-report	contig_stats_test.txt: 44 vs 18 lines
+summary_report	test_summary_report_database_1#0	differs	deferred:text-report	contig_stats_test.txt: 42 vs 18 lines

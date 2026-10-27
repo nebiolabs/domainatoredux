@@ -31,6 +31,4 @@ structure_dist	-	tool	false	true	deferred:structure
 structure_domainate	-	tool	false	true	deferred:structure	
 structure_search	-	tool	false	true	deferred:structure	
 structure_to_genbank	-	tool	false	true	deferred:structure	
-summary_report	-	required_outputs	["text_out","json_out","domains_tsv_out","co_occurrence_fraction_out","co_occurrence_count_out"]	["text_out","html_out","json_out","domains_tsv_out","co_occurrence_fraction_out","co_occurrence_count_out"]	deferred:html	no html_out
-summary_report	html_out	missing	null	{"default":null,"flags":["--html_out"],"kind":"path","name":"html_out","required":false,"role":"output","stdout":true,"type":"string"}	deferred:html	
 summary_report	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs

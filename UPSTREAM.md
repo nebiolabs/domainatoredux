@@ -7,8 +7,16 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `460f120` — *Keep the HTML report tests' main([...]) calls literal*
+- **Caught up to:** `920d690` — *Offline HTML page for summary_report*
   (2026-10-27; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`920d690`**, ported. summary_report's `--html_out` page moved onto `report_html.py`:
+  the `--json_out` document plus a `length_histogram` and a `taxonomy_tree`, computed by
+  integer rules this port reproduces (`summary_report::length_histogram`/`taxonomy_tree`);
+  `common/charts.js` and `common/hierarchy.js` draw them. The shell is
+  `report_shells/summary_report.html`. `table.js` gained an `idPrefix`, which regenerated
+  the table shell too. The four upstream tests that write the page also write the `-o`
+  text report, which this port does not reproduce, so they are `deferred:text-report`
+  rows and their pages are compared by `extra:` rows without `-o`.
 - **`460f120`**, tests only: the HTML report tests call `main([...])` with literal lists
   again, and hmmer_report's page gained one, so the harvester replays all four.
 - **`a1aaa2f`**, ported. Upstream's `--html_out` pages are now built by `report_html.py`
@@ -98,7 +106,7 @@ Use this to triage which module a changed upstream file lands in:
 | `build_ssn_viewer.py`, `ssn_hierarchy.py` | `crates/domainator-core/src/tools/build_ssn_viewer.rs`, `.../matrix/ssn.rs` |
 | `ssn_bundle.py` | `.../tools/ssn_bundle.rs` (the `.dsnv` reader) |
 | `ssn_navigator.py` | `.../tools/ssn_navigator.rs` |
-| `summary_report.py` | `.../tools/summary_report.rs` (data path only; HTML deferred) |
+| `summary_report.py` | `.../tools/summary_report.rs` (`length_histogram`, `taxonomy_tree` feed the HTML page) |
 | `colors.py` | `.../palette.rs` |
 | `structure_*.py`, `structure_lib.py`, `foldseek.py` | **deferred** — see below |
 | `build_ssn.py` | `.../tools/build_ssn.rs` |
@@ -176,10 +184,14 @@ Tracked so a later sync does not mistake them for oversights:
   when `matrix_report --include_mst_knn` is eventually ported, it must follow that shape.
 - **`hmmer_build --window_beta`.** Deriving MAXL from a tail mass needs builder calibration
   `hmmer-pure-rs` does not expose; the flag is refused rather than silently ignored.
-- **HTML output** for `matrix_report` and `summary_report`, until upstream moves them
-  onto `report_html.py` (their pages still load Plotly and d3 from a CDN, built in Python
-  f-strings no shell can be generated from). `--json_out` is offered instead, which is upstream's own recommendation for agents.
-  (`deferred:html` in `known_gaps.tsv`.)
+- **HTML output** for `matrix_report`, until upstream moves it onto `report_html.py`
+  (its page still loads Plotly and d3 from a CDN, built in Python f-strings no shell can
+  be generated from). `--json_out` is offered instead, which is upstream's own
+  recommendation for agents. (`deferred:html` in `known_gaps.tsv`.)
+- **`summary_report`'s text report** (`-o`): its ASCII length histogram and pandas'
+  table layout are not reproduced; the JSON and HTML outputs are. Upstream's tests that
+  write it are `deferred:text-report` rows, and their HTML pages are compared by
+  `extra:` rows without `-o`.
 - **`--progress`** draws no progress bar: `seq_dist` and `compare_contigs` accept and
   ignore it.
 - **Infernal `.cm` references** in `domainate`/`domain_search`. (`deferred:infernal`.)
@@ -204,7 +216,8 @@ machine-checked on each sweep so none can be quietly forgotten. One open `gap:` 
 
 | class | rows | |
 |---|---|---|
-| `deferred:html` | 6 | `--html_out` for `matrix_report` and `summary_report`; `--json_out` is offered instead |
+| `deferred:html` | 2 | `--html_out` for `matrix_report`; `--json_out` is offered instead |
+| `deferred:text-report` | 4 | `summary_report`'s text report, above |
 | `gap:feature-order` | 5 | `domain_search` emits tied-coordinate features in the other order, below |
 | `deferred:infernal` | 3 | `.cm` references |
 

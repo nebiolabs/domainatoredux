@@ -616,7 +616,9 @@ co-occurrence with every other domain is reported; `--taxonomy` adds a taxonomic
 breakdown. The counts include partial CDSs and protein fragments (`partial_cdss`,
 `fragment_proteins`), and `--partial` restricts what is counted.
 
-Outputs (at least one is required): `-o/--text_out` the text report, `--json_out` one
+Outputs (at least one is required): `-o/--text_out` the text report, `--html_out` a page
+that opens in any browser, offline (the length histogram, sortable domain and
+co-occurrence tables, and with `--taxonomy` a zoomable taxonomy chart), `--json_out` one
 compact JSON object (`schema_version` 1), `--domains_tsv_out` the domain frequency table,
 and `--co_occurrence_count_out`/`--co_occurrence_fraction_out` domain-by-domain matrices
 (dense TSV) of how many contigs carry both domains, or what fraction of the row domain's
@@ -625,10 +627,11 @@ contigs also carry the column domain.
 ```bash
 domainatoredux summary_report -i annotated.gb -o summary.txt
 domainatoredux summary_report -i annotated.gb --json_out - | jq .domain_frequency
+domainatoredux summary_report -i annotated.gb --html_out summary.html --taxonomy
 ```
 
-HTML and the ASCII length histogram are not ported; the
-[desktop app's Summary tab](gui.md#viewers) covers that visually.
+The text report's ASCII length histogram is not ported, and its tables are laid out
+differently from upstream's.
 
 ### `matrix_report`
 

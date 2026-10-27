@@ -349,15 +349,12 @@ mod tests {
     #[test]
     fn an_unsupported_upstream_option_is_accepted_only_at_its_default() {
         let cmd = crate::args::tool_command("summary_report").unwrap();
-        let ok = scratch(
-            "unsupported-ok.yml",
-            "html_out: null\ntaxonomy_update: false\n",
-        );
+        let ok = scratch("unsupported-ok.yml", "taxonomy_update: false\n");
         assert!(expand(&cmd, &os(&["--config", &ok])).unwrap().is_empty());
-        let bad = scratch("unsupported-bad.yml", "html_out: r.html\n");
+        let bad = scratch("unsupported-bad.yml", "taxonomy_update: true\n");
         let e = format!("{:#}", expand(&cmd, &os(&["--config", &bad])).unwrap_err());
         assert!(
-            e.contains("`html_out`") && e.contains("does not support"),
+            e.contains("`taxonomy_update`") && e.contains("does not support"),
             "{e}"
         );
     }

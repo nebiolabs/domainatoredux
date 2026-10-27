@@ -13,6 +13,9 @@ pub struct SummaryReportArgs {
     /// Write the report as text to this file.
     #[arg(short = 'o', long)]
     pub text_out: Option<String>,
+    /// Write the report as html to this file.
+    #[arg(long)]
+    pub html_out: Option<String>,
     /// Write the full summary as a single compact JSON object to this file.
     #[arg(long)]
     pub json_out: Option<String>,

@@ -346,6 +346,7 @@ pub const TOOLS: &[ToolInfo] = &[
     ToolInfo {
         required_outputs: Some(&[
             "text_out",
+            "html_out",
             "json_out",
             "domains_tsv_out",
             "co_occurrence_fraction_out",
@@ -357,7 +358,7 @@ pub const TOOLS: &[ToolInfo] = &[
             "co_occurrence_count_out",
         ],
         dynamic_defaults: &["ncbi_taxonomy_path"],
-        unsupported: &[("html_out", "null"), ("taxonomy_update", "false")],
+        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "summary_report",
             "report",

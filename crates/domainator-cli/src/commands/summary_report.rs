@@ -5,9 +5,11 @@ use domainator_config::args::SummaryReportArgs;
 use domainator_core::io::python_json;
 use domainator_core::matrix::text::write_dense_text_to;
 use domainator_core::seq::taxonomy::default_ncbi_taxonomy_path;
+use domainator_core::tools::report_html::{render_report, Encoding, SUMMARY_REPORT_SHELL};
 use domainator_core::tools::select_common::parse_name_list;
 use domainator_core::tools::summary_report::{
-    cooccurrence_matrix, domains_tsv, render_text, summary_report, to_json, SummaryReportOptions,
+    cooccurrence_matrix, domains_tsv, render_text, summary_report, to_html_data, to_json,
+    SummaryReportOptions,
 };
 
 use super::load_seq_inputs;
@@ -49,6 +51,18 @@ pub fn run(args: &SummaryReportArgs) -> Result<()> {
 
     if let Some(path) = &args.text_out {
         write_text(path, &render_text(&report))?;
+    }
+    if let Some(path) = &args.html_out {
+        write_text(
+            path,
+            &render_report(
+                SUMMARY_REPORT_SHELL,
+                "Summary Report",
+                "summary_report",
+                to_html_data(&report),
+                Encoding::Json,
+            ),
+        )?;
     }
     if let Some(path) = &args.json_out {
         write_text(
