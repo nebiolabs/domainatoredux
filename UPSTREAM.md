@@ -7,8 +7,15 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `2e6e51e` — *Drop matplotlib and seaborn from the required dependencies*
-  (2026-10-27; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **Caught up to:** `5405402` — *Treat taxids missing from the taxonomy database as unknown;
+  sort summary ties stably* (2026-10-27; upstream `__version__` 1.0.0rc1, on the
+  `version_one` branch).
+- **`5405402`**, ported. Two bugs the example reports turned up. A taxid missing from the
+  taxonomy database crashed upstream (`KeyError` in `lineage`); it is now unknown, with one
+  warning per taxid, and summary_report gives it a blank name and rank. The port already
+  returned an empty lineage, and now warns the same way. summary_report's domain table
+  used pandas' unstable sort, so equal counts came out scrambled past 16 domains;
+  upstream now sorts stably, the first-seen order the port already used.
 - **`2e6e51e`**, nothing to port. matplotlib and seaborn moved to upstream's `projection`
   extra (only `build_projection --png_out` uses them; that tool is unported here), and
   `web_libs.py` is gone. `AutoColormap`'s palette is now the literal `colors.AUTO_COLORS`,

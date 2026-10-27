@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `2e6e51e`.
+Parity: Python domainator 1.0.0rc1 @ `5405402`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **`enum_report` and `hmmer_report --html_out`** (and `--html_max_height`): upstream's
@@ -25,6 +25,8 @@ Parity: Python domainator 1.0.0rc1 @ `2e6e51e`.
   blank lines skipped, and the structured comment split out even when its lines are
   padded, as NCBI pads them. Such a record used to be written back with its structured
   comment inside the free text.
+- **A taxid missing from the taxonomy database is warned about**, once per taxid,
+  suggesting `--taxonomy_update`; it is still reported as unknown (blank taxonomy).
 - **Upstream's 1.0 interface.** Python domainator 1.0 adopted a single `domainator <tool>`
   command, as this port had. The two would clash, so **the executable is now
   `domainatoredux`**, and its tools take **upstream's names and options**:

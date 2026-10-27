@@ -311,8 +311,7 @@ pub fn summary_report(
     }
     let cooccurrence_domains = domain_order.clone();
 
-    // Frequency table, most common first; ties by name so the order is deterministic
-    // (Python's sort is stable over an insertion-ordered dict, which a HashMap is not).
+    // Frequency table, most common first (upstream sorts with kind="stable").
     let mut rows: Vec<DomainRow> = domain_order
         .into_iter()
         .filter_map(|domain| {

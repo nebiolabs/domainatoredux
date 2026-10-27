@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Mutex;
 
 use crate::tools::select_common::BooleanEvaluator;
 
@@ -22,6 +23,8 @@ pub struct NCBITaxonomy {
     merged: HashMap<i64, i64>,
     /// deleted taxids.
     deleted: HashSet<i64>,
+    /// Unknown taxids already warned about, so each is reported once.
+    warned_unknown: Mutex<HashSet<i64>>,
 }
 
 /// Split a taxdmp line into fields: strip the trailing `\n|\t` clutter, then
@@ -129,6 +132,7 @@ impl NCBITaxonomy {
             names: name_tab,
             merged: merged_tab,
             deleted,
+            warned_unknown: Mutex::new(HashSet::new()),
         }
     }
 
@@ -143,7 +147,9 @@ impl NCBITaxonomy {
     }
 
     /// All ancestors of `tax_id` (self first, root `1` last). Empty if the taxid
-    /// is deleted or unknown.
+    /// is deleted or unknown; an unknown one is warned about once (upstream
+    /// `NCBITaxonomy._lineage`). NCBI deprecates taxids rather than removing them,
+    /// so an unknown taxid is newer than the database.
     pub fn lineage(&self, tax_id: i64) -> Vec<i64> {
         let mut out = Vec::new();
         let mut tax_id = tax_id;
@@ -154,6 +160,14 @@ impl NCBITaxonomy {
             return out;
         }
         if !self.nodes.contains_key(&tax_id) {
+            let first = self.warned_unknown.lock().map(|mut w| w.insert(tax_id));
+            if first.unwrap_or(false) {
+                crate::log::warn(format_args!(
+                    "taxid {tax_id} is not in the NCBI taxonomy database, which is probably older \
+                     than the sequences; it is treated as unknown (no lineage). Update the \
+                     database with --taxonomy_update."
+                ));
+            }
             return out;
         }
         out.push(tax_id);
@@ -569,6 +583,14 @@ mod tests {
         assert_eq!(t.name(562), Some("Escherichia coli"));
         assert_eq!(t.rank(2), Some("superkingdom"));
         assert_eq!(t.rank(561), Some("genus"));
+    }
+
+    #[test]
+    fn unknown_taxid_has_no_lineage_and_is_warned_about_once() {
+        let t = tax();
+        assert!(t.lineage(59919).is_empty());
+        assert!(t.lineage(59919).is_empty());
+        assert_eq!(*t.warned_unknown.lock().unwrap(), HashSet::from([59919]));
     }
 
     #[test]
