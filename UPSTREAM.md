@@ -7,8 +7,15 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `f18dc15` — *bugfix* (2026-10-25; upstream `__version__` 1.0.0rc1, on
-  the `version_one` branch). The 29 commits since `02a31c1` are upstream's 1.0 refactor
+- **Caught up to:** `44acbce` — *ssn viewer zoom ui and palette offset* (2026-10-27;
+  upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **Since `f18dc15`** (`000b1c4`, `44acbce`), ported. The viewer's Zoom box, color-picker
+  start offset and two fixes (a stale layout drawn while a new bundle loads, an
+  extraction inheriting the parent's pan/zoom) arrived with the regenerated shell.
+  `--palette_offset` is ported for `build_ssn`, the one of its three tools this port has
+  (`build_projection` and `plot_contigs` are unported); `test_build_ssn_palette_offset`
+  reproduces byte for byte.
+- **`f18dc15`** — *bugfix* (2026-10-25). The 29 commits since `02a31c1` are upstream's 1.0 refactor
   and the features it gathered. The port followed it in eight phases on the
   `upstream-1.0-sync` branch; `CHANGELOG.md` (1.0.0) lists what changed for users.
 - **The 1.0 interface** (`9207113`, `e7af752`, `8519ff8`), ported. Upstream adopted one

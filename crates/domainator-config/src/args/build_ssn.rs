@@ -39,6 +39,12 @@ pub struct BuildSsnArgs {
     /// cycling over a palette of 64 distinguishable colors.
     #[arg(long, allow_negative_numbers = true)]
     pub max_color_groups: Option<i64>,
+    /// Skip this many colors at the start of the palette before assigning colors to
+    /// --color_by groups. For example, if a network colored by one column used the
+    /// first 5 colors, --palette_offset 5 colors another column without reusing them.
+    /// Ignored with --color_table.
+    #[arg(long, default_value = "0", allow_negative_numbers = true)]
+    pub palette_offset: i64,
     /// Give every edge a boolean 'MST' property saying whether it belongs to the
     /// maximum spanning tree. Useful for styling or filtering the MST backbone within
     /// a larger network in Cytoscape.

@@ -72,10 +72,15 @@ pub fn sort_palette_values(values: &[String]) -> Vec<String> {
 /// `counts`, when given, ranks groups by frequency for `max_groups` (Python passes a
 /// pandas Series to get this); without it, groups are ranked in sort order. Groups
 /// beyond the cap share [`OTHER_COLOR`].
+///
+/// `offset` skips that many colors at the start of [`DISTINCT_COLORS`] (upstream
+/// `44acbce`), so a second column can be colored without reusing the colors a first
+/// one with that many values got. Grayed-out groups take no slot.
 pub fn get_palette(
     values: &[String],
     max_groups: Option<usize>,
     counts: Option<&std::collections::HashMap<String, usize>>,
+    offset: usize,
 ) -> std::collections::HashMap<String, String> {
     use std::collections::{HashMap, HashSet};
 
@@ -115,7 +120,7 @@ pub fn get_palette(
         let color = match &keep {
             Some(k) if !k.contains(&value) => OTHER_COLOR.to_string(),
             _ => {
-                let c = DISTINCT_COLORS[colored % DISTINCT_COLORS.len()].to_string();
+                let c = DISTINCT_COLORS[(offset + colored) % DISTINCT_COLORS.len()].to_string();
                 colored += 1;
                 c
             }
@@ -150,13 +155,13 @@ mod tests {
 
     #[test]
     fn colors_are_assigned_in_sorted_order_and_cycle() {
-        let p = get_palette(&s(&["2", "1", "3"]), None, None);
+        let p = get_palette(&s(&["2", "1", "3"]), None, None, 0);
         assert_eq!(p["1"], DISTINCT_COLORS[0]);
         assert_eq!(p["2"], DISTINCT_COLORS[1]);
         assert_eq!(p["3"], DISTINCT_COLORS[2]);
         // 65 distinct values wrap onto the first color again.
         let many: Vec<String> = (0..65).map(|i| format!("{i:03}")).collect();
-        let p = get_palette(&many, None, None);
+        let p = get_palette(&many, None, None, 0);
         assert_eq!(p["000"], p["064"]);
     }
 
@@ -167,7 +172,7 @@ mod tests {
             [("a".into(), 1usize), ("b".into(), 9), ("c".into(), 5)]
                 .into_iter()
                 .collect();
-        let p = get_palette(&values, Some(2), Some(&counts));
+        let p = get_palette(&values, Some(2), Some(&counts), 0);
         // b and c are the two largest groups, so only `a` is grayed out.
         assert_eq!(p["a"], OTHER_COLOR);
         assert_ne!(p["b"], OTHER_COLOR);
@@ -176,9 +181,31 @@ mod tests {
         assert_eq!(p["b"], DISTINCT_COLORS[0]);
         assert_eq!(p["c"], DISTINCT_COLORS[1]);
         // A cap at or above the group count colors everything.
-        assert!(!get_palette(&values, Some(3), Some(&counts))
+        assert!(!get_palette(&values, Some(3), Some(&counts), 0)
             .values()
             .any(|c| c == OTHER_COLOR));
+    }
+
+    #[test]
+    fn offset_skips_colors_and_still_cycles() {
+        // Upstream's test_get_palette_offset, case for case.
+        let p = get_palette(&s(&["A", "B", "C"]), None, None, 5);
+        assert_eq!(
+            [&p["A"], &p["B"], &p["C"]],
+            [DISTINCT_COLORS[5], DISTINCT_COLORS[6], DISTINCT_COLORS[7]]
+        );
+        let p = get_palette(&s(&["A", "B"]), None, None, DISTINCT_COLORS.len() - 1);
+        assert_eq!(p["A"], DISTINCT_COLORS[63]);
+        assert_eq!(p["B"], DISTINCT_COLORS[0]);
+        // The groups past max_groups are gray and take no slot.
+        let counts: HashMap<String, usize> =
+            [("a".into(), 3usize), ("b".into(), 2), ("c".into(), 1)]
+                .into_iter()
+                .collect();
+        let p = get_palette(&s(&["a", "b", "c"]), Some(2), Some(&counts), 1);
+        assert_eq!(p["a"], DISTINCT_COLORS[1]);
+        assert_eq!(p["b"], DISTINCT_COLORS[2]);
+        assert_eq!(p["c"], OTHER_COLOR);
     }
 
     #[test]

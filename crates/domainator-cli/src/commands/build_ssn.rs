@@ -23,6 +23,16 @@ pub fn run(args: &BuildSsnArgs) -> Result<()> {
         args.subset.as_deref().unwrap_or_default(),
         args.subset_file.as_deref(),
     )?;
+    // Upstream refuses a negative offset only where it builds a palette, so one that
+    // would go unused is not an error.
+    let palette_offset = match usize::try_from(args.palette_offset) {
+        Ok(n) => n,
+        Err(_) if args.color_by.is_none() || color_table.is_some() => 0,
+        Err(_) => anyhow::bail!(
+            "The palette offset must be 0 or more, not {}.",
+            args.palette_offset
+        ),
+    };
     let matrix =
         read_matrix(&args.input).with_context(|| format!("reading matrix {}", args.input))?;
     let opts = BuildSsnOptions {
@@ -39,6 +49,7 @@ pub fn run(args: &BuildSsnArgs) -> Result<()> {
         max_color_groups: args
             .max_color_groups
             .map(|n| usize::try_from(n).unwrap_or(0)),
+        palette_offset,
     };
     let result = build_ssn(&matrix, &opts)?;
 

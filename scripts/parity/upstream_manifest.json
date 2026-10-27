@@ -7112,6 +7112,16 @@
      "type": "integer"
     },
     {
+     "default": 0,
+     "flags": [
+      "--palette_offset"
+     ],
+     "kind": "value",
+     "name": "palette_offset",
+     "required": false,
+     "type": "integer"
+    },
+    {
      "default": false,
      "flags": [
       "--mark_mst"
@@ -7892,6 +7902,16 @@
      "role": "output",
      "stdout": false,
      "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--palette_offset"
+     ],
+     "kind": "value",
+     "name": "palette_offset",
+     "required": false,
+     "type": "integer"
     },
     {
      "default": null,
@@ -9064,6 +9084,16 @@
      "required": false,
      "role": "input",
      "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--palette_offset"
+     ],
+     "kind": "value",
+     "name": "palette_offset",
+     "required": false,
+     "type": "integer"
     }
    ],
    "required_outputs": [

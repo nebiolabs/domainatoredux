@@ -534,7 +534,9 @@ keep the union, which keeps a large network legible without splitting clusters.
 assigns connected-component cluster ids and `--cluster_tsv_out` writes them out (with a
 `contig cluster` header unless `--no_cluster_header`). `--metadata` joins TSV columns
 onto nodes, and `--color_by`/`--color_table`/`--color_table_out` color by one of them;
-`--max_color_groups N` colors only the N largest groups.
+`--max_color_groups N` colors only the N largest groups, and `--palette_offset N` starts N
+colors into the palette, so a second column can be colored without reusing the colors a
+first one took.
 
 ```bash
 domainatoredux build_ssn -i dist.hdf5 -o network.xgmml --threshold 100 \

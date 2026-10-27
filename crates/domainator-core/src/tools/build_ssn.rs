@@ -41,6 +41,9 @@ pub struct BuildSsnOptions {
     /// Give distinct colors only to this many of the largest `--color_by` groups;
     /// the rest share the neutral gray. `None` colors every group.
     pub max_color_groups: Option<usize>,
+    /// Skip this many palette colors before coloring the `--color_by` groups.
+    /// Ignored with a `color_table`.
+    pub palette_offset: usize,
 }
 
 /// The assembled network, ready for the CLI to write (XGMML / cluster TSV /
@@ -458,7 +461,12 @@ fn resolve_colors(table: &NodeTable, opts: &BuildSsnOptions) -> ResolvedColors {
                 present.push(v);
             }
         }
-        table_map = crate::palette::get_palette(&present, opts.max_color_groups, Some(&counts));
+        table_map = crate::palette::get_palette(
+            &present,
+            opts.max_color_groups,
+            Some(&counts),
+            opts.palette_offset,
+        );
     }
 
     let fills: Vec<Option<String>> = (0..table.names.len())

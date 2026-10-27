@@ -47,6 +47,9 @@ fields:
   - name: max_color_groups
     show: false
     label: "Max color groups"
+  - name: palette_offset
+    show: false
+    label: "Palette offset"
   - name: no_cluster_header
     show: false
     label: "No cluster header"

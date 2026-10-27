@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `f18dc15`.
+Parity: Python domainator 1.0.0rc1 @ `44acbce`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **Upstream's 1.0 interface.** Python domainator 1.0 adopted a single `domainator <tool>`
@@ -37,7 +37,13 @@ Parity: Python domainator 1.0.0rc1 @ `f18dc15`.
   `--mst_knn`; `domain_search --deduplicate_by_sequence`, `--anchor`, and circular
   `--whole_contig` output; `select_by_contig` length, CDS-count, score and record-count
   filters; `deduplicate_genbank --identity`, `--cluster_tsv_out` and per-program
-  `--<program>_path`/`--<program>_args`.
+  `--<program>_path`/`--<program>_args`; `build_ssn --palette_offset`, to color a second
+  column without reusing the colors a first one took.
+- **SSN viewer** (upstream's, shared by `build_ssn_viewer` and the GUI): a **Zoom** box in
+  View Settings that shows and sets the zoom, so two viewers can draw at the same scale; a
+  **Start offset** beside the color picker's palette menu, the viewer's `--palette_offset`;
+  loading a second bundle no longer briefly draws the first one's layout against it, and a
+  saved extraction opens fitted to its own layout instead of the parent's pan and zoom.
 - **HDF5 matrices are written in upstream's format 2.0**: always sparse, with a
   symmetric matrix stored as its upper triangle. Format 1.0 files still load.
 - **Behavior now matching upstream 1.0**: extracted regions are named `id_first:last`
