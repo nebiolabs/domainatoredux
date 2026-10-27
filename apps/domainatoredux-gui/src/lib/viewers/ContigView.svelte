@@ -663,7 +663,8 @@
       const r = itemRange(it);
       if (!r || r.hi <= r.lo) continue;
       const strand = it.kind === "feature" && featOf(it.ci, it.feat)?.strand === -1 ? -1 : 1;
-      req.push({ contig: it.ci, start: r.lo, end: r.hi, strand });
+      const feature = it.kind === "feature" ? it.feat : undefined;
+      req.push({ contig: it.ci, start: r.lo, end: r.hi, strand, feature });
     }
     const p = await extractSelection(dir, name, path, req, selExtractKind === "aa");
     await ws.refreshAndOpen(p);

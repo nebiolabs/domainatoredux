@@ -869,12 +869,17 @@ pub(crate) fn notify_files_changed(app: &tauri::AppHandle, dir: &str) {
 /// One item of a Contig View selection to extract: contig `contig` (0-based) whole,
 /// or its region [`start`, `end`) (0-based half-open) read on `strand` (`-1` gives
 /// the reverse complement, so a minus-strand feature comes out reading forward).
+/// `feature` is the `feat_index` of the feature the item selects, if it is one: a
+/// translated extract of a selected CDS yields that CDS's peptide alone, not those
+/// of every CDS overlapping its span.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExtractItem {
     pub contig: usize,
     pub start: Option<usize>,
     pub end: Option<usize>,
     pub strand: Option<i32>,
+    #[serde(default)]
+    pub feature: Option<usize>,
 }
 
 /// Write each selected item, in order, as its own record of a new file
@@ -920,6 +925,23 @@ fn extract_selection_blocking(
         let contig = recs
             .get(item.contig)
             .ok_or_else(|| format!("no contig at index {}", item.contig))?;
+        // A selected CDS translates on its own: keep the whole contig (so the CDS
+        // is never cut) minus every other CDS. Its domain annotations stay with it;
+        // other CDSs' ones are orphaned and ignored by `extract_peptides`.
+        if let Some(fi) = item.feature.filter(|_| translate) {
+            if contig.features.get(fi).is_some_and(|f| f.kind == "CDS") {
+                let mut one = contig.clone();
+                one.features = contig
+                    .features
+                    .iter()
+                    .enumerate()
+                    .filter(|&(i, f)| i == fi || f.kind != "CDS")
+                    .map(|(_, f)| f.clone())
+                    .collect();
+                out.push(one);
+                continue;
+            }
+        }
         match (item.start, item.end) {
             (Some(start), Some(end)) => {
                 if end <= start {
@@ -1371,6 +1393,7 @@ mod tests {
             start,
             end,
             strand,
+            feature: None,
         };
         let out = extract_selection_blocking(
             &dir,
@@ -1408,6 +1431,47 @@ mod tests {
         assert!(
             extract_selection_blocking(&dir, "none.gb", &gb.to_string_lossy(), &[], false).is_err()
         );
+    }
+
+    /// A selected CDS extracts as its own peptide only. Slicing its span first
+    /// also caught the CDS overlapping it, cut down to a sliver.
+    #[test]
+    fn extracting_a_selected_cds_skips_the_cds_overlapping_it() {
+        let dir = scratch("extract-overlap");
+        let gb = format!("{dir}/two.gb");
+        std::fs::write(
+            &gb,
+            "LOCUS       rec1                      24 bp    DNA     linear   UNK 01-JAN-2026
+FEATURES             Location/Qualifiers
+     source          1..24
+     CDS             1..12
+                     /locus_tag=\"a\"
+     CDS             10..24
+                     /locus_tag=\"b\"
+ORIGIN
+        1 atgaaacccg ggtttaaacc cggg
+//
+",
+        )
+        .unwrap();
+        let item = |feature| ExtractItem {
+            contig: 0,
+            start: Some(0),
+            end: Some(12),
+            strand: Some(1),
+            feature,
+        };
+        let names = |out: &str, items: &[ExtractItem]| -> Vec<String> {
+            let out = extract_selection_blocking(&dir, out, &gb, items, true).unwrap();
+            read_genbank(&out)
+                .unwrap()
+                .into_iter()
+                .map(|r| r.id)
+                .collect()
+        };
+        assert_eq!(names("cds.gb", &[item(Some(1))]), ["a"]);
+        // A bare range still yields every CDS it touches.
+        assert_eq!(names("range.gb", &[item(None)]), ["a", "b"]);
     }
 
     /// `enum_report`'s `OutputFormat::Json` writes NDJSON, so the grid must parse

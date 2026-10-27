@@ -127,6 +127,9 @@ export interface ExtractItem {
   start?: number;
   end?: number;
   strand?: number;
+  /// The selected feature's `feat_index`: a peptide extract of a CDS item then
+  /// yields that CDS alone, not every CDS overlapping its span.
+  feature?: number;
 }
 /// Write each item, in order, as its own record of a new file `dir/name` (FASTA or
 /// GenBank by extension); `translate` makes it a protein GenBank of their CDSs.
