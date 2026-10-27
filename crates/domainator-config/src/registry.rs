@@ -367,8 +367,7 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     ToolInfo {
         stdin: false,
-        required_outputs: Some(&["text_out", "json_out"]),
-        unsupported: &[("html_out", "null"), ("knn_projection", "false")],
+        required_outputs: Some(&["text_out", "html_out", "json_out"]),
         ..tool("matrix_report", "report", "Summarize a similarity matrix.")
     },
     // plot

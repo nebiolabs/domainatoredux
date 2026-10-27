@@ -32,6 +32,8 @@ pub const TABLE_REPORT_SHELL: &str = include_str!("../../assets/report_shells/ta
 /// `summary_report`'s page.
 pub const SUMMARY_REPORT_SHELL: &str =
     include_str!("../../assets/report_shells/summary_report.html");
+/// `matrix_report`'s page.
+pub const MATRIX_REPORT_SHELL: &str = include_str!("../../assets/report_shells/matrix_report.html");
 
 /// How the envelope carries `data`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -251,7 +253,11 @@ mod tests {
 
     #[test]
     fn the_shells_have_each_token_once_where_upstream_puts_it() {
-        for (shell, rows) in [(TABLE_REPORT_SHELL, 1), (SUMMARY_REPORT_SHELL, 0)] {
+        for (shell, rows) in [
+            (TABLE_REPORT_SHELL, 1),
+            (SUMMARY_REPORT_SHELL, 0),
+            (MATRIX_REPORT_SHELL, 0),
+        ] {
             assert_eq!(shell.matches(TITLE_TOKEN).count(), 2);
             assert_eq!(shell.matches(DATA_TOKEN).count(), 1);
             assert_eq!(shell.matches(ROWS_TOKEN).count(), rows);

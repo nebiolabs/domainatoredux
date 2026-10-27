@@ -32,7 +32,7 @@ from pathlib import Path
 
 # The pages this port writes. Add a name here, and its include_str! in report_html.rs,
 # when a report's --html_out is ported.
-REPORTS = ["table_report", "summary_report"]
+REPORTS = ["table_report", "summary_report", "matrix_report"]
 
 # Must match report_html.rs.
 TOKENS = {"@@REPORT_TITLE@@": 2, "@@REPORT_DATA@@": 1}

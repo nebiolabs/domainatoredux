@@ -7,8 +7,19 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `920d690` — *Offline HTML page for summary_report*
+- **Caught up to:** `fb6b947` — *Offline HTML page for matrix_report*
   (2026-10-27; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`fb6b947`**, ported. matrix_report's `--html_out` page moved onto `report_html.py`
+  (`report_shells/matrix_report.html`, new shared scripts `common/line_chart.js` and
+  `common/pack.js`). Its data is the `--json_out` document plus the MST, the threshold
+  tables as columns, the moving sum, the slider stops and the `--knn_projection` counts
+  (`matrix_report::to_html_data`); where the slider puts each stop is now the page's own
+  layout, so nothing rounding-sensitive is left to reproduce. `--knn_projection` is ported
+  (`ssn::mst_knn_edge_counts_by_threshold`, checked against `mst_knn_edge_list` at every
+  threshold and `k`), and so is upstream's `text_plot.text_histogram` (`text_plot.rs`),
+  which makes the `-o` text report byte-identical too. The two matrix_report invocations
+  that write a page reproduce; only gzip's bytes differ, and one `edge_scores.mean` in
+  its last digit (numpy's pairwise summation), as in `--json_out`.
 - **`920d690`**, ported. summary_report's `--html_out` page moved onto `report_html.py`:
   the `--json_out` document plus a `length_histogram` and a `taxonomy_tree`, computed by
   integer rules this port reproduces (`summary_report::length_histogram`/`taxonomy_tree`);
@@ -120,6 +131,7 @@ Use this to triage which module a changed upstream file lands in:
 | `domain_search.py`, `select_by_cds.py` | `.../tools/{domain_search,select_by_cds,neighborhood}.rs` |
 | `select_by_contig.py`, `enum_report.py` | `.../tools/{select_by_contig,enum_report,select_common}.rs` |
 | `matrix_report.py` | `.../tools/matrix_report.rs` |
+| `text_plot.py` (the text reports' histograms) | `.../text_plot.rs` |
 | `hmmer_compare.py` | `.../tools/hmmer_compare.rs`, `.../search/hmm_compare.rs` |
 | `seqio.py`, `genbank.py` (Biopython subclasses), `lean_record.py`, `offsets.py`, `db_index.py`, `bgzf_compress.py` | `.../io/{genbank,fasta,bgzf,didx,shards,partition}.rs` |
 | `hmmio.py` | `.../search/{hmm_read,hmm_write,references}.rs` |
@@ -177,17 +189,10 @@ Tracked so a later sync does not mistake them for oversights:
   `foldseek`/`reseek`, no torch or ESM — but out of scope for this sync. It touches ported
   code only through `SearchResult`'s four optional structural metrics, which **are** carried
   (`tmscore`/`lddt`/`rmsd`/`prob`), so structure-written GenBank stays round-trippable.
-- **`merge_impact_axis_labels`** (`ssn_hierarchy.py`). Its only consumers are the deferred
-  matrix_report HTML and the vendored viewer JS, which carries its own copy.
-- **`mst_knn_edge_counts_by_threshold`'s reshape.** Upstream changed its rows to one per
-  distinct threshold and flipped `include_equal` to `False`. It has no Rust surface today;
-  when `matrix_report --include_mst_knn` is eventually ported, it must follow that shape.
+- **`merge_impact_axis_labels`** (`ssn_hierarchy.py`). Its only consumers are the
+  vendored viewer shell and matrix_report's page shell, which each carry their own copy.
 - **`hmmer_build --window_beta`.** Deriving MAXL from a tail mass needs builder calibration
   `hmmer-pure-rs` does not expose; the flag is refused rather than silently ignored.
-- **HTML output** for `matrix_report`, until upstream moves it onto `report_html.py`
-  (its page still loads Plotly and d3 from a CDN, built in Python f-strings no shell can
-  be generated from). `--json_out` is offered instead, which is upstream's own
-  recommendation for agents. (`deferred:html` in `known_gaps.tsv`.)
 - **`summary_report`'s text report** (`-o`): its ASCII length histogram and pandas'
   table layout are not reproduced; the JSON and HTML outputs are. Upstream's tests that
   write it are `deferred:text-report` rows, and their HTML pages are compared by
@@ -206,7 +211,6 @@ Tracked so a later sync does not mistake them for oversights:
   managed downloads cover UniProt, Pfam and NCBI Taxonomy), `infernal_build`,
   `find_features` (torch), and the structure tools above. Their manifest entries are
   `deferred:` rows of `scripts/parity/manifest_allowlist.tsv`.
-- **`matrix_report --knn_projection`**, which only feeds the deferred HTML report.
 
 ## What the parity sweep still tracks
 
@@ -216,7 +220,6 @@ machine-checked on each sweep so none can be quietly forgotten. One open `gap:` 
 
 | class | rows | |
 |---|---|---|
-| `deferred:html` | 2 | `--html_out` for `matrix_report`; `--json_out` is offered instead |
 | `deferred:text-report` | 4 | `summary_report`'s text report, above |
 | `gap:feature-order` | 5 | `domain_search` emits tied-coordinate features in the other order, below |
 | `deferred:infernal` | 3 | `.cm` references |

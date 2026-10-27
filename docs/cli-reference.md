@@ -642,14 +642,18 @@ changes. Run this before choosing `build_ssn --threshold`.
 `--max_merge_events` (default 500, `0` = all) caps the split-event series in the JSON
 report; the text report always lists the 25 strongest events.
 `--merge_impact_metric min_child|product` changes how an event's significance is scored.
-`--json_out` writes the summary as one compact JSON object (`schema_version` 1). At
-least one of `-o/--text_out` and `--json_out` is required, and either may be `-`. The
-input must be a similarity matrix, not a `_dist` one. Upstream's HTML report
-(`--html_out`, `--knn_projection`) is not ported.
+`--json_out` writes the summary as one compact JSON object (`schema_version` 1).
+`--html_out` writes an interactive page that works offline: clusters and edges kept by
+threshold, the split events, and a threshold slider showing the clusters at each cut.
+`--knn_projection` adds, to the text report and the page, how many edges
+`build_ssn --threshold T --mst --knn k` would keep for each threshold and `k` from 1 to
+25. At least one of `-o/--text_out`, `--html_out` and `--json_out` is required, and any
+may be `-`. The input must be a similarity matrix, not a `_dist` one.
 
 ```bash
 domainatoredux matrix_report -i dist.hdf5 -o report.txt
 domainatoredux matrix_report -i dist.hdf5 --json_out report.json
+domainatoredux matrix_report -i dist.hdf5 --html_out report.html --knn_projection
 ```
 
 ### `ssn_navigator`

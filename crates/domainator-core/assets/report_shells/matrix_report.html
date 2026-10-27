@@ -1,0 +1,2363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>@@REPORT_TITLE@@</title>
+<style>
+:root {
+    color-scheme: light;
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --ink: #1e2a2f;
+    --muted: #5c6a70;
+    --accent: #c8553d;
+    --accent-soft: #f3cdb9;
+    --line: #d8dce2;
+    --row-alt: #f8f9fa;
+    --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    color: var(--ink);
+    min-height: 100vh;
+    background: linear-gradient(180deg, #ffffff 0%, var(--bg) 100%) fixed;
+}
+.shell {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 24px;
+}
+h1 {
+    margin: 0 0 16px;
+    font-size: 1.8rem;
+    font-weight: 600;
+}
+h2 {
+    margin: 0 0 12px;
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 16px 18px;
+    margin-bottom: 18px;
+}
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+}
+.toolbar .spacer { flex: 1; }
+.pager {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.toolbar input.page-input {
+    width: 4.5em;
+    text-align: center;
+    font-size: 0.9rem;
+    padding: 3px 4px;
+}
+.status { color: var(--muted); font-size: 0.9rem; }
+button, select {
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--ink);
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 4px 10px;
+    cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { color: var(--muted); cursor: default; }
+input[type="search"], input[type="text"] {
+    font: inherit;
+    font-size: 0.85rem;
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+.error {
+    color: #8f1d1d;
+    background: #fdecec;
+    border: 1px solid #f2b8b8;
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+
+/* table.js */
+.report-table-wrap {
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+table.report-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    table-layout: fixed;
+}
+.report-table th, .report-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+.report-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #eef0f3;
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    font-weight: 600;
+    vertical-align: top;
+}
+.report-table th .column-title {
+    display: flex;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.report-table th .column-title span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.report-table th .sort-mark { color: var(--accent); }
+.report-table th.drop-target { box-shadow: inset 3px 0 0 var(--accent); }
+.report-table th .resize-handle {
+    position: absolute;
+    top: 0;
+    right: -1px;
+    width: 7px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 2;
+}
+.report-table th .resize-handle:hover,
+.report-table th .resize-handle:focus-visible,
+.report-table th.resizing .resize-handle {
+    background: var(--accent-soft);
+    outline: none;
+}
+body.resizing-column { cursor: col-resize; user-select: none; }
+.context-menu {
+    position: fixed;
+    z-index: 10;
+    min-width: 160px;
+    padding: 4px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    font-size: 0.9rem;
+}
+.context-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    border-radius: 6px;
+    padding: 6px 10px;
+    background: transparent;
+}
+.context-menu button:hover, .context-menu button:focus {
+    background: var(--accent-soft);
+    outline: none;
+}
+.report-table th input { margin-top: 4px; font-weight: normal; }
+.report-table td.number { text-align: right; }
+.report-table tbody tr:nth-child(even) td { background: var(--row-alt); }
+.report-table tbody tr:hover td { background: var(--accent-soft); }
+
+/* charts.js and the summary page */
+.chart { overflow-x: auto; }
+.chart rect[data-tip]:not([fill-opacity="0"]):hover { fill-opacity: 1; }
+.chart-tooltip {
+    position: fixed;
+    z-index: 10;
+    max-width: 420px;
+    padding: 6px 10px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    font-size: 0.85rem;
+    white-space: pre-line;
+    pointer-events: none;
+}
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px 18px;
+    margin: 0 0 16px;
+}
+.stat-grid div { display: flex; flex-direction: column-reverse; gap: 2px; }
+.stat-grid dt { color: var(--muted); font-size: 0.85rem; }
+.stat-grid dd { margin: 0; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.panel p.note { color: var(--muted); font-size: 0.9rem; margin: 0 0 12px; }
+
+/* The matrix report */
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 18px;
+}
+.chart-grid > div { min-width: 0; }
+.slider-controls { margin: 4px 0 16px; }
+.slider-controls label { display: block; margin: 10px 0 6px; font-size: 0.95rem; }
+.slider-track input[type="range"] { width: 100%; margin: 0; accent-color: #d62728; }
+#threshold-slider { direction: rtl; }
+</style>
+</head>
+<body>
+<div class="shell">
+    <h1>@@REPORT_TITLE@@</h1>
+    <div id="report-root"><div class="status">Loading the report...</div></div>
+</div>
+<script type="application/json" id="report-data">@@REPORT_DATA@@</script>
+<script>
+// The matrix report (matrix_report): a similarity matrix's size and scores, and how its
+// network falls apart into clusters as the threshold rises, to help choose a threshold for
+// build_ssn.
+//
+// report-data's data is {summary, mst_edges, threshold_table, merge_moving_sum, slider_stops,
+// knn_projection}:
+// - summary is the document --json_out writes, split_events being the split events to plot.
+// - mst_edges is the maximum spanning tree, [node, node, score] strongest first.
+// - threshold_table has one row per distinct threshold, as the columns threshold, edges and
+//   clusters: what build_ssn --threshold <threshold> keeps, edges scoring strictly above it.
+// - merge_moving_sum is {window, x, y}, the split impact within window/2 of each x.
+// - slider_stops are the thresholds the slider offers: infinity (threshold_value null), one
+//   per split event, then one below every edge. Each has the edge_index of the last MST edge it
+//   keeps and the threshold_index of its threshold_table row (-1 for none).
+// - knn_projection is null, or {min_k, max_k, default_k, counts}, counts[i][k - min_k] being
+//   the edges build_ssn --threshold <threshold_table.threshold[i]> --mst --knn k keeps.
+
+// Reading the data a report was built with.
+//
+// report_html.py puts one envelope in <script type="application/json" id="report-data">:
+// {"report": <name>, "payload_version": <n>, "encoding": "json" | "gzip+base64", "data": ...}.
+// With "gzip+base64", data is a base64 string of gzipped JSON. A table report also has a
+// <script type="application/x-ndjson" id="report-rows"> block, one JSON object per line.
+
+async function gunzipBase64Json(base64Text) {
+    if (typeof DecompressionStream === "undefined") {
+        throw new Error("This browser cannot read the report's compressed data (DecompressionStream is unavailable).");
+    }
+    const binary = atob(base64Text);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return JSON.parse(await new Response(stream).text());
+}
+
+async function readReportData() {
+    const element = document.getElementById("report-data");
+    const envelope = JSON.parse(element.textContent);
+    if (envelope.encoding === "gzip+base64") {
+        envelope.data = await gunzipBase64Json(envelope.data);
+    } else if (envelope.encoding !== "json") {
+        throw new Error(`Unknown report data encoding: ${envelope.encoding}`);
+    }
+    return envelope;
+}
+
+function readNdjsonRows(elementId) {
+    const element = document.getElementById(elementId);
+    const rows = [];
+    for (const line of element.textContent.split("\n")) {
+        if (line.trim() !== "") {
+            rows.push(JSON.parse(line));
+        }
+    }
+    return rows;
+}
+
+function showReportError(container, error) {
+    const message = document.createElement("div");
+    message.className = "error";
+    message.textContent = `This report could not be shown: ${error && error.message ? error.message : error}`;
+    container.replaceChildren(message);
+}
+
+// Saving data from a report: text files built in the page, handed to the browser as a download,
+// and text copied to the clipboard.
+
+function downloadText(fileName, mimeType, text) {
+    downloadBlob(fileName, new Blob([text], {type: mimeType}));
+}
+
+function downloadBlob(fileName, blob) {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function csvField(value) {
+    if (value === null || value === undefined) {
+        return "";
+    }
+    const text = String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function tsvField(value) {
+    if (value === null || value === undefined) {
+        return "";
+    }
+    return String(value).replace(/[\t\r\n]/g, " ");
+}
+
+// rows: arrays of cell values, in the order of header.
+function delimitedText(header, rows, delimiter) {
+    const field = delimiter === "\t" ? tsvField : csvField;
+    const lines = [header.map(field).join(delimiter)];
+    for (const row of rows) {
+        lines.push(row.map(field).join(delimiter));
+    }
+    return lines.join("\n") + "\n";
+}
+
+// Resolves to whether the text reached the clipboard. The Clipboard API needs a secure context
+// (a file:// page is one in Chromium, not everywhere), so this falls back to a hidden textarea.
+async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (error) {
+            // Refused (no permission, or the page lost focus): try the fallback.
+        }
+    }
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    let copied = false;
+    try {
+        copied = document.execCommand("copy");
+    } catch (error) {
+        copied = false;
+    }
+    area.remove();
+    return copied;
+}
+
+// An interactive table: sort by a column, filter per column, page through the rows, drag
+// columns to reorder them, drag a column's right edge to resize it (double-click the edge to
+// fit its contents), right-click a cell to copy its value, and save the filtered rows as CSV,
+// TSV or JSON.
+//
+// columns: [{name, type}], type "str", "int" or "float". rows: objects keyed by column name,
+// null for a missing value. Floats are shown to one decimal place, as the TSV report writes
+// them; the saved files keep the full values. idPrefix goes before the ids of the table's
+// controls, so a page can hold more than one table.
+
+const TABLE_PAGE_SIZES = [25, 50, 100, 1000];
+const TABLE_COLUMN_WIDTH = 150;
+const TABLE_MIN_COLUMN_WIDTH = 40;
+const TABLE_MAX_FIT_WIDTH = 800;
+
+// Python's "%0.1f": like toFixed(1), except that an exact tie rounds to the even digit
+// (Python writes 1.25 as "1.2", toFixed as "1.3"). A double is exactly halfway between two
+// tenths only when four times it is an odd integer (it ends in .25 or .75).
+function formatFixed1(value) {
+    if (!Number.isFinite(value)) {
+        return Number.isNaN(value) ? "nan" : (value > 0 ? "inf" : "-inf");
+    }
+    if (Math.abs(value) >= 1e21) {
+        return `${BigInt(value)}.0`;  // toFixed switches to exponent notation here
+    }
+    const quarters = value * 4;
+    if (Number.isInteger(quarters) && quarters % 2 !== 0) {
+        const tenths = Math.abs(value) * 10;  // exact: an odd multiple of 0.5
+        const even = Math.floor(tenths) % 2 === 0 ? Math.floor(tenths) : Math.ceil(tenths);
+        return `${value < 0 ? "-" : ""}${Math.floor(even / 10)}.${even % 10}`;
+    }
+    const text = value.toFixed(1);
+    return Object.is(value, -0) ? "-0.0" : text;
+}
+
+// A float column's value in a saved CSV or TSV: every digit, and a whole number keeps its ".0",
+// as Python writes a float.
+function formatFullFloat(value) {
+    if (value === null || value === undefined) {
+        return value;
+    }
+    if (Object.is(value, -0)) {
+        return "-0.0";
+    }
+    return Number.isInteger(value) && Math.abs(value) < 1e16 ? `${value}.0` : String(value);
+}
+
+function formatTableCell(value, type) {
+    if (value === null || value === undefined) {
+        return "";
+    }
+    if (type === "float") {
+        return formatFixed1(Number(value));
+    }
+    return String(value);
+}
+
+// A number column's filter can be a comparison ("> 5", "<=0.1", "=3", "!= 0"); anything else,
+// and every filter on a text column, matches a case-insensitive substring of the shown value.
+function tableFilterPredicate(text, type) {
+    const query = text.trim();
+    if (query === "") {
+        return null;
+    }
+    if (type !== "str") {
+        const comparison = /^(>=|<=|!=|>|<|=)\s*(-?[0-9.]+(?:e[-+]?[0-9]+)?)$/i.exec(query);
+        if (comparison) {
+            const bound = Number(comparison[2]);
+            const test = {
+                ">": v => v > bound, ">=": v => v >= bound, "<": v => v < bound,
+                "<=": v => v <= bound, "=": v => v === bound, "!=": v => v !== bound,
+            }[comparison[1]];
+            return value => value !== null && value !== undefined && test(Number(value));
+        }
+    }
+    const needle = query.toLowerCase();
+    return value => formatTableCell(value, type).toLowerCase().includes(needle);
+}
+
+function compareTableValues(a, b, type) {
+    const aMissing = a === null || a === undefined;
+    const bMissing = b === null || b === undefined;
+    if (aMissing || bMissing) {
+        return aMissing === bMissing ? 0 : (aMissing ? 1 : -1);
+    }
+    if (type === "str") {
+        return String(a).localeCompare(String(b));
+    }
+    return Number(a) - Number(b);
+}
+
+function createReportTable(container, {columns, rows, maxHeight = null, fileStem = "data", idPrefix = ""}) {
+    const state = {
+        order: columns.map((_, index) => index),
+        filters: columns.map(() => ""),
+        sortColumn: null,
+        sortDescending: false,
+        pageSize: TABLE_PAGE_SIZES[0],
+        page: 0,
+        view: rows,
+        widths: columns.map(() => TABLE_COLUMN_WIDTH),
+    };
+
+    const toolbar = document.createElement("div");
+    toolbar.className = "toolbar";
+    const downloads = [["CSV", "csv"], ["TSV", "tsv"], ["JSON", "json"]].map(([label, kind]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.id = `${idPrefix}download-${kind}`;
+        button.textContent = `Download ${label}`;
+        button.addEventListener("click", () => download(kind));
+        return button;
+    });
+    const spacer = document.createElement("div");
+    spacer.className = "spacer";
+    const pageSizeSelect = document.createElement("select");
+    pageSizeSelect.setAttribute("aria-label", "Rows per page");
+    for (const size of TABLE_PAGE_SIZES) {
+        pageSizeSelect.add(new Option(`${size} rows`, String(size)));
+    }
+    const pagerButton = (id, label, text) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.id = idPrefix + id;
+        button.textContent = text;
+        button.setAttribute("aria-label", label);
+        return button;
+    };
+    const first = pagerButton("page-first", "First page", "\u00ab First");
+    const previous = pagerButton("page-prev", "Previous page", "\u2039 Prev");
+    const next = pagerButton("page-next", "Next page", "Next \u203a");
+    const last = pagerButton("page-last", "Last page", "Last \u00bb");
+    // Type a page number and press Enter (or leave the box) to go to it: both fire "change".
+    const pageInput = document.createElement("input");
+    pageInput.type = "text";
+    pageInput.inputMode = "numeric";
+    pageInput.id = `${idPrefix}page-input`;
+    pageInput.className = "page-input";
+    pageInput.setAttribute("aria-label", "Page number");
+    const pageCountLabel = document.createElement("span");
+    pageCountLabel.className = "status";
+    pageCountLabel.id = `${idPrefix}page-count`;
+    const pager = document.createElement("span");
+    pager.className = "pager";
+    pager.append(first, previous, "Page", pageInput, pageCountLabel, next, last);
+    const counter = document.createElement("span");
+    counter.className = "status";
+    counter.id = `${idPrefix}table-counter`;
+    const copyStatus = document.createElement("span");
+    copyStatus.className = "status";
+    copyStatus.id = `${idPrefix}table-copy-status`;
+    copyStatus.setAttribute("role", "status");
+    toolbar.append(...downloads, copyStatus, spacer, counter, pager, pageSizeSelect);
+
+    const wrap = document.createElement("div");
+    wrap.className = "report-table-wrap";
+    if (maxHeight !== null) {
+        wrap.style.maxHeight = `${maxHeight}px`;
+    }
+    const table = document.createElement("table");
+    table.className = "report-table";
+    const colgroup = document.createElement("colgroup");
+    table.appendChild(colgroup);
+    const thead = table.createTHead();
+    const tbody = table.createTBody();
+    wrap.appendChild(table);
+    container.replaceChildren(toolbar, wrap);
+
+    pageSizeSelect.addEventListener("change", () => {
+        state.pageSize = Number(pageSizeSelect.value);
+        state.page = 0;
+        renderBody();
+    });
+    // renderBody clamps the page, so "last" can ask for one past the end.
+    first.addEventListener("click", () => { state.page = 0; renderBody(); });
+    previous.addEventListener("click", () => { state.page -= 1; renderBody(); });
+    next.addEventListener("click", () => { state.page += 1; renderBody(); });
+    last.addEventListener("click", () => { state.page = Infinity; renderBody(); });
+    pageInput.addEventListener("change", () => {
+        const page = Number.parseInt(pageInput.value.trim(), 10);
+        if (Number.isFinite(page)) {
+            state.page = page - 1;
+        }
+        // An unreadable number puts the current page back in the box.
+        renderBody();
+    });
+
+    function recompute() {
+        const tests = state.filters
+            .map((text, index) => [index, tableFilterPredicate(text, columns[index].type)])
+            .filter(([, test]) => test !== null);
+        let view = tests.length === 0
+            ? rows.slice()
+            : rows.filter(row => tests.every(([index, test]) => test(row[columns[index].name])));
+        if (state.sortColumn !== null) {
+            const {name, type} = columns[state.sortColumn];
+            const sign = state.sortDescending ? -1 : 1;
+            // Array.prototype.sort is stable, so ties keep the report's order.
+            view.sort((a, b) => {
+                const order = compareTableValues(a[name], b[name], type);
+                // Missing values stay last in both directions.
+                const aMissing = a[name] === null || a[name] === undefined;
+                const bMissing = b[name] === null || b[name] === undefined;
+                return aMissing || bMissing ? order : sign * order;
+            });
+        }
+        state.view = view;
+        state.page = 0;
+    }
+
+    function renderHead() {
+        const row = document.createElement("tr");
+        colgroup.replaceChildren(...state.order.map(index => {
+            const col = document.createElement("col");
+            col.dataset.column = String(index);
+            return col;
+        }));
+        applyWidths();
+        for (const index of state.order) {
+            const column = columns[index];
+            const th = document.createElement("th");
+            th.draggable = true;
+            th.dataset.column = String(index);
+            th.title = column.name;
+            const title = document.createElement("div");
+            title.className = "column-title";
+            const label = document.createElement("span");
+            label.textContent = column.name;
+            const mark = document.createElement("span");
+            mark.className = "sort-mark";
+            mark.textContent = state.sortColumn === index ? (state.sortDescending ? "▼" : "▲") : "";
+            title.append(label, mark);
+            title.addEventListener("click", () => {
+                // Ascending, then descending, then the report's own order.
+                if (state.sortColumn !== index) {
+                    state.sortColumn = index;
+                    state.sortDescending = false;
+                } else if (!state.sortDescending) {
+                    state.sortDescending = true;
+                } else {
+                    state.sortColumn = null;
+                }
+                recompute();
+                renderHead();
+                renderBody();
+            });
+            const filter = document.createElement("input");
+            filter.type = "search";
+            filter.placeholder = column.type === "str" ? "filter" : "filter, e.g. > 10";
+            filter.setAttribute("aria-label", `Filter ${column.name}`);
+            filter.value = state.filters[index];
+            filter.addEventListener("input", () => {
+                state.filters[index] = filter.value;
+                recompute();
+                renderBody();
+            });
+            filter.addEventListener("mousedown", event => event.stopPropagation());
+            th.append(title, filter, resizeHandle(th, index, column.name));
+
+            th.addEventListener("dragstart", event => {
+                event.dataTransfer.setData("text/plain", String(index));
+                event.dataTransfer.effectAllowed = "move";
+            });
+            th.addEventListener("dragover", event => {
+                event.preventDefault();
+                th.classList.add("drop-target");
+            });
+            th.addEventListener("dragleave", () => th.classList.remove("drop-target"));
+            th.addEventListener("drop", event => {
+                event.preventDefault();
+                th.classList.remove("drop-target");
+                moveColumn(Number(event.dataTransfer.getData("text/plain")), index);
+            });
+            row.appendChild(th);
+        }
+        thead.replaceChildren(row);
+    }
+
+    // The column widths are on <col> elements; with table-layout: fixed the table must be
+    // exactly as wide as its columns, or the browser stretches them to fill it.
+    function applyWidths() {
+        let total = 0;
+        for (const col of colgroup.children) {
+            const width = state.widths[Number(col.dataset.column)];
+            col.style.width = `${width}px`;
+            total += width;
+        }
+        table.style.width = `${total}px`;
+    }
+
+    function setWidth(index, width) {
+        state.widths[index] = Math.max(TABLE_MIN_COLUMN_WIDTH, Math.round(width));
+        applyWidths();
+    }
+
+    // The width that shows the header and every value on the current page in full.
+    function fitWidth(index) {
+        const {name, type} = columns[index];
+        const context = document.createElement("canvas").getContext("2d");
+        const measure = (font, text) => {
+            context.font = font;
+            return context.measureText(text).width;
+        };
+        const th = thead.querySelector(`th[data-column="${index}"]`);
+        const headStyle = getComputedStyle(th);
+        const padding = parseFloat(headStyle.paddingLeft) + parseFloat(headStyle.paddingRight) + 2;
+        // Room for the sort mark beside the name.
+        let width = measure(headStyle.font, name) + measure(headStyle.font, "\u25b2") + 4;
+        const cell = tbody.querySelector("td");
+        if (cell) {
+            const font = getComputedStyle(cell).font;
+            const start = state.page * state.pageSize;
+            for (const record of state.view.slice(start, start + state.pageSize)) {
+                width = Math.max(width, measure(font, formatTableCell(record[name], type)));
+            }
+        }
+        return Math.min(TABLE_MAX_FIT_WIDTH, Math.ceil(width + padding));
+    }
+
+    // A handle on a column's right edge: drag it to resize the column, double-click it to fit
+    // the column to its contents. It takes focus, and the arrow keys resize too.
+    function resizeHandle(th, index, name) {
+        const handle = document.createElement("span");
+        handle.className = "resize-handle";
+        handle.tabIndex = 0;
+        handle.setAttribute("role", "separator");
+        handle.setAttribute("aria-orientation", "vertical");
+        handle.setAttribute("aria-label", `Resize ${name}`);
+        handle.title = "Drag to resize; double-click to fit";
+        handle.addEventListener("pointerdown", event => {
+            if (event.button !== 0) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            // Otherwise the drag also starts moving the column.
+            th.draggable = false;
+            th.classList.add("resizing");
+            document.body.classList.add("resizing-column");
+            handle.setPointerCapture(event.pointerId);
+            const startX = event.clientX;
+            const startWidth = state.widths[index];
+            const move = moveEvent => setWidth(index, startWidth + moveEvent.clientX - startX);
+            const end = () => {
+                handle.removeEventListener("pointermove", move);
+                handle.removeEventListener("pointerup", end);
+                handle.removeEventListener("pointercancel", end);
+                th.draggable = true;
+                th.classList.remove("resizing");
+                document.body.classList.remove("resizing-column");
+            };
+            handle.addEventListener("pointermove", move);
+            handle.addEventListener("pointerup", end);
+            handle.addEventListener("pointercancel", end);
+        });
+        handle.addEventListener("dblclick", event => {
+            event.stopPropagation();
+            setWidth(index, fitWidth(index));
+        });
+        handle.addEventListener("keydown", event => {
+            const step = event.shiftKey ? 50 : 10;
+            if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault();
+                setWidth(index, state.widths[index] + (event.key === "ArrowRight" ? step : -step));
+            }
+        });
+        handle.addEventListener("click", event => event.stopPropagation());
+        return handle;
+    }
+
+    // Right-clicking a cell opens a menu with "Copy cell value", which copies the value itself:
+    // a float with every digit, not rounded as it is shown. Shift + right-click opens the
+    // browser's own menu.
+    const menu = document.createElement("div");
+    menu.className = "context-menu";
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+    const copyItem = document.createElement("button");
+    copyItem.type = "button";
+    copyItem.setAttribute("role", "menuitem");
+    copyItem.textContent = "Copy cell value";
+    menu.appendChild(copyItem);
+    document.body.appendChild(menu);
+    let menuCell = null;
+    let copyStatusTimer = null;
+
+    function hideMenu() {
+        menu.hidden = true;
+        menuCell = null;
+    }
+
+    function cellText(cell) {
+        const value = state.view[cell.row][columns[cell.column].name];
+        if (value === null || value === undefined) {
+            return "";
+        }
+        return columns[cell.column].type === "float" ? formatFullFloat(value) : String(value);
+    }
+
+    tbody.addEventListener("contextmenu", event => {
+        const td = event.target.closest("td");
+        if (!td || event.shiftKey) {
+            return;
+        }
+        event.preventDefault();
+        menuCell = {row: Number(td.dataset.row), column: Number(td.dataset.column)};
+        menu.hidden = false;
+        // Kept inside the window.
+        const x = Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 4);
+        const y = Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 4);
+        menu.style.left = `${Math.max(0, x)}px`;
+        menu.style.top = `${Math.max(0, y)}px`;
+        copyItem.focus();
+    });
+    copyItem.addEventListener("click", async () => {
+        if (menuCell === null) {
+            return;
+        }
+        const text = cellText(menuCell);
+        hideMenu();
+        const copied = await copyText(text);
+        copyStatus.textContent = copied ? "Copied." : "Could not copy to the clipboard.";
+        clearTimeout(copyStatusTimer);
+        copyStatusTimer = setTimeout(() => { copyStatus.textContent = ""; }, 2000);
+    });
+    document.addEventListener("pointerdown", event => {
+        if (!menu.hidden && !menu.contains(event.target)) {
+            hideMenu();
+        }
+    });
+    document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !menu.hidden) {
+            hideMenu();
+        }
+    });
+    // Not closed on scroll: a scroll event can arrive just after the right-click that opened it.
+    window.addEventListener("blur", hideMenu);
+    window.addEventListener("resize", hideMenu);
+
+    // Puts column `from` just before column `to`.
+    function moveColumn(from, to) {
+        if (from === to || !Number.isInteger(from)) {
+            return;
+        }
+        const order = state.order.filter(index => index !== from);
+        order.splice(order.indexOf(to), 0, from);
+        state.order = order;
+        renderHead();
+        renderBody();
+    }
+
+    function renderBody() {
+        const total = state.view.length;
+        const pageCount = Math.max(1, Math.ceil(total / state.pageSize));
+        state.page = Math.min(Math.max(state.page, 0), pageCount - 1);
+        const start = state.page * state.pageSize;
+        const end = Math.min(start + state.pageSize, total);
+        const fragment = document.createDocumentFragment();
+        for (let i = start; i < end; i += 1) {
+            const record = state.view[i];
+            const tr = document.createElement("tr");
+            for (const index of state.order) {
+                const {name, type} = columns[index];
+                const td = document.createElement("td");
+                td.dataset.row = String(i);
+                td.dataset.column = String(index);
+                const text = formatTableCell(record[name], type);
+                td.textContent = text;
+                td.title = text;
+                if (type !== "str") {
+                    td.className = "number";
+                }
+                tr.appendChild(td);
+            }
+            fragment.appendChild(tr);
+        }
+        tbody.replaceChildren(fragment);
+        const filtered = total === rows.length ? "" : ` (filtered from ${rows.length})`;
+        counter.textContent = total === 0
+            ? `No rows${filtered}`
+            : `Showing ${start + 1}-${end} of ${total} rows${filtered}`;
+        first.disabled = previous.disabled = state.page === 0;
+        next.disabled = last.disabled = state.page >= pageCount - 1;
+        pageInput.value = String(state.page + 1);
+        pageCountLabel.textContent = `of ${pageCount}`;
+    }
+
+    // Saves the rows the filters keep, in the shown order, with the columns as arranged.
+    function download(kind) {
+        const shown = state.order.map(index => columns[index].name);
+        if (kind === "json") {
+            const records = state.view.map(record => Object.fromEntries(shown.map(name => [name, record[name] ?? null])));
+            downloadText(`${fileStem}.json`, "application/json", JSON.stringify(records, null, 1) + "\n");
+            return;
+        }
+        const delimiter = kind === "tsv" ? "\t" : ",";
+        const types = state.order.map(index => columns[index].type);
+        const cells = state.view.map(record => shown.map((name, i) => types[i] === "float" ? formatFullFloat(record[name]) : record[name]));
+        downloadText(`${fileStem}.${kind}`, kind === "tsv" ? "text/tab-separated-values" : "text/csv", delimitedText(shown, cells, delimiter));
+    }
+
+    recompute();
+    renderHead();
+    renderBody();
+    return {
+        filter(columnName, text) {
+            const index = columns.findIndex(column => column.name === columnName);
+            state.filters[index] = text;
+            recompute();
+            renderHead();
+            renderBody();
+        },
+        get viewRows() { return state.view; },
+    };
+}
+
+// SVG charts drawn without a charting library: axes with round-number ticks, a hover tooltip,
+// a histogram of precomputed bins, and buttons that save a chart as SVG or PNG.
+//
+// Colors and fonts are set as attributes, not by the page's stylesheet, so a saved SVG looks
+// the same outside the page.
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const CHART_FONT = "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif";
+const CHART_INK = "#1e2a2f";
+const CHART_MUTED = "#5c6a70";
+const CHART_GRID = "#e3e6ea";
+const CHART_ACCENT = "#c8553d";
+
+function svgElement(tag, attributes = {}, parent = null) {
+    const element = document.createElementNS(SVG_NS, tag);
+    for (const [name, value] of Object.entries(attributes)) {
+        element.setAttribute(name, String(value));
+    }
+    if (parent) {
+        parent.appendChild(element);
+    }
+    return element;
+}
+
+// The step, 1, 2 or 5 times a power of ten, that splits [lo, hi] into about `count` parts.
+function niceStep(lo, hi, count) {
+    const span = hi - lo;
+    if (!(span > 0)) {
+        return 1;
+    }
+    const raw = span / Math.max(1, count);
+    const power = 10 ** Math.floor(Math.log10(raw));
+    for (const factor of [1, 2, 5, 10]) {
+        if (power * factor >= raw) {
+            return power * factor;
+        }
+    }
+    return power * 10;
+}
+
+// The multiples of niceStep(lo, hi, count) in [lo, hi].
+function niceTicks(lo, hi, count) {
+    const step = niceStep(lo, hi, count);
+    const ticks = [];
+    for (let i = Math.ceil(lo / step); i * step <= hi + step * 1e-9; i += 1) {
+        // Rounded so 0.1 * 3 is shown as 0.3.
+        ticks.push(Number((i * step).toPrecision(12)));
+    }
+    return ticks;
+}
+
+function formatChartNumber(value) {
+    return value.toLocaleString("en-US", {maximumFractionDigits: 3});
+}
+
+function linearScale(domainLo, domainHi, rangeLo, rangeHi) {
+    const span = domainHi - domainLo || 1;
+    return value => rangeLo + (value - domainLo) / span * (rangeHi - rangeLo);
+}
+
+// One tooltip per page, shown beside the pointer.
+function chartTooltip() {
+    let tooltip = document.querySelector(".chart-tooltip");
+    if (!tooltip) {
+        tooltip = document.createElement("div");
+        tooltip.className = "chart-tooltip";
+        tooltip.setAttribute("role", "tooltip");
+        tooltip.hidden = true;
+        document.body.appendChild(tooltip);
+    }
+    return {
+        show(event, text) {
+            tooltip.textContent = text;
+            tooltip.hidden = false;
+            const x = Math.min(event.clientX + 14, window.innerWidth - tooltip.offsetWidth - 4);
+            const y = Math.min(event.clientY + 14, window.innerHeight - tooltip.offsetHeight - 4);
+            tooltip.style.left = `${Math.max(0, x)}px`;
+            tooltip.style.top = `${Math.max(0, y)}px`;
+        },
+        hide() {
+            tooltip.hidden = true;
+        },
+    };
+}
+
+// Shows `text(element)` while the pointer is over an element of `group` that has data-tip.
+function attachTooltip(group, text) {
+    const tooltip = chartTooltip();
+    group.addEventListener("pointermove", event => {
+        const target = event.target.closest("[data-tip]");
+        if (target && group.contains(target)) {
+            tooltip.show(event, text(target));
+        } else {
+            tooltip.hide();
+        }
+    });
+    group.addEventListener("pointerleave", () => tooltip.hide());
+}
+
+function svgMarkup(svg) {
+    const copy = svg.cloneNode(true);
+    copy.setAttribute("xmlns", SVG_NS);
+    const box = svg.viewBox.baseVal;
+    copy.setAttribute("width", String(box.width));
+    copy.setAttribute("height", String(box.height));
+    copy.removeAttribute("style");
+    return `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(copy)}\n`;
+}
+
+function downloadSvg(svg, fileStem) {
+    downloadText(`${fileStem}.svg`, "image/svg+xml", svgMarkup(svg));
+}
+
+// At twice the chart's size, on white.
+function downloadPng(svg, fileStem, scale = 2) {
+    const box = svg.viewBox.baseVal;
+    const url = URL.createObjectURL(new Blob([svgMarkup(svg)], {type: "image/svg+xml"}));
+    const image = new Image();
+    image.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(box.width * scale);
+        canvas.height = Math.round(box.height * scale);
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(blob => downloadBlob(`${fileStem}.png`, blob), "image/png");
+    };
+    image.src = url;
+}
+
+// "Download SVG" and "Download PNG" buttons for the chart `getSvg()` returns when clicked.
+function chartDownloadButtons(getSvg, fileStem, idPrefix = "") {
+    return [["SVG", downloadSvg], ["PNG", downloadPng]].map(([label, save]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.id = `${idPrefix}download-${label.toLowerCase()}`;
+        button.textContent = `Download ${label}`;
+        button.addEventListener("click", () => save(getSvg(), fileStem));
+        return button;
+    });
+}
+
+// A chart's toolbar (its download buttons) above the chart.
+function chartFigure(container, svg, fileStem, idPrefix) {
+    const toolbar = document.createElement("div");
+    toolbar.className = "toolbar";
+    toolbar.append(...chartDownloadButtons(() => svg, fileStem, idPrefix));
+    const figure = document.createElement("div");
+    figure.className = "chart";
+    figure.appendChild(svg);
+    container.replaceChildren(toolbar, figure);
+}
+
+function drawAxes(svg, {x, y, xTicks, yTicks, left, right, top, bottom, xLabel, yLabel}) {
+    const axes = svgElement("g", {"font-family": CHART_FONT, "font-size": 11, fill: CHART_MUTED}, svg);
+    for (const tick of yTicks) {
+        const ty = y(tick);
+        svgElement("line", {x1: left, x2: right, y1: ty, y2: ty, stroke: CHART_GRID}, axes);
+        const label = svgElement("text", {x: left - 6, y: ty, "text-anchor": "end", "dominant-baseline": "middle"}, axes);
+        label.textContent = formatChartNumber(tick);
+    }
+    svgElement("line", {x1: left, x2: right, y1: bottom, y2: bottom, stroke: CHART_INK}, axes);
+    for (const tick of xTicks) {
+        const tx = x(tick);
+        svgElement("line", {x1: tx, x2: tx, y1: bottom, y2: bottom + 4, stroke: CHART_INK}, axes);
+        const label = svgElement("text", {x: tx, y: bottom + 16, "text-anchor": "middle"}, axes);
+        label.textContent = formatChartNumber(tick);
+    }
+    const titles = svgElement("g", {"font-family": CHART_FONT, "font-size": 12, fill: CHART_INK}, svg);
+    const xTitle = svgElement("text", {x: (left + right) / 2, y: bottom + 36, "text-anchor": "middle"}, titles);
+    xTitle.textContent = xLabel;
+    const yTitle = svgElement("text", {
+        transform: `translate(14 ${(top + bottom) / 2}) rotate(-90)`, "text-anchor": "middle",
+    }, titles);
+    yTitle.textContent = yLabel;
+}
+
+// binEdges: n + 1 numbers, bin i holding the values in [binEdges[i], binEdges[i + 1]);
+// counts: n counts. With integerBins, a bin is labeled by the integers it holds.
+function drawHistogram(container, {binEdges, counts, xLabel, yLabel, itemLabel = "items",
+    integerBins = false, fileStem = "histogram", idPrefix = ""}) {
+    const width = 760;
+    const height = 300;
+    const margin = {top: 12, right: 20, bottom: 48, left: 64};
+    const svg = svgElement("svg", {
+        viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `Histogram of ${xLabel}`,
+        style: `width: 100%; max-width: ${width}px; height: auto;`,
+    });
+    const lo = binEdges[0];
+    const hi = binEdges[binEdges.length - 1];
+    const maxCount = Math.max(1, ...counts);
+    // Counts get whole-number ticks.
+    const yTicks = niceTicks(0, maxCount, 5).filter(Number.isInteger);
+    const yTop = Math.max(maxCount, yTicks[yTicks.length - 1]);
+    const x = linearScale(lo, hi, margin.left, width - margin.right);
+    const y = linearScale(0, yTop, height - margin.bottom, margin.top);
+    // Integer bins get integer ticks.
+    const xTicks = niceTicks(lo, hi, 8).filter(tick => !integerBins || Number.isInteger(tick));
+    drawAxes(svg, {
+        x, y, xTicks, yTicks, xLabel, yLabel,
+        left: margin.left, right: width - margin.right, top: margin.top, bottom: height - margin.bottom,
+    });
+
+    const bars = svgElement("g", {fill: CHART_ACCENT}, svg);
+    counts.forEach((count, i) => {
+        const x0 = x(binEdges[i]);
+        const x1 = x(binEdges[i + 1]);
+        const bar = svgElement("rect", {
+            x: x0 + 0.5, y: y(count), width: Math.max(1, x1 - x0 - 1), height: y(0) - y(count),
+            "fill-opacity": 0.85,
+        }, bars);
+        const start = binEdges[i];
+        const end = binEdges[i + 1];
+        const range = integerBins
+            ? (end - start === 1 ? formatChartNumber(start) : `${formatChartNumber(start)}–${formatChartNumber(end - 1)}`)
+            : `${formatChartNumber(start)}–${formatChartNumber(end)}`;
+        bar.dataset.tip = `${range}: ${formatChartNumber(count)} ${itemLabel}`;
+        // Empty bins can still be pointed at: a transparent strip the height of the plot.
+        if (count === 0) {
+            bar.setAttribute("y", margin.top);
+            bar.setAttribute("height", y(0) - margin.top);
+            bar.setAttribute("fill-opacity", 0);
+        }
+    });
+    attachTooltip(bars, bar => bar.dataset.tip);
+    chartFigure(container, svg, fileStem, idPrefix);
+    return svg;
+}
+
+// Line charts on SVG, built on charts.js: a chart frame that redraws itself for a range of x
+// (zoom by dragging across it), log or linear x axes, a second y axis on the right, and a
+// tooltip with each series' value under the pointer.
+
+// The axis from 0 up to the first multiple of niceStep(0, top, count) at or above top, and its
+// ticks: [axisTop, ticks]. integer: true keeps whole-number ticks only.
+function zeroBasedAxis(top, count = 5, integer = false) {
+    const step = integer ? Math.max(1, niceStep(0, top, count)) : niceStep(0, top, count);
+    const axisTop = Math.max(step, Math.ceil(top / step - 1e-9) * step);
+    return [axisTop, niceTicks(0, axisTop, Math.round(axisTop / step))];
+}
+
+// Ticks for a log axis over [lo, hi] (lo > 0): the powers of ten, with 2 and 5 times them when
+// the range spans few decades, and round linear ticks when it spans less than one.
+function logTicks(lo, hi) {
+    const first = Math.floor(Math.log10(lo));
+    const last = Math.ceil(Math.log10(hi));
+    const factors = last - first <= 2 ? [1, 2, 5] : [1];
+    const stride = Math.max(1, Math.ceil((last - first) / 8));
+    const ticks = [];
+    for (let power = first; power <= last; power += stride) {
+        for (const factor of factors) {
+            const tick = Number((factor * 10 ** power).toPrecision(12));
+            if (tick >= lo * (1 - 1e-9) && tick <= hi * (1 + 1e-9)) {
+                ticks.push(tick);
+            }
+        }
+    }
+    return ticks.length >= 2 ? ticks : niceTicks(lo, hi, 5);
+}
+
+// A scale for [lo, hi] onto [rangeLo, rangeHi], linear or by log10, with invert().
+function axisScale(lo, hi, rangeLo, rangeHi, log = false) {
+    const f = log ? Math.log10 : value => value;
+    const a = f(lo);
+    const b = f(hi);
+    const span = b - a || 1;
+    const scale = value => rangeLo + (f(value) - a) / span * (rangeHi - rangeLo);
+    scale.invert = position => {
+        const value = a + (position - rangeLo) / (rangeHi - rangeLo) * span;
+        return log ? 10 ** value : value;
+    };
+    return scale;
+}
+
+// The y axis on the right: its ticks and title, without grid lines.
+function drawRightAxis(svg, {y, ticks, right, top, bottom, label}) {
+    const axis = svgElement("g", {"font-family": CHART_FONT, "font-size": 11, fill: CHART_MUTED}, svg);
+    for (const tick of ticks) {
+        const text = svgElement("text", {x: right + 6, y: y(tick), "dominant-baseline": "middle"}, axis);
+        text.textContent = formatChartNumber(tick);
+    }
+    const title = svgElement("text", {
+        transform: `translate(${right + 52} ${(top + bottom) / 2}) rotate(90)`, "text-anchor": "middle",
+        "font-family": CHART_FONT, "font-size": 12, fill: CHART_INK,
+    }, svg);
+    title.textContent = label;
+}
+
+// A legend in one row above the plot: [{label, color, mark: "line" | "dot"}].
+function drawLegend(svg, entries, {left, top}) {
+    const legend = svgElement("g", {"font-family": CHART_FONT, "font-size": 11, fill: CHART_INK}, svg);
+    let x = left;
+    for (const {label, color, mark} of entries) {
+        if (mark === "dot") {
+            svgElement("circle", {cx: x + 7, cy: top, r: 4, fill: color}, legend);
+        } else {
+            svgElement("line", {x1: x, x2: x + 14, y1: top, y2: top, stroke: color, "stroke-width": 2}, legend);
+        }
+        const text = svgElement("text", {x: x + 19, y: top, "dominant-baseline": "middle"}, legend);
+        text.textContent = label;
+        x += 19 + label.length * 6.2 + 18;
+    }
+}
+
+// An SVG path through points ([x, y] pairs, sorted by x). step: true holds each y until the
+// next x, as a running total over discrete events does.
+function linePath(points, x, y, step = false) {
+    const parts = [];
+    points.forEach(([px, py], i) => {
+        const sx = x(px).toFixed(2);
+        const sy = y(py).toFixed(2);
+        if (i === 0) {
+            parts.push(`M${sx},${sy}`);
+        } else if (step) {
+            parts.push(`H${sx}V${sy}`);
+        } else {
+            parts.push(`L${sx},${sy}`);
+        }
+    });
+    return parts.join("");
+}
+
+// The index of the point in points (sorted by x) nearest to value.
+function nearestIndex(points, value, key = point => point[0]) {
+    let lo = 0;
+    let hi = points.length - 1;
+    while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (key(points[mid]) < value) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    return Math.abs(key(points[hi]) - value) < Math.abs(key(points[lo]) - value) ? hi : lo;
+}
+
+// The points of a sorted series inside [lo, hi], with one more on each side so a line runs to
+// the plot's edges.
+function pointsInRange(points, lo, hi) {
+    let start = 0;
+    while (start < points.length && points[start][0] < lo) {
+        start += 1;
+    }
+    let end = points.length;
+    while (end > start && points[end - 1][0] > hi) {
+        end -= 1;
+    }
+    return points.slice(Math.max(0, start - 1), Math.min(points.length, end + 1));
+}
+
+// A chart that redraws itself: draw(svg, [lo, hi]) draws it for that x range and returns
+// {plot: {left, right, top, bottom}, x, hover(px, py), click(px, py)}, hover giving
+// {text, guide, dots: [{x, y, color}]} or null for the point under the pointer (in the
+// chart's own coordinates), and click being optional.
+//
+// With zoom, dragging across the plot zooms to that range of x and double-clicking (or the
+// Reset zoom button) zooms back out. setMarker(value) draws a line across the plot at x = value
+// (null for none), the value the page is showing elsewhere.
+function interactiveChart(container, {width, height, domain, draw, zoom = true, ariaLabel = "Chart",
+    fileStem = "chart", idPrefix = ""}) {
+    const svg = svgElement("svg", {
+        viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": ariaLabel,
+        style: `width: 100%; max-width: ${width}px; height: auto;`,
+    });
+    chartFigure(container, svg, fileStem, idPrefix);
+    const resetButton = document.createElement("button");
+    if (zoom) {
+        resetButton.type = "button";
+        resetButton.id = `${idPrefix}reset-zoom`;
+        resetButton.textContent = "Reset zoom";
+        resetButton.disabled = true;
+        resetButton.title = "Drag across the chart to zoom in; double-click it to zoom back out.";
+        resetButton.addEventListener("click", () => setView(null));
+        container.querySelector(".toolbar").appendChild(resetButton);
+    }
+    const tooltip = chartTooltip();
+    let view = null;
+    let marker = null;
+    let layout = null;
+    let markerLayer = null;
+    let hoverLayer = null;
+    let brush = null;
+
+    const toChart = event => {
+        const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM().inverse());
+        return [point.x, point.y];
+    };
+    const inPlot = ([px, py]) => layout && px >= layout.plot.left && px <= layout.plot.right
+        && py >= layout.plot.top && py <= layout.plot.bottom;
+
+    function drawMarker() {
+        markerLayer.replaceChildren();
+        if (marker === null || marker === undefined) {
+            return;
+        }
+        const mx = layout.x(marker);
+        if (Number.isFinite(mx) && mx >= layout.plot.left - 0.5 && mx <= layout.plot.right + 0.5) {
+            svgElement("line", {
+                x1: mx, x2: mx, y1: layout.plot.top, y2: layout.plot.bottom,
+                stroke: "#d62728", "stroke-width": 1.5, "stroke-dasharray": "4 3",
+            }, markerLayer);
+        }
+    }
+
+    function render() {
+        svg.replaceChildren();
+        layout = draw(svg, view || domain);
+        const {left, right, top, bottom} = layout.plot;
+        markerLayer = svgElement("g", {"pointer-events": "none"}, svg);
+        hoverLayer = svgElement("g", {"pointer-events": "none"}, svg);
+        drawMarker();
+        const overlay = svgElement("rect", {
+            x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top),
+            fill: "transparent", "data-overlay": "",
+        }, svg);
+        overlay.style.cursor = zoom ? "crosshair" : (layout.click ? "pointer" : "default");
+        resetButton.disabled = view === null;
+    }
+
+    function setView(range) {
+        view = range;
+        tooltip.hide();
+        render();
+    }
+
+    function showHover(point) {
+        hoverLayer.replaceChildren();
+        const found = inPlot(point) && layout.hover ? layout.hover(point[0], point[1]) : null;
+        if (!found) {
+            tooltip.hide();
+            return null;
+        }
+        if (found.guide !== undefined && found.guide !== null) {
+            svgElement("line", {
+                x1: found.guide, x2: found.guide, y1: layout.plot.top, y2: layout.plot.bottom,
+                stroke: CHART_MUTED, "stroke-width": 1, "stroke-opacity": 0.5,
+            }, hoverLayer);
+        }
+        for (const dot of found.dots || []) {
+            svgElement("circle", {cx: dot.x, cy: dot.y, r: 4, fill: dot.color, stroke: "#ffffff", "stroke-width": 1.5}, hoverLayer);
+        }
+        return found;
+    }
+
+    svg.addEventListener("pointerdown", event => {
+        const point = toChart(event);
+        if (event.button !== 0 || !inPlot(point)) {
+            return;
+        }
+        brush = {start: point[0], current: point[0], rect: null};
+        svg.setPointerCapture(event.pointerId);
+    });
+    svg.addEventListener("pointermove", event => {
+        const point = toChart(event);
+        if (brush && zoom) {
+            brush.current = Math.max(layout.plot.left, Math.min(layout.plot.right, point[0]));
+            if (Math.abs(brush.current - brush.start) > 4) {
+                tooltip.hide();
+                hoverLayer.replaceChildren();
+                if (!brush.rect) {
+                    brush.rect = svgElement("rect", {fill: CHART_MUTED, "fill-opacity": 0.15, "pointer-events": "none"}, svg);
+                }
+                brush.rect.setAttribute("x", Math.min(brush.start, brush.current));
+                brush.rect.setAttribute("width", Math.abs(brush.current - brush.start));
+                brush.rect.setAttribute("y", layout.plot.top);
+                brush.rect.setAttribute("height", layout.plot.bottom - layout.plot.top);
+                return;
+            }
+        }
+        const found = showHover(point);
+        if (found) {
+            tooltip.show(event, found.text);
+        }
+    });
+    svg.addEventListener("pointerup", event => {
+        if (!brush) {
+            return;
+        }
+        const {start, current} = brush;
+        brush = null;
+        if (zoom && Math.abs(current - start) > 4) {
+            const a = layout.x.invert(Math.min(start, current));
+            const b = layout.x.invert(Math.max(start, current));
+            setView([a, b]);
+        } else if (layout.click) {
+            layout.click(...toChart(event));
+        }
+    });
+    svg.addEventListener("pointerleave", () => {
+        if (!brush) {
+            tooltip.hide();
+            hoverLayer.replaceChildren();
+        }
+    });
+    if (zoom) {
+        svg.addEventListener("dblclick", () => setView(null));
+    }
+
+    render();
+    return {
+        svg,
+        setMarker(value) {
+            marker = value;
+            drawMarker();
+        },
+        zoomTo(range) {
+            setView(range);
+        },
+        layout: () => layout,
+    };
+}
+
+// A line chart of series [{name, color, points, axis: "left" | "right", step, format}], each
+// points a list of [x, y] sorted by x. Every y axis starts at zero. The tooltip shows each
+// series' value at the point nearest the pointer.
+function drawLineChart(container, {series, xLabel, yLabel, y2Label = null, xLog = false, xName = null,
+    xFormat = formatChartNumber, width = 760, height = 320, fileStem = "chart", idPrefix = "",
+    integerY = true}) {
+    const margin = {top: 34, right: y2Label ? 72 : 20, bottom: 48, left: 72};
+    const firsts = series.filter(s => s.points.length > 0).map(s => s.points[0][0]);
+    const lasts = series.filter(s => s.points.length > 0).map(s => s.points[s.points.length - 1][0]);
+    const domain = firsts.length > 0 ? [Math.min(...firsts), Math.max(...lasts)] : [0, 1];
+    const draw = (svg, [lo, hi]) => {
+        const plot = {left: margin.left, right: width - margin.right, top: margin.top, bottom: height - margin.bottom};
+        const x = axisScale(lo, hi, plot.left, plot.right, xLog);
+        const visible = series.map(s => pointsInRange(s.points, lo, hi));
+        const yScaleFor = axis => {
+            let top = 1;
+            visible.forEach((points, i) => {
+                if ((series[i].axis || "left") === axis) {
+                    for (const point of points) {
+                        top = Math.max(top, point[1]);
+                    }
+                }
+            });
+            const [yTop, ticks] = zeroBasedAxis(top, 5, integerY);
+            return {y: axisScale(0, yTop, plot.bottom, plot.top), ticks};
+        };
+        const left = yScaleFor("left");
+        const right = y2Label ? yScaleFor("right") : null;
+        const xTicks = xLog ? logTicks(lo, hi) : niceTicks(lo, hi, 8);
+        drawAxes(svg, {
+            x, y: left.y, xTicks, yTicks: left.ticks, xLabel, yLabel, ...plot,
+        });
+        if (right) {
+            drawRightAxis(svg, {y: right.y, ticks: right.ticks, right: plot.right, top: plot.top, bottom: plot.bottom, label: y2Label});
+        }
+        drawLegend(svg, series.map(s => ({label: s.name, color: s.color, mark: "line"})), {left: plot.left, top: 14});
+        const clipId = `${idPrefix}clip`;
+        const clip = svgElement("clipPath", {id: clipId}, svgElement("defs", {}, svg));
+        svgElement("rect", {x: plot.left, y: plot.top - 2, width: plot.right - plot.left, height: plot.bottom - plot.top + 4}, clip);
+        const lines = svgElement("g", {"clip-path": `url(#${clipId})`, fill: "none"}, svg);
+        series.forEach((s, i) => {
+            const y = (s.axis === "right" && right ? right : left).y;
+            svgElement("path", {d: linePath(visible[i], x, y, s.step), stroke: s.color, "stroke-width": 2}, lines);
+        });
+        const hover = px => {
+            const value = x.invert(px);
+            const dots = [];
+            const text = [];
+            let guide = null;
+            series.forEach((s, i) => {
+                const points = visible[i];
+                if (points.length === 0) {
+                    return;
+                }
+                const scaled = xLog ? Math.log10 : v => v;
+                const point = points[nearestIndex(points, scaled(value), p => scaled(p[0]))];
+                const y = (s.axis === "right" && right ? right : left).y;
+                if (guide === null) {
+                    guide = x(point[0]);
+                    text.push(`${xName || xLabel}: ${xFormat(point[0])}`);
+                }
+                dots.push({x: x(point[0]), y: y(point[1]), color: s.color});
+                text.push(`${s.name}: ${(s.format || formatChartNumber)(point[1])}`);
+            });
+            return dots.length > 0 ? {text: text.join("\n"), guide, dots} : null;
+        };
+        return {plot, x, hover};
+    };
+    return interactiveChart(container, {
+        width, height, domain, draw, ariaLabel: `${yLabel} by ${xLabel}`, fileStem, idPrefix,
+    });
+}
+
+// Circles packed side by side, and a bubble chart drawn with them (built on charts.js).
+//
+// The packing is ported from d3-hierarchy's pack/siblings.js and pack/enclose.js (Copyright
+// 2010-2021 Mike Bostock, ISC license).
+
+// d3-hierarchy's linear congruential generator, so a packing is the same on every load.
+function packRandom() {
+    let state = 1;
+    return () => (state = (1664525 * state + 1013904223) % 4294967296) / 4294967296;
+}
+
+function shuffleWith(array, random) {
+    let m = array.length;
+    while (m) {
+        const i = random() * m-- | 0;
+        [array[m], array[i]] = [array[i], array[m]];
+    }
+    return array;
+}
+
+function enclosesNot(a, b) {
+    const dr = a.r - b.r;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return dr < 0 || dr * dr < dx * dx + dy * dy;
+}
+
+function enclosesWeak(a, b) {
+    const dr = a.r - b.r + Math.max(a.r, b.r, 1) * 1e-9;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return dr > 0 && dr * dr > dx * dx + dy * dy;
+}
+
+function enclosesWeakAll(a, circles) {
+    return circles.every(circle => enclosesWeak(a, circle));
+}
+
+function encloseBasis2(a, b) {
+    const x21 = b.x - a.x;
+    const y21 = b.y - a.y;
+    const r21 = b.r - a.r;
+    const l = Math.sqrt(x21 * x21 + y21 * y21);
+    return {x: (a.x + b.x + x21 / l * r21) / 2, y: (a.y + b.y + y21 / l * r21) / 2, r: (l + a.r + b.r) / 2};
+}
+
+function encloseBasis3(a, b, c) {
+    const {x: x1, y: y1, r: r1} = a;
+    const {x: x2, y: y2, r: r2} = b;
+    const {x: x3, y: y3, r: r3} = c;
+    const a2 = x1 - x2;
+    const a3 = x1 - x3;
+    const b2 = y1 - y2;
+    const b3 = y1 - y3;
+    const c2 = r2 - r1;
+    const c3 = r3 - r1;
+    const d1 = x1 * x1 + y1 * y1 - r1 * r1;
+    const d2 = d1 - x2 * x2 - y2 * y2 + r2 * r2;
+    const d3 = d1 - x3 * x3 - y3 * y3 + r3 * r3;
+    const ab = a3 * b2 - a2 * b3;
+    const xa = (b2 * d3 - b3 * d2) / (ab * 2) - x1;
+    const xb = (b3 * c2 - b2 * c3) / ab;
+    const ya = (a3 * d2 - a2 * d3) / (ab * 2) - y1;
+    const yb = (a2 * c3 - a3 * c2) / ab;
+    const qa = xb * xb + yb * yb - 1;
+    const qb = 2 * (r1 + xa * xb + ya * yb);
+    const qc = xa * xa + ya * ya - r1 * r1;
+    const r = -(Math.abs(qa) > 1e-6 ? (qb + Math.sqrt(qb * qb - 4 * qa * qc)) / (2 * qa) : qc / qb);
+    return {x: x1 + xa + xb * r, y: y1 + ya + yb * r, r};
+}
+
+function encloseBasis(basis) {
+    if (basis.length === 1) {
+        return {x: basis[0].x, y: basis[0].y, r: basis[0].r};
+    }
+    return basis.length === 2 ? encloseBasis2(basis[0], basis[1]) : encloseBasis3(basis[0], basis[1], basis[2]);
+}
+
+function extendBasis(basis, p) {
+    if (enclosesWeakAll(p, basis)) {
+        return [p];
+    }
+    for (const b of basis) {
+        if (enclosesNot(p, b) && enclosesWeakAll(encloseBasis2(b, p), basis)) {
+            return [b, p];
+        }
+    }
+    for (let i = 0; i < basis.length - 1; i += 1) {
+        for (let j = i + 1; j < basis.length; j += 1) {
+            if (enclosesNot(encloseBasis2(basis[i], basis[j]), p)
+                && enclosesNot(encloseBasis2(basis[i], p), basis[j])
+                && enclosesNot(encloseBasis2(basis[j], p), basis[i])
+                && enclosesWeakAll(encloseBasis3(basis[i], basis[j], p), basis)) {
+                return [basis[i], basis[j], p];
+            }
+        }
+    }
+    throw new Error("Could not enclose the circles.");
+}
+
+// The smallest circle {x, y, r} enclosing every circle {x, y, r}.
+function packEnclose(circles, random) {
+    const shuffled = shuffleWith(Array.from(circles), random);
+    let basis = [];
+    let enclosing = null;
+    let i = 0;
+    while (i < shuffled.length) {
+        const p = shuffled[i];
+        if (enclosing && enclosesWeak(enclosing, p)) {
+            i += 1;
+        } else {
+            basis = extendBasis(basis, p);
+            enclosing = encloseBasis(basis);
+            i = 0;
+        }
+    }
+    return enclosing;
+}
+
+// Places c tangent to both a and b.
+function placeTangent(b, a, c) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2) {
+        const a2 = (a.r + c.r) ** 2;
+        const b2 = (b.r + c.r) ** 2;
+        if (a2 > b2) {
+            const x = (d2 + b2 - a2) / (2 * d2);
+            const y = Math.sqrt(Math.max(0, b2 / d2 - x * x));
+            c.x = b.x - x * dx - y * dy;
+            c.y = b.y - x * dy + y * dx;
+        } else {
+            const x = (d2 + a2 - b2) / (2 * d2);
+            const y = Math.sqrt(Math.max(0, a2 / d2 - x * x));
+            c.x = a.x + x * dx - y * dy;
+            c.y = a.y + x * dy + y * dx;
+        }
+    } else {
+        c.x = a.x + c.r;
+        c.y = a.y;
+    }
+}
+
+function circlesIntersect(a, b) {
+    const dr = a.r + b.r - 1e-6;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return dr > 0 && dr * dr > dx * dx + dy * dy;
+}
+
+// How far from the origin the point between a front-chain node and the next one is.
+function chainScore(node) {
+    const a = node.circle;
+    const b = node.next.circle;
+    const ab = a.r + b.r;
+    const dx = (a.x * b.r + b.x * a.r) / ab;
+    const dy = (a.y * b.r + b.y * a.r) / ab;
+    return dx * dx + dy * dy;
+}
+
+// Places circles {r} side by side around the origin, each tangent to two placed before it, by
+// setting their x and y. Returns the radius of the circle enclosing them all, centered on the
+// origin.
+function packSiblings(circles, random) {
+    const n = circles.length;
+    if (n === 0) {
+        return 0;
+    }
+    let a = circles[0];
+    a.x = 0;
+    a.y = 0;
+    if (n === 1) {
+        return a.r;
+    }
+    let b = circles[1];
+    a.x = -b.r;
+    b.x = a.r;
+    b.y = 0;
+    if (n === 2) {
+        return a.r + b.r;
+    }
+    let c = circles[2];
+    placeTangent(b, a, c);
+
+    // The front chain: a ring of the outermost circles.
+    a = {circle: a};
+    b = {circle: b};
+    c = {circle: c};
+    a.next = c.previous = b;
+    b.next = a.previous = c;
+    c.next = b.previous = a;
+
+    pack: for (let i = 3; i < n; i += 1) {
+        placeTangent(a.circle, b.circle, circles[i]);
+        c = {circle: circles[i]};
+        // Find the closest circle on the chain that c intersects, if any, by distance along
+        // the chain, ahead of b or behind a.
+        let j = b.next;
+        let k = a.previous;
+        let sj = b.circle.r;
+        let sk = a.circle.r;
+        do {
+            if (sj <= sk) {
+                if (circlesIntersect(j.circle, c.circle)) {
+                    b = j;
+                    a.next = b;
+                    b.previous = a;
+                    i -= 1;
+                    continue pack;
+                }
+                sj += j.circle.r;
+                j = j.next;
+            } else {
+                if (circlesIntersect(k.circle, c.circle)) {
+                    a = k;
+                    a.next = b;
+                    b.previous = a;
+                    i -= 1;
+                    continue pack;
+                }
+                sk += k.circle.r;
+                k = k.previous;
+            }
+        } while (j !== k.next);
+
+        // c fits between a and b.
+        c.previous = a;
+        c.next = b;
+        a.next = b.previous = b = c;
+
+        // The next circle goes beside the chain pair closest to the origin.
+        let best = chainScore(a);
+        while ((c = c.next) !== b) {
+            const score = chainScore(c);
+            if (score < best) {
+                a = c;
+                best = score;
+            }
+        }
+        b = a.next;
+    }
+
+    const chain = [b.circle];
+    for (let node = b.next; node !== b; node = node.next) {
+        chain.push(node.circle);
+    }
+    const enclosing = packEnclose(chain, random);
+    for (const circle of circles) {
+        circle.x -= enclosing.x;
+        circle.y -= enclosing.y;
+    }
+    return enclosing.r;
+}
+
+// d3's pack() of one level: circles with areas in proportion to values, packed into a circle
+// that fills the smaller side of width x height, padding pixels apart. Returns [{value, index,
+// x, y, r}] in the order of values.
+function packValues(values, width, height, padding = 0) {
+    const circles = values.map((value, index) => ({value, index, r: Math.sqrt(Math.max(0, value)), x: 0, y: 0}));
+    // As d3: pack once to learn the scale, then again with the padding in those units.
+    let radius = packSiblings(circles, packRandom());
+    const size = Math.min(width, height);
+    if (padding > 0 && radius > 0) {
+        const pad = padding * radius / size;
+        circles.forEach(circle => { circle.r += pad; });
+        radius = packSiblings(circles, packRandom()) + pad;
+        circles.forEach(circle => { circle.r -= pad; });
+    }
+    const k = radius > 0 ? size / (2 * radius) : 1;
+    for (const circle of circles) {
+        circle.x = width / 2 + circle.x * k;
+        circle.y = height / 2 + circle.y * k;
+        circle.r *= k;
+    }
+    return circles;
+}
+
+// ColorBrewer's YlOrRd (Cynthia Brewer, Apache 2.0), interpolated: t in [0, 1], light to dark.
+const YL_OR_RD = ["#ffffcc", "#ffeda0", "#fed976", "#feb24c", "#fd8d3c", "#fc4e2a", "#e31a1c", "#bd0026", "#800026"];
+
+function sequentialColor(t, scheme = YL_OR_RD) {
+    const position = Math.max(0, Math.min(1, t)) * (scheme.length - 1);
+    const i = Math.min(scheme.length - 2, Math.floor(position));
+    const f = position - i;
+    const rgb = hex => [1, 3, 5].map(offset => parseInt(hex.slice(offset, offset + 2), 16));
+    const [from, to] = [rgb(scheme[i]), rgb(scheme[i + 1])];
+    return `rgb(${from.map((value, j) => Math.round(value + (to[j] - value) * f)).join(",")})`;
+}
+
+// A bubble chart: one circle per value, its area in proportion to it. Returns {update(values)},
+// values being the numbers to draw, largest first; label(i) names circle i in its tooltip.
+function createBubbleChart(container, {width = 760, height = 360, padding = 4, itemLabel = "items",
+    label = i => `#${i + 1}`, emptyText = "Nothing to show.", fileStem = "bubbles", idPrefix = ""} = {}) {
+    const svg = svgElement("svg", {
+        viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Bubble chart",
+        style: `width: 100%; max-width: ${width}px; height: auto;`,
+        "font-family": CHART_FONT,
+    });
+    chartFigure(container, svg, fileStem, idPrefix);
+    const bubbles = svgElement("g", {}, svg);
+    attachTooltip(bubbles, circle => circle.dataset.tip);
+    return {
+        svg,
+        update(values) {
+            bubbles.replaceChildren();
+            if (values.length === 0) {
+                const text = svgElement("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: CHART_MUTED, "font-size": 13}, bubbles);
+                text.textContent = emptyText;
+                return;
+            }
+            const top = Math.max(1, values[0], values[values.length - 1]);
+            for (const circle of packValues(values, width, height, padding)) {
+                const group = svgElement("g", {transform: `translate(${circle.x.toFixed(2)},${circle.y.toFixed(2)})`}, bubbles);
+                const shape = svgElement("circle", {
+                    r: circle.r.toFixed(2), fill: sequentialColor(circle.value / top), "fill-opacity": 0.85,
+                    stroke: "#9a3412", "stroke-width": 1,
+                }, group);
+                shape.dataset.tip = `${label(circle.index)}: ${formatChartNumber(circle.value)} ${itemLabel}`;
+                if (circle.r >= 16) {
+                    const text = svgElement("text", {
+                        "text-anchor": "middle", dy: "0.35em", "font-weight": 600, fill: "#3f1d0f",
+                        "font-size": Math.max(9, Math.min(14, circle.r / 2.4)).toFixed(1), "pointer-events": "none",
+                    }, group);
+                    text.textContent = formatChartNumber(circle.value);
+                }
+            }
+        },
+    };
+}
+
+
+// What a split's size means under each --merge_impact_metric; ssn_hierarchy.py's
+// merge_impact_axis_labels, which test_report_html.py checks these against.
+const SPLIT_AXIS_LABELS = {
+    min_child: {
+        largest: "Largest single split (nodes)",
+        moving_sum: "Moving sum of split size (5% window)",
+        moving_sum_short: "Moving sum (5% window)",
+        impact_amount: "{} nodes",
+        moving_sum_hover: "Nodes displaced within",
+    },
+    product: {
+        largest: "Largest single split (size product)",
+        moving_sum: "Moving sum of split impact (5% window)",
+        moving_sum_short: "Moving sum (5% window)",
+        impact_amount: "impact {}",
+        moving_sum_hover: "Split impact within",
+    },
+};
+// ssn_hierarchy.MERGE_EVENT_DENSITY_BINS: the bands of the axis --max_merge_events backfills.
+const MERGE_EVENT_DENSITY_BINS = 20;
+// The slider's positions run 0 to SLIDER_SCALE.
+const SLIDER_SCALE = 10000;
+// How much of the threshold axis is left empty past the outermost stops, on each side.
+const AXIS_PADDING_FRACTION = 0.05;
+// The split chart, whose plot the slider underneath it lines up with.
+const SPLIT_CHART = {width: 1000, height: 340, margin: {top: 40, right: 72, bottom: 48, left: 72}};
+const SPLIT_STEM_COLOR = "#a8d2cf";
+const SPLIT_BEAD_COLOR = "#72b7b2";
+const MOVING_SUM_COLOR = "#e45756";
+// A cluster-size union-find snapshot is kept every this many slider stops.
+const CHECKPOINT_STRIDE = 50;
+
+function reportPanel(root, title, note = null) {
+    const section = document.createElement("section");
+    section.className = "panel";
+    const heading = document.createElement("h2");
+    heading.textContent = title;
+    section.appendChild(heading);
+    if (note) {
+        const text = document.createElement("p");
+        text.className = "note";
+        text.textContent = note;
+        section.appendChild(text);
+    }
+    root.appendChild(section);
+    return section;
+}
+
+function panelPart(parent, id, className = null) {
+    const part = document.createElement("div");
+    if (id) {
+        part.id = id;
+    }
+    if (className) {
+        part.className = className;
+    }
+    parent.appendChild(part);
+    return part;
+}
+
+// [label, value, id] triples as a grid of figures; id names the figure, for updating it.
+function statGrid(entries) {
+    const grid = document.createElement("dl");
+    grid.className = "stat-grid";
+    for (const [label, value, id] of entries) {
+        const item = document.createElement("div");
+        const term = document.createElement("dt");
+        term.textContent = label;
+        const figure = document.createElement("dd");
+        figure.textContent = value;
+        if (id) {
+            figure.id = id;
+        }
+        item.append(term, figure);
+        grid.appendChild(item);
+    }
+    return grid;
+}
+
+function summaryPanel(root, summary) {
+    const section = reportPanel(root, "Summary");
+    const scores = summary.edge_scores;
+    const entries = [
+        ["nodes", formatChartNumber(summary.nodes)],
+        ["non-zero edges", formatChartNumber(summary.non_zero_edges)],
+        ["connected components", formatChartNumber(summary.connected_components)],
+    ];
+    if (scores) {
+        entries.push(
+            ["mean score", formatFixed1(scores.mean)],
+            ["median score", formatFixed1(scores.median)],
+            ["lowest score", formatFixed1(scores.min)],
+            ["highest score", formatFixed1(scores.max)],
+        );
+    }
+    section.appendChild(statGrid(entries));
+}
+
+// Clusters, and the edges kept, by threshold; and clusters by edges kept.
+function thresholdCharts(root, table) {
+    const section = reportPanel(root, "Clusters by Threshold",
+        "Drag across a chart to zoom in, and double-click it to zoom back out.");
+    const grid = panelPart(section, null, "chart-grid");
+    // Ascending threshold; the table is descending.
+    const rows = table.threshold.map((threshold, i) => i).reverse();
+    // A log axis needs positive thresholds, and earns its place over a decade or more.
+    const positive = rows.filter(i => table.threshold[i] > 0);
+    const xLog = positive.length >= 2 && table.threshold[positive[positive.length - 1]] / table.threshold[positive[0]] >= 10;
+    const plotted = xLog ? positive : rows;
+    const byThreshold = drawLineChart(panelPart(grid, "clusters-by-threshold"), {
+        series: [
+            {name: "Clusters", color: "#1f77b4", points: plotted.map(i => [table.threshold[i], table.clusters[i]])},
+            {name: "Edges kept", color: "#2ca02c", axis: "right", points: plotted.map(i => [table.threshold[i], table.edges[i]])},
+        ],
+        xLabel: xLog ? "Threshold (log scale)" : "Threshold", xName: "Threshold", xLog,
+        xFormat: value => value.toLocaleString("en-US", {maximumFractionDigits: 2}),
+        yLabel: "Clusters", y2Label: "Edges kept (build_ssn --threshold)",
+        fileStem: "matrix_report_clusters_by_threshold", idPrefix: "threshold-chart-",
+    });
+    // Edges kept rises as the threshold falls, so this is the table read bottom up.
+    const edgeRows = rows.slice().reverse();
+    const byEdges = drawLineChart(panelPart(grid, "clusters-by-edges"), {
+        series: [{name: "Clusters", color: "#ff7f0e", points: edgeRows.map(i => [table.edges[i], table.clusters[i]])}],
+        xLabel: "Edges kept", yLabel: "Clusters",
+        fileStem: "matrix_report_clusters_by_edges", idPrefix: "edges-chart-",
+    });
+    return {byThreshold, byEdges};
+}
+
+// The threshold axis the split chart and the slider share: the stops' and the moving sum's
+// range, padded, or null when there is no finite stop.
+function thresholdAxis(stops, movingSum) {
+    const values = stops.filter(stop => stop.threshold_value !== null).map(stop => stop.threshold_value);
+    if (movingSum && movingSum.x.length > 0) {
+        values.push(movingSum.x[0], movingSum.x[movingSum.x.length - 1]);
+    }
+    if (values.length === 0) {
+        return null;
+    }
+    let lo = values[0];
+    let hi = values[0];
+    for (const value of values) {
+        lo = Math.min(lo, value);
+        hi = Math.max(hi, value);
+    }
+    const pad = hi > lo ? (hi - lo) * AXIS_PADDING_FRACTION : Math.max(Math.abs(hi) * AXIS_PADDING_FRACTION, 1);
+    return [lo - pad, hi + pad];
+}
+
+// Each stop's place on the slider. The slider runs right to left, so position 0, infinity, is
+// at its right end, and the others sit under their threshold on the axis [lo, hi] above. Every
+// stop is kept one position past the last, so none is out of reach.
+function sliderPositions(stops, [lo, hi]) {
+    const positions = [];
+    let previous = -1;
+    for (const stop of stops) {
+        let position = stop.threshold_value === null
+            ? 0 : Math.round((hi - stop.threshold_value) / (hi - lo) * SLIDER_SCALE);
+        position = Math.min(SLIDER_SCALE, Math.max(previous + 1, position));
+        positions.push(position);
+        previous = position;
+    }
+    return positions;
+}
+
+function fillTemplate(template, value) {
+    return template.replace("{}", value);
+}
+
+// Stems at each split event's threshold as tall as its largest split, a bead for each split
+// size, and the moving sum of split impact on the right axis. A tall stem with one bead is one
+// large clean split; short stems under a high line are a network crumbling into small pieces.
+function drawSplitChart(container, {events, movingSum, labels, axis, onPick}) {
+    const {width, height, margin} = SPLIT_CHART;
+    const plot = {left: margin.left, right: width - margin.right, top: margin.top, bottom: height - margin.bottom};
+    const beads = [];
+    let tallest = 1;
+    for (const event of events) {
+        tallest = Math.max(tallest, event.largest_merge);
+        for (const [size, count] of Object.entries(event.merge_size_counts || {})) {
+            // JSON object keys are strings.
+            beads.push({event, size: Number(size), count});
+        }
+    }
+    const sumPoints = movingSum ? movingSum.x.map((x, i) => [x, movingSum.y[i]]) : [];
+    let highestSum = 1;
+    for (const [, y] of sumPoints) {
+        highestSum = Math.max(highestSum, y);
+    }
+    const sumWindow = movingSum ? movingSum.window : 0;
+    const formatThreshold = value => value.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    const draw = (svg, [lo, hi]) => {
+        const x = axisScale(lo, hi, plot.left, plot.right);
+        const [yTop, yTicks] = zeroBasedAxis(tallest, 5, true);
+        const y = axisScale(0, yTop, plot.bottom, plot.top);
+        const [y2Top, y2Ticks] = zeroBasedAxis(highestSum, 5);
+        const y2 = axisScale(0, y2Top, plot.bottom, plot.top);
+        drawAxes(svg, {x, y, xTicks: niceTicks(lo, hi, 10), yTicks, xLabel: "Threshold", yLabel: labels.largest, ...plot});
+        drawRightAxis(svg, {y: y2, ticks: y2Ticks, right: plot.right, top: plot.top, bottom: plot.bottom, label: labels.moving_sum});
+        drawLegend(svg, [
+            {label: "Individual cluster split", color: SPLIT_BEAD_COLOR, mark: "dot"},
+            {label: labels.moving_sum_short, color: MOVING_SUM_COLOR, mark: "line"},
+        ], {left: plot.left, top: 14});
+        const stems = svgElement("g", {stroke: SPLIT_STEM_COLOR, "stroke-width": 1.6}, svg);
+        for (const event of events) {
+            const sx = x(event.threshold_value);
+            svgElement("line", {x1: sx, x2: sx, y1: y(0), y2: y(event.largest_merge)}, stems);
+        }
+        // No outline: on a stem with several close beads, outlines would merge into a band
+        // that hides the stem.
+        const dots = svgElement("g", {fill: SPLIT_BEAD_COLOR}, svg);
+        for (const bead of beads) {
+            svgElement("circle", {cx: x(bead.event.threshold_value), cy: y(bead.size), r: 2.5}, dots);
+        }
+        svgElement("path", {
+            d: linePath(sumPoints, x, y2, true), fill: "none", stroke: MOVING_SUM_COLOR, "stroke-width": 2,
+        }, svg);
+
+        // The bead nearest the pointer within 10 pixels; else the stem within 14; else the
+        // moving sum under it.
+        const hover = (px, py) => {
+            let best = null;
+            let bestDistance = 10;
+            for (const bead of beads) {
+                const distance = Math.hypot(x(bead.event.threshold_value) - px, y(bead.size) - py);
+                if (distance < bestDistance) {
+                    best = bead;
+                    bestDistance = distance;
+                }
+            }
+            if (best) {
+                const event = best.event;
+                return {
+                    text: [
+                        `Threshold: ${formatThreshold(event.threshold_value)}`,
+                        `${formatChartNumber(best.count)} split(s) of ${fillTemplate(labels.impact_amount, formatChartNumber(best.size))}`,
+                        `${formatChartNumber(event.merge_count)} split(s) here, ${fillTemplate(labels.impact_amount, formatChartNumber(event.merge_impact))} total`,
+                        `From: ${event.threshold_from}`,
+                        `To: ${event.threshold_to}`,
+                    ].join("\n"),
+                    dots: [{x: x(event.threshold_value), y: y(best.size), color: SPLIT_BEAD_COLOR}],
+                };
+            }
+            let stem = null;
+            let stemDistance = 14;
+            for (const event of events) {
+                const distance = Math.abs(x(event.threshold_value) - px);
+                if (distance < stemDistance && py >= y(event.largest_merge) - 10) {
+                    stem = event;
+                    stemDistance = distance;
+                }
+            }
+            if (stem) {
+                return {
+                    text: [
+                        `Threshold: ${formatThreshold(stem.threshold_value)}`,
+                        `Largest single split: ${fillTemplate(labels.impact_amount, formatChartNumber(stem.largest_merge))}`,
+                        `${formatChartNumber(stem.merge_count)} split(s) here, ${fillTemplate(labels.impact_amount, formatChartNumber(stem.merge_impact))} total`,
+                        `From: ${stem.threshold_from}`,
+                        `To: ${stem.threshold_to}`,
+                    ].join("\n"),
+                    guide: x(stem.threshold_value),
+                    dots: [],
+                };
+            }
+            if (sumPoints.length === 0) {
+                return null;
+            }
+            const value = x.invert(px);
+            // The step line holds each value until the next x.
+            let i = nearestIndex(sumPoints, value);
+            if (sumPoints[i][0] > value && i > 0) {
+                i -= 1;
+            }
+            return {
+                text: `Threshold: ${formatThreshold(value)}\n${labels.moving_sum_hover} ±${formatThreshold(sumWindow / 2)}: ${formatChartNumber(sumPoints[i][1])}`,
+                guide: px,
+                dots: [{x: px, y: y2(sumPoints[i][1]), color: MOVING_SUM_COLOR}],
+            };
+        };
+        return {plot, x, hover, click: px => onPick(x.invert(px))};
+    };
+    return interactiveChart(container, {
+        width, height, domain: axis, draw, zoom: false,
+        ariaLabel: "Cluster splits by threshold", fileStem: "split_events", idPrefix: "split-chart-",
+    });
+}
+
+// How much of the split series is drawn: the x axis and the moving sum span every split event,
+// but --max_merge_events caps the stems, and without this note a stretch of axis with no stems
+// reads as a quiet one rather than a filtered one.
+function splitEventNote(plotted, total, cap) {
+    const plural = count => (count === 1 ? "" : "s");
+    if (plotted >= total) {
+        return {text: `All ${formatChartNumber(total)} split event${plural(total)} plotted. Click the chart to move the threshold there.`};
+    }
+    const backfilled = Math.max(0, plotted - cap);
+    const how = backfilled > 0
+        ? `the strongest ${formatChartNumber(cap)} by impact, plus ${formatChartNumber(backfilled)} so that every ${100 / MERGE_EVENT_DENSITY_BINS}% of the axis with an event to show has one`
+        : "the strongest by impact";
+    return {
+        text: `${formatChartNumber(plotted)} of ${formatChartNumber(total)} split events plotted: ${how}. Click the chart to move the threshold there.`,
+        title: "Set by domainator matrix_report --max_merge_events (0 plots them all). A stretch with no stems "
+            + "is a stretch whose events were too small to make the cut, not necessarily a quiet one.",
+    };
+}
+
+// Cluster sizes as the MST's edges are added strongest first, with a union-find snapshot kept
+// every CHECKPOINT_STRIDE stops so that moving the slider never replays the whole tree.
+class ClusterSizes {
+    constructor(nodes, mstEdges, stops) {
+        this.nodes = nodes;
+        this.edges = mstEdges;
+        this.checkpoints = [{edgeIndex: -1, parent: Array.from({length: nodes}, (_, i) => i), size: new Array(nodes).fill(1)}];
+        const parent = this.checkpoints[0].parent.slice();
+        const size = this.checkpoints[0].size.slice();
+        let next = 0;
+        stops.forEach((stop, i) => {
+            while (next <= stop.edge_index && next < mstEdges.length) {
+                ClusterSizes.union(parent, size, mstEdges[next][0], mstEdges[next][1]);
+                next += 1;
+            }
+            if (i > 0 && (i % CHECKPOINT_STRIDE === 0 || i === stops.length - 1)) {
+                this.checkpoints.push({edgeIndex: next - 1, parent: parent.slice(), size: size.slice()});
+            }
+        });
+    }
+
+    static find(parent, node) {
+        let root = node;
+        while (parent[root] !== root) {
+            root = parent[root];
+        }
+        while (parent[node] !== root) {
+            const up = parent[node];
+            parent[node] = root;
+            node = up;
+        }
+        return root;
+    }
+
+    static union(parent, size, a, b) {
+        let ra = ClusterSizes.find(parent, a);
+        let rb = ClusterSizes.find(parent, b);
+        if (ra === rb) {
+            return;
+        }
+        if (size[ra] > size[rb]) {
+            [ra, rb] = [rb, ra];
+        }
+        parent[ra] = rb;
+        size[rb] += size[ra];
+    }
+
+    // The cluster sizes once MST edges 0 to edgeIndex are in, largest first.
+    at(edgeIndex) {
+        let checkpoint = this.checkpoints[0];
+        for (const candidate of this.checkpoints) {
+            if (candidate.edgeIndex <= edgeIndex) {
+                checkpoint = candidate;
+            }
+        }
+        const parent = checkpoint.parent.slice();
+        const size = checkpoint.size.slice();
+        for (let i = checkpoint.edgeIndex + 1; i <= edgeIndex && i < this.edges.length; i += 1) {
+            ClusterSizes.union(parent, size, this.edges[i][0], this.edges[i][1]);
+        }
+        const sizes = [];
+        for (let node = 0; node < this.nodes; node += 1) {
+            if (parent[node] === node) {
+                sizes.push(size[node]);
+            }
+        }
+        return sizes.sort((a, b) => b - a);
+    }
+}
+
+// The threshold slider, what the network looks like at its threshold, and (with
+// --knn_projection) the k slider.
+function thresholdPanel(root, data, charts) {
+    const summary = data.summary;
+    const stops = data.slider_stops;
+    const events = summary.split_events;
+    const section = reportPanel(root, "Cluster Splits by Threshold");
+    const axis = thresholdAxis(stops, data.merge_moving_sum);
+    let selectStop = () => {};
+    const pickThreshold = value => {
+        const position = Math.round((axis[1] - value) / (axis[1] - axis[0]) * SLIDER_SCALE);
+        selectStop(nearestIndex(positions, position, p => p));
+    };
+    let splitChart = null;
+    if (events.length > 0 && axis) {
+        const labels = SPLIT_AXIS_LABELS[summary.merge_impact_metric] || SPLIT_AXIS_LABELS.min_child;
+        splitChart = drawSplitChart(panelPart(section, "split-chart"), {
+            events, movingSum: data.merge_moving_sum, labels, axis, onPick: pickThreshold,
+        });
+        const note = splitEventNote(events.length, summary.split_event_total, summary.max_merge_events);
+        const text = document.createElement("p");
+        text.className = "note";
+        text.id = "split-event-count";
+        text.textContent = note.text;
+        if (note.title) {
+            text.title = note.title;
+        }
+        section.appendChild(text);
+    }
+
+    const positions = axis ? sliderPositions(stops, axis) : [0];
+    const controls = panelPart(section, null, "slider-controls");
+    // As wide as the split chart, which is at most its own width.
+    controls.style.maxWidth = `${SPLIT_CHART.width}px`;
+    const label = document.createElement("label");
+    label.htmlFor = "threshold-slider";
+    label.append("Threshold (build_ssn --threshold): ");
+    const number = document.createElement("strong");
+    number.id = "threshold-number";
+    label.appendChild(number);
+    const track = panelPart(controls, null, "slider-track");
+    // Line the track up with the split chart's plot, allowing for the thumb's half width.
+    const {width, margin} = SPLIT_CHART;
+    if (splitChart) {
+        track.style.paddingLeft = `calc(${(margin.left / width * 100).toFixed(3)}% - 9px)`;
+        track.style.paddingRight = `calc(${(margin.right / width * 100).toFixed(3)}% - 9px)`;
+    }
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.id = "threshold-slider";
+    slider.min = "0";
+    slider.max = String(stops.length > 1 ? SLIDER_SCALE : 0);
+    slider.step = "1";
+    slider.value = "0";
+    slider.disabled = stops.length <= 1;
+    track.appendChild(slider);
+    controls.insertBefore(label, track);
+
+    let kSlider = null;
+    const knn = data.knn_projection;
+    if (knn) {
+        const kLabel = document.createElement("label");
+        kLabel.htmlFor = "mst-knn-k-slider";
+        kLabel.append("MST + kNN k (build_ssn --mst --knn): ");
+        const kNumber = document.createElement("strong");
+        kNumber.id = "mst-knn-k-number";
+        kLabel.appendChild(kNumber);
+        kSlider = document.createElement("input");
+        kSlider.type = "range";
+        kSlider.id = "mst-knn-k-slider";
+        kSlider.min = String(knn.min_k);
+        kSlider.max = String(knn.max_k);
+        kSlider.step = "1";
+        kSlider.value = String(knn.default_k);
+        controls.append(kLabel, panelPart(controls, null, "slider-track"));
+        controls.lastChild.appendChild(kSlider);
+    }
+
+    const stats = [
+        ["clusters", formatChartNumber(summary.nodes), "num-clusters"],
+        ["singletons", formatChartNumber(summary.nodes), "num-singletons"],
+        ["largest cluster", "1", "largest-cluster"],
+        ["edges kept", "0", "num-edges"],
+        ["mean cluster size", "1.0", "avg-cluster-size"],
+    ];
+    if (knn) {
+        stats.push(["projected MST + kNN edges", "0", "mst-knn-edges"]);
+    }
+    section.appendChild(statGrid(stats));
+
+    const heading = document.createElement("h2");
+    heading.textContent = "100 Largest Clusters";
+    section.appendChild(heading);
+    const bubbles = createBubbleChart(panelPart(section, "cluster-bubbles"), {
+        itemLabel: "nodes", label: i => `Cluster ${i + 1}`, emptyText: "No clusters to show.",
+        fileStem: "matrix_report_largest_clusters", idPrefix: "bubbles-",
+    });
+
+    const clusters = new ClusterSizes(summary.nodes, data.mst_edges, stops);
+    const table = data.threshold_table;
+    let current = 0;
+    const show = () => {
+        const stop = stops[current];
+        const sizes = clusters.at(stop.edge_index);
+        const row = stop.threshold_index;
+        const edges = row >= 0 && row < table.edges.length ? table.edges[row] : 0;
+        number.textContent = stop.threshold_label;
+        document.getElementById("num-clusters").textContent = formatChartNumber(sizes.length);
+        document.getElementById("num-singletons").textContent = formatChartNumber(sizes.filter(size => size === 1).length);
+        document.getElementById("largest-cluster").textContent = formatChartNumber(sizes[0] || 0);
+        document.getElementById("num-edges").textContent = formatChartNumber(edges);
+        const mean = sizes.length > 0 ? sizes.reduce((a, b) => a + b, 0) / sizes.length : 0;
+        document.getElementById("avg-cluster-size").textContent = mean.toFixed(1);
+        if (knn) {
+            const k = Number(kSlider.value);
+            document.getElementById("mst-knn-k-number").textContent = String(k);
+            const counts = row >= 0 && row < knn.counts.length ? knn.counts[row][k - knn.min_k] : 0;
+            document.getElementById("mst-knn-edges").textContent = formatChartNumber(counts);
+        }
+        bubbles.update(sizes.slice(0, 100));
+        const threshold = stop.threshold_value;
+        if (splitChart) {
+            splitChart.setMarker(threshold);
+        }
+        charts.byThreshold.setMarker(row >= 0 ? table.threshold[row] : null);
+        charts.byEdges.setMarker(row >= 0 ? edges : null);
+    };
+    selectStop = index => {
+        current = Math.max(0, Math.min(stops.length - 1, index));
+        slider.value = String(positions[current]);
+        show();
+    };
+    // The nearest stop to the thumb while it moves, snapping the thumb to it when let go.
+    let pending = null;
+    slider.addEventListener("input", () => {
+        cancelAnimationFrame(pending);
+        pending = requestAnimationFrame(() => {
+            current = nearestIndex(positions, Number(slider.value), p => p);
+            show();
+        });
+    });
+    slider.addEventListener("change", () => selectStop(nearestIndex(positions, Number(slider.value), p => p)));
+    // The arrow keys step from stop to stop; the slider's own step would never leave one.
+    slider.addEventListener("keydown", event => {
+        const moves = {ArrowLeft: 1, ArrowDown: 1, ArrowRight: -1, ArrowUp: -1, PageDown: 10, PageUp: -10};
+        if (event.key in moves) {
+            selectStop(current + moves[event.key]);
+        } else if (event.key === "Home" || event.key === "End") {
+            selectStop(event.key === "Home" ? 0 : stops.length - 1);
+        } else {
+            return;
+        }
+        event.preventDefault();
+    });
+    if (kSlider) {
+        kSlider.addEventListener("input", show);
+    }
+    selectStop(0);
+    return {select: selectStop, positions};
+}
+
+(async () => {
+    const root = document.getElementById("report-root");
+    try {
+        const {data} = await readReportData();
+        root.replaceChildren();
+        summaryPanel(root, data.summary);
+        const charts = thresholdCharts(root, data.threshold_table);
+        window.matrixReport = {charts, threshold: thresholdPanel(root, data, charts)};
+    } catch (error) {
+        showReportError(root, error);
+    }
+})();
+</script>
+</body>
+</html>

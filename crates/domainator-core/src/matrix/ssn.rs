@@ -381,6 +381,71 @@ pub fn edge_scores_desc(m: &DataMatrix) -> Vec<f64> {
         .collect()
 }
 
+/// How many edges `build_ssn --threshold T --mst --knn k` keeps, for every threshold row
+/// `T` of `tree` (built from `m`) and every `k` in `1..=max_k`: `counts[row][k - 1]`.
+/// Mirrors `ssn_edges.mst_knn_edge_counts_by_threshold`.
+///
+/// A cut keeps the MST edges scoring strictly above `T` and, of the rest, each edge that
+/// scores above `T` and that one of its two nodes ranks among its `k` best neighbors
+/// (higher score first, then the lower node index, as [`mst_knn_edge_list`] ranks them).
+/// So an edge outside the MST counts from the best rank either node gives it.
+pub fn mst_knn_edge_counts_by_threshold(
+    m: &DataMatrix,
+    tree: &MaxTree,
+    max_k: usize,
+) -> Vec<Vec<u64>> {
+    let mut neighbors: Vec<Vec<(f64, usize)>> = vec![Vec::new(); tree.n_nodes];
+    for (score, hi, lo) in symmetric_edges_desc(m) {
+        neighbors[hi].push((score, lo));
+        neighbors[lo].push((score, hi));
+    }
+    // (score, best rank) per (larger index, smaller index) pair, ranks from 1.
+    let mut ranked: HashMap<(usize, usize), (f64, usize)> = HashMap::new();
+    for (node, list) in neighbors.iter_mut().enumerate() {
+        list.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        for (rank, &(score, other)) in list.iter().take(max_k).enumerate() {
+            let entry = ranked
+                .entry((node.max(other), node.min(other)))
+                .or_insert((score, rank + 1));
+            entry.1 = entry.1.min(rank + 1);
+        }
+    }
+    let mst: std::collections::HashSet<(usize, usize)> = tree
+        .edges
+        .iter()
+        .map(|e| (e.i.max(e.j), e.i.min(e.j)))
+        .collect();
+    let mut outside_mst: Vec<(f64, usize)> = ranked
+        .into_iter()
+        .filter(|(pair, _)| !mst.contains(pair))
+        .map(|(_, scored)| scored)
+        .collect();
+    outside_mst.sort_by(|a, b| b.0.total_cmp(&a.0));
+
+    // Walking the thresholds down, the edges outside the MST that score above each one,
+    // counted by best rank.
+    let mut by_rank = vec![0u64; max_k + 1];
+    let mut next = 0;
+    tree.thresholds
+        .iter()
+        .zip(&tree.mst_edges_above_threshold)
+        .map(|(&threshold, &mst_above)| {
+            while next < outside_mst.len() && outside_mst[next].0 > threshold {
+                by_rank[outside_mst[next].1] += 1;
+                next += 1;
+            }
+            let mut total = mst_above;
+            by_rank[1..]
+                .iter()
+                .map(|&count| {
+                    total += count;
+                    total
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// MST ∪ OR-symmetric kNN edges as canonical `(a, b, symmetric_score)` with
 /// `a < b`. Mirrors `ssn_edges.mst_knn_edge_index_dict` — the same selection the
 /// `--mst_knn` matrix pruner uses.
@@ -1123,6 +1188,34 @@ mod tests {
             tree.cluster_count_by_threshold(),
             vec![(9.0, 4.0), (8.0, 3.0), (0.0, 2.0)]
         );
+    }
+
+    #[test]
+    fn mst_knn_counts_match_the_edges_build_ssn_keeps() {
+        // Tied scores, a node ranked by both ends, and an isolated pair.
+        let m = sym_matrix(
+            7,
+            &[
+                (0, 1, 9.0),
+                (0, 2, 9.0),
+                (1, 2, 7.0),
+                (2, 3, 7.0),
+                (1, 3, 4.0),
+                (0, 3, 2.0),
+                (3, 4, 2.0),
+                (5, 6, 3.0),
+            ],
+        );
+        let tree = MaxTree::from_matrix(&m);
+        let max_k = 4;
+        let counts = mst_knn_edge_counts_by_threshold(&m, &tree, max_k);
+        assert_eq!(counts.len(), tree.thresholds().len());
+        for (row, &threshold) in tree.thresholds().iter().enumerate() {
+            for k in 1..=max_k {
+                let kept = mst_knn_edge_list(&m, k, threshold, true).len() as u64;
+                assert_eq!(counts[row][k - 1], kept, "threshold {threshold}, k {k}");
+            }
+        }
     }
 
     #[test]

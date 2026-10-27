@@ -48,6 +48,38 @@ pub fn py_sci(x: f64) -> String {
     }
 }
 
+/// Format a float like Python's `f"{x:g}"`: six significant digits with trailing zeros
+/// (and a bare `.`) stripped, in exponent form when the exponent of the *rounded* value is
+/// below -4 or at least 6 (`999999.5` is `1e+06`).
+pub fn py_g(x: f64) -> String {
+    if x.is_nan() {
+        return "nan".to_string();
+    }
+    if x.is_infinite() {
+        return if x < 0.0 { "-inf" } else { "inf" }.to_string();
+    }
+    let strip = |text: &str| -> String {
+        if text.contains('.') {
+            text.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else {
+            text.to_string()
+        }
+    };
+    if x == 0.0 {
+        return if x.is_sign_negative() { "-0" } else { "0" }.to_string();
+    }
+    let rounded = format!("{x:.5e}"); // Rust: "1.00000e6"
+    let (mantissa, exp) = rounded.split_once('e').unwrap_or((&rounded, "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    if (-4..6).contains(&exp) {
+        let decimals = (5 - exp).unsigned_abs() as usize;
+        strip(&format!("{x:.decimals$}"))
+    } else {
+        let sign = if exp < 0 { '-' } else { '+' };
+        format!("{}e{sign}{:02}", strip(mantissa), exp.abs())
+    }
+}
+
 impl SearchResult {
     /// Build a `Domainator`/`Domain_Search` feature with qualifiers in the exact
     /// order and formatting `add_protein_annotations` uses. `cds_id` is supplied by
@@ -93,5 +125,38 @@ impl SearchResult {
             }
         }
         f
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::py_g;
+
+    #[test]
+    fn py_g_matches_pythons_g_format() {
+        // Each pair is Python's format(x, "g").
+        for (x, expected) in [
+            (10.0, "10"),
+            (4.627564518750634, "4.62756"),
+            (0.5, "0.5"),
+            (0.0, "0"),
+            (-0.0, "-0"),
+            (123456.0, "123456"),
+            (1234567.0, "1.23457e+06"),
+            (999999.5, "1e+06"),
+            (999999.4, "999999"),
+            (0.0001, "0.0001"),
+            (1.234e-05, "1.234e-05"),
+            (9.9999996e-05, "0.0001"),
+            (71.2, "71.2"),
+            (287.0, "287"),
+            (-3.5, "-3.5"),
+            (1e22, "1e+22"),
+            (1.5e-300, "1.5e-300"),
+            (100000.0, "100000"),
+            (1e6, "1e+06"),
+        ] {
+            assert_eq!(py_g(x), expected, "{x:?}");
+        }
     }
 }

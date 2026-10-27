@@ -12,9 +12,15 @@ fields:
     label: "Output (text)"
     required: true
     output_name: "{stem}.report.txt"
+  - name: html_out
+    label: "HTML report (optional)"
+    help: "An interactive page that opens in any browser, offline."
   - name: json_out
     show: false
     label: "JSON"
+  - name: knn_projection
+    show: false
+    label: "Project MST + kNN edge counts"
   - name: merge_impact_metric
     show: false
     label: "Merge impact metric"

@@ -13,6 +13,7 @@ pub mod parallel;
 pub mod search;
 pub mod seq;
 pub mod stats;
+pub mod text_plot;
 pub mod tools;
 pub mod version;
 

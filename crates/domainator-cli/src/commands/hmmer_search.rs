@@ -2,9 +2,8 @@ use anyhow::Result;
 use domainator_config::args::HmmerSearchArgs;
 use domainator_core::log;
 use domainator_core::search::hmm_compare::common_file_alphabet;
-use domainator_core::tools::hmmer_search::{
-    default_min_score, hmmer_search, py_g, HmmerSearchOptions,
-};
+use domainator_core::search::results::py_g;
+use domainator_core::tools::hmmer_search::{default_min_score, hmmer_search, HmmerSearchOptions};
 
 use super::{cpu_threads, read_hmm_inputs, usage_error, write_hmm_out};
 

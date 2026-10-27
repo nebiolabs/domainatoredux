@@ -59,7 +59,12 @@ pub async fn load_matrix_report(path: String) -> Result<Value, String> {
     // other IPC (so every tool dialog would sit at "Loading…" meanwhile).
     tauri::async_runtime::spawn_blocking(move || {
         let matrix = read_matrix(&path).map_err(|e| format!("reading matrix: {e}"))?;
-        let report = matrix_report(&matrix, DEFAULT_MERGE_IMPACT_METRIC, DEFAULT_MAX_MERGE);
+        let report = matrix_report(
+            &matrix,
+            DEFAULT_MERGE_IMPACT_METRIC,
+            DEFAULT_MAX_MERGE,
+            false,
+        );
         let histogram = histogram(&report.scores_desc, 40);
         // The viewer payload, not the agent-facing --json contract: this tab draws
         // the per-threshold curves that upstream's --json does not carry.

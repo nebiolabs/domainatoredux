@@ -22,8 +22,6 @@ domain_search	test_domain_search_nucleotide_query_kb_range_uses_annotation_bound
 domain_search	test_domain_search_whole_contig_infernal_query#0	rust-failed	deferred:infernal	domainatoredux domain_search: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/t
 domain_search	test_domain_search_whole_contig_nucleotide_query#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
 domainate	test_domainator_infernal_cm_query#0	rust-failed	deferred:infernal	domainatoredux domainate: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/test/
-matrix_report	test_matrix_report_default_excludes_mst_knn#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
-matrix_report	test_matrix_report_text_includes_mst_knn_projection#0	rust-failed	deferred:html	error: unexpected argument '--html_out' found
 rotate_contigs	extra:test_rotate_infernal#0	rust-failed	deferred:infernal	domainatoredux rotate_contigs: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/
 summary_report	test_contig_stats_1#0	differs	deferred:text-report	contig_stats_test.txt: 45 vs 21 lines
 summary_report	test_contig_stats_empty_input#0	differs	deferred:text-report	contig_stats_test.txt: 17 vs 14 lines

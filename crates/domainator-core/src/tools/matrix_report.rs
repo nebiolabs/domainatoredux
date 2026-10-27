@@ -1,18 +1,19 @@
 //! `matrix_report`: summarize a similarity matrix to help choose an SSN edge
-//! threshold. Mirrors `domainator.matrix_report` (text path) and adds an
-//! agent-friendly `--json` payload with the threshold→cluster curve, ranked
-//! merge events, and suggested cutoffs. (`--include_mst_knn` projections and the
-//! interactive HTML are deferred.)
+//! threshold. Mirrors `domainator.matrix_report`: the text report, the agent-facing
+//! `--json_out` document, the `--html_out` page's data ([`to_html_data`]) and the
+//! `--knn_projection` edge counts. [`to_viewer_json`] is this port's own, for the GUI.
 
 use serde_json::{json, Value};
 
 use crate::matrix::ssn::{
     component_size_summary_by_threshold, edge_scores_desc, filter_merge_event_rows,
-    format_threshold_value, merge_event_moving_sum, threshold_merge_event_rows,
-    threshold_slider_stops, MaxTree, MergeEvent, MovingSum, SliderStop, DEFAULT_MAX_MERGE_EVENTS,
-    MERGE_IMPACT_MIN_CHILD, MOVING_SUM_GRID_POINTS, MOVING_SUM_WINDOW_FRACTION,
+    format_threshold_value, merge_event_moving_sum, mst_knn_edge_counts_by_threshold,
+    threshold_merge_event_rows, threshold_slider_stops, MaxTree, MergeEvent, MovingSum, SliderStop,
+    DEFAULT_MAX_MERGE_EVENTS, MERGE_IMPACT_MIN_CHILD, MOVING_SUM_GRID_POINTS,
+    MOVING_SUM_WINDOW_FRACTION,
 };
 use crate::matrix::DataMatrix;
+use crate::text_plot::text_histogram;
 
 /// Computed report over a similarity matrix.
 pub struct MatrixReport {
@@ -47,6 +48,35 @@ pub struct MatrixReport {
     /// Distinct thresholds, descending — lets a consumer map a threshold back to its
     /// row in the tables above without holding the whole `MaxTree`.
     pub thresholds: Vec<f64>,
+    /// `--knn_projection`'s MST + kNN edge counts, when asked for.
+    pub knn_projection: Option<KnnProjection>,
+}
+
+/// What `build_ssn --threshold T --mst --knn k` would keep, for every threshold row `T`
+/// and `k` from `min_k` to `max_k` (upstream `_get_mst_knn_report_config` and
+/// `mst_knn_edge_counts_by_threshold`).
+pub struct KnnProjection {
+    pub min_k: usize,
+    pub max_k: usize,
+    /// The `k` the text report and the page start from.
+    pub default_k: usize,
+    /// `counts[row][k - min_k]`, one row per entry of [`MatrixReport::thresholds`].
+    pub counts: Vec<Vec<u64>>,
+}
+
+/// The smallest `k` `--knn_projection` counts.
+pub const KNN_PROJECTION_MIN_K: usize = 1;
+/// The largest, unless the network has fewer other nodes.
+pub const KNN_PROJECTION_MAX_K: usize = 25;
+
+fn knn_projection(matrix: &DataMatrix, tree: &MaxTree) -> KnnProjection {
+    let max_k = KNN_PROJECTION_MAX_K.min(tree.n_nodes.saturating_sub(1).max(KNN_PROJECTION_MIN_K));
+    KnnProjection {
+        min_k: KNN_PROJECTION_MIN_K,
+        max_k,
+        default_k: max_k.min(5),
+        counts: mst_knn_edge_counts_by_threshold(matrix, tree, max_k),
+    }
 }
 
 /// Rows in the text report's strongest-split-events table.
@@ -77,11 +107,13 @@ fn strongest_merge_events(events: &[MergeEvent]) -> Vec<MergeEvent> {
 }
 
 /// Build the report. `merge_impact_metric` is `min_child`/`product`;
-/// `max_merge_events` caps the retained split events (0 = all).
+/// `max_merge_events` caps the retained split events (0 = all); `with_knn_projection`
+/// also counts the MST + kNN edges of every threshold and `k` (`--knn_projection`).
 pub fn matrix_report(
     matrix: &DataMatrix,
     merge_impact_metric: &str,
     max_merge_events: usize,
+    with_knn_projection: bool,
 ) -> MatrixReport {
     let scores = edge_scores_desc(matrix); // descending
     let n = scores.len();
@@ -139,6 +171,7 @@ pub fn matrix_report(
         slider_stops,
         mst_edges: tree.export_mst_edges(),
         thresholds: tree.thresholds().to_vec(),
+        knn_projection: with_knn_projection.then(|| knn_projection(matrix, &tree)),
     }
 }
 
@@ -164,36 +197,25 @@ fn sample_indices(len: usize) -> Vec<usize> {
         .collect()
 }
 
-/// A very small ASCII histogram (bashplotlib is not replicated exactly).
-fn ascii_histogram(scores_desc: &[f64], bins: usize, width: usize) -> String {
-    if scores_desc.is_empty() {
-        return String::new();
-    }
-    let max = scores_desc[0];
-    let min = scores_desc[scores_desc.len() - 1];
-    let span = (max - min).max(f64::MIN_POSITIVE);
-    let mut counts = vec![0usize; bins];
-    for &s in scores_desc {
-        counts[crate::stats::floor_index((s - min) / span * bins as f64, bins)] += 1;
-    }
-    let peak = counts.iter().copied().max().unwrap_or(1).max(1);
-    let mut out = String::from("Edge counts by score:\n");
-    for (i, &c) in counts.iter().enumerate() {
-        let lo = min + span * i as f64 / bins as f64;
-        let bar = c * width / peak;
-        out.push_str(&format!("  {lo:8.2} | {} {}\n", "#".repeat(bar), c));
-    }
-    out
-}
-
 /// Render the human-readable text report.
 pub fn render_text(r: &MatrixReport) -> String {
     let mut s = String::new();
+    // Upstream prints the header from a triple-quoted string whose last line is eight
+    // spaces, then the histogram between two newlines.
     s.push_str(&format!(
-        "Matrix Report\nNodes: {}\nNon-zero edges: {}\nMean: {:.1}\nMedian: {:.1}\nMin: {:.1}\nMax: {:.1}\n\n",
+        "Matrix Report\nNodes: {}\nNon-zero edges: {}\nMean: {:.1}\nMedian: {:.1}\nMin: {:.1}\nMax: {:.1}\n        \n",
         r.n_nodes, r.n_edges, r.mean, r.median, r.min, r.max
     ));
-    s.push_str(&ascii_histogram(&r.scores_desc, 20, 50));
+    s.push('\n');
+    if !r.scores_desc.is_empty() {
+        s.push_str(&text_histogram(
+            &r.scores_desc,
+            "Edge counts by score",
+            50,
+            20,
+        ));
+    }
+    s.push('\n');
 
     if r.cluster_count_by_threshold.len() > 1 {
         s.push_str("\nCluster count at key thresholds:\n");
@@ -222,7 +244,26 @@ pub fn render_text(r: &MatrixReport) -> String {
             s.push_str(&format!("  Threshold: {t:.2} → Edges: {}\n", e as i64));
         }
     }
+    if let Some(knn) = r
+        .knn_projection
+        .as_ref()
+        .filter(|knn| !knn.counts.is_empty())
+    {
+        let k = knn.default_k;
+        s.push_str(&format!("\nProjected MST + kNN edge counts (k={k}):\n"));
+        for i in sample_indices(knn.counts.len()) {
+            s.push_str(&format!(
+                "  Threshold: {:.2} → MST + kNN edges: {}\n",
+                r.thresholds[i],
+                knn.counts[i][k - knn.min_k]
+            ));
+        }
+    }
 
+    // Upstream has split events to list only when the tree has an edge.
+    if r.mst_edges.is_empty() {
+        return s;
+    }
     s.push_str(&format!(
         "\nStrongest MST split events (metric={}):\n",
         r.merge_impact_metric
@@ -408,6 +449,46 @@ pub fn to_json(r: &MatrixReport) -> Value {
     payload.insert("split_event_total".into(), json!(r.merge_event_total));
     payload.insert("max_merge_events".into(), json!(r.max_merge_events));
     Value::Object(payload)
+}
+
+/// The `--html_out` page's data (upstream `SummaryHTMLWriter`, read by
+/// `web/reports/matrix_report.js`): the [`to_json`] document, and what the page needs to
+/// show the network at any threshold — the MST, the threshold tables as columns, the
+/// moving sum of split impact, the slider's stops and the `--knn_projection` counts.
+pub fn to_html_data(r: &MatrixReport) -> Value {
+    let stops: Vec<Value> = r
+        .slider_stops
+        .iter()
+        .map(|stop| {
+            json!({
+                "edge_index": stop.edge_index,
+                "threshold_label": stop.threshold_label,
+                "threshold_value": stop.threshold_value.map_or(Value::Null, num_or_null),
+                "threshold_index": stop.threshold_index.unwrap_or(-1),
+            })
+        })
+        .collect();
+    json!({
+        "summary": to_json(r),
+        "mst_edges": r.mst_edges.iter().map(|&(i, j, w)| json!([i, j, w])).collect::<Vec<_>>(),
+        "threshold_table": {
+            "threshold": r.thresholds,
+            "edges": r.edges_by_threshold.iter().map(|&(e, _)| e as i64).collect::<Vec<_>>(),
+            "clusters": r.cluster_count_by_threshold.iter().map(|&(_, c)| c as i64).collect::<Vec<_>>(),
+        },
+        "merge_moving_sum": {
+            "window": r.merge_moving_sum.window,
+            "x": r.merge_moving_sum.x,
+            "y": r.merge_moving_sum.y,
+        },
+        "slider_stops": stops,
+        "knn_projection": r.knn_projection.as_ref().map_or(Value::Null, |knn| json!({
+            "min_k": knn.min_k,
+            "max_k": knn.max_k,
+            "default_k": knn.default_k,
+            "counts": knn.counts,
+        })),
+    })
 }
 
 /// Defaults re-exported for the CLI.

@@ -13,10 +13,18 @@ pub struct MatrixReportArgs {
     /// Write the report as text to this file.
     #[arg(short = 'o', long)]
     pub text_out: Option<String>,
+    /// Write the report as html to this file.
+    #[arg(long)]
+    pub html_out: Option<String>,
     /// Write a compact JSON summary (edge stats, connected components, split-event
     /// series) to this file.
     #[arg(long)]
     pub json_out: Option<String>,
+    /// Project how many edges 'build_ssn --threshold T --mst --knn K' would keep, for every
+    /// threshold T and K from 1 to 25, and add a K slider to the HTML report. Disabled by
+    /// default to reduce memory use.
+    #[arg(long)]
+    pub knn_projection: bool,
     /// Metric used for split-event plots and tables: 'min_child' emphasizes the
     /// smaller cluster breaking away, while 'product' emphasizes balanced large splits.
     #[arg(long, default_value = "min_child", value_parser = ["min_child", "product"])]
