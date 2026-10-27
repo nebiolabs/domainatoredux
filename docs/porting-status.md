@@ -97,6 +97,6 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | structure_domainate | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
 | structure_search | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
 | structure_to_genbank | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
-| summary_report | finished: `--json_out` (upstream's agent contract), `--html_out` (upstream's generated page) + text; the text report's ASCII length histogram and pandas table layout are not reproduced | **Summary dashboard** tab (pure-data stats + length histogram + taxonomy icicle) — GUI-only, sidesteps the matplotlib CLI tool |
+| summary_report | finished: `--json_out` (upstream's agent contract), `--html_out` (upstream's generated page) + text; the text report's ASCII length histogram and pandas table layout are not reproduced | **Summary dashboard** tab (pure-data stats + length histogram + taxonomy icicle) — GUI-only, separate from the CLI tool's page |
 | transform_matrix | finished | Tools menu ("Transform matrix") |
 | trim_contigs | finished (parity-verified) | Tools menu ("Trim contigs") |

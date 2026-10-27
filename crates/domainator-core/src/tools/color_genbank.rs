@@ -6,14 +6,11 @@
 //! `Color` feature qualifier (matches Python's `feature.qualifiers['Color']`,
 //! which Benchling/ApE read for feature coloring).
 //!
-//! Color source: either a user-supplied color table (exact parity) or an
-//! auto-generated map. The auto-generated path mirrors Python's
-//! `AutoColormap`, which uses `seaborn.color_palette('husl', n_colors=30)`
-//! shuffled with `random.Random(12)`. The 30-color husl palette is
-//! deterministic, so the shuffled list is hardcoded below (see `AUTO_PALETTE`)
-//! — reproducing Python's output byte-for-byte for the seaborn/HSLuv math in the
-//! reference environment. If seaborn ever changes its husl implementation this
-//! constant would need regenerating; the color-table path is unaffected.
+//! Color source: either a user-supplied color table or an auto-generated map.
+//! The auto-generated path mirrors Python's `AutoColormap`, which hands out
+//! `colors.AUTO_COLORS` in order: seaborn's 30-color husl palette shuffled with
+//! `random.Random(12)`, written out as a literal upstream (seaborn is no longer
+//! a dependency). `AUTO_PALETTE` is a copy of that list.
 
 use std::collections::HashSet;
 
@@ -48,10 +45,9 @@ impl ColorTargets {
     }
 }
 
-/// The 30-color `husl` palette from `seaborn.color_palette('husl', n_colors=30)`,
-/// upper-cased and shuffled with Python's `random.Random(12)` (Fisher-Yates over
-/// MT19937). Hardcoded because the palette is a deterministic constant. See the
-/// module docs for the parity caveat.
+/// Upstream's `colors.AUTO_COLORS`: the 30-color `husl` palette from
+/// `seaborn.color_palette('husl', n_colors=30)`, upper-cased and shuffled with
+/// Python's `random.Random(12)`.
 const AUTO_PALETTE: [&str; 30] = [
     "#3BA3EC", "#38A9C5", "#34AF8C", "#AE9D31", "#F77468", "#B287F4", "#39A7D5", "#DC8932",
     "#37AAB9", "#9591F4", "#BB9832", "#F560E4", "#F37A32", "#77AB31", "#50B131", "#E866F4",

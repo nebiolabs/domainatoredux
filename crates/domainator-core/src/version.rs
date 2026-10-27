@@ -17,7 +17,7 @@ macro_rules! upstream_version {
 }
 macro_rules! upstream_commit {
     () => {
-        "d7a75a4"
+        "2e6e51e"
     };
 }
 

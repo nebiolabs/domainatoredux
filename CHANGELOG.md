@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `d7a75a4`.
+Parity: Python domainator 1.0.0rc1 @ `2e6e51e`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **`enum_report` and `hmmer_report --html_out`** (and `--html_max_height`): upstream's

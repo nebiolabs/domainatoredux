@@ -487,8 +487,8 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
   mean/median/range), a contig length histogram, top-N bar lists for domains /
   databases / feature kinds / organisms, and a **taxonomy icicle plot** built from
   each record's embedded ORGANISM lineage (`annotations.taxonomy` + organism — no
-  external taxdump needed). Pure data + client-side charts — sidesteps the
-  matplotlib dependency that keeps the CLI `summary_report` deferred.
+  external taxdump needed). Pure data + client-side charts, separate from the
+  CLI `summary_report` and its upstream `--html_out` page.
   The Enum Report tab's **Columns** popover is the export's `ColumnBuilder`, over the
   same manifest catalog and `tools/enum_report.yml` `column_types`, applied with an
   explicit Apply (each change reruns the whole report). `run_enum_report` takes

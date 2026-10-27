@@ -7,8 +7,13 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `d7a75a4` — *Offline HTML page for plot_contigs*
+- **Caught up to:** `2e6e51e` — *Drop matplotlib and seaborn from the required dependencies*
   (2026-10-27; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`2e6e51e`**, nothing to port. matplotlib and seaborn moved to upstream's `projection`
+  extra (only `build_projection --png_out` uses them; that tool is unported here), and
+  `web_libs.py` is gone. `AutoColormap`'s palette is now the literal `colors.AUTO_COLORS`,
+  equal to `color_genbank.rs`'s `AUTO_PALETTE`. The removed domain distance code in
+  summary_report never reached an output. The manifest and every shell are unchanged.
 - **`d7a75a4`**, ported: `plot_contigs` is a new tool here (`tools/plot_contigs.rs`). Its
   page moved onto `report_html.py` (`report_shells/plot_contigs.html`), and upstream's
   Python now builds only the data: each contig's details and line color, each drawn

@@ -1,7 +1,7 @@
 //! Pure-data summary statistics for a sequence file, for the GUI's Summary
 //! dashboard. Computes counts/distributions from `SeqRecord`s (no plotting — the
-//! frontend charts these), so it sidesteps the matplotlib dependency that keeps
-//! the CLI `summary_report` deferred.
+//! frontend charts these). Separate from the CLI `summary_report`, whose
+//! `--html_out` page is upstream's.
 
 use serde::Serialize;
 
