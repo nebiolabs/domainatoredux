@@ -21,7 +21,5 @@ domain_search	test_domain_search_nucleotide_multi_hit_max_hits_per_contig#0	diff
 domain_search	test_domain_search_nucleotide_multi_hit_whole_contig#0	differs	gap:feature-order	out.gb: compare_seqfiles failed at helpers.py:67
 domain_search	test_domain_search_nucleotide_query_defaults_to_annotation_span#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
 domain_search	test_domain_search_nucleotide_query_kb_range_uses_annotation_boundaries#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
-domain_search	test_domain_search_whole_contig_infernal_query#0	rust-failed	deferred:infernal	domainatoredux domain_search: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/t
+domain_search	test_domain_search_whole_contig_infernal_query#0	differs	gap:feature-order	out.gb: 6 feature location/type, 0 LOCUS name
 domain_search	test_domain_search_whole_contig_nucleotide_query#0	differs	gap:feature-order	out.gb: 2 feature location/type, 0 LOCUS name
-domainate	test_domainator_infernal_cm_query#0	rust-failed	deferred:infernal	domainatoredux domainate: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/test/
-rotate_contigs	extra:test_rotate_infernal#0	rust-failed	deferred:infernal	domainatoredux rotate_contigs: error: reading references: infernal .cm references are not yet supported ("/home/sean/scripts/domainatoredux/

@@ -44,6 +44,13 @@ Parity: Python domainator 1.0.0rc1 @ `961d817`.
   clusters at the chosen threshold, and (with `--knn_projection`) the edges
   `build_ssn --mst --knn k` would keep at that threshold for each `k`. The text report's
   score histogram is now upstream's, so `-o` writes the same file as `domainator`.
+- **Infernal covariance models (`.cm`) as references** in `domainate`, `domain_search` and
+  `rotate_contigs`: whole contigs are searched on both strands as `cmsearch` does,
+  truncated hits at contig ends included, with hits equal to upstream's (coordinates,
+  scores and E-values). The search is built in (the infernox crate, a Rust port of
+  Infernal 1.1.5), so it needs no Infernal install and runs on Windows.
+- **`infernal_build`**, a new tool: builds a CM from an alignment with an external `cmbuild`
+  (Infernal's, or infernox's `infernox-cmbuild`) and sets its NAME, ACC and DESC.
 - **`plot_contigs`**, a new tool: upstream's contig plot, an offline page that draws each
   contig with its features stacked above it, colored by `--metadata` with `--color_by`.
 - **GenBank COMMENT lines are read as Biopython reads them**: without trailing spaces,

@@ -25,6 +25,7 @@ pub mod hmmer_compare;
 pub mod hmmer_report;
 pub mod hmmer_search;
 pub mod hmmer_select;
+pub mod infernal_build;
 pub mod matrix_report;
 pub mod plot_contigs;
 pub mod rotate_contigs;

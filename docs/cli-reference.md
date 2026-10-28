@@ -96,7 +96,7 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 | [Color and plots](#color-and-plots) | `color_genbank`, `color_table_to_legend`, `plot_contigs` |
 | [Matrices and networks](#matrices-and-networks) | `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`, `build_projection`, `viewer` |
 | [Reports](#reports) | `enum_report`, `summary_report`, `matrix_report`, `ssn_navigator` |
-| [HMM profiles](#hmm-profiles) | `hmmer_build`, `hmmer_select`, `hmmer_search`, `hmmer_compare`, `hmmer_report` |
+| [HMM profiles](#hmm-profiles) | `hmmer_build`, `hmmer_select`, `hmmer_search`, `hmmer_compare`, `hmmer_report`, `infernal_build` |
 | [Database preparation](#database-preparation) | `format_db` |
 
 ---
@@ -151,7 +151,7 @@ domainatoredux completion bash > ~/.local/share/bash-completion/completions/doma
 
 ### `doctor`
 
-List the optional external programs (`diamond`, `cdhit`, `usearch`, `orphos`): for each,
+List the optional external programs (`diamond`, `cdhit`, `usearch`, `orphos`, `cmbuild`): for each,
 whether a tool would find it and where (by the lookup order in
 [Installation](installation.md#optional-external-programs)), the commands that need it,
 and how to install it.
@@ -168,8 +168,9 @@ domainatoredux doctor
 
 **Annotate sequences with hits to references, keeping every input record.** The workhorse
 annotator: protein HMMs and protein FASTA are searched against CDSs (or against protein
-records directly), nucleotide FASTA and nucleotide HMMs against whole contigs on both
-strands, wrapping the origin on circular contigs. Give `-r` several files to annotate
+records directly), nucleotide FASTA, nucleotide HMMs and Infernal covariance models
+(`.cm`, searched as `cmsearch` does) against whole contigs on both strands, wrapping the
+origin on circular contigs. Give `-r` several files to annotate
 against several databases in one pass. Writes `-o/--genbank_out` and/or `--fasta_out`
 (at least one; `-` is standard output). The input is read twice, so it cannot come from
 standard input.
@@ -761,6 +762,24 @@ domainatoredux hmmer_build -i alignment.sto -o profile.hmm --name MyDomain --des
 
 Upstream reads every format hmmbuild does; this port reads those two, and not
 `--window_beta`.
+
+### `infernal_build`
+
+Build an Infernal covariance model (CM) from a multiple sequence alignment, by running
+Infernal's `cmbuild` (see [Installation](installation.md#optional-external-programs)), and
+set its NAME (`--name`, required), ACC (`--acc`) and DESC (`--desc`). `--noss` builds a
+model with no base pairs, which an alignment without secondary-structure annotation (such
+as aligned FASTA) needs; `--hand` and `--symfrac` are passed to `cmbuild`, as is
+`--input_format` (`stockholm`, `pfam` or `selex`; aligned FASTA is recognized without it).
+The model goes to `-o/--cm_out` (`-` for stdout); `-i -` reads standard input. Exactly one
+alignment per run.
+
+```bash
+domainatoredux infernal_build -i family.sto -o family.cm --name MyRNA --acc RF99999
+```
+
+A freshly built model has no E-value calibration. Run Infernal's `cmcalibrate` on it before
+using it as a `domainate` reference.
 
 ### `hmmer_select`
 

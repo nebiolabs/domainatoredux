@@ -7,7 +7,7 @@ around them, and turns collections of sequences into **sequence similarity netwo
 This is a from-scratch Rust implementation of the
 [Python Domainator suite](https://github.com/nebiolabs/domainator). It ships as:
 
-- **one command-line executable** — `domainatoredux <tool> [options]`, 38 tools, no
+- **one command-line executable** — `domainatoredux <tool> [options]`, 39 tools, no
   interpreter or conda environment required;
 - **one desktop app** — a workspace browser with a contig viewer, an interactive SSN
   viewer, HMM logos and dialogs for running the tools;
@@ -141,7 +141,7 @@ upstream's test suite through both implementations and diffs the results — see
 [the parity harness](docs/parity.md) — and per-tool coverage, including what is
 deliberately not ported, is tracked in [Porting status](docs/porting-status.md).
 
-Not ported: anything depending on torch or Infernal. Gene calling runs Prodigal's
+Not ported: anything depending on torch. Gene calling runs Prodigal's
 algorithm through the external [Orphos](https://github.com/FullHuman/orphos) binary. The
 `structure_*` subsystem and HTML report output are out of scope for now; report tools offer
 `--json_out` instead.

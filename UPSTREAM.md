@@ -182,7 +182,7 @@ Use this to triage which module a changed upstream file lands in:
 | `transform_matrix.py`, `data_matrix.py` (HDF5/TSV) | `.../tools/transform_matrix.rs`, `.../matrix/{hdf5_io,text,transform}.rs` |
 | `seq_dist.py` | `.../tools/seq_dist.rs` |
 | `compare_contigs.py` | `.../tools/compare_contigs.rs`; its sort's scipy calls (`linkage`, `leaves_list`, `optimal_leaf_ordering`) are `.../matrix/hierarchy.rs` |
-| `domainate.py` | `.../tools/domainate.rs`, `.../search/hmmer.rs` |
+| `domainate.py` | `.../tools/domainate.rs`, `.../search/hmmer.rs`; the `infernal` program (`infernal_hits_to_search_results`) is `.../search/infernal.rs` |
 | `domainate.py` gene calling (`prodigal_CDS_annotate`, `_prodigal_linear_location`, `_prodigal_origin_genes`) | `.../tools/gene_call.rs` (drives the external Orphos binary; also the port-only `gene_call` tool) |
 | `domain_search.py`, `select_by_cds.py` | `.../tools/{domain_search,select_by_cds,neighborhood}.rs` |
 | `select_by_contig.py`, `enum_report.py` | `.../tools/{select_by_contig,enum_report,select_common}.rs` |
@@ -190,7 +190,8 @@ Use this to triage which module a changed upstream file lands in:
 | `text_plot.py` (the text reports' histograms and tables) | `.../text_plot.rs` |
 | `hmmer_compare.py` | `.../tools/hmmer_compare.rs`, `.../search/hmm_compare.rs` |
 | `seqio.py`, `genbank.py` (Biopython subclasses), `lean_record.py`, `offsets.py`, `db_index.py`, `bgzf_compress.py` | `.../io/{genbank,fasta,bgzf,didx,shards,partition}.rs` |
-| `hmmio.py` | `.../search/{hmm_read,hmm_write,references}.rs` |
+| `hmmio.py` | `.../search/{hmm_read,hmm_write,references}.rs`; `read_infernal_cms` is `.../search/infernal.rs` (`load_cm_db`) |
+| `infernal_build.py` | `.../tools/infernal_build.rs` (drives the external `cmbuild`) |
 | `expr.py` | `.../tools/select_common.rs` (`BooleanEvaluator`), `.../seq/taxonomy.rs` (`--taxonomy_expr`) |
 | `model.py` (`region_id`, the per-CDS view) | `.../tools/neighborhood.rs` (`region_id`), `.../tools/select_common.rs` |
 | `taxonomy/`, the protein chemistry in `enum_report.py` | `.../seq/{protein_analysis,taxonomy,taxid,translate}.rs` |
@@ -251,7 +252,6 @@ Tracked so a later sync does not mistake them for oversights:
   `hmmer-pure-rs` does not expose; the flag is refused rather than silently ignored.
 - **`--progress`** draws no progress bar: `seq_dist` and `compare_contigs` accept and
   ignore it.
-- **Infernal `.cm` references** in `domainate`/`domain_search`. (`deferred:infernal`.)
 - **`seq_dist`'s diamond diagnostics**: the explained failures (out of disk or memory, a
   rejected `--diamond_args` option, unreadable input: `build_diamond_failure_message`); a
   failed run reports diamond's own stderr instead. The advisory before a large all-vs-all
@@ -265,7 +265,7 @@ Tracked so a later sync does not mistake them for oversights:
   `--algorithm coords`.
 - **Unported tools:** `kmer_dist`, `split_by_cluster`,
   `db_download` (the app's
-  managed downloads cover UniProt, Pfam and NCBI Taxonomy), `infernal_build`,
+  managed downloads cover UniProt, Pfam and NCBI Taxonomy),
   `find_features` (torch), and the structure tools above. Their manifest entries are
   `deferred:` rows of `scripts/parity/manifest_allowlist.tsv`.
 
@@ -273,12 +273,11 @@ Tracked so a later sync does not mistake them for oversights:
 
 `scripts/parity/known_gaps.tsv` holds every upstream invocation that does not reproduce,
 machine-checked on each sweep so none can be quietly forgotten. One open `gap:` row remains
-(five invocations of it); everything else is a deliberate deferral:
+(six invocations of it); everything else is a deliberate deferral:
 
 | class | rows | |
 |---|---|---|
-| `gap:feature-order` | 5 | `domain_search` emits tied-coordinate features in the other order, below |
-| `deferred:infernal` | 3 | `.cm` references |
+| `gap:feature-order` | 6 | `domain_search` emits tied-coordinate features in the other order, below |
 
 A `tolerated` row is one where the semantic comparator passed but the **bytes differ**, so
 the gap list structurally cannot hold it. Diffing those bytes is the single most productive
@@ -288,7 +287,8 @@ stamp, `/key` vs `/key=""`, the Pfam `GA`/`TC`/`NC` cutoffs, the `.hmm` model-ma
 f64-vs-f32 score rounding, and cluster-table ordering. Byte-identical invocations went from
 51 to 133 as a result (136 once the nucleotide single-sequence builder landed).
 
-`gap:feature-order` (5 rows) is the residue of the nucleotide-FASTA gap described under
+`gap:feature-order` (6 rows; the sixth is the whole-contig `.cm` invocation, which ties the
+same way) is the residue of the nucleotide-FASTA gap described under
 "Pinned dependency" below. All the hits now match — every coordinate and every
 qualifier, `evalue` and `score` included, compare equal as a set — but where two features
 share a start coordinate, `domain_search` emits `Domainator` before `Domain_Search` and
@@ -346,3 +346,30 @@ hmmer-pure-rs`):
    (the real gate: no new rows in `known_gaps.tsv`), and the aarch64 check
    (`domainate` under QEMU must match x86 byte for byte).
 4. Delete this section.
+
+## Pinned dependency: `infernox`
+
+`.cm` references are searched in-process by [infernox](https://github.com/necoli1822/infernox),
+a BSD-licensed Rust port of Infernal 1.1.5 whose `cmsearch` is byte-identical to C's. It is
+pinned exactly (`infernox = "=0.2.0"`), because a release that changed one hit would change
+annotations, so a bump is a re-verification: the sweep's infernal rows (the upstream ones
+plus the `extra:infernal_*` set, which cuts the CopA site so the truncated passes run) and
+the aarch64 check. `search/infernal.rs` reproduces what `pyinfernal.cmsearch(cms, block)`
+does, which differs from the `cmsearch` command line and from infernox's library defaults:
+
+- **`Z` is the block's residue count, not doubled** for two strands (pyinfernal sets
+  `Z = targets.total_length()`; cmsearch's default is twice that). infernox takes `Z` in
+  megabases and truncates, so `z_megabases` steps the float until it lands exactly.
+- **Truncated hits are on** (`notrunc: false`); infernox's `FaithfulConfig::default()` has
+  them off, and that alone drops every hit cut by a contig end.
+- **`E = 10`**, pyinfernal's pipeline default, is the scan cutoff; `--evalue` (capped at 10
+  upstream anyway) and `--min_evalue` only filter.
+- **Strict Forward arithmetic** (`set_forward_strict(true)`): infernox otherwise fuses
+  multiply-adds where the CPU has FMA, which moves scores in the last bits and makes x86 and
+  ARM disagree. Strict costs about 15%.
+
+Hits Infernal marks as overlapping duplicates are dropped, as `cmsearch` drops them.
+pyinfernal keeps them in `TopHits` (flagged `duplicate`), and upstream's
+`infernal_hits_to_search_results` annotated them too, writing the same locus twice. That was
+fixed upstream to skip `hit.duplicate`, with `test_domainator_infernal_skips_duplicate_hits`;
+the sweep row of that name needs an upstream checkout carrying the fix.

@@ -4,29 +4,31 @@
 //! - protein `.hmm`  -> hmmsearch  (protein peptides)
 //! - protein FASTA   -> phmmer     (protein peptides; single-seq profile per ref)
 //! - nucleotide `.hmm` / FASTA -> nhmmer (whole nucleotide contigs, both strands)
-//! - `.cm` (infernal) -> error (deferred)
+//! - `.cm` (infernal) -> cmsearch (whole nucleotide contigs, both strands)
 //!
-//! Nucleotide references combined with protein input is an error, matching
+//! Nucleotide or CM references combined with protein input is an error, matching
 //! `validate_input_molecule_types`.
 
 use std::path::Path;
 
 use super::hmmer::{load_hmm_dbs, load_phmmer_db, HmmDb};
+use super::infernal::{load_cm_db, CmDb};
 use super::nhmmer::NuclDb;
 
-/// Classified references: protein dbs (hmmsearch + phmmer) and nucleotide dbs
-/// (nhmmer). Empty is legal (no references).
+/// Classified references: protein dbs (hmmsearch + phmmer), nucleotide dbs
+/// (nhmmer) and covariance models (cmsearch). Empty is legal (no references).
 #[derive(Default)]
 pub struct References {
     pub protein: Vec<HmmDb>,
     pub nucleotide: Vec<NuclDb>,
+    pub infernal: Vec<CmDb>,
 }
 
 impl References {
-    /// `true` if any nucleotide (nhmmer) reference was loaded — protein input with
-    /// these is an error.
+    /// `true` if any nucleic-acid (nhmmer or cmsearch) reference was loaded —
+    /// protein input with these is an error (`has_nucleic_acid_references`).
     pub fn has_nucleotide(&self) -> bool {
-        !self.nucleotide.is_empty()
+        !self.nucleotide.is_empty() || !self.infernal.is_empty()
     }
 }
 
@@ -178,10 +180,16 @@ pub fn read_references(files: &[String]) -> std::io::Result<References> {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
         match ftype {
             RefFileType::Cm => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("infernal .cm references are not yet supported ({file:?})"),
-                ));
+                let db = load_cm_db(file)?;
+                // `read_infernal_cms` keys its databases by name and refuses a repeat.
+                if refs.infernal.iter().any(|d| d.name == db.name) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Multiple cm files with the same name, please combine the models into \
+                         a single file, or rename one of the files.",
+                    ));
+                }
+                refs.infernal.push(db);
             }
             RefFileType::Hmm => {
                 if hmm_is_nucleic_acid(file)? {

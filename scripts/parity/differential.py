@@ -273,7 +273,8 @@ def _compare_viewer_html(a, b):
 
 
 def _normalize_hmm(text):
-    # Profiles carry a build DATE and the COM line that produced them; neither is
+    # Profiles (HMMs and CMs) carry a build DATE and the COM line that produced them,
+    # with temporary paths in it; neither is
     # a parity target. NAME can carry a tool-chosen default too, but that *is*.
     return "\n".join(l for l in text.splitlines()
                      if not l.startswith(("DATE ", "COM   ")))
@@ -311,7 +312,7 @@ def compare(a, b, helpers, SeqIO):
             return _compare_coords_tsv(a, b)
         if ext == ".xgmml":
             return _compare_xgmml(a, b)
-        if ext == ".hmm":
+        if ext in (".hmm", ".cm"):  # a CM carries both its own and its filter HMM's
             return _compare_text(a, b, _normalize_hmm)
         # A test may name its page with no extension (an @OUT@ the harvester could not
         # resolve), so a page is also recognized by its first bytes.

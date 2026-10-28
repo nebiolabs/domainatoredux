@@ -1,0 +1,33 @@
+# GUI dialog for `domainatoredux infernal_build`. Format: see README.md in this directory.
+id: infernal_build
+label: "CM build"
+description: "Build an Infernal covariance model from a Stockholm alignment with cmbuild."
+fields:
+  - name: input
+    label: "Input MSA (Stockholm)"
+    file_type: stockholm
+    sources: workspace_first
+    select: first
+  - name: cm_out
+    label: "Output (CM)"
+    output_name: "{stem}.cm"
+  - name: name
+    label: "Model name"
+  - name: acc
+    label: "Accession"
+  - name: desc
+    label: "Description"
+  - name: noss
+    label: "Ignore secondary structure"
+  - name: hand
+    show: false
+    label: "Consensus columns from RF"
+  - name: symfrac
+    show: false
+    label: "Consensus-column threshold"
+  - name: input_format
+    show: false
+    label: "Alignment format"
+  - name: cmbuild_path
+    show: false
+    label: "cmbuild path"

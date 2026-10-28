@@ -7,7 +7,7 @@ around them, and turns collections of sequences into **sequence similarity netwo
 This is a from-scratch Rust implementation of the
 [Python Domainator suite](https://github.com/nebiolabs/domainator). It ships as:
 
-- **one command-line executable** — `domainatoredux <tool> [options]`, 38 tools;
+- **one command-line executable** — `domainatoredux <tool> [options]`, 39 tools;
 - **one desktop app** — a Geneious-inspired workspace browser with a contig viewer, an
   interactive viewer for networks, trees and projections, an alignment viewer, HMM
   logos, and dialogs for running the tools.

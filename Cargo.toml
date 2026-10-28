@@ -11,6 +11,9 @@ rust-version = "1.89"
 
 [workspace.dependencies]
 hmmer-pure-rs = "0.8"
+# Exact pin: infernox is a byte-parity port of Infernal 1.1.5, and a release that changed
+# its hits would change `.cm` annotations, so a bump is a deliberate re-verification.
+infernox = "=0.2.0"
 hdf5-pure = "0.20"
 rayon = "1"
 num_cpus = "1"

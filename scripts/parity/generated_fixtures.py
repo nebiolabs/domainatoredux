@@ -76,6 +76,7 @@ def generate(data_dir, test_dir, out_dir):
 
     _rotate_contigs_fixtures(data, out)
     _compare_contigs_fixtures(out)
+    _infernal_fixtures(data, out)
 
 
 def _compare_contigs_fixtures(out):
@@ -91,6 +92,37 @@ def _compare_contigs_fixtures(out):
     with open(out / "compare_max_hits.gb", "w") as handle:
         write_genbank([contig(f"rec{i}", doms) for i, doms in enumerate(
             [["A", "B"], ["C", "D"], ["A", "B", "E"], ["C", "D", "F"], ["A", "E"], ["C", "F"]])], handle)
+
+
+def _infernal_fixtures(data, out):
+    """Inputs for the Infernal invocations: test_infernal_build.py's alignments, and
+    CopA (RF00042) sites cut or wrapped so cmsearch's truncated passes run."""
+    from Bio import SeqIO
+    from Bio.Seq import Seq
+    from Bio.SeqRecord import SeqRecord
+    from test_infernal_build import FASTA_CONTENT, STOCKHOLM_CONTENT
+
+    (out / "infernal_build.sto").write_bytes(STOCKHOLM_CONTENT)
+    (out / "infernal_build.afa").write_bytes(FASTA_CONTENT)
+
+    record = next(SeqIO.parse(str(data / "pANT_R100.fa"), "fasta"))
+    # test_domainator_infernal_skips_duplicate_hits: the site cut near one end, where
+    # the truncated pass finds it twice.
+    SeqIO.write([SeqRecord(record.seq[48590:48730], id="fragment", description="")],
+                str(out / "copa_fragment.fa"), "fasta")
+    # The site (48665..48755, minus strand) cut at either end, several ways.
+    windows = [(48560, 48700), (48590, 48730), (48690, 48790), (48700, 48800), (48720, 48820)]
+    SeqIO.write([SeqRecord(record.seq[a:b], id=f"copa_{a}_{b}", description="")
+                 for a, b in windows], str(out / "copa_fragments.fa"), "fasta")
+    # The whole plasmid as a circular contig whose origin falls inside the site.
+    circular = SeqRecord(record.seq[48710:] + record.seq[:48710], id="pANT_rotated",
+                         name="pANT_rotated", description="pANT_R100 rotated into CopA")
+    circular.annotations["molecule_type"] = "DNA"
+    circular.annotations["topology"] = "circular"
+    SeqIO.write([circular], str(out / "copa_circular.gb"), "genbank")
+    # One model twice: the second replaces the first, with a warning.
+    model = (data / "RF00042.cm").read_text()
+    (out / "copa_twice.cm").write_text(model + model)
 
 
 def _rotate_contigs_fixtures(data, out):

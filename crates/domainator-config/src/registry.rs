@@ -239,6 +239,14 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
+        required_outputs: Some(&["cm_out"]),
+        ..tool(
+            "infernal_build",
+            "profile",
+            "Build a covariance model (CM) from a multiple sequence alignment (experimental).",
+        )
+    },
+    ToolInfo {
         required_outputs: Some(&["hmm_out"]),
         ..tool(
             "hmmer_select",

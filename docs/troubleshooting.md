@@ -50,6 +50,18 @@ export DOMAINATOREDUX_ORPHOS=~/.cargo/bin/orphos
 You don't need Orphos if your contigs already carry CDS annotations, for example
 GenBank files downloaded from NCBI.
 
+## `infernal_build` cannot find cmbuild, or a `.cm` reference is rejected
+
+`infernal_build` runs Infernal's `cmbuild`. Install Infernal, or `cargo install infernox`
+and set `$DOMAINATOREDUX_CMBUILD` to its `infernox-cmbuild` (or pass `--cmbuild_path`); see
+[Installation](installation.md#optional-external-programs).
+
+`domainate`, `domain_search` and `rotate_contigs` search `.cm` references themselves. A
+model that has base pairs needs E-value statistics. If it has never been through Infernal's
+`cmcalibrate`, which is the case for a model straight out of `infernal_build`, the search
+stops with "no E-value parameters were read". Calibrate it first:
+`cmcalibrate family.cm`.
+
 ## `deduplicate_genbank` with cd-hit complains about the molecule type
 
 cd-hit ships as two programs: `cd-hit` for protein and `cd-hit-est` for nucleotide.

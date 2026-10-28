@@ -3,13 +3,15 @@
 //! Protein references (`.hmm` -> hmmsearch, protein FASTA -> phmmer) search the
 //! input peptides (whole protein records or translated CDSs); nucleotide
 //! references (nucleotide FASTA/`.hmm` -> nhmmer) search whole nucleotide contigs
-//! on both strands and annotate contig-level hits (`cds_id="."`, circular
-//! origin-wrap handled as a `join`). Infernal `.cm` / foldseek remain deferred.
+//! on both strands, as do Infernal covariance models (`.cm` -> cmsearch); both
+//! annotate contig-level hits (`cds_id="."`, circular origin-wrap handled as a
+//! `join`). foldseek remains deferred.
 
 use std::collections::{HashMap, HashSet};
 
 use super::gene_call::{call_genes, clear_cds_annotations, GeneCall, GeneCallScope};
 use crate::search::hmmer::hmmsearch_db;
+use crate::search::infernal::{cmsearch_db, CmDb};
 use crate::search::nhmmer::nhmmer_db;
 use crate::search::references::{read_references, References};
 use crate::search::SearchResult;
@@ -454,6 +456,31 @@ fn add_contig_nucleic_acid_annotations(
     }
 }
 
+/// The nucleotide records as whole-contig search targets (`get_contig_search_sequence`):
+/// `"{i},contig,{len}"` and the residues, a circular contig followed by its first
+/// `extension` bases again.
+fn whole_contig_targets(records: &[SeqRecord], extension: usize) -> Vec<(String, Vec<u8>)> {
+    let mut targets: Vec<(String, Vec<u8>)> = Vec::new();
+    for (i, rec) in records.iter().enumerate() {
+        if rec.is_protein() {
+            continue;
+        }
+        let mut seq: Vec<u8> = rec
+            .seq
+            .iter()
+            .copied()
+            .filter(|b| b.is_ascii_alphabetic())
+            .collect();
+        if matches!(rec.topology, Topology::Circular) && extension > 0 {
+            let ext = extension.min(seq.len());
+            let prefix: Vec<u8> = seq[..ext].to_vec();
+            seq.extend_from_slice(&prefix);
+        }
+        targets.push((format!("{i},contig,{}", rec.len()), seq));
+    }
+    targets
+}
+
 /// Options for [`domainate`].
 pub struct DomainateOptions {
     pub z: f64,
@@ -625,10 +652,25 @@ pub fn domainate(
         }
     }
 
-    // Nucleotide search (nhmmer) over whole contigs, both strands. Targets are
-    // named "{i},contig,{len}"; circular contigs are extended by the longest
-    // nucleotide reference so origin-spanning hits are found.
+    // Nucleic-acid searches (nhmmer, then cmsearch) over whole contigs, both
+    // strands. Each builds its own targets, named "{i},contig,{len}": circular
+    // contigs are extended by that program's longest reference so origin-spanning
+    // hits are found.
     let mut contig_hits: HashMap<usize, Vec<SearchResult>> = HashMap::new();
+    let mut add_contig_hits = |per_db: Vec<Vec<crate::search::hmmer::NamedHit>>| {
+        for nhs in per_db {
+            for nh in nhs {
+                if let Some(ci) = nh
+                    .target
+                    .split(',')
+                    .next()
+                    .and_then(|s| s.parse::<usize>().ok())
+                {
+                    contig_hits.entry(ci).or_default().push(nh.result);
+                }
+            }
+        }
+    };
     if !refs.nucleotide.is_empty() {
         let nhmmer_extension: usize = refs
             .nucleotide
@@ -636,24 +678,7 @@ pub fn domainate(
             .flat_map(|db| db.hmms.iter().map(|h| h.m))
             .max()
             .unwrap_or(0);
-        let mut targets: Vec<(String, Vec<u8>)> = Vec::new();
-        for (i, rec) in records.iter().enumerate() {
-            if rec.is_protein() {
-                continue;
-            }
-            let mut seq: Vec<u8> = rec
-                .seq
-                .iter()
-                .copied()
-                .filter(|b| b.is_ascii_alphabetic())
-                .collect();
-            if matches!(rec.topology, Topology::Circular) && nhmmer_extension > 0 {
-                let ext = nhmmer_extension.min(seq.len());
-                let prefix: Vec<u8> = seq[..ext].to_vec();
-                seq.extend_from_slice(&prefix);
-            }
-            targets.push((format!("{i},contig,{}", rec.len()), seq));
-        }
+        let targets = whole_contig_targets(&records, nhmmer_extension);
         if !targets.is_empty() {
             let per_db: Vec<Vec<crate::search::hmmer::NamedHit>> =
                 crate::parallel::with_threads(opts.cpu, || {
@@ -665,18 +690,28 @@ pub fn domainate(
                         })
                         .collect()
                 });
-            for nhs in per_db {
-                for nh in nhs {
-                    if let Some(ci) = nh
-                        .target
-                        .split(',')
-                        .next()
-                        .and_then(|s| s.parse::<usize>().ok())
-                    {
-                        contig_hits.entry(ci).or_default().push(nh.result);
-                    }
-                }
-            }
+            add_contig_hits(per_db);
+        }
+    }
+    if !refs.infernal.is_empty() {
+        // Python extends by the largest `CM.M`, the model's state count.
+        let infernal_extension: usize = refs
+            .infernal
+            .iter()
+            .map(CmDb::max_states)
+            .max()
+            .unwrap_or(0);
+        let targets = whole_contig_targets(&records, infernal_extension);
+        if !targets.is_empty() {
+            // Each search spreads its own windows over the pool, so databases run
+            // one after another.
+            let per_db = crate::parallel::with_threads(opts.cpu, || {
+                refs.infernal
+                    .iter()
+                    .map(|db| cmsearch_db(db, &targets, opts.evalue, opts.min_evalue))
+                    .collect::<std::io::Result<Vec<_>>>()
+            })?;
+            add_contig_hits(per_db);
         }
     }
 

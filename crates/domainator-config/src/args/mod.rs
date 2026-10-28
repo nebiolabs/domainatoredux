@@ -31,6 +31,7 @@ mod hmmer_compare;
 mod hmmer_report;
 mod hmmer_search;
 mod hmmer_select;
+mod infernal_build;
 mod matrix_report;
 mod plot_contigs;
 mod rotate_contigs;
@@ -69,6 +70,7 @@ pub use hmmer_compare::HmmerCompareArgs;
 pub use hmmer_report::HmmerReportArgs;
 pub use hmmer_search::HmmerSearchArgs;
 pub use hmmer_select::HmmerSelectArgs;
+pub use infernal_build::InfernalBuildArgs;
 pub use matrix_report::MatrixReportArgs;
 pub use plot_contigs::PlotContigsArgs;
 pub use rotate_contigs::RotateContigsArgs;
@@ -121,6 +123,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "hmmer_select" => HmmerSelectArgs::augment_args(cmd),
         "hmmer_build" => HmmerBuildArgs::augment_args(cmd),
         "hmmer_search" => HmmerSearchArgs::augment_args(cmd),
+        "infernal_build" => InfernalBuildArgs::augment_args(cmd),
         "format_db" => FormatDbArgs::augment_args(cmd),
         "color_table_to_legend" => ColorTableToLegendArgs::augment_args(cmd),
         "plot_contigs" => PlotContigsArgs::augment_args(cmd),

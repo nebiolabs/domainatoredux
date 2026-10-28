@@ -90,7 +90,7 @@ choices here, with these exceptions:
 
 - tools upstream has and this port does not (the structure tools, `kmer_dist`,
   `split_by_cluster`, `build_tree`, `build_projection`, `db_download`,
-  `infernal_build`, `find_features`; see [Porting status](porting-status.md));
+  `find_features`; see [Porting status](porting-status.md));
 - options of ported tools that are not ported, such as `--taxonomy_update`. They are
   absent from this manifest, but a config file may still name one at its upstream default;
 - `gene_call`, `inspect` and `convert`, which upstream does not have (`inspect` and

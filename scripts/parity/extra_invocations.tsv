@@ -118,3 +118,15 @@ rotate_contigs	extra:test_rotate_infernal#0	extra_invocations.tsv	-i	@DATA@/pANT
 rotate_contigs	extra:test_rotate_fasta_out#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--fasta_out	@TMP@/out.fasta
 compare_contigs	extra:test_compare_contigs_name_by_order_reorders_clustered_records#0	extra_invocations.tsv	-i	@GEN@/compare_reorder.gb	--ji	1.0	--ai	0.0	--genbank_out	@TMP@/sorted.gb	--name_by_order
 compare_contigs	extra:test_compare_contigs_sorts_with_max_hits_per_query#0	extra_invocations.tsv	-i	@GEN@/compare_max_hits.gb	--ji	1.0	--ai	0	--max_hits_per_query	2	--genbank_out	@TMP@/sorted.gb
+infernal_build	extra:test_infernal_build_with_required_params#0	extra_invocations.tsv	--name	test_cm	--input	@GEN@/infernal_build.sto	--cm_out	@TMP@/out.cm
+infernal_build	extra:test_infernal_build_with_optional_params#0	extra_invocations.tsv	--name	test_cm	--acc	RFTEST1	--desc	Test CM description	--input	@GEN@/infernal_build.sto	--cm_out	@TMP@/out.cm
+infernal_build	extra:test_infernal_build_with_fasta_input#0	extra_invocations.tsv	--name	test_cm	--acc	RFTEST1	--desc	FASTA input description	--input	@GEN@/infernal_build.afa	--noss	--cm_out	@TMP@/out.cm
+infernal_build	extra:infernal_build_options#0	extra_invocations.tsv	--name	test cm/x	--input	@GEN@/infernal_build.sto	--input_format	stockholm	--symfrac	1.0	--cm_out	@TMP@/out.cm
+domainate	extra:test_domainator_infernal_skips_duplicate_hits#0	extra_invocations.tsv	--input	@GEN@/copa_fragment.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--evalue	10
+domainate	extra:infernal_truncated_hits#0	extra_invocations.tsv	--input	@GEN@/copa_fragments.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--evalue	10
+domainate	extra:infernal_truncated_hits#1	extra_invocations.tsv	--input	@GEN@/copa_fragments.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--evalue	10	--min_evalue	1e-8	--cpu	4
+domainate	extra:infernal_truncated_hits#2	extra_invocations.tsv	--input	@GEN@/copa_fragments.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--evalue	10	--max_overlap	0
+domainate	extra:infernal_circular_origin#0	extra_invocations.tsv	--input	@GEN@/copa_circular.gb	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--hits_only	--evalue	10
+domainate	extra:infernal_duplicate_model_names#0	extra_invocations.tsv	--input	@DATA@/pANT_R100.fa	--alphabet	nucleotide	-r	@GEN@/copa_twice.cm	--genbank_out	@TMP@/out.gb	--hits_only
+domain_search	extra:infernal_truncated_hits#0	extra_invocations.tsv	-i	@GEN@/copa_fragments.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	-o	@TMP@/out.gb	--whole_contig	--evalue	10
+rotate_contigs	extra:infernal_circular_origin#0	extra_invocations.tsv	-i	@GEN@/copa_circular.gb	-r	@DATA@/RF00042.cm	--cpu	1	--keep_annotation	-o	@TMP@/out.gb

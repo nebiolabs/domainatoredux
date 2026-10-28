@@ -1,5 +1,6 @@
 //! Shared helpers for tools that shell out to external binaries (DIAMOND for
-//! `seq_dist`/`deduplicate_genbank`, USEARCH for `deduplicate_genbank`): a self-cleaning temp
+//! `seq_dist`/`deduplicate_genbank`, USEARCH for `deduplicate_genbank`, cmbuild for
+//! `infernal_build`): a self-cleaning temp
 //! directory, a binary locator (env var → bundled → PATH), a FASTA writer for
 //! `(id, residues)` records, and a friendly "not found" error.
 
@@ -152,7 +153,7 @@ impl ExternalProgram {
 }
 
 /// Every external program, in the order `doctor` lists them.
-pub const EXTERNAL_PROGRAMS: &[ExternalProgram] = &[DIAMOND, CDHIT, USEARCH, ORPHOS];
+pub const EXTERNAL_PROGRAMS: &[ExternalProgram] = &[DIAMOND, CDHIT, USEARCH, ORPHOS, CMBUILD];
 
 pub const DIAMOND: ExternalProgram = ExternalProgram {
     name: super::deduplicate_genbank::DIAMOND_BIN_NAME,
@@ -187,4 +188,13 @@ pub const ORPHOS: ExternalProgram = ExternalProgram {
     needed_by: "gene_call, domainate/domain_search/rotate_contigs --gene_call",
     install: "https://github.com/FullHuman/orphos/releases (0.4.0 or newer), or cargo install \
               orphos-cli",
+};
+
+pub const CMBUILD: ExternalProgram = ExternalProgram {
+    name: super::infernal_build::CMBUILD_BIN_NAME,
+    env_vars: &[super::infernal_build::CMBUILD_ENV_VAR, "CMBUILD"],
+    bundled_dir: "infernal",
+    needed_by: "infernal_build",
+    install: "conda install -c bioconda infernal, or cargo install infernox (then point \
+              $DOMAINATOREDUX_CMBUILD at its infernox-cmbuild)",
 };

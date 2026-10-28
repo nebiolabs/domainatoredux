@@ -86,17 +86,18 @@ alignment or gene-calling program, and **only** if you ask for that algorithm:
 | `cdhit` | `deduplicate_genbank --algorithm cd-hit` (the default) | you use `deduplicate_genbank --algorithm hash` |
 | `usearch` | `deduplicate_genbank --algorithm usearch` | as above |
 | `orphos` (0.4.0 or newer) | `gene_call`, and `domainate`/`domain_search --gene_call` | your contigs already have CDS annotations |
+| `cmbuild` | `infernal_build` | you only search with existing `.cm` models (that needs nothing) |
 
 Each is found by the first of these that works:
 
 1. the tool's own path option (`--diamond_path`, `--cdhit_path`, `--usearch_path`;
-   `gene_call --orphos_path`);
+   `gene_call --orphos_path`; `infernal_build --cmbuild_path`);
 2. the environment variable `$DOMAINATOREDUX_DIAMOND`, `$DOMAINATOREDUX_CDHIT`,
-   `$DOMAINATOREDUX_USEARCH` or `$DOMAINATOREDUX_ORPHOS`;
+   `$DOMAINATOREDUX_USEARCH`, `$DOMAINATOREDUX_ORPHOS` or `$DOMAINATOREDUX_CMBUILD`;
 3. a bundled copy at `external/<program>/` next to the executable;
 4. the bare program name on your `PATH`.
 
-**The desktop app can download all of them for you** — open the *External tools* panel in
+**The desktop app can download all of them but `cmbuild` for you** — open the *External tools* panel in
 the left sidebar and click Download. It installs them into the app's data directory and
 sets the environment variables, so the command-line tool finds them too if you launch it
 from the same session. See [the desktop app](gui.md#external-tools).
@@ -106,6 +107,12 @@ downloads them at your request and runs them as separate processes.
 
 Orphos publishes no build for Intel Macs. There, install it with `cargo install
 orphos-cli` and point `$DOMAINATOREDUX_ORPHOS` at the result (usually `~/.cargo/bin/orphos`).
+
+`cmbuild` is Infernal's (`conda install -c bioconda infernal`, Linux and macOS). On any
+platform, Windows included, `cargo install infernox` builds a Rust port whose
+`infernox-cmbuild` writes the same models; point `$DOMAINATOREDUX_CMBUILD` at it. It reads
+Stockholm, Pfam and SELEX alignments, not aligned FASTA. Searching with `.cm` models needs
+neither: that is built in.
 
 ## Verify the installation
 

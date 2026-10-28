@@ -38,12 +38,12 @@ scripts/parity/differential.py --report /tmp/report.tsv   # every invocation, no
 ### External binaries
 
 `deduplicate_genbank`'s invocations shell out to `cd-hit`, `usearch` or `diamond`,
-and `seq_dist`'s `diamond_*` ones to `diamond`. When a binary is missing **Python
-fails first**, so the harness classifies the invocation `skipped: python rejected
-the invocation` — an `OK` outcome. A sweep run without them is therefore green
+`seq_dist`'s `diamond_*` ones to `diamond`, and `infernal_build`'s to `cmbuild`. When a
+binary is missing **Python fails first**, so the harness classifies the invocation
+`skipped: python rejected the invocation` — an `OK` outcome. A sweep run without them is therefore green
 while covering nothing, which is exactly how five broken cd-hit invocations sat
 invisible until the backend was written. Put the conda environment's `bin` on
-`PATH` (it carries all three), and point `$DOMAINATOREDUX_CDHIT` at a `cdhit` binary
+`PATH` (it carries all four), and point `$DOMAINATOREDUX_CDHIT` at a `cdhit` binary
 so the Rust side can find one too:
 
 ```bash
@@ -52,7 +52,10 @@ PATH=/path/to/conda/envs/domainator/bin:$PATH DOMAINATOREDUX_CDHIT=/path/to/cdhi
 ```
 
 `deduplicate_genbank` should report 8 identical and 1 skipped. If it reports more
-skips, a binary is missing rather than anything being fine.
+skips, a binary is missing rather than anything being fine. `infernal_build` should
+report 4 `tolerated`. Never identical, because a CM's COM line records the `cmbuild`
+command with its temporary paths; the comparator drops DATE and COM, as it does for
+`.hmm`.
 
 `--gene_call` is the reverse case. Python calls genes in-process with pyrodigal, so it
 never fails for want of a binary, while the Rust side needs Orphos. Without it, the 13

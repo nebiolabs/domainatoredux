@@ -40,7 +40,6 @@ const DEFERRED_TOOLS: &[(&str, &str)] = &[
     ("build_tree", "deferred:unported-tool"),
     ("db_download", "deferred:unported-tool"),
     ("find_features", "deferred:unported-tool"),
-    ("infernal_build", "deferred:infernal"),
     ("kmer_dist", "deferred:unported-tool"),
     ("split_by_cluster", "deferred:unported-tool"),
     ("structure_dist", "deferred:structure"),

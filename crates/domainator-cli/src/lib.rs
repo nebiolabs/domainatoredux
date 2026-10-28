@@ -137,6 +137,8 @@ enum Command {
     HmmerBuild(config::args::HmmerBuildArgs),
     /// Filter query HMM profiles by best score against reference HMM profiles.
     HmmerSearch(config::args::HmmerSearchArgs),
+    /// Build a covariance model from a multiple sequence alignment with cmbuild.
+    InfernalBuild(config::args::InfernalBuildArgs),
     /// Shard / BGZF-compress / .didx-index a domain_search database.
     FormatDb(config::args::FormatDbArgs),
 }
@@ -518,6 +520,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::HmmerSelect(args) => commands::hmmer_select::run(&args)?,
         Command::HmmerBuild(args) => commands::hmmer_build::run(&args)?,
         Command::HmmerSearch(args) => commands::hmmer_search::run(&args)?,
+        Command::InfernalBuild(args) => commands::infernal_build::run(&args)?,
         Command::FormatDb(args) => commands::format_db::run(&args)?,
     }
     Ok(())

@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 hmmer-pure-rs.workspace = true
+infernox.workspace = true
 hdf5-pure.workspace = true
 rayon.workspace = true
 num_cpus.workspace = true

@@ -36,7 +36,7 @@ pub fn report() -> Vec<String> {
     }
     lines.push(String::new());
     lines.push(
-        "The desktop app's External tools panel downloads all of them; see \
+        "The desktop app's External tools panel downloads all of them but cmbuild; see \
          docs/installation.md."
             .to_string(),
     );
