@@ -154,6 +154,15 @@ plus [`genbank_to_fasta`](cli-reference.md#genbank_to_fasta). It cannot carry an
 so it is an endpoint rather than an intermediate. Use `--alphabet` to tell a tool whether
 to read FASTA as protein (the default) or nucleotide.
 
+### Aligned FASTA
+
+`.afa` (and any FASTA file whose sequences are all the same length)
+
+A multiple sequence alignment, one gapped sequence (`-` or `.` for a gap) per record.
+[`build_tree --msa`](cli-reference.md#build_tree) shows one beside a tree, matching
+sequences to leaves by id, and the desktop app's Alignment tab displays one. A file with
+a repeated id, or with sequences of different lengths, is not an alignment.
+
 ## Score matrices
 
 `.hdf5` `.hdf` `.h5` (binary), `.tsv` (text)
@@ -193,28 +202,46 @@ conversion.
 
 ## Networks
 
-### `.dsnv` — the interactive viewer bundle
+### `.dvb` — the Domainator Viewer bundle
 
-Written by [`build_ssn_viewer`](cli-reference.md#build_ssn_viewer): a gzipped JSON bundle
-holding the nodes, the maximum spanning tree, and the cluster hierarchy — **and nothing
-else**. Everything a viewer shows (split events, slider stops, cluster membership at a
-given cutoff) is derived from those when the file is read.
+Written with `--dvb_out` by [`build_ssn`](cli-reference.md#build_ssn),
+[`build_tree`](cli-reference.md#build_tree) and
+[`build_projection`](cli-reference.md#build_projection): a gzipped JSON bundle holding a
+set of nodes (sequences), their metadata table, the viewer's starting colors and labels,
+and one view of them —
 
-That is why there is no threshold and no event cap baked into the file: you choose them
-while looking at the network, in the viewer or with
-[`ssn_navigator`](cli-reference.md#ssn_navigator).
+- **a network** (`build_ssn`): the maximum spanning tree above `--threshold` and the cluster
+  hierarchy, **and nothing else**. Everything the viewer shows (split events, slider stops,
+  cluster membership at a given cutoff) is derived from those when the file is read, so
+  there is no event cap baked into the file: you choose it while looking at the network,
+  in the viewer or with [`ssn_navigator`](cli-reference.md#ssn_navigator);
+- **a tree** (`build_tree`): each node's parent, branch length, label and support value,
+  and optionally an alignment of the leaves (`--msa`);
+- **a projection** (`build_projection`): each node's coordinates.
 
-`.ssnv` is the older spelling of the same thing. It is still read; new files are always
-written as `.dsnv`.
+The viewer's "Save session" writes the same format, with its state added, so a saved
+session opens wherever a bundle does. `--html_out` writes a standalone HTML page with the
+bundle embedded, which can be emailed or put on a web server with nothing else alongside
+it, and [`viewer`](cli-reference.md#viewer) writes one for a bundle you already have.
+Upstream defines the exact schema in its `docs/file_formats.md`.
 
-With `--html_out` you also get a standalone HTML page, and with `--embed_data` the bundle is
-embedded inside it, so the page is fully self-contained and can be emailed or put on a
-web server with nothing else alongside it.
+### `.dsnv` — the older network bundle
+
+Networks were written as `.dsnv` bundles before the `.dvb` format held trees and
+projections too. They are still read — by the viewer, `viewer -i`,
+[`ssn_navigator`](cli-reference.md#ssn_navigator) and the desktop app, as the `.dvb` network
+they correspond to — but never written. `.ssnv` is an older spelling of the same thing.
+
+### `.nwk` — Newick trees
+
+Written by [`build_tree`](cli-reference.md#build_tree) `-o/--newick_out`, and read with
+`--newick`, which reads Newick the way Biopython does: quoted labels, `[comments]`, and
+numeric internal labels taken as support values.
 
 ### `.xgmml` — Cytoscape
 
 Written by [`build_ssn`](cli-reference.md#build_ssn). A static network: the edges are
-fixed at the `--threshold` cutoff you chose, unlike the `.dsnv` bundle. Node attributes carry any
+fixed at the `--threshold` cutoff you chose, unlike the `.dvb` bundle. Node attributes carry any
 metadata you joined on with `--metadata`, and `--cluster` adds a cluster id; `--mark_mst`
 gives each edge a boolean `MST` attribute.
 

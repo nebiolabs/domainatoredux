@@ -8,6 +8,7 @@ import type { FileType } from "./types";
 export const ACCEPTED_EXTS = [
   "gb", "gbk", "genbank", "gbff",
   "fasta", "fa", "fna", "faa", "pep",
+  "afa", "afasta",
   "hmm", "hmmer",
   "hdf5", "hdf", "h5",
   "cm",
@@ -15,12 +16,14 @@ export const ACCEPTED_EXTS = [
   "tsv", "csv", "tab",
   "txt", "text", "list",
   "svg",
-  "dsnv", "ssnv", "ssnview",
+  "nwk", "newick",
+  "dvb", "dsnv", "ssnv", "ssnview",
 ];
 
 export const ACCEPTED_HINT =
-  "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .hmm, .hdf5/.h5, " +
-  ".cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .svg, .dsnv (optionally with a .gz suffix).";
+  "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .afa (aligned FASTA), " +
+  ".hmm, .hdf5/.h5, .cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .svg, .nwk/.newick, " +
+  ".dvb/.dsnv (optionally with a .gz suffix).";
 
 export function isRecognizedFilename(name: string): boolean {
   let n = name.trim().toLowerCase().replace(/\.(gz|bgz|bgzf)$/, "");
@@ -46,8 +49,10 @@ export function fileTypeOf(name: string): FileType | null {
   if (["hmm", "hmmer"].includes(ext)) return "hmm";
   if (["hdf5", "hdf", "h5"].includes(ext)) return "hdf5";
   if (ext === "cm") return "cm";
-  // `.ssnv` is the pre-0.11 spelling; still read, never written.
-  if (["dsnv", "ssnv", "ssnview"].includes(ext)) return "ssn_viewer";
+  if (["afa", "afasta"].includes(ext)) return "alignment";
+  if (["nwk", "newick"].includes(ext)) return "newick";
+  // `.dsnv` is the older network bundle, `.ssnv` its pre-0.11 spelling; still read.
+  if (["dvb", "dsnv", "ssnv", "ssnview"].includes(ext)) return "viewer_bundle";
   if (["tsv", "csv", "tab"].includes(ext)) return "table";
   if (["txt", "text", "list"].includes(ext)) return "text";
   if (ext === "svg") return "svg";

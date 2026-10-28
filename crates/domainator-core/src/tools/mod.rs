@@ -1,7 +1,8 @@
 //! Domainator tools as library functions (CLI and GUI both call these).
 
+pub mod build_projection;
 pub mod build_ssn;
-pub mod build_ssn_viewer;
+pub mod build_tree;
 pub mod clean_sequences;
 pub mod color_genbank;
 pub mod color_table_to_legend;
@@ -25,6 +26,7 @@ pub mod hmmer_search;
 pub mod hmmer_select;
 pub mod matrix_report;
 pub mod neighborhood;
+pub mod node_table;
 pub mod output_guardrails;
 pub mod plot_contigs;
 pub mod report_html;
@@ -40,3 +42,5 @@ pub mod ssn_navigator;
 pub mod summary_report;
 pub mod transform_matrix;
 pub mod trim_contigs;
+pub mod viewer_bundle;
+pub mod viewer_html;

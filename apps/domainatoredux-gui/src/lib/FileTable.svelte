@@ -21,7 +21,9 @@
     hmm: "HMM",
     hdf5: "Matrix",
     cm: "CM",
-    ssn_viewer: "SSN",
+    viewer_bundle: "Viewer",
+    alignment: "MSA",
+    newick: "Tree",
     table: "Table",
     stockholm: "Stockholm",
   };
@@ -682,7 +684,7 @@
     title="New file in {folderName}"
     defaultName="pasted.fasta"
     withBody={true}
-    bodyPlaceholder="Paste file contents here. The extension sets the type: .fasta/.gb (sequences), .hmm, .tsv/.csv (table), .dsnv…"
+    bodyPlaceholder="Paste file contents here. The extension sets the type: .fasta/.gb (sequences), .hmm, .tsv/.csv (table), .dvb…"
     submitLabel="Create"
     validate={validateFilename}
     onsubmit={createNew}
@@ -975,9 +977,13 @@
     color: #2f6feb;
     border-color: #2f6feb55;
   }
-  .badge-ssn_viewer {
+  .badge-viewer_bundle {
     color: #b5179e;
     border-color: #b5179e55;
+  }
+  .badge-alignment {
+    color: #b06a00;
+    border-color: #b06a0055;
   }
   .note {
     padding: 16px 12px;

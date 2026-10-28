@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Regenerate the vendored SSN viewer HTML shell from the Python `domainator` source.
+"""Regenerate the vendored Domainator Viewer HTML shell from the Python `domainator` source.
 
-The Rust asset ``crates/domainator-core/assets/ssn_viewer_shell.html`` is NOT authored
+The Rust asset ``crates/domainator-core/assets/viewer_shell.html`` is NOT authored
 by hand. It is the rendered output of the Python viewer,
-``domainator.ssn_viewer_html.ssn_viewer_html(title, embedded_bundle_json)``, with two
+``domainator.viewer_html.viewer_html(title, embedded_bundle)``, with two
 interpolation points frozen into string tokens that the Rust ``render_html`` substitutes
-at runtime (see ``crates/domainator-core/src/tools/build_ssn_viewer.rs``):
+at runtime (see ``crates/domainator-core/src/tools/viewer_html.rs``):
 
-  * ``@@SSN_VIEWER_TITLE@@``            -> the HTML-escaped title (the <title> tag)
-  * ``@@SSN_VIEWER_HEADING@@``          -> the HTML-escaped <h1> heading
+  * ``@@VIEWER_TITLE@@``                -> the HTML-escaped title (the <title> tag)
+  * ``@@VIEWER_HEADING@@``              -> the HTML-escaped <h1> heading
   * ``"embeddedBundleBase64": null``    -> swapped for the base64 bundle on embed. It is a
-    key of the page's ``<script type="application/json" id="dsnv-config">`` block, which
+    key of the page's ``<script type="application/json" id="viewer-config">`` block, which
     ``json.dumps`` writes with its default ``": "`` separator.
 
 On top of that render, the Rust asset carries local-only patches that do not exist in
@@ -21,12 +21,12 @@ Because the asset is generated, it must NEVER be hand-edited. Change the Python 
 (or the local patch here), then re-run this script.
 
 Usage:
-    python scripts/regen_ssn_viewer_shell.py            # write the asset
-    python scripts/regen_ssn_viewer_shell.py --check    # verify asset is up to date
-    python scripts/regen_ssn_viewer_shell.py --src PATH # override vendored src dir
+    python scripts/regen_viewer_shell.py            # write the asset
+    python scripts/regen_viewer_shell.py --check    # verify asset is up to date
+    python scripts/regen_viewer_shell.py --src PATH # override vendored src dir
 
 Run with the domainator conda env, e.g.:
-    /home/sean/miniforge3/envs/domainator/bin/python scripts/regen_ssn_viewer_shell.py
+    /home/sean/miniforge3/envs/domainator/bin/python scripts/regen_viewer_shell.py
 
 --check exits non-zero (with a short diff) when the committed asset differs from what a
 fresh render + patch would produce; use it as an upstream-drift guard in CI / parity runs.
@@ -40,14 +40,14 @@ import importlib
 import sys
 from pathlib import Path
 
-# --- frozen token contract (must match build_ssn_viewer.rs) ---
-TITLE_TOKEN = "@@SSN_VIEWER_TITLE@@"
-HEADING_TOKEN = "@@SSN_VIEWER_HEADING@@"
+# --- frozen token contract (must match viewer_html.rs) ---
+TITLE_TOKEN = "@@VIEWER_TITLE@@"
+HEADING_TOKEN = "@@VIEWER_HEADING@@"
 EMBED_NULL_LINE = '"embeddedBundleBase64": null'
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SRC = REPO_ROOT / "external" / "domainator" / "src"
-ASSET_PATH = REPO_ROOT / "crates" / "domainator-core" / "assets" / "ssn_viewer_shell.html"
+ASSET_PATH = REPO_ROOT / "crates" / "domainator-core" / "assets" / "viewer_shell.html"
 
 # --- local patch inventory --------------------------------------------------
 # Patches applied to the Python render to produce the Rust asset. Each entry is
@@ -55,9 +55,11 @@ ASSET_PATH = REPO_ROOT / "crates" / "domainator-core" / "assets" / "ssn_viewer_s
 # `anchor_line`. Keep blocks minimal and additive so they survive upstream churn.
 #
 # 1. "gui-host-hook": surfaces the selected node labels to a Tauri parent window
-#    via postMessage. The GUI's SsnView.svelte listens for `domainator-ssn-selection`
-#    to drive select -> Extract selected -> open source sequences. Without this the
-#    viewer still renders but GUI node-selection silently breaks.
+#    via postMessage. The GUI's DomainatorView.svelte listens for
+#    `domainator-viewer-selection` to drive select -> Extract selected -> open source
+#    sequences. The anchor is in js/common/metadata_table.js, which every view (network,
+#    tree, projection) shares, so one hook covers all three. Without it the viewer still
+#    renders but GUI node-selection silently breaks.
 GUI_HOST_HOOK_ANCHOR = (
     "        document.getElementById('selection-summary').textContent = "
     "selected.length.toLocaleString() + ' nodes selected';"
@@ -67,14 +69,14 @@ GUI_HOST_HOOK_BLOCK = """        // Domainator GUI host hook (additive; no-op wh
         try {
             if (window.parent && window.parent !== window) {
                 window.parent.postMessage({
-                    type: 'domainator-ssn-selection',
-                    labels: selected.map(i => state.bundle.graph.nodes[i])
+                    type: 'domainator-viewer-selection',
+                    labels: selected.map(i => nodeId(i))
                 }, '*');
             }
         } catch (e) { /* ignore */ }
 """
 # Sentinel unique to the block, used to assert the patch is present exactly once.
-GUI_HOST_HOOK_SENTINEL = "domainator-ssn-selection"
+GUI_HOST_HOOK_SENTINEL = "domainator-viewer-selection"
 
 LOCAL_PATCHES = [
     ("gui-host-hook", GUI_HOST_HOOK_ANCHOR, GUI_HOST_HOOK_BLOCK, GUI_HOST_HOOK_SENTINEL),
@@ -82,11 +84,11 @@ LOCAL_PATCHES = [
 
 # 2. "heading-token": upstream's `viewer_heading()` decides at RENDER time whether the
 #    <h1> is the bare app name or "<app name>: <network>", collapsing titles that name
-#    no particular network. Rendering with a frozen token bakes the "<app>: " prefix in,
-#    so that choice could never fire in the Rust asset -- the default CLI name is one of
-#    upstream's generic titles, which would render "...Viewer: Domainator SSN Viewer".
+#    no particular bundle. Rendering with a frozen token bakes the "<app>: " prefix in,
+#    so that choice could never fire in the Rust asset -- the empty page's title is one of
+#    upstream's generic titles, which would render "...Viewer: Domainator Viewer".
 #    Swap the whole heading for its own token and let `render_html` apply the rule.
-HEADING_PREFIX = "Domainator Similarity Network Viewer: "
+HEADING_PREFIX = "Domainator Viewer: "
 
 
 def _apply_heading_token(html: str) -> str:
@@ -99,23 +101,23 @@ def _apply_heading_token(html: str) -> str:
 
 
 def _fail(msg: str) -> "NoReturn":  # type: ignore[name-defined]
-    sys.exit(f"regen_ssn_viewer_shell: {msg}")
+    sys.exit(f"regen_viewer_shell: {msg}")
 
 
 def render_shell(src_dir: Path) -> str:
     """Render the shell from the vendored Python source with frozen tokens + local patches."""
     src_dir = src_dir.resolve()
-    if not (src_dir / "domainator" / "ssn_viewer_html.py").exists():
-        _fail(f"no domainator/ssn_viewer_html.py under --src {src_dir}")
+    if not (src_dir / "domainator" / "viewer_html.py").exists():
+        _fail(f"no domainator/viewer_html.py under --src {src_dir}")
 
     # Make the vendored copy win over any installed `domainator`.
     sys.path.insert(0, str(src_dir))
     for mod in list(sys.modules):
         if mod == "domainator" or mod.startswith("domainator."):
             del sys.modules[mod]
-    mod = importlib.import_module("domainator.ssn_viewer_html")
+    mod = importlib.import_module("domainator.viewer_html")
 
-    html = mod.ssn_viewer_html(title=TITLE_TOKEN, embedded_bundle_json=None)
+    html = mod.viewer_html(title=TITLE_TOKEN, embedded_bundle=None)
 
     # Token sanity: the two interpolation points must have frozen as expected.
     n_title = html.count(TITLE_TOKEN)
@@ -171,7 +173,7 @@ def main() -> None:
         sys.stdout.write(diff[:8000])
         if len(diff) > 8000:
             sys.stdout.write("\n... (diff truncated) ...\n")
-        _fail("asset is STALE — run `python scripts/regen_ssn_viewer_shell.py` to update.")
+        _fail("asset is STALE — run `python scripts/regen_viewer_shell.py` to update.")
 
     ASSET_PATH.write_text(rendered)
     print(f"wrote {ASSET_PATH.relative_to(REPO_ROOT)} ({len(rendered)} bytes).")

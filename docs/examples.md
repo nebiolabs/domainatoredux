@@ -76,8 +76,7 @@ domainatoredux seq_dist -i annotated.gb -o dist.hdf5 --algorithm hmmer --mode sc
 # look before you choose a cutoff
 domainatoredux matrix_report -i dist.hdf5 -o report.txt
 
-domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv \
-  --html_out network.html --embed_data
+domainatoredux build_ssn -i dist.hdf5 --dvb_out network.dvb --html_out network.html
 ```
 
 On a large dataset, swap in DIAMOND and normalize the scores:
@@ -85,7 +84,7 @@ On a large dataset, swap in DIAMOND and normalize the scores:
 ```bash
 domainatoredux seq_dist -i proteins.fasta -o raw.hdf5 --algorithm diamond_us --cpu 0
 domainatoredux transform_matrix -i raw.hdf5 -o efi.hdf5 --mode efi_score
-domainatoredux build_ssn_viewer -i efi.hdf5 -o network.dsnv --html_out network.html --embed_data
+domainatoredux build_ssn -i efi.hdf5 --dvb_out network.dvb --html_out network.html
 ```
 
 `--mode efi_score` applies the EFI-style normalization, which makes a cutoff comparable
@@ -94,6 +93,14 @@ prune it while keeping it connected:
 
 ```bash
 domainatoredux transform_matrix -i efi.hdf5 -o pruned.hdf5 --mst --knn 5
+```
+
+The same matrix makes a tree and a projection, which open in the same viewer. `--msa` puts
+an alignment of the sequences (aligned FASTA, made elsewhere) beside the tree:
+
+```bash
+domainatoredux build_tree -i dist.hdf5 --msa aligned.afa --dvb_out tree.dvb --html_out tree.html
+domainatoredux build_projection -i dist.hdf5 --dvb_out projection.dvb --html_out projection.html
 ```
 
 ## 3. A similarity network of HMM profiles
@@ -106,8 +113,7 @@ automatically:
 domainatoredux seq_dist -i pdonr_hmms.hmm -o hmm_dist.hdf5 --mode score
 #> Warning: input and reference are both HMM files; using --algorithm hmmer_compare.
 
-domainatoredux build_ssn_viewer -i hmm_dist.hdf5 -o profiles.dsnv \
-  --html_out profiles.html --embed_data
+domainatoredux build_ssn -i hmm_dist.hdf5 --dvb_out profiles.dvb --html_out profiles.html
 ```
 
 For the pairwise alignments themselves rather than a matrix, use
@@ -195,8 +201,8 @@ network without a GUI:
 ```bash
 domainatoredux summary_report -i annotated.gb --json_out - | jq .domain_frequency
 domainatoredux enum_report -i annotated.gb --by cds --columns domains --json_out - | head -1
-domainatoredux ssn_navigator -i network.dsnv -o - --query overview
-domainatoredux ssn_navigator -i network.dsnv -o - --query clusters --threshold 120 --min_size 3
+domainatoredux ssn_navigator -i network.dvb -o - --query overview
+domainatoredux ssn_navigator -i network.dvb -o - --query clusters --threshold 120 --min_size 3
 ```
 
 See [Config files and agent output](config-and-agents.md) for the exact contracts and for

@@ -6,8 +6,6 @@
 # Classes: deferred: (not ported, on purpose)  port-only: (ours alone)
 #          upstream: (upstream should change)   todo: (the 1.0 migration; none may remain)
 tool	parameter	aspect	ours	upstream	class	note
-build_projection	-	tool	false	true	deferred:unported-tool	
-build_tree	-	tool	false	true	deferred:unported-tool	
 db_download	-	tool	false	true	deferred:unported-tool	
 domain_search	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 domainate	esm2_3di_device	missing	null	{"default":"cuda:0","flags":["--esm2_3di_device"],"kind":"value","name":"esm2_3di_device","required":false,"type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs

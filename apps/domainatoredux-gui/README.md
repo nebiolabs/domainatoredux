@@ -111,9 +111,9 @@ Linux) and use Windows only to *validate the GUI*:
   `src/main.ts`, which stands down for `defaultPrevented` (so component menus
   compose), for `input`/`textarea`/`contenteditable`, for a live text selection,
   and for `[data-native-menu]`. Those exceptions matter — the browser menu is the
-  only thing offering a working **Paste**. The SSN viewer is a separate document,
-  so its suppressor is appended to the `srcdoc` string in `SsnView.svelte`;
-  **never** edit the generated `ssn_viewer_shell.html`.
+  only thing offering a working **Paste**. The Domainator Viewer is a separate
+  document, so its suppressor is appended to the `srcdoc` string in
+  `DomainatorView.svelte`; **never** edit the generated `viewer_shell.html`.
 - **Opening URLs / revealing files** goes through `tauri-plugin-opener`, which is
   registered but deliberately granted **no `opener:` permission**. Capabilities
   gate the JS→Rust IPC surface, not Rust-side calls, so the webview (including the
@@ -471,10 +471,10 @@ Carry these forward — they are intentional Phase-1/2 cuts, not oversights.
 - **`matrix_report::to_json` is CLI-parity-locked** (must equal the Python JSON),
   so the histogram for the matrix view is computed GUI-side from the public
   `MatrixReport.scores_desc` instead of being added to `to_json`.
-- **SSN viewer** is hosted via `build_ssn_viewer::render_html` in an
-  `<iframe srcdoc>`. Cross-linking (selecting an SSN node → open the source
-  sequence) needs the one additive `postMessage` hook in
-  `assets/ssn_viewer_shell.html` + a provenance map — deferred to Phase 3.
+- **The Domainator Viewer** (networks, trees, projections; `.dvb` and the older
+  `.dsnv`) is hosted via `viewer_html::render_html` in an `<iframe srcdoc>`.
+  Cross-linking (selecting nodes → extract their source sequences) uses the one
+  additive `postMessage` hook in `assets/viewer_shell.html` + the provenance map.
 - **Multi-view registry**: sequence files now expose **Contig View + Enum Report**
   sub-tabs; the Enum Report tab (`run_enum_report`, async / off-thread) offers by
   contig/cds/domain with a **row-virtualized** sortable grid (only viewport rows in

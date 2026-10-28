@@ -123,6 +123,52 @@ pub fn write_xgmml_to<W: Write>(
     edge_mst: Option<&[bool]>,
     node_fills: Option<&[Option<String>]>,
 ) -> io::Result<()> {
+    write_xgmml_with(
+        w,
+        name,
+        table,
+        edges,
+        &XgmmlExtras {
+            edge_mst,
+            node_fills,
+            ..Default::default()
+        },
+    )
+}
+
+/// The parts of an XGMML network beyond its nodes and scored edges.
+pub struct XgmmlExtras<'a> {
+    /// The name of the edges' score attribute.
+    pub edge_score_name: &'a str,
+    /// Whether each edge is in the maximum spanning tree (`--mark_mst`).
+    pub edge_mst: Option<&'a [bool]>,
+    /// An optional hex fill color per node.
+    pub node_fills: Option<&'a [Option<String>]>,
+    /// Each node's `(x, y, z)` position, as upstream's `x_col`/`y_col`/`z_col` values:
+    /// `y` is negated on the way out, as upstream's writer negates it, and a missing `z`
+    /// is written as `0.0`.
+    pub positions: Option<&'a [(f64, f64, Option<f64>)]>,
+}
+
+impl Default for XgmmlExtras<'_> {
+    fn default() -> Self {
+        XgmmlExtras {
+            edge_score_name: "SSN_SCORE",
+            edge_mst: None,
+            node_fills: None,
+            positions: None,
+        }
+    }
+}
+
+/// [`write_xgmml_to`], with node positions and a choice of edge attribute name.
+pub fn write_xgmml_with<W: Write>(
+    w: &mut W,
+    name: &str,
+    table: &NodeTable,
+    edges: &[(usize, usize, f64)],
+    extras: &XgmmlExtras<'_>,
+) -> io::Result<()> {
     w.write_all(b"<?xml version='1.0' encoding='utf-8'?>\n")?;
     writeln!(
         w,
@@ -148,17 +194,25 @@ pub fn write_xgmml_to<W: Write>(
                 xml_escape(&val)
             )?;
         }
-        let fill = node_fills.and_then(|f| f.get(i)).and_then(|x| x.as_ref());
-        match fill {
-            Some(color) => writeln!(
-                w,
-                "    <graphics type=\"ELLIPSE\" x=\"0.0\" y=\"0.0\" w=\"25\" h=\"25\" z=\"0.0\" fill=\"{}\" />",
-                xml_escape(color)
-            )?,
-            None => writeln!(
-                w,
-                "    <graphics type=\"ELLIPSE\" x=\"0.0\" y=\"0.0\" w=\"25\" h=\"25\" z=\"0.0\" />"
-            )?,
+        let (x, y, z) = match extras.positions.and_then(|p| p.get(i)) {
+            Some(&(x, y, z)) => (
+                py_float_str(x),
+                py_float_str(-y),
+                z.map_or_else(|| "0.0".to_string(), py_float_str),
+            ),
+            None => ("0.0".into(), "0.0".into(), "0.0".into()),
+        };
+        write!(
+            w,
+            "    <graphics type=\"ELLIPSE\" x=\"{x}\" y=\"{y}\" w=\"25\" h=\"25\" z=\"{z}\""
+        )?;
+        match extras
+            .node_fills
+            .and_then(|f| f.get(i))
+            .and_then(|x| x.as_ref())
+        {
+            Some(color) => writeln!(w, " fill=\"{}\" />", xml_escape(color))?,
+            None => writeln!(w, " />")?,
         }
         writeln!(w, "  </node>")?;
     }
@@ -170,10 +224,11 @@ pub fn write_xgmml_to<W: Write>(
         )?;
         writeln!(
             w,
-            "    <att type=\"real\" name=\"SSN_SCORE\" value=\"{}\" />",
+            "    <att type=\"real\" name=\"{}\" value=\"{}\" />",
+            xml_escape(extras.edge_score_name),
             py_float_str(score)
         )?;
-        if let Some(mst) = edge_mst {
+        if let Some(mst) = extras.edge_mst {
             writeln!(
                 w,
                 "    <att type=\"boolean\" name=\"MST\" value=\"{}\" />",

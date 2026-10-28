@@ -113,7 +113,7 @@ def _load(path: str):
         return json.load(sys.stdin)
     with open(path, "rb") as handle:
         raw = handle.read()
-    if raw[:2] == b"\x1f\x8b":  # a .dsnv bundle handed over directly
+    if raw[:2] == b"\x1f\x8b":  # a .dvb or .dsnv bundle handed over directly
         import gzip
         raw = gzip.decompress(raw)
     return json.loads(raw.decode("utf-8"))

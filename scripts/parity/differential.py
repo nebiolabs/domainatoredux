@@ -90,7 +90,7 @@ def _compare_matrix(a, b):
 
 
 def _compare_json(a, b):
-    # `json_parity.py` gunzips `.dsnv` itself and ignores key *order*, which is
+    # `json_parity.py` gunzips a bundle itself and ignores key *order*, which is
     # required: serde_json is built with `preserve_order`, Python sorts keys.
     script = REPO / "scripts" / "json_parity.py"
     proc = subprocess.run([sys.executable, str(script), str(a), str(b), "--rtol", "1e-3"],
@@ -147,28 +147,129 @@ def _compare_html(a, b):
     return "tolerated", ""
 
 
+# Projection coordinates are scaled to span 0..--scale (1000 by default), and upstream
+# projects a sparse matrix with scikit-learn's randomized TruncatedSVD, unseeded, so its
+# own runs disagree in about the fifth decimal. This port's SVD is exact.
+COORDINATE_ATOL = 1e-3
+
+
 def _compare_xgmml(a, b):
+    import math
     import xml.etree.ElementTree as ET
 
     def summarize(path):
         root = ET.parse(path).getroot()
         tag = lambda e: e.tag.rsplit("}", 1)[-1]
-        nodes, edges = set(), set()
+        nodes, edges, graphics = set(), set(), {}
         for el in root:
             atts = frozenset((c.get("name"), c.get("value"))
                              for c in el if tag(c) == "att")
             if tag(el) == "node":
                 nodes.add((el.get("label"), atts))
+                g = next((c for c in el if tag(c) == "graphics"), None)
+                if g is not None:
+                    graphics[el.get("label")] = dict(g.attrib)
             elif tag(el) == "edge":
                 edges.add((el.get("source"), el.get("target"), atts))
-        return nodes, edges
+        return nodes, edges, graphics
 
-    (na, ea), (nb, eb) = summarize(a), summarize(b)
+    (na, ea, ga), (nb, eb, gb) = summarize(a), summarize(b)
     if na != nb:
         return "differs", f"{len(na ^ nb)} node(s) differ"
     if ea != eb:
         return "differs", f"{len(ea ^ eb)} edge(s) differ"
+    # Node positions (build_tree's layout, build_projection's coordinates) and fills.
+    for label, attrs_a in ga.items():
+        attrs_b = gb.get(label, {})
+        for key in set(attrs_a) | set(attrs_b):
+            va, vb = attrs_a.get(key), attrs_b.get(key)
+            if key in ("x", "y", "z") and va is not None and vb is not None:
+                if math.isclose(float(va), float(vb), rel_tol=1e-6, abs_tol=COORDINATE_ATOL):
+                    continue
+            if va != vb:
+                return "differs", f"node {label} graphics {key}: {va} != {vb}"
     return "tolerated", ""
+
+
+def _compare_coords_tsv(a, b):
+    """build_projection --coords_out: the same points and axes, coordinates within
+    COORDINATE_ATOL."""
+    import math
+
+    def rows(path):
+        lines = pathlib.Path(path).read_text().splitlines()
+        return lines[0], [line.split("\t") for line in lines[1:]]
+
+    (ha, ra), (hb, rb) = rows(a), rows(b)
+    if ha != hb or len(ra) != len(rb):
+        return "differs", "different axes or points"
+    for row_a, row_b in zip(ra, rb):
+        if row_a[0] != row_b[0] or len(row_a) != len(row_b):
+            return "differs", f"point {row_a[0]} != {row_b[0]}"
+        for va, vb in zip(row_a[1:], row_b[1:]):
+            if not math.isclose(float(va), float(vb), rel_tol=1e-6, abs_tol=COORDINATE_ATOL):
+                return "differs", f"{row_a[0]}: {va} != {vb}"
+    return "tolerated", ""
+
+
+def _bundle_problems(bundle_a, bundle_b):
+    """A Domainator Viewer bundle (.dvb), parsed: compared like any JSON output, but
+    with projection coordinates held to COORDINATE_ATOL."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("json_parity", REPO / "scripts" / "json_parity.py")
+    json_parity = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(json_parity)
+    projection = "projection" in (bundle_a.get("views") or {})
+    return json_parity.compare(bundle_a, bundle_b, 1e-3, COORDINATE_ATOL if projection else 1e-12,
+                               "$bundle")
+
+
+def _read_bundle(path):
+    import gzip
+    import json
+
+    raw = pathlib.Path(path).read_bytes()
+    return json.loads(gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw)
+
+
+def _compare_bundle(a, b):
+    problems = _bundle_problems(_read_bundle(a), _read_bundle(b))
+    return ("differs", problems[0][:110]) if problems else ("tolerated", "")
+
+
+_VIEWER_BUNDLE = re.compile(r'"embeddedBundleBase64": (null|"[^"]*")')
+# The GUI host hook regen_viewer_shell.py adds to our copy of the shell: from its
+# comment to the end of its try block.
+_GUI_HOST_HOOK = re.compile(
+    r"        // Domainator GUI host hook.*?\} catch \(e\) \{ /\* ignore \*/ \}\n", re.S)
+
+
+def _compare_viewer_html(a, b):
+    """A Domainator Viewer page (upstream viewer_html.py). Both sides fill the same
+    generated shell (crates/domainator-core/assets/viewer_shell.html, which adds the GUI
+    host hook), so the page outside its embedded bundle must match byte for byte once
+    the hook is removed; the bundles are compared parsed."""
+    import base64
+    import gzip
+    import json
+
+    def split(path):
+        text = _GUI_HOST_HOOK.sub("", pathlib.Path(path).read_text(encoding="utf-8"), count=1)
+        match = _VIEWER_BUNDLE.search(text)
+        embedded = json.loads(match.group(1))
+        bundle = None if embedded is None else json.loads(gzip.decompress(base64.b64decode(embedded)))
+        return _VIEWER_BUNDLE.sub('"embeddedBundleBase64": @@BUNDLE@@', text, count=1), bundle
+
+    (shell_a, bundle_a), (shell_b, bundle_b) = split(a), split(b)
+    if shell_a != shell_b:
+        la, lb = shell_a.splitlines(), shell_b.splitlines()
+        first = next((i for i, (x, y) in enumerate(zip(la, lb)) if x != y), min(len(la), len(lb)))
+        return "differs", f"viewer page outside its bundle differs at line {first + 1}"
+    if (bundle_a is None) != (bundle_b is None):
+        return "differs", "one page embeds a bundle and the other does not"
+    problems = [] if bundle_a is None else _bundle_problems(bundle_a, bundle_b)
+    return ("differs", problems[0][:110]) if problems else ("tolerated", "")
 
 
 def _normalize_hmm(text):
@@ -202,8 +303,12 @@ def compare(a, b, helpers, SeqIO):
             return _compare_genbank(a, b, helpers, SeqIO)
         if ext in (".hdf5", ".h5"):
             return _compare_matrix(a, b)
-        if ext in (".json", ".dsnv", ".ssnv", ".ndjson"):
+        if ext in (".dvb", ".dsnv"):
+            return _compare_bundle(a, b)
+        if ext in (".json", ".ssnv", ".ndjson"):
             return _compare_json(a, b)
+        if pathlib.Path(a).read_text(errors="replace").startswith("\tprojection_X\t"):
+            return _compare_coords_tsv(a, b)
         if ext == ".xgmml":
             return _compare_xgmml(a, b)
         if ext == ".hmm":
@@ -211,6 +316,8 @@ def compare(a, b, helpers, SeqIO):
         # A test may name its page with no extension (an @OUT@ the harvester could not
         # resolve), so a page is also recognized by its first bytes.
         if ext in (".html", ".htm") or pathlib.Path(a).read_bytes()[:15].lower() == b"<!doctype html>":
+            if 'id="viewer-config"' in pathlib.Path(a).read_text(errors="replace"):
+                return _compare_viewer_html(a, b)
             return _compare_html(a, b)
         return _compare_text(a, b)
     except Exception as exc:

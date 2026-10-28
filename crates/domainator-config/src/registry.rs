@@ -295,22 +295,18 @@ pub const TOOLS: &[ToolInfo] = &[
     // network
     ToolInfo {
         stdin: false,
-        required_outputs: Some(&["xgmml_out"]),
-        no_stdout: &["xgmml_out", "color_table_out", "cluster_tsv_out"],
+        required_outputs: Some(&["xgmml_out", "html_out", "dvb_out"]),
+        no_stdout: &[
+            "xgmml_out",
+            "html_out",
+            "dvb_out",
+            "color_table_out",
+            "cluster_tsv_out",
+        ],
         ..tool(
             "build_ssn",
             "network",
-            "Build a sequence similarity network as a Cytoscape file.",
-        )
-    },
-    ToolInfo {
-        stdin: false,
-        required_outputs: Some(&["dsnv_out", "html_out"]),
-        no_stdout: &["dsnv_out", "html_out"],
-        ..tool(
-            "build_ssn_viewer",
-            "network",
-            "Build a Domainator Similarity Network Viewer bundle and HTML page.",
+            "Build a sequence similarity network for Cytoscape or the Domainator Viewer.",
         )
     },
     ToolInfo {
@@ -320,6 +316,42 @@ pub const TOOLS: &[ToolInfo] = &[
             "ssn_navigator",
             "network",
             "Query a similarity network bundle: clusters, members, and metadata.",
+        )
+    },
+    ToolInfo {
+        stdin: false,
+        required_outputs: Some(&["newick_out", "xgmml_out", "html_out", "dvb_out"]),
+        no_stdout: &["xgmml_out", "html_out", "dvb_out", "color_table_out"],
+        ..tool(
+            "build_tree",
+            "network",
+            "Build a UPGMA tree from a distance or similarity matrix.",
+        )
+    },
+    ToolInfo {
+        stdin: false,
+        required_outputs: Some(&["xgmml_out", "html_out", "dvb_out", "coords_out"]),
+        no_stdout: &[
+            "xgmml_out",
+            "html_out",
+            "dvb_out",
+            "coords_out",
+            "color_table_out",
+        ],
+        ..tool(
+            "build_projection",
+            "network",
+            "Project a matrix into 2D or 3D with UMAP, t-SNE, or PCA.",
+        )
+    },
+    ToolInfo {
+        stdin: false,
+        required_outputs: Some(&["html_out"]),
+        no_stdout: &["html_out"],
+        ..tool(
+            "viewer",
+            "network",
+            "Write the Domainator Viewer, empty or opening a network, tree, or projection bundle.",
         )
     },
     // report

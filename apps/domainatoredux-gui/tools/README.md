@@ -21,7 +21,7 @@ app lists the tools the GUI offers. Editing a file takes effect on the next buil
   `domainatoredux <id> --config <the dialog's params>` in a worker process.
 - **File fields drive provenance and Cancel.** An input's role in the job's provenance
   record comes from its `file_type` (a field named `reference`/`references` is always
-  `reference`), and the SSN viewer's node → sequence tracing follows those roles. A
+  `reference`), and the viewer's node → sequence tracing follows those roles. A
   canceled job deletes the files named by its `output_file` fields that it created or
   changed, so a field that names an output file should have that role.
 - **New CLI option:** a new manifest parameter makes
@@ -133,7 +133,9 @@ or `.bgzf`:
 | `text` | `.txt` `.text` `.list` | none |
 | `cm` | `.cm` | none |
 | `svg` | `.svg` | none |
-| `ssn_viewer` | `.dsnv` `.ssnv` `.ssnview` | none |
+| `alignment` | `.afa` `.afasta` | none |
+| `newick` | `.nwk` `.newick` | none |
+| `viewer_bundle` | `.dvb` `.dsnv` `.ssnv` `.ssnview` | none |
 | `taxonomy` | none | NCBI taxonomy (`taxdump*.tar.gz`, e.g. the managed NCBI Taxonomy download) |
 
 `file_type` only filters what the dropdown offers. The tool receives the chosen path and

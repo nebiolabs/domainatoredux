@@ -95,7 +95,8 @@ pub fn migrate_legacy_layout(root: &Path) {
 }
 
 /// Logical file type shown in the file table / used to pick viewers. Mirrors the
-/// Python `EXTENSION_TO_TYPE` map plus the GUI-only `ssn_viewer` bundle type.
+/// Python `EXTENSION_TO_TYPE` map plus the GUI-only types: `viewer_bundle` (Domainator
+/// Viewer bundles), `alignment` (aligned FASTA) and `newick` (trees).
 /// `SystemTime` → epoch milliseconds (None if before the epoch / unavailable).
 fn sys_time_ms(t: Option<std::time::SystemTime>) -> Option<u64> {
     t?.duration_since(std::time::UNIX_EPOCH)
@@ -112,7 +113,7 @@ pub fn count_records(path: &Path) -> Option<u64> {
     use std::io::{BufRead, BufReader};
     let prefix = match classify_file(path)? {
         "genbank" => "LOCUS",
-        "fasta" => ">",
+        "fasta" | "alignment" => ">",
         "hmm" => "HMMER3",
         _ => return None,
     };
@@ -139,8 +140,9 @@ pub fn count_records(path: &Path) -> Option<u64> {
 /// Human-readable list of the extensions [`classify_file`] recognizes, for error
 /// messages when a user names a new/renamed file with an unrecognized type.
 pub fn accepted_types_hint() -> &'static str {
-    "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .hmm, .hdf5/.h5, \
-     .cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .svg, .dsnv (optionally with a .gz suffix)."
+    "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .afa (aligned FASTA), \
+     .hmm, .hdf5/.h5, .cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .svg, .nwk/.newick, \
+     .dvb/.dsnv (optionally with a .gz suffix)."
 }
 
 pub fn classify_file(path: &Path) -> Option<&'static str> {
@@ -161,8 +163,11 @@ pub fn classify_file(path: &Path) -> Option<&'static str> {
         "tsv" | "csv" | "tab" => "table",
         "txt" | "text" | "list" => "text",
         "svg" => "svg",
-        // `.ssnv` is the pre-0.11 spelling; still read, never written.
-        "dsnv" | "ssnv" | "ssnview" => "ssn_viewer",
+        "afa" | "afasta" => "alignment",
+        "nwk" | "newick" => "newick",
+        // `.dsnv` is the older network bundle, and `.ssnv` its pre-0.11 spelling; both
+        // are still read, never written.
+        "dvb" | "dsnv" | "ssnv" | "ssnview" => "viewer_bundle",
         _ => return None,
     })
 }
@@ -505,9 +510,12 @@ mod tests {
         assert_eq!(classify_file(Path::new("a.gbff.gz")), Some("genbank"));
         assert_eq!(classify_file(Path::new("a.faa")), Some("fasta"));
         assert_eq!(classify_file(Path::new("a.hmm")), Some("hmm"));
-        assert_eq!(classify_file(Path::new("net.dsnv")), Some("ssn_viewer"));
-        // The pre-0.11 spelling still opens.
-        assert_eq!(classify_file(Path::new("net.ssnv")), Some("ssn_viewer"));
+        assert_eq!(classify_file(Path::new("net.dvb")), Some("viewer_bundle"));
+        // The older network bundle, and its pre-0.11 spelling, still open.
+        assert_eq!(classify_file(Path::new("net.dsnv")), Some("viewer_bundle"));
+        assert_eq!(classify_file(Path::new("net.ssnv")), Some("viewer_bundle"));
+        assert_eq!(classify_file(Path::new("msa.afa")), Some("alignment"));
+        assert_eq!(classify_file(Path::new("tree.nwk")), Some("newick"));
         assert_eq!(classify_file(Path::new("m.hdf5")), Some("hdf5"));
         assert_eq!(classify_file(Path::new("readme.txt")), Some("text"));
         assert_eq!(classify_file(Path::new("logo.svg")), Some("svg"));

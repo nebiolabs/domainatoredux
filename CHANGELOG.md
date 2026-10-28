@@ -6,9 +6,31 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `d3ccc35`.
+Parity: Python domainator 1.0.0rc1 @ `961d817`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
+- **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
+  upstream's, for networks, trees and projections, with the same metadata table, editing,
+  colors, presets, charts and saved sessions in all three. Its data is a `.dvb` bundle.
+  - **`build_ssn --html_out` and `--dvb_out`** write the network for it (with
+    `--merge_impact_metric`, `--label_by`, `--categorical` and `--name`), and
+    `--xgmml_out` is no longer required. **`build_ssn_viewer` is gone**, as it is upstream.
+  - **`build_tree`**, a new tool: a UPGMA tree from a distance or similarity matrix, or a
+    Newick tree built elsewhere (`--newick`), written as Newick, as Cytoscape XGMML laid
+    out as a rectangular tree, and for the viewer, with an aligned FASTA beside the tree
+    (`--msa`).
+  - **`build_projection`**, a new tool: a 2D or 3D PCA projection of a matrix's rows, as
+    coordinates, XGMML and for the viewer. Upstream's `tsne` and `umap` are not supported
+    yet; `--algorithm coords` reads a projection made elsewhere.
+  - **`viewer`**, a new tool: the viewer page, opening a bundle or empty.
+  - `.dsnv` network bundles are still read, by the viewer, `ssn_navigator` and the
+    desktop app, but no longer written.
+- **The desktop app** opens `.dvb` and `.dsnv` bundles in one Viewer tab, which can save the
+  page as a standalone HTML file, and has a new **Alignment** tab for aligned FASTA
+  (`.afa`, or any FASTA file that is an alignment): a residue grid with conservation and
+  consensus tracks, row filtering, and export of the selected rows with or without gaps.
+  The Tools menu gains Build tree (taking an alignment from the workspace) and Build
+  projection, and Build SSN writes a viewer bundle.
 - **`enum_report` and `hmmer_report --html_out`** (and `--html_max_height`): upstream's
   new interactive table page, which works offline. It is generated from upstream's own
   page (`scripts/regen_report_shells.py`), so the two write the same file.

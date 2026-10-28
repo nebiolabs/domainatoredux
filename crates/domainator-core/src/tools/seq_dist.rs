@@ -872,7 +872,7 @@ mod tests {
         assert!(err.contains("starting with '-'"), "{err}");
     }
     use crate::matrix::{DataMatrix, Storage};
-    use crate::tools::build_ssn_viewer::{build_ssn_viewer_bundle, BuildSsnViewerOptions};
+    use crate::tools::build_ssn::{build_ssn, BuildSsnOptions, ViewerOptions};
 
     #[test]
     fn genbank_matrix_labels_use_locus_not_version() {
@@ -902,12 +902,16 @@ ORIGIN\n\
             data_type: "score".to_string(),
             storage: Storage::Dense(vec![0.0]),
         };
-        let opts = BuildSsnViewerOptions {
+        let opts = BuildSsnOptions {
             metadata_files: vec![metadata_path.to_str().unwrap().to_string()],
-            ..BuildSsnViewerOptions::default()
+            viewer: Some(ViewerOptions::default()),
+            ..BuildSsnOptions::default()
         };
-        let bundle = build_ssn_viewer_bundle(&matrix, &opts);
+        let result = build_ssn(&matrix, &opts);
         std::fs::remove_file(&metadata_path).unwrap();
-        assert_eq!(bundle.unwrap()["metadata"]["rows"][0][0], "DUF262");
+        assert_eq!(
+            result.unwrap().bundle.unwrap()["metadata"]["rows"][0][0],
+            "DUF262"
+        );
     }
 }

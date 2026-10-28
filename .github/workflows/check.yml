@@ -233,7 +233,7 @@ jobs:
       # The viewer shell is a generated artifact; --check fails if it drifted from the
       # Python source it is rendered from.
       - name: Viewer shell drift
-        run: python scripts/regen_ssn_viewer_shell.py --check
+        run: python scripts/regen_viewer_shell.py --check
 
       # Same for the --html_out report pages (crates/domainator-core/assets/report_shells/).
       - name: Report shell drift

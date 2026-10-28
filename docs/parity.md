@@ -112,12 +112,20 @@ because `compare_seqfiles` reads both files back and gets equal values.
 Per file type the comparator is: GenBank → upstream's `compare_seqfiles`, **plus**
 a feature-coordinate/type and LOCUS-name check the upstream comparator does not
 do (that blind spot is where the origin-crossing slice bugs lived); HDF5 →
-`DataMatrix` + `np.allclose`; JSON/`.dsnv` → `scripts/json_parity.py` (parsed, not
+`DataMatrix` + `np.allclose`; JSON/`.dvb`/`.dsnv` → `scripts/json_parity.py` (parsed, not
 bytes — `serde_json` is built with `preserve_order` and Python sorts keys); XGMML
-→ parse-equal node/edge/att sets; `.hmm` → text with `DATE`/`COM` normalized out; an
-`--html_out` report page → exact text outside its `report-data` envelope and
-`report-rows` block (both sides fill the same generated shell), and `json_parity` inside
-them, gzip+base64 data decoded; everything else → exact text.
+→ parse-equal node/edge/att sets, plus each node's `<graphics>` fill and position;
+`.hmm` → text with `DATE`/`COM` normalized out; an `--html_out` report page → exact
+text outside its `report-data` envelope and `report-rows` block (both sides fill the same
+generated shell), and `json_parity` inside them, gzip+base64 data decoded; a Domainator
+Viewer page → exact text outside its embedded bundle once our GUI host hook is removed,
+and the bundle parsed; everything else → exact text.
+
+Projection coordinates (`build_projection`'s `--coords_out`, its XGMML positions and its
+bundle) are held to an absolute 1e-3 on their 0..`--scale` axes rather than to bytes:
+upstream projects a mostly-empty matrix with scikit-learn's randomized `TruncatedSVD`,
+unseeded, so its own runs disagree around the fifth decimal, where this port's SVD is
+exact.
 
 Python runs with `TZ=UTC`. Both writers stamp a record that has no `date` with
 today's date, ours in UTC and Python's in local time, so without it every such
@@ -243,7 +251,10 @@ one.
 
 If a newly interesting test is being skipped, widen `Resolver.render` in
 `harvest_invocations.py` — it currently handles constants, local bindings,
-`str()`, pathlib `/`, `+`, and f-strings over any of those. Each addition is a few
+`str()`, `os.path.join()`, pathlib `/`, `+`, and f-strings over any of those, with
+`shared_datadir` as the fixtures and `output_dir`/`tmp_path` as the scratch directory.
+A tool's invocations are harvested from its own `test_<tool>.py` and, in the qualified
+`<tool>.main([...])` form, from every other test module (keyed `<module>.<test>#n`). Each addition is a few
 lines. Multi-step tests (build a file, then consume it) would need the harness to
 replay a whole test function as a sequence, which it deliberately does not do.
 

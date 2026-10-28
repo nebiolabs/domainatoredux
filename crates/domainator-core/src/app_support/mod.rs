@@ -1,6 +1,7 @@
 //! Support code for small GUI apps that reuse Domainator core data structures.
 
 pub mod about;
+pub mod alignment;
 pub mod contig_edit;
 pub mod contig_view;
 pub mod export;

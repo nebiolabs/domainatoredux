@@ -7151,9 +7151,78 @@
      ],
      "kind": "path",
      "name": "xgmml_out",
-     "required": true,
+     "required": false,
      "role": "output",
      "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--html_out"
+     ],
+     "kind": "path",
+     "name": "html_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--dvb_out"
+     ],
+     "kind": "path",
+     "name": "dvb_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "product",
+      "min_child"
+     ],
+     "default": "min_child",
+     "flags": [
+      "--merge_impact_metric"
+     ],
+     "kind": "value",
+     "name": "merge_impact_metric",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--label_by"
+     ],
+     "kind": "value",
+     "name": "label_by",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--categorical"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "categorical",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--name"
+     ],
+     "kind": "value",
+     "name": "name",
+     "required": false,
      "type": "string"
     },
     {
@@ -7221,203 +7290,9 @@
     }
    ],
    "required_outputs": [
-    "xgmml_out"
-   ]
-  },
-  {
-   "category": "network",
-   "mutually_exclusive": [
-    [
-     "verbose",
-     "quiet"
-    ]
-   ],
-   "name": "build_ssn_viewer",
-   "parameters": [
-    {
-     "default": false,
-     "flags": [
-      "-v",
-      "--verbose"
-     ],
-     "kind": "flag",
-     "name": "verbose",
-     "sets": true,
-     "type": "boolean"
-    },
-    {
-     "default": false,
-     "flags": [
-      "-q",
-      "--quiet"
-     ],
-     "kind": "flag",
-     "name": "quiet",
-     "sets": true,
-     "type": "boolean"
-    },
-    {
-     "default": null,
-     "flags": [
-      "-i",
-      "--input"
-     ],
-     "kind": "path",
-     "name": "input",
-     "required": false,
-     "role": "input",
-     "stdin": false,
-     "type": "string"
-    },
-    {
-     "default": null,
-     "flags": [
-      "-o",
-      "--dsnv_out"
-     ],
-     "kind": "path",
-     "name": "dsnv_out",
-     "required": false,
-     "role": "output",
-     "stdout": false,
-     "type": "string"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--html_out"
-     ],
-     "kind": "path",
-     "name": "html_out",
-     "required": false,
-     "role": "output",
-     "stdout": false,
-     "type": "string"
-    },
-    {
-     "default": false,
-     "flags": [
-      "--embed_data"
-     ],
-     "kind": "flag",
-     "name": "embed_data",
-     "sets": true,
-     "type": "boolean"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--name"
-     ],
-     "kind": "value",
-     "name": "name",
-     "required": false,
-     "type": "string"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--metadata"
-     ],
-     "kind": "path",
-     "multiple": true,
-     "name": "metadata",
-     "required": false,
-     "role": "input",
-     "type": "string"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--subset"
-     ],
-     "kind": "value",
-     "multiple": true,
-     "name": "subset",
-     "required": false,
-     "type": "string"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--subset_file"
-     ],
-     "kind": "path",
-     "name": "subset_file",
-     "required": false,
-     "role": "input",
-     "type": "string"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--color_by"
-     ],
-     "kind": "value",
-     "name": "color_by",
-     "required": false,
-     "type": "string"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--color_table"
-     ],
-     "kind": "path",
-     "name": "color_table",
-     "required": false,
-     "role": "input",
-     "type": "string"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--label_by"
-     ],
-     "kind": "value",
-     "name": "label_by",
-     "required": false,
-     "type": "string"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--categorical"
-     ],
-     "kind": "value",
-     "multiple": true,
-     "name": "categorical",
-     "required": false,
-     "type": "string"
-    },
-    {
-     "choices": [
-      "product",
-      "min_child"
-     ],
-     "default": "min_child",
-     "flags": [
-      "--merge_impact_metric"
-     ],
-     "kind": "value",
-     "name": "merge_impact_metric",
-     "required": false,
-     "type": "string"
-    },
-    {
-     "default": 25.0,
-     "flags": [
-      "--max_output_gb"
-     ],
-     "kind": "value",
-     "name": "max_output_gb",
-     "required": false,
-     "type": "number"
-    }
-   ],
-   "required_outputs": [
-    "dsnv_out",
-    "html_out"
+    "xgmml_out",
+    "html_out",
+    "dvb_out"
    ]
   },
   {
@@ -7721,9 +7596,20 @@
      ],
      "kind": "path",
      "name": "input",
-     "required": true,
+     "required": false,
      "role": "input",
      "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--newick"
+     ],
+     "kind": "path",
+     "name": "newick",
+     "required": false,
+     "role": "input",
      "type": "string"
     },
     {
@@ -7769,6 +7655,123 @@
     {
      "default": null,
      "flags": [
+      "--subset"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "subset",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--subset_file"
+     ],
+     "kind": "path",
+     "name": "subset_file",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--msa"
+     ],
+     "kind": "path",
+     "name": "msa",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_by"
+     ],
+     "kind": "value",
+     "name": "color_by",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_table"
+     ],
+     "kind": "path",
+     "name": "color_table",
+     "required": false,
+     "role": "input",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--color_table_out"
+     ],
+     "kind": "path",
+     "name": "color_table_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": 0,
+     "flags": [
+      "--palette_offset"
+     ],
+     "kind": "value",
+     "name": "palette_offset",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--max_color_groups"
+     ],
+     "kind": "value",
+     "name": "max_color_groups",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--label_by"
+     ],
+     "kind": "value",
+     "name": "label_by",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--categorical"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "categorical",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--name"
+     ],
+     "kind": "value",
+     "name": "name",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
       "-o",
       "--newick_out"
      ],
@@ -7790,11 +7793,47 @@
      "role": "output",
      "stdout": false,
      "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--html_out"
+     ],
+     "kind": "path",
+     "name": "html_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--dvb_out"
+     ],
+     "kind": "path",
+     "name": "dvb_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": 25.0,
+     "flags": [
+      "--max_output_gb"
+     ],
+     "kind": "value",
+     "name": "max_output_gb",
+     "required": false,
+     "type": "number"
     }
    ],
    "required_outputs": [
     "newick_out",
-    "xgmml_out"
+    "xgmml_out",
+    "html_out",
+    "dvb_out"
    ]
   },
   {
@@ -7916,6 +7955,37 @@
     {
      "default": null,
      "flags": [
+      "--label_by"
+     ],
+     "kind": "value",
+     "name": "label_by",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--categorical"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "categorical",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--name"
+     ],
+     "kind": "value",
+     "name": "name",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
       "-o",
       "--xgmml_out"
      ],
@@ -7933,6 +8003,18 @@
      ],
      "kind": "path",
      "name": "html_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--dvb_out"
+     ],
+     "kind": "path",
+     "name": "dvb_out",
      "required": false,
      "role": "output",
      "stdout": false,
@@ -8004,7 +8086,81 @@
    "required_outputs": [
     "xgmml_out",
     "html_out",
+    "dvb_out",
     "coords_out"
+   ]
+  },
+  {
+   "category": "network",
+   "mutually_exclusive": [
+    [
+     "verbose",
+     "quiet"
+    ]
+   ],
+   "name": "viewer",
+   "parameters": [
+    {
+     "default": false,
+     "flags": [
+      "-v",
+      "--verbose"
+     ],
+     "kind": "flag",
+     "name": "verbose",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": false,
+     "flags": [
+      "-q",
+      "--quiet"
+     ],
+     "kind": "flag",
+     "name": "quiet",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-i",
+      "--input"
+     ],
+     "kind": "path",
+     "name": "input",
+     "required": false,
+     "role": "input",
+     "stdin": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "-o",
+      "--html_out"
+     ],
+     "kind": "path",
+     "name": "html_out",
+     "required": false,
+     "role": "output",
+     "stdout": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--name"
+     ],
+     "kind": "value",
+     "name": "name",
+     "required": false,
+     "type": "string"
+    }
+   ],
+   "required_outputs": [
+    "html_out"
    ]
   },
   {

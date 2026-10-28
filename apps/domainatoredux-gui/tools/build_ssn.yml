@@ -1,28 +1,29 @@
 # GUI dialog for `domainatoredux build_ssn`. Format: see README.md in this directory.
 id: build_ssn
-label: "Build SSN (XGMML)"
-description: "Build a Cytoscape XGMML network from a similarity matrix."
+label: "Build SSN"
+description: "Build a sequence similarity network from a similarity matrix: a Domainator Viewer bundle (.dvb) to explore here, and optionally a Cytoscape XGMML file."
 fields:
   - name: input
     label: "Input matrix"
     file_type: hdf5
     sources: workspace_first
     select: first
+  - name: dvb_out
+    label: "Viewer bundle (.dvb)"
+    output_name: "{stem}.dvb"
   - name: xgmml_out
-    label: "Output (XGMML)"
-    output_name: "{stem}.xgmml"
+    label: "Cytoscape (XGMML)"
   - name: metadata
     label: "Metadata (TSV)"
     file_type: table
     sources: workspace_first
     select: none
+  - name: threshold
+    label: "Threshold"
   - name: cluster
     label: "Cluster"
   - name: cluster_tsv_out
     label: "Cluster TSV"
-    output_name: "{stem}.clusters.tsv"
-  - name: threshold
-    label: "Threshold"
   - name: mst
     label: "MST"
   - name: knn
@@ -31,6 +32,8 @@ fields:
     label: "Mark MST edges"
   - name: color_by
     label: "Color by"
+  - name: label_by
+    label: "Label by"
   - name: color_table
     label: "Color table (in)"
     file_type: table
@@ -38,6 +41,17 @@ fields:
     select: none
   - name: color_table_out
     label: "Color table (out)"
+  - name: merge_impact_metric
+    label: "Merge metric"
+  - name: html_out
+    show: false
+    label: "HTML page"
+  - name: name
+    show: false
+    label: "Name"
+  - name: categorical
+    show: false
+    label: "Categorical"
   - name: subset
     show: false
     label: "Subset"

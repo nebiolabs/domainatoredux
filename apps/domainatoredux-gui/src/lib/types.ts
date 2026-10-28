@@ -23,7 +23,9 @@ export type FileType =
   | "hmm"
   | "hdf5"
   | "cm"
-  | "ssn_viewer"
+  | "viewer_bundle"
+  | "alignment"
+  | "newick"
   | "table"
   | "text"
   | "svg";

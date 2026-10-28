@@ -63,9 +63,12 @@ Domainator tools that take a table.
 **Summary reports** describe a whole dataset rather than its records —
 `summary_report`, `matrix_report`.
 
-**Network tools** turn a matrix into something you can look at: `build_ssn` writes
-Cytoscape XGMML, `build_ssn_viewer` writes a self-contained interactive viewer, and
-`ssn_navigator` queries a built network from a script.
+**Network tools** turn a matrix into something you can look at: `build_ssn` (a network),
+`build_tree` (a UPGMA tree, or a Newick tree built elsewhere) and `build_projection` (a
+PCA projection) write Cytoscape XGMML and the Domainator Viewer — one self-contained
+interactive page for all three, with its data in a `.dvb` bundle. `viewer` writes that
+page for a bundle you already have, and `ssn_navigator` queries a built network from a
+script.
 
 The [command-line reference](cli-reference.md) is organized along these lines.
 

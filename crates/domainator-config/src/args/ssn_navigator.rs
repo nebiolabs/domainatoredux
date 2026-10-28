@@ -1,14 +1,14 @@
 use super::CommonArgs;
 
-/// Answers navigation queries about a Domainator Similarity Network Viewer bundle,
-/// as JSON (upstream `ssn_navigator.py`).
+/// Answers navigation queries about the network in a Domainator Viewer bundle, as JSON
+/// (upstream `ssn_navigator.py`).
 #[derive(clap::Args, Clone, Debug, Default)]
 #[command(rename_all = "snake_case")]
 pub struct SsnNavigatorArgs {
     #[command(flatten)]
     pub common: CommonArgs,
-    /// A Domainator Similarity Network Viewer bundle (.dsnv) produced by
-    /// build_ssn_viewer.
+    /// A Domainator Viewer bundle (.dvb) with a network, from build_ssn --dvb_out or the
+    /// viewer's Save session. Older network bundles (.dsnv) work too.
     #[arg(short, long, required = true)]
     pub input: String,
     /// Write the JSON answer to this file.

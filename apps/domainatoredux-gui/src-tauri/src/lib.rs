@@ -4,6 +4,7 @@
 
 mod app_menu;
 mod cmd_about;
+mod cmd_alignment;
 mod cmd_db;
 mod cmd_edit;
 mod cmd_external;
@@ -92,7 +93,10 @@ pub fn run() {
             cmd_files::run_summary_stats,
             cmd_files::resolve_records,
             cmd_files::trace_network_sources,
-            cmd_files::render_ssn_html,
+            cmd_files::render_viewer_html,
+            cmd_alignment::alignment_info,
+            cmd_alignment::alignment_window,
+            cmd_alignment::export_alignment_rows,
             cmd_files::extract_records,
             cmd_tools::list_tools,
             cmd_tools::run_tool,

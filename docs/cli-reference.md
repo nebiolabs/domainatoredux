@@ -68,8 +68,8 @@ read-only or tiny `TMPDIR` will cause failures on large piped inputs.
 
 **`--max_output_gb`** (default 25, `0` disables) aborts a run whose projected matrix or
 network output would exceed that size, before it writes. On `domainate`, `domain_search`, `seq_dist`,
-`compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer`, `hmmer_compare`
-and `hmmer_search`.
+`compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`, `hmmer_compare` and
+`hmmer_search`.
 
 **Taxonomy flags** (`--include_taxids`, `--exclude_taxids`, `--taxonomy_expr`) need an
 NCBI taxdump, given by `--ncbi_taxonomy_path`; it defaults to
@@ -94,7 +94,7 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 | [Annotation and search](#annotation-and-search) | `domainate`, `domain_search`, `gene_call`, `filter_domains` |
 | [Selection and extraction](#selection-and-extraction) | `select_by_cds`, `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `rotate_contigs`, `sort_contigs`, `clean_sequences`, `deduplicate_genbank` |
 | [Color and plots](#color-and-plots) | `color_genbank`, `color_table_to_legend`, `plot_contigs` |
-| [Matrices and networks](#matrices-and-networks) | `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_ssn_viewer` |
+| [Matrices and networks](#matrices-and-networks) | `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`, `build_projection`, `viewer` |
 | [Reports](#reports) | `enum_report`, `summary_report`, `matrix_report`, `ssn_navigator` |
 | [HMM profiles](#hmm-profiles) | `hmmer_build`, `hmmer_select`, `hmmer_search`, `hmmer_compare`, `hmmer_report` |
 | [Database preparation](#database-preparation) | `format_db` |
@@ -541,8 +541,10 @@ domainatoredux transform_matrix -i scores.tsv -o pruned.hdf5 --mst --knn 5 --thr
 
 ### `build_ssn`
 
-Build a **Cytoscape XGMML** network (`-o/--xgmml_out`) from a similarity matrix (not a
-`_dist` one). `--threshold` is the score cutoff, keeping edges strictly above it — the
+Build a network from a similarity matrix (not a `_dist` one), as a **Cytoscape XGMML**
+file (`-o/--xgmml_out`), the **Domainator Viewer** (`--html_out`, a self-contained page),
+or its bundle (`--dvb_out`, which the desktop app's Viewer tab and
+[`ssn_navigator`](#ssn_navigator) open). Give at least one of them. `--threshold` is the score cutoff, keeping edges strictly above it — the
 single most important choice, so consult [`matrix_report`](#matrix_report) first. `--mst`
 keeps only maximum-spanning-tree edges and `--knn K` each node's K best; together they
 keep the union, which keeps a large network legible without splitting clusters.
@@ -559,25 +561,66 @@ domainatoredux build_ssn -i dist.hdf5 -o network.xgmml --threshold 100 \
   --cluster_tsv_out clusters.tsv --metadata annotations.tsv
 ```
 
-### `build_ssn_viewer`
-
-Build a `.dsnv` bundle (`-o/--dsnv_out`) for the **interactive viewer** from a similarity
-matrix — no cutoff needed, because the viewer lets you move the threshold instead.
-`--html_out` also writes a standalone HTML page, and `--embed_data` puts the data inside
-it so the page is self-contained and shareable (then `-o` is optional); without `-i`,
-`--html_out` writes an empty viewer that opens bundles itself. `--metadata` joins TSV
-columns, `--color_by`/`--label_by` choose which colors and labels nodes, `--color_table`
-sets the starting colors of the `--color_by` column, and `--categorical` marks columns
-that should be treated as categories rather than numbers.
+The viewer needs no cutoff, because it lets you move the threshold instead: it shows the
+network's maximum spanning tree above `--threshold`, whatever `--mst` and `--knn` say.
+`--label_by` chooses the column that labels nodes, `--color_table` sets the starting colors
+of the `--color_by` column, `--categorical` marks numeric columns to color as categories
+rather than a gradient, `--merge_impact_metric` how the split chart measures a merge, and
+`--name` the network's title (by default the output's file name).
 
 ```bash
-domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html_out network.html \
-  --embed_data --metadata annotations.tsv --color_by phylum --categorical phylum
+domainatoredux build_ssn -i dist.hdf5 --dvb_out network.dvb --html_out network.html \
+  --metadata annotations.tsv --color_by phylum --categorical phylum
 ```
 
 There is deliberately no `--max_merge_events` here: the bundle stores only nodes, the
 spanning tree and the hierarchy, and everything else is derived when read, so the viewer
 (and [`ssn_navigator`](#ssn_navigator)) chooses that cap at read time.
+
+### `build_tree`
+
+Build a **UPGMA tree** from a square distance or similarity matrix (`-i`), or read one
+built elsewhere from a Newick file (`--newick`; numeric internal labels are read as
+support values). `--distance auto` uses a `_dist` matrix (or a TSV, which records no data
+type) as is and turns similarity scores into distances, 1 − score / min(row max, column
+max); `precomputed` and `score_dist` force either. Writes Newick (`-o/--newick_out`, `-`
+for stdout, branch lengths to six significant digits), Cytoscape XGMML laid out as a
+rectangular tree (`--xgmml_out`), and the Domainator Viewer (`--html_out`, `--dvb_out`).
+`--msa` shows an aligned FASTA of the leaves beside the tree in the viewer. `--subset`/
+`--subset_file` keep only some leaves, and the coloring and labeling options are
+`build_ssn`'s.
+
+```bash
+domainatoredux build_tree -i dist.hdf5 -o tree.nwk --dvb_out tree.dvb --msa aligned.afa
+domainatoredux build_tree --newick ml_tree.nwk --metadata annotations.tsv --color_by phylum \
+  --html_out tree.html
+```
+
+### `build_projection`
+
+Project a matrix's rows into **2D or 3D** (`--three_d`) with PCA, each row a point whose
+features are its columns. A mostly-empty matrix is projected uncentered (scikit-learn's
+`TruncatedSVD`, which upstream uses there), and the coordinates are shifted to start at 0
+and scaled so the largest spans `--scale`. `--algorithm coords` reads coordinates already
+computed (a `--coords_out` table) instead. Writes the coordinates (`--coords_out`),
+Cytoscape XGMML (`-o/--xgmml_out`) and the Domainator Viewer (`--html_out`, `--dvb_out`).
+Upstream's `tsne` and `umap` are not supported yet: project with the Python suite and read
+its `--coords_out` with `--algorithm coords`.
+
+```bash
+domainatoredux build_projection -i dist.hdf5 --coords_out xy.tsv --dvb_out projection.dvb \
+  --metadata annotations.tsv --color_by phylum
+```
+
+### `viewer`
+
+Write the **Domainator Viewer** page (`-o/--html_out`) opening a bundle (`-i`, a `.dvb`
+from any of the three tools above or a saved session, or an older `.dsnv`), or, without
+`-i`, an empty page that opens the bundles you choose in it. `--name` sets the title.
+
+```bash
+domainatoredux viewer -i network.dvb -o network.html
+```
 
 ---
 
@@ -671,7 +714,8 @@ domainatoredux matrix_report -i dist.hdf5 --html_out report.html --knn_projectio
 
 ### `ssn_navigator`
 
-Query a built `.dsnv` bundle from a script — the non-interactive counterpart to the viewer.
+Query the network in a built `.dvb` bundle (from `build_ssn --dvb_out`, or an older
+`.dsnv`) from a script — the non-interactive counterpart to the viewer.
 Output is always one compact JSON object, starting with `schema_version` and `query`, to
 `-o/--json_out` (required; `-` is stdout).
 
@@ -685,9 +729,9 @@ cluster listings.
 sequence id, not a prefix.
 
 ```bash
-domainatoredux ssn_navigator -i network.dsnv -o - --query overview
-domainatoredux ssn_navigator -i network.dsnv -o - --query clusters --threshold 120 --min_size 3
-domainatoredux ssn_navigator -i network.dsnv -o - --query node \
+domainatoredux ssn_navigator -i network.dvb -o - --query overview
+domainatoredux ssn_navigator -i network.dvb -o - --query clusters --threshold 120 --min_size 3
+domainatoredux ssn_navigator -i network.dvb -o - --query node \
   --node "FeSOD_A0A1F4ZT98|unreviewed|Superoxide"
 ```
 
@@ -754,7 +798,7 @@ domainatoredux hmmer_compare -i query.hmm -r pfam-A.hmm -o scores.tsv \
 
 To build a network *of* profiles, feed the same files to
 [`seq_dist`](#seq_dist) — with two HMM inputs it selects `hmmer_compare` automatically —
-and then to [`build_ssn_viewer`](#build_ssn_viewer).
+and then to [`build_ssn`](#build_ssn).
 
 ### `hmmer_report`
 

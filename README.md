@@ -7,7 +7,7 @@ around them, and turns collections of sequences into **sequence similarity netwo
 This is a from-scratch Rust implementation of the
 [Python Domainator suite](https://github.com/nebiolabs/domainator). It ships as:
 
-- **one command-line executable** — `domainatoredux <tool> [options]`, 36 tools, no
+- **one command-line executable** — `domainatoredux <tool> [options]`, 38 tools, no
   interpreter or conda environment required;
 - **one desktop app** — a workspace browser with a contig viewer, an interactive SSN
   viewer, HMM logos and dialogs for running the tools;
@@ -47,13 +47,12 @@ domainatoredux domainate -i FeSOD_20.gb -r FeSOD_pfam.hmm -o annotated.gb
 domainatoredux seq_dist -i annotated.gb -o dist.hdf5 --algorithm hmmer --mode score
 #> wrote 20x20 matrix
 
-domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html_out network.html --embed_data
-#> wrote 20-node .dsnv bundle to network.dsnv
-#> wrote HTML viewer to network.html
+domainatoredux build_ssn -i dist.hdf5 --dvb_out network.dvb --html_out network.html
 ```
 
 `network.html` is self-contained: open it in any browser and drag the threshold slider to
-split the network into clusters.
+split the network into clusters. The same viewer shows trees (`build_tree`) and
+projections (`build_projection`).
 
 Walked through step by step in **[Getting started](docs/getting-started.md)**.
 
@@ -72,7 +71,7 @@ the Python suite's underscore spellings (`--max_overlap`), and so do subcommands
 | --- | --- |
 | **Annotation and search** | `domainate` annotate with hits to references · `domain_search` keep the records or neighborhoods that hit · `filter_domains` prune weak annotations |
 | **Selection and extraction** | `select_by_cds` · `select_by_contig` · `select_by_coord` · `extract_domains` · `extract_peptides` · `extract_unannotated` · `trim_contigs` · `rotate_contigs` · `sort_contigs` · `clean_sequences` · `deduplicate_genbank` |
-| **Matrices and networks** | `seq_dist` similarity by alignment · `compare_contigs` similarity by shared domain content · `transform_matrix` · `build_ssn` (Cytoscape XGMML) · `build_ssn_viewer` (interactive) |
+| **Matrices and networks** | `seq_dist` similarity by alignment · `compare_contigs` similarity by shared domain content · `transform_matrix` · `build_ssn` networks · `build_tree` UPGMA or Newick trees, with an alignment · `build_projection` PCA · `viewer` (Cytoscape XGMML, or the interactive Domainator Viewer) |
 | **Reports** | `enum_report` per contig/CDS/domain tables · `summary_report` · `matrix_report` score distribution and suggested cutoffs · `ssn_navigator` query a network as JSON |
 | **HMM profiles** | `hmmer_build` · `hmmer_select` · `hmmer_search` · `hmmer_compare` · `hmmer_report` |
 | **Color** | `color_genbank` · `color_table_to_legend` |
@@ -91,11 +90,14 @@ the command line just appear, and vice versa.
 - **Contig viewer** — scroll and zoom gene maps, with circular origin-wrapping drawn
   correctly, e-value and database filters, sequence selection and copy, and per-feature
   editing and recoloring.
-- **SSN viewer** — the interactive network: move the threshold to split clusters, switch
-  layouts, chart and edit metadata, and jump from selected nodes back to their sequences.
+- **Domainator Viewer** — networks, trees and projections: move a network's threshold to
+  split clusters, cut and collapse a tree beside its alignment, chart and edit metadata, and
+  jump from selected nodes back to their sequences.
+- **Alignment** — aligned FASTA as a residue grid with conservation and consensus tracks,
+  and selected rows exported with or without their gaps.
 - **Enum Report, Summary, Matrix Report, HMM Profiles and Logo** tabs for the other file
   types, plus table, text and SVG viewers.
-- **Tools menu** — 30 of the tools, with dialogs generated from the same manifest the
+- **Tools menu** — 32 of the tools, with dialogs generated from the same manifest the
   CLI publishes (`describe`), so the two cannot drift. Outputs land next to your inputs and chain by
   file type.
 - **Jobs, Databases and External tools panels** — run history with provenance, a reusable
@@ -126,7 +128,7 @@ The `docs/` directory is an [mdbook](https://rust-lang.github.io/mdBook/):
 ## Interoperability with the Python suite
 
 Maintaining on-disk compatibility with the original tool is a hard requirement, in both
-directions — GenBank files, HDF5 matrices, `.dsnv` network bundles, HMM profiles, and
+directions — GenBank files, HDF5 matrices, `.dvb` viewer bundles (and the older `.dsnv`), HMM profiles, and
 formatted databases (shards, BGZF, `.didx` indexes). You can hand a file to either
 implementation mid-workflow.
 

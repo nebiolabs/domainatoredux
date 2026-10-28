@@ -1004,7 +1004,8 @@ pub(crate) mod tests {
     /// `(tool, field, role)`.
     const GOLDEN_INPUT_ROLES: &[(&str, &str, &str)] = &[
         ("build_ssn", "input", "matrix"),
-        ("build_ssn_viewer", "input", "matrix"),
+        ("build_tree", "input", "matrix"),
+        ("build_projection", "input", "matrix"),
         ("clean_sequences", "input", "sequence"),
         ("color_genbank", "input", "sequence"),
         ("color_table_to_legend", "input", "table"),

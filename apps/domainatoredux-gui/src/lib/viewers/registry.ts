@@ -5,7 +5,8 @@ import EnumReport from "./EnumReport.svelte";
 import HmmLogo from "./HmmLogo.svelte";
 import HmmReport from "./HmmReport.svelte";
 import MatrixView from "./MatrixView.svelte";
-import SsnView from "./SsnView.svelte";
+import AlignmentView from "./AlignmentView.svelte";
+import DomainatorView from "./DomainatorView.svelte";
 import SummaryView from "./SummaryView.svelte";
 import SvgView from "./SvgView.svelte";
 import TableView from "./TableView.svelte";
@@ -27,21 +28,31 @@ export interface ViewDescriptor {
   component: Component<ViewerProps>;
 }
 
-// Maps a file type to its ordered view tabs. Sequence files will grow Enum /
-// Summary tabs in a later phase; today they have only the contig view.
+// Maps a file type to its ordered view tabs.
 export function viewsFor(fileType: FileType): ViewDescriptor[] {
   switch (fileType) {
     case "genbank":
-    case "fasta":
       return [
         { id: "contig", label: "Contig View", component: ContigView },
         { id: "enum", label: "Enum Report", component: EnumReport },
         { id: "summary", label: "Summary", component: SummaryView },
       ];
+    case "fasta":
+      // A FASTA file may be an alignment saved under a plain FASTA name; the
+      // Alignment tab says so when it is not one.
+      return [
+        { id: "contig", label: "Contig View", component: ContigView },
+        { id: "enum", label: "Enum Report", component: EnumReport },
+        { id: "summary", label: "Summary", component: SummaryView },
+        { id: "alignment", label: "Alignment", component: AlignmentView },
+      ];
+    case "alignment":
+      return [{ id: "alignment", label: "Alignment", component: AlignmentView }];
     case "hdf5":
       return [{ id: "matrix", label: "Matrix Report", component: MatrixView }];
-    case "ssn_viewer":
-      return [{ id: "ssn", label: "SSN Viewer", component: SsnView }];
+    case "viewer_bundle":
+      // Networks, trees and projections alike: the bundle says which.
+      return [{ id: "viewer", label: "Viewer", component: DomainatorView }];
     case "hmm":
       // A fast profile table by default (it never computes a logo, so a
       // 25k-profile file opens instantly); the Logo tab draws one profile on
@@ -53,6 +64,7 @@ export function viewsFor(fileType: FileType): ViewDescriptor[] {
     case "table":
       return [{ id: "table", label: "Table", component: TableView }];
     case "text":
+    case "newick":
       return [{ id: "text", label: "Text", component: TextView }];
     case "svg":
       return [{ id: "svg", label: "Image", component: SvgView }];

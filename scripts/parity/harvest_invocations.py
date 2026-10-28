@@ -12,7 +12,8 @@ Emits one TSV row per invocation:
     <module>\t<test_fn>#<n>\t<file>:<lineno>\t<arg>\t<arg>...
 
 The second column is the stable key (the n-th invocation inside that test
-function); the third is human-readable provenance only. Line numbers move every
+function, prefixed with the test module's name when it is not the tool's own
+`test_<tool>.py`); the third is human-readable provenance only. Line numbers move every
 time upstream touches a test file, so `known_gaps.tsv` keys on column 2.
 
 with three placeholders substituted at replay time:
@@ -57,7 +58,7 @@ def ported_tools(rust):
     return sorted(upstream & subcommands(rust))
 
 # Fixture names pytest injects, which the replay substitutes for.
-RESERVED = {"shared_datadir": "@DATA@", "output_dir": "@TMP@"}
+RESERVED = {"shared_datadir": "@DATA@", "output_dir": "@TMP@", "tmp_path": "@TMP@"}
 
 # Locals that name the *output* path, used only as a fallback when the binding
 # itself will not resolve. Upstream is consistent enough about these names that
@@ -101,6 +102,9 @@ class Resolver:
             return "@OUT@" if el.id in OUT_NAMES else None
         if isinstance(el, ast.Call) and isinstance(el.func, ast.Name) and el.func.id == "str":
             return self.render(el.args[0]) if el.args else None
+        if isinstance(el, ast.Call) and ast.unparse(el.func) == "os.path.join" and el.args:
+            parts = [self.render(a) for a in el.args]
+            return None if None in parts else "/".join(p.rstrip("/") for p in parts)
         if isinstance(el, ast.BinOp) and isinstance(el.op, ast.Div):  # pathlib `/`
             left, right = self.render(el.left), self.render(el.right)
             if left is None or right is None:
@@ -125,20 +129,23 @@ class Resolver:
         return None
 
 
-def _is_main_call(node, module):
-    """True for `main([...])`, `<module>.main([...])` or `<module>_main([...])`."""
+def _is_main_call(node, module, qualified_only=False):
+    """True for `main([...])`, `<module>.main([...])` or `<module>_main([...])`.
+
+    `qualified_only` accepts `<module>.main([...])` alone: in another tool's test module a
+    bare `main` is that tool's own."""
     if isinstance(node.func, ast.Attribute):
         return (
             node.func.attr == "main"
             and isinstance(node.func.value, ast.Name)
             and node.func.value.id == module
         )
-    if isinstance(node.func, ast.Name):
+    if isinstance(node.func, ast.Name) and not qualified_only:
         return node.func.id in ("main", f"{module}_main")
     return False
 
 
-def harvest(path, module):
+def harvest(path, module, qualified_only=False):
     tree = ast.parse(pathlib.Path(path).read_text())
     found = []
     for fn in ast.walk(tree):
@@ -148,7 +155,7 @@ def harvest(path, module):
         for node in ast.walk(fn):
             resolver.bind(node)
         for node in ast.walk(fn):
-            if not isinstance(node, ast.Call) or not _is_main_call(node, module):
+            if not isinstance(node, ast.Call) or not _is_main_call(node, module, qualified_only):
                 continue
             # Only the single-list form; anything else is a helper, not an invocation.
             if len(node.args) != 1 or not isinstance(node.args[0], ast.List):
@@ -194,6 +201,16 @@ def main(argv=None):
         for fn_name, lineno, argv_ in harvest(path, module):
             n = seen[fn_name] = seen.get(fn_name, -1) + 1
             rows.append([module, f"{fn_name}#{n}", f"{path.name}:{lineno}"] + argv_)
+        # A tool is also run from other tools' test modules (test_viewer.py builds its
+        # networks with build_ssn.main), always in the qualified `<tool>.main` form.
+        for other in sorted(test_dir.glob("test_*.py")):
+            if other == path:
+                continue
+            seen = {}
+            for fn_name, lineno, argv_ in harvest(other, module, qualified_only=True):
+                n = seen[fn_name] = seen.get(fn_name, -1) + 1
+                rows.append([module, f"{other.stem}.{fn_name}#{n}", f"{other.name}:{lineno}"]
+                            + argv_)
 
     # Sort so the harvest is diffable across upstream revisions.
     rows.sort(key=lambda r: (r[0], r[1]))

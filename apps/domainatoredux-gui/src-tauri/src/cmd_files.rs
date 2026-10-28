@@ -16,13 +16,13 @@ use domainator_core::matrix::read_matrix;
 use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::partial::Partial;
 use domainator_core::seq::SeqRecord;
-use domainator_core::tools::build_ssn_viewer::render_html;
 use domainator_core::tools::enum_report::{
     enum_report_with_targets, needs_taxonomy, By, OutputFormat,
 };
 use domainator_core::tools::matrix_report::{
     matrix_report, to_viewer_json, DEFAULT_MAX_MERGE, DEFAULT_MERGE_IMPACT_METRIC,
 };
+use domainator_core::tools::viewer_html::render_html;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -778,7 +778,7 @@ pub async fn resolve_records(
     .map_err(|e| format!("resolve records failed: {e}"))?
 }
 
-/// Trace a network artifact (`.dsnv`/matrix) back to the sequence files that
+/// Trace a viewer bundle (`.dvb`/`.dsnv`) or matrix back to the sequence files that
 /// supplied its node labels, via the provenance job DAG. The workspace root is
 /// discovered by walking up from `path` for a `.domainatoredux/` dir, so this works in
 /// detached windows too. Returns `has_provenance=false` (empty sources) when no
@@ -799,22 +799,38 @@ pub async fn trace_network_sources(path: String) -> Result<SourceTrace, String> 
     .map_err(|e| format!("tracing sources failed: {e}"))
 }
 
-/// Render the self-contained SSN viewer HTML for a `.dsnv` bundle, with the
-/// bundle embedded so it autoloads. Hosted by the frontend in an `<iframe>`.
+/// Render the self-contained Domainator Viewer page for a bundle (`.dvb`, or an
+/// older `.dsnv`), with the bundle embedded so it autoloads, as `domainatoredux viewer
+/// -i <bundle>` writes it. Hosted by the frontend in an `<iframe>`.
 #[tauri::command]
-pub async fn render_ssn_html(path: String) -> Result<String, String> {
-    // Off the UI thread: a .dsnv bundle can be large, and embedding it into the
-    // HTML shell is a big string build — keep it off Tauri's main thread.
+pub async fn render_viewer_html(path: String) -> Result<String, String> {
+    // Off the UI thread: a bundle can be large, and embedding it into the HTML shell
+    // is a big string build — keep it off Tauri's main thread.
     tauri::async_runtime::spawn_blocking(move || {
-        let bytes = std::fs::read(&path).map_err(|e| format!("reading SSN bundle: {e}"))?;
-        let title = std::path::Path::new(&path)
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "SSN".into());
-        Ok(render_html(&title, Some(&bytes)))
+        let raw = std::fs::read(&path).map_err(|e| format!("reading the bundle: {e}"))?;
+        // The page is handed gzip bytes; a bundle saved as plain JSON is compressed.
+        let compressed = if raw.starts_with(&[0x1f, 0x8b]) {
+            raw
+        } else {
+            domainator_core::tools::viewer_bundle::gzip(&raw)
+        };
+        let bundle = domainator_core::tools::ssn_bundle::parse_any_bundle(&compressed, &path)
+            .map_err(|e| e.to_string())?;
+        let title = bundle
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|n| !n.trim().is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                std::path::Path::new(&path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            });
+        Ok(render_html(&title, Some(&compressed)))
     })
     .await
-    .map_err(|e| format!("rendering SSN failed: {e}"))?
+    .map_err(|e| format!("rendering the viewer failed: {e}"))?
 }
 
 /// One selected record: its source file and 0-based contig index.
@@ -826,7 +842,7 @@ pub struct RecordRef {
 
 /// Validate a bare filename and join it to `dir`, refusing path separators, the
 /// reserved `.domainatoredux` name, and pre-existing targets (caller supplies a name).
-fn validated_target(dir: &str, name: &str) -> Result<std::path::PathBuf, String> {
+pub(crate) fn validated_target(dir: &str, name: &str) -> Result<std::path::PathBuf, String> {
     use domainator_core::app_support::workspace::{
         accepted_types_hint, classify_file, is_reserved_name,
     };

@@ -2,7 +2,7 @@
   import {
     extractRecords,
     openFileWindow,
-    renderSsnHtml,
+    renderViewerHtml,
     resolveRecords,
     saveBinaryFile,
     saveTextFile,
@@ -16,6 +16,8 @@
 
   let { path }: { path: string } = $props();
 
+  // The page as rendered (what "Save as HTML page" writes), and as the iframe shows it.
+  let page = $state<string | null>(null);
   let html = $state<string | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(true);
@@ -31,11 +33,12 @@
   // so from a detached window we open the extract in its own new window instead.
   const inDetachedWindow = new URLSearchParams(location.search).has("view");
 
-  // Default extract name: "<ssn-stem>_selection.gb".
-  const defaultName = $derived.by(() => {
-    const base = (path.split(/[\\/]/).pop() ?? "selection").replace(/\.(dsnv|ssnv|ssnview)(\.gz)?$/i, "");
-    return `${base}_selection.gb`;
-  });
+  // The bundle's file name without its extension.
+  const stem = $derived(
+    (path.split(/[\\/]/).pop() ?? "selection").replace(/\.(dvb|dsnv|ssnv|ssnview)(\.gz)?$/i, ""),
+  );
+  // Default extract name: "<bundle-stem>_selection.gb".
+  const defaultName = $derived(`${stem}_selection.gb`);
 
   // Provenance-derived extraction state. Extraction resolves node labels only
   // within the sequence files this network was built from — so it's correct even
@@ -57,13 +60,13 @@
     return null;
   });
 
-  // The SSN shell runs in its own document inside a sandboxed iframe, so the app's
+  // The viewer runs in its own document inside a sandboxed iframe, so the app's
   // global `contextmenu` suppressor (main.ts) never sees events from it and the raw
   // WebKit/WebView2 menu would still appear there.
   //
   // Injected here rather than in the shell itself:
-  // `crates/domainator-core/assets/ssn_viewer_shell.html` is a *generated*
-  // artifact, regenerated from Python by `scripts/regen_ssn_viewer_shell.py` and
+  // `crates/domainator-core/assets/viewer_shell.html` is a *generated*
+  // artifact, regenerated from Python by `scripts/regen_viewer_shell.py` and
   // covered by a drift check, so it must never be hand-edited. Post-processing the
   // string in this consumer leaves those bytes untouched.
   //
@@ -109,7 +112,7 @@ document.addEventListener("contextmenu", function (e) {
     var blob = this.hasAttribute("download") ? blobs.get(this.href) : undefined;
     if (!blob) return click.call(this);
     window.parent.postMessage(
-      { type: "domainator-ssn-download", filename: this.download || "download", blob: blob },
+      { type: "domainator-viewer-download", filename: this.download || "download", blob: blob },
       "*",
     );
   };
@@ -120,14 +123,18 @@ document.addEventListener("contextmenu", function (e) {
     void path;
     loading = true;
     error = null;
+    page = null;
     html = null;
     selectedLabels = [];
     openNote = null;
     naming = false;
     trace = null;
     saveNote = null;
-    cached(`ssnhtml:${path}`, () => renderSsnHtml(path))
-      .then((h) => (html = h + IFRAME_CONTEXTMENU_SUPPRESSOR + IFRAME_DOWNLOAD_BRIDGE))
+    cached(`viewerhtml:${path}`, () => renderViewerHtml(path))
+      .then((h) => {
+        page = h;
+        html = h + IFRAME_CONTEXTMENU_SUPPRESSOR + IFRAME_DOWNLOAD_BRIDGE;
+      })
       .catch((e) => (error = String(e)))
       .finally(() => (loading = false));
     // Trace provenance in parallel (cached — it only reads small JSON sidecars).
@@ -136,17 +143,17 @@ document.addEventListener("contextmenu", function (e) {
       .catch(() => (trace = { has_provenance: false, sources: [] }));
   });
 
-  // Listen for messages from the embedded SSN viewer iframe: node selection (the
-  // shell's GUI host hook) and downloads (IFRAME_DOWNLOAD_BRIDGE). Only this
-  // viewer's own iframe counts — other SSN tabs stay mounted and post to the same
-  // window.
+  // Listen for messages from the embedded viewer iframe: node selection (the
+  // shell's GUI host hook, shared by the network, tree and projection views) and
+  // downloads (IFRAME_DOWNLOAD_BRIDGE). Only this viewer's own iframe counts — other
+  // viewer tabs stay mounted and post to the same window.
   $effect(() => {
     const onMessage = (e: MessageEvent) => {
       if (!frame || e.source !== frame.contentWindow) return;
-      if (e.data?.type === "domainator-ssn-selection" && Array.isArray(e.data.labels)) {
+      if (e.data?.type === "domainator-viewer-selection" && Array.isArray(e.data.labels)) {
         selectedLabels = e.data.labels as string[];
         openNote = null;
-      } else if (e.data?.type === "domainator-ssn-download" && e.data.blob instanceof Blob) {
+      } else if (e.data?.type === "domainator-viewer-download" && e.data.blob instanceof Blob) {
         saveDownload(String(e.data.filename), e.data.blob as Blob);
       }
     };
@@ -158,8 +165,15 @@ document.addEventListener("contextmenu", function (e) {
     png: "PNG image",
     svg: "SVG image",
     tsv: "TSV table",
+    dvb: "Domainator Viewer bundle",
     dsnv: "SSN viewer bundle",
     json: "JSON",
+    html: "HTML page",
+    // The tree view exports its selection as Newick and as FASTA, aligned or not.
+    nwk: "Newick tree",
+    newick: "Newick tree",
+    afa: "Aligned FASTA",
+    fasta: "FASTA",
   };
 
   // Base64 in chunks: a spread of a multi-megabyte array into
@@ -177,7 +191,10 @@ document.addEventListener("contextmenu", function (e) {
     const dot = filename.lastIndexOf(".");
     const ext = dot > 0 ? filename.slice(dot + 1).toLowerCase() : "";
     const filter = FILTER_NAMES[ext] ?? (ext ? ext.toUpperCase() : "File");
-    const isText = blob.type.startsWith("text/") || blob.type === "image/svg+xml" || ext === "tsv";
+    const isText =
+      blob.type.startsWith("text/") ||
+      blob.type === "image/svg+xml" ||
+      ["tsv", "nwk", "newick", "afa", "fasta", "html"].includes(ext);
     try {
       const saved = isText
         ? await saveTextFile(filename, ext, filter, await blob.text())
@@ -185,6 +202,17 @@ document.addEventListener("contextmenu", function (e) {
       saveNote = saved ? { text: `Saved ${saved}`, err: false } : null;
     } catch (err) {
       saveNote = { text: `Saving ${filename} failed: ${err}`, err: true };
+    }
+  }
+
+  // The page with its bundle embedded, as `domainatoredux viewer -i <bundle>` writes it.
+  async function savePage() {
+    if (!page) return;
+    try {
+      const saved = await saveTextFile(`${stem}.html`, "html", "HTML page", page);
+      saveNote = saved ? { text: `Saved ${saved}`, err: false } : null;
+    } catch (err) {
+      saveNote = { text: `Saving ${stem}.html failed: ${err}`, err: true };
     }
   }
 
@@ -219,9 +247,9 @@ document.addEventListener("contextmenu", function (e) {
   }
 </script>
 
-<div class="ssn">
+<div class="viewer">
   {#if loading}
-    <div class="msg">Loading SSN viewer…</div>
+    <div class="msg">Loading the viewer…</div>
   {:else if error}
     <div class="msg err">{error}</div>
   {:else if html}
@@ -234,12 +262,18 @@ document.addEventListener("contextmenu", function (e) {
         {:else if staleSources.length > 0}
           <span class="note warn" title={staleSources.map((s) => s.path).join("\n")}>
             ⚠ {staleSources.length} source file{staleSources.length === 1 ? "" : "s"} changed since this
-            network was built — extracted sequences may not match.
+            bundle was built — extracted sequences may not match.
           </span>
         {/if}
         {#if openNote}<span class="note">{openNote}</span>{/if}
       </div>
     {/if}
+    <div class="toolbar">
+      <button
+        onclick={() => savePage()}
+        title="Save this viewer, with its bundle, as one HTML file that opens in any browser"
+      >Save as HTML page…</button>
+    </div>
     {#if saveNote}
       <div class="selbar">
         <span class="note" class:err={saveNote.err}>{saveNote.text}</span>
@@ -250,13 +284,13 @@ document.addEventListener("contextmenu", function (e) {
          `allow-modals` lets the shell's own alert/confirm prompts show. -->
     <iframe
       bind:this={frame}
-      title="SSN viewer"
+      title="Domainator Viewer"
       srcdoc={html}
       sandbox="allow-scripts allow-same-origin allow-modals"
     ></iframe>
   {:else}
     <!-- No HTML and no error: don't leave the pane blank with no explanation. -->
-    <div class="msg">No network to show for this bundle.</div>
+    <div class="msg">Nothing to show for this bundle.</div>
   {/if}
 
   {#if naming}
@@ -272,11 +306,18 @@ document.addEventListener("contextmenu", function (e) {
 </div>
 
 <style>
-  .ssn {
+  .viewer {
     height: 100%;
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  .toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 3px 12px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
   }
   .selbar {
     display: flex;

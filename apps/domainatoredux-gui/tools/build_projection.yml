@@ -1,0 +1,61 @@
+# GUI dialog for `domainatoredux build_projection`. Format: see README.md in this directory.
+id: build_projection
+label: "Build projection (PCA)"
+description: "Project a matrix's rows into 2D or 3D with PCA, as a Domainator Viewer bundle (.dvb). t-SNE and UMAP are not supported yet."
+fields:
+  - name: input
+    label: "Input matrix"
+    file_type: [hdf5, table]
+    sources: workspace_first
+    select: first
+  - name: dvb_out
+    label: "Viewer bundle (.dvb)"
+    output_name: "{stem}.projection.dvb"
+  - name: coords_out
+    label: "Coordinates (TSV)"
+  - name: xgmml_out
+    label: "Cytoscape (XGMML)"
+  - name: algorithm
+    label: "Algorithm"
+  - name: three_d
+    label: "3D"
+  - name: metadata
+    label: "Metadata (TSV)"
+    file_type: table
+    sources: workspace_first
+    select: none
+  - name: color_by
+    label: "Color by"
+  - name: label_by
+    label: "Label by"
+  - name: color_table
+    label: "Color table (in)"
+    file_type: table
+    sources: workspace_first
+    select: none
+  - name: color_table_out
+    label: "Color table (out)"
+  - name: pca_args
+    show: false
+    label: "PCA arguments"
+  - name: tsne_args
+    show: false
+    label: "t-SNE arguments"
+  - name: umap_args
+    show: false
+    label: "UMAP arguments"
+  - name: scale
+    show: false
+    label: "Scale"
+  - name: html_out
+    show: false
+    label: "HTML page"
+  - name: name
+    show: false
+    label: "Name"
+  - name: categorical
+    show: false
+    label: "Categorical"
+  - name: palette_offset
+    show: false
+    label: "Palette offset"

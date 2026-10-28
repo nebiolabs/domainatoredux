@@ -128,24 +128,25 @@ breaks into meaningfully different groups.
 ## 5. Build the network
 
 ```bash
-domainatoredux build_ssn_viewer -i dist.hdf5 -o network.dsnv --html_out network.html --embed_data
-```
-
-```
-wrote 20-node .dsnv bundle to network.dsnv
-wrote HTML viewer to network.html
+domainatoredux build_ssn -i dist.hdf5 --dvb_out network.dvb --html_out network.html
 ```
 
 You now have two things:
 
-- **`network.dsnv`** — a compact bundle. Open it in the desktop app's SSN viewer tab, or
-  query it from a script with [`ssn_navigator`](cli-reference.md#ssn_navigator).
-- **`network.html`** — a standalone page with the data embedded (`--embed_data`). Open it
-  in any browser; drag the threshold slider to split the network into clusters. Nothing
-  else is required to view or share it.
+- **`network.dvb`** — a compact Domainator Viewer bundle. Open it in the desktop app's
+  Viewer tab, or query it from a script with
+  [`ssn_navigator`](cli-reference.md#ssn_navigator).
+- **`network.html`** — a standalone page with the bundle embedded. Open it in any browser;
+  drag the threshold slider to split the network into clusters. Nothing else is required
+  to view or share it.
 
-If you'd rather work in Cytoscape, use [`build_ssn`](cli-reference.md#build_ssn) to write
-XGMML instead.
+If you'd rather work in Cytoscape, add `-o network.xgmml` to the same command.
+
+The same viewer shows a tree of the matrix (with an alignment beside it, if you have one):
+
+```bash
+domainatoredux build_tree -i dist.hdf5 --dvb_out tree.dvb --html_out tree.html
+```
 
 ## Where to go next
 

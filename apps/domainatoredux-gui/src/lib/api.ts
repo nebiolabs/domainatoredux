@@ -205,8 +205,44 @@ export const runEnumReport = (
 export const runSummaryStats = (path: string, ncbiTaxonomyPath: string | null): Promise<SummaryStats> =>
   invoke("run_summary_stats", { path, ncbiTaxonomyPath });
 
-export const renderSsnHtml = (path: string): Promise<string> =>
-  invoke("render_ssn_html", { path });
+/// The Domainator Viewer page for a bundle (`.dvb`, or an older `.dsnv`), with the
+/// bundle embedded so it opens on load.
+export const renderViewerHtml = (path: string): Promise<string> =>
+  invoke("render_viewer_html", { path });
+
+/// `app_support::alignment::AlignmentInfo`: an aligned FASTA file's row names, size and
+/// per-column tracks.
+export interface AlignmentInfo {
+  ids: string[];
+  length: number;
+  alphabet: "protein" | "nucleotide";
+  consensus: string;
+  conservation: number[];
+  occupancy: number[];
+}
+
+/// Summarize an aligned FASTA file, or fail with why it is not an alignment.
+export const alignmentInfo = (path: string): Promise<AlignmentInfo> =>
+  invoke("alignment_info", { path });
+
+/// The residues of rows `rowStart..rowStart+rowCount`, columns `colStart..colStart+colCount`.
+export const alignmentWindow = (
+  path: string,
+  rowStart: number,
+  rowCount: number,
+  colStart: number,
+  colCount: number,
+): Promise<string[]> =>
+  invoke("alignment_window", { path, rowStart, rowCount, colStart, colCount });
+
+/// Write the rows named by `ids` to a new FASTA file `dir/name`, aligned or ungapped.
+export const exportAlignmentRows = (
+  path: string,
+  dir: string,
+  name: string,
+  ids: string[],
+  gapped: boolean,
+): Promise<string> => invoke("export_alignment_rows", { path, dir, name, ids, gapped });
 
 export interface ResolvedRecord {
   path: string;
@@ -215,7 +251,7 @@ export interface ResolvedRecord {
   contig_id: string;
 }
 
-/// Resolve many SSN node labels to their source records, searching ONLY `files`
+/// Resolve many viewer node labels to their source records, searching ONLY `files`
 /// (the network's provenance-traced sequence sources). Aligned to `labels` (null
 /// for any not found).
 export const resolveRecords = (
@@ -223,7 +259,7 @@ export const resolveRecords = (
   labels: string[],
 ): Promise<(ResolvedRecord | null)[]> => invoke("resolve_records", { files, labels });
 
-/// Trace a network artifact (.dsnv/matrix) back to the sequence files that
+/// Trace a viewer bundle (.dvb/.dsnv) or matrix back to the sequence files that
 /// supplied its node labels (provenance DAG walk).
 export const traceNetworkSources = (path: string): Promise<SourceTrace> =>
   invoke("trace_network_sources", { path });

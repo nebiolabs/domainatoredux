@@ -7,9 +7,10 @@ use std::io::{self, Write};
 
 use super::DataMatrix;
 
-/// Format `x` like NumPy/Python `str(np.float64(x))`: Rust's shortest round-trip
-/// Display, but always with a decimal point for finite values (`410` -> `410.0`),
-/// and `nan`/`inf`/`-inf` spelled the Python way.
+/// Format `x` like NumPy/Python `str(np.float64(x))`, which is Python's `repr`: the
+/// shortest round-trip digits, positional with a decimal point (`410` -> `410.0`) when
+/// the exponent is in `-4..16`, otherwise in exponent form (`1e-05`, `1.5e+16`), and
+/// `nan`/`inf`/`-inf` spelled the Python way.
 pub fn py_float_str(x: f64) -> String {
     if x.is_nan() {
         return "nan".to_string();
@@ -21,11 +22,19 @@ pub fn py_float_str(x: f64) -> String {
             "inf".to_string()
         };
     }
-    let s = format!("{x}");
-    if s.contains('.') || s.contains('e') || s.contains('E') {
-        s
+    let sci = format!("{x:e}"); // shortest digits: "1.5e16", "-1e-5"
+    let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    if (-4..16).contains(&exp) {
+        let s = format!("{x}");
+        if s.contains('.') {
+            s
+        } else {
+            format!("{s}.0")
+        }
     } else {
-        format!("{s}.0")
+        let sign = if exp < 0 { '-' } else { '+' };
+        format!("{mantissa}e{sign}{:02}", exp.abs())
     }
 }
 
@@ -141,5 +150,12 @@ mod tests {
         assert_eq!(py_float_str(f64::NAN), "nan");
         assert_eq!(py_float_str(f64::INFINITY), "inf");
         assert_eq!(py_float_str(f64::NEG_INFINITY), "-inf");
+        assert_eq!(py_float_str(-0.0), "-0.0");
+        assert_eq!(py_float_str(0.0001), "0.0001");
+        assert_eq!(py_float_str(0.00001), "1e-05");
+        assert_eq!(py_float_str(-1.25e-7), "-1.25e-07");
+        assert_eq!(py_float_str(1e15), "1000000000000000.0");
+        assert_eq!(py_float_str(1.5e16), "1.5e+16");
+        assert_eq!(py_float_str(1e100), "1e+100");
     }
 }

@@ -17,13 +17,13 @@ macro_rules! upstream_version {
 }
 macro_rules! upstream_commit {
     () => {
-        "d3ccc35"
+        "961d817"
     };
 }
 
 /// Upstream's `__version__` at the pin — what the Python suite would call itself
 /// if it had produced the same output. Also the value of a `.dsnv` bundle's
-/// `domainator_version`, which is the key's meaning on the Python side.
+/// `domainator_version` and a `.dvb` bundle's, which is the key's meaning on the Python side.
 pub const UPSTREAM_VERSION: &str = upstream_version!();
 
 /// The upstream commit the port is caught up to (`UPSTREAM.md`'s pin). Upstream
@@ -66,11 +66,11 @@ mod tests {
     /// `__version__`, so it is an independent witness for [`UPSTREAM_VERSION`].
     #[test]
     fn upstream_version_matches_the_generated_viewer_shell() {
-        let shell = include_str!("../assets/ssn_viewer_shell.html");
+        let shell = include_str!("../assets/viewer_shell.html");
         let needle = format!("\"domainatorVersion\": \"{UPSTREAM_VERSION}\"");
         assert!(
             shell.contains(&needle),
-            "the regenerated ssn_viewer_shell.html does not say `{needle}`: upstream's \
+            "the regenerated viewer_shell.html does not say `{needle}`: upstream's \
              __version__ changed, so update UPSTREAM_VERSION in version.rs"
         );
     }

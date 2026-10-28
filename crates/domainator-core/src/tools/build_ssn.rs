@@ -1,19 +1,48 @@
-//! `build_ssn`: build a Cytoscape XGMML sequence-similarity network from a
-//! symmetric score matrix. Mirrors `domainator.build_ssn`: three edge modes
-//! (all edges above `--threshold`, `--mst`, `--knn`, the last two combinable),
-//! optional MST edge marks, connected-component clustering (`SSN_cluster`), TSV
-//! node metadata, and node coloring.
+//! `build_ssn`: build a sequence-similarity network from a symmetric score matrix, for
+//! Cytoscape (XGMML) or the Domainator Viewer (a `.dvb` bundle and its page). Mirrors
+//! `domainator.build_ssn`: three edge modes (all edges above `--threshold`, `--mst`,
+//! `--knn`, the last two combinable), optional MST edge marks, connected-component
+//! clustering (`SSN_cluster`), TSV node metadata, and node coloring. The viewer always
+//! shows the network's maximum spanning tree above `--threshold`, whatever the edge mode.
 
 use std::collections::{HashMap, HashSet};
 use std::io;
 
+use serde_json::Value;
+
 use crate::matrix::cytoscape::{Cell, ColType, NodeTable};
 use crate::matrix::mst_knn::check_sparsify_data_type;
-use crate::matrix::ssn::{mst_knn_edge_list, MaxTree};
+use crate::matrix::ssn::{mst_knn_edge_list, MaxTree, MERGE_IMPACT_MIN_CHILD};
 use crate::matrix::{require_similarity, DataMatrix, Storage};
+use crate::tools::node_table::{read_node_table, resolve_colors, ColorOptions, LeadingColumn};
+use crate::tools::ssn_bundle::ssn_view;
+use crate::tools::viewer_bundle::{viewer_bundle, viewer_colors, viewer_defaults, ViewerDefaults};
 
 pub const SCORE_COLUMN: &str = "SSN_SCORE";
 pub const CLUSTER_COLUMN: &str = "SSN_cluster";
+
+/// What goes into the Domainator Viewer bundle (`--html_out`/`--dvb_out`).
+pub struct ViewerOptions {
+    /// The network's name, shown in the viewer.
+    pub name: String,
+    /// How the viewer's split chart measures a merge.
+    pub merge_impact_metric: String,
+    /// The metadata column the viewer labels nodes by at first.
+    pub label_by: Option<String>,
+    /// Numeric metadata columns the viewer colors as categories, not a gradient.
+    pub categorical: Vec<String>,
+}
+
+impl Default for ViewerOptions {
+    fn default() -> Self {
+        ViewerOptions {
+            name: String::new(),
+            merge_impact_metric: MERGE_IMPACT_MIN_CHILD.to_string(),
+            label_by: None,
+            categorical: Vec::new(),
+        }
+    }
+}
 
 /// Options for [`build_ssn`].
 #[derive(Default)]
@@ -44,6 +73,8 @@ pub struct BuildSsnOptions {
     /// Skip this many palette colors before coloring the `--color_by` groups.
     /// Ignored with a `color_table`.
     pub palette_offset: usize,
+    /// Build the viewer bundle too (`--html_out`/`--dvb_out`).
+    pub viewer: Option<ViewerOptions>,
 }
 
 /// The assembled network, ready for the CLI to write (XGMML / cluster TSV /
@@ -61,24 +92,11 @@ pub struct BuildSsnResult {
     pub palette_has_missing: bool,
     /// Size-ranked cluster id per node (aligned to `table.names`), when clustered.
     pub cluster_labels: Option<Vec<i64>>,
+    /// The Domainator Viewer bundle, when [`BuildSsnOptions::viewer`] asked for one.
+    pub bundle: Option<Value>,
 }
 
-/// Color for a node whose `--color_by` value is missing, or whose group fell outside
-/// `--max_color_groups`. Same neutral gray Python uses.
-use crate::palette::OTHER_COLOR as DEFAULT_COLOR;
-
-/// A parsed metadata TSV: the value column names, and per-index-string values
-/// positionally aligned to those columns (`None` = the row omitted that column).
-type MetadataTable = (Vec<String>, HashMap<String, Vec<Option<String>>>);
-/// `(per-node fill color, the resolved value -> color table)`; both `None`
-/// when `--color_by` was not given.
-type ResolvedColors = (
-    Option<Vec<Option<String>>>,
-    Option<HashMap<String, String>>,
-    bool,
-);
-
-pub(crate) fn subset_matrix(m: &DataMatrix, subset: &Option<HashSet<String>>) -> DataMatrix {
+pub fn subset_matrix(m: &DataMatrix, subset: &Option<HashSet<String>>) -> DataMatrix {
     let subset = match subset {
         Some(s) => s,
         None => {
@@ -242,50 +260,6 @@ fn orient_by_name(m: &DataMatrix, a: usize, b: usize) -> (usize, usize) {
     }
 }
 
-/// Parse a TSV metadata file into (column names, per-index value map). The first
-/// column is the index; remaining columns are values keyed by the index string.
-pub(crate) fn read_metadata(path: &str) -> io::Result<MetadataTable> {
-    let text = std::fs::read_to_string(path)?;
-    let mut lines = text.lines();
-    let header = lines.next().unwrap_or_default();
-    let cols: Vec<String> = header.split('\t').skip(1).map(|s| s.to_string()).collect();
-    let mut map: HashMap<String, Vec<Option<String>>> = HashMap::new();
-    for line in lines {
-        if line.is_empty() {
-            continue;
-        }
-        let mut it = line.split('\t');
-        let key = it.next().unwrap_or_default().to_string();
-        let mut vals: Vec<Option<String>> = Vec::with_capacity(cols.len());
-        for _ in 0..cols.len() {
-            match it.next() {
-                Some(v) if !v.is_empty() => vals.push(Some(v.to_string())),
-                _ => vals.push(None),
-            }
-        }
-        map.insert(key, vals);
-    }
-    Ok((cols, map))
-}
-
-/// Infer the XGMML column type from the file's present values, upcasting an
-/// integer column to real when the left-merge leaves any node without a value
-/// (mirrors pandas' NaN-driven int→float upcast).
-fn infer_type(present: &[&str], has_missing: bool) -> ColType {
-    if present.is_empty() {
-        return ColType::Str;
-    }
-    let all_int = present.iter().all(|s| s.parse::<i64>().is_ok());
-    let all_num = present.iter().all(|s| s.parse::<f64>().is_ok());
-    if all_int && !has_missing {
-        ColType::Integer
-    } else if all_num {
-        ColType::Real
-    } else {
-        ColType::Str
-    }
-}
-
 /// Build the SSN. `matrix` must have symmetric labels after subsetting.
 pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<BuildSsnResult> {
     let invalid = |msg: String| io::Error::new(io::ErrorKind::InvalidInput, msg);
@@ -302,8 +276,10 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
     let names = matrix.rows.clone();
     let (use_mst, knn_k) = (opts.mst, opts.knn);
 
-    // `--mark_mst` only annotates edges, so it keeps the graph-derived clustering.
-    let tree = (use_mst || opts.mark_mst).then(|| MaxTree::from_matrix(&matrix));
+    // `--mark_mst` only annotates edges, so it keeps the graph-derived clustering. The
+    // viewer's network is the spanning tree.
+    let tree =
+        (use_mst || opts.mark_mst || opts.viewer.is_some()).then(|| MaxTree::from_matrix(&matrix));
 
     // Edges per mode.
     let edges: Vec<(usize, usize, f64)> = if use_mst && knn_k.is_none() {
@@ -361,62 +337,60 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
     };
 
     // Node table: SSN_cluster first (if any), then metadata columns.
-    let mut columns: Vec<String> = Vec::new();
-    let mut coltypes: Vec<ColType> = Vec::new();
-    let mut cells: Vec<Vec<Cell>> = vec![Vec::new(); n];
+    let leading = cluster_labels
+        .iter()
+        .map(|labels| LeadingColumn {
+            name: CLUSTER_COLUMN.to_string(),
+            coltype: ColType::Integer,
+            cells: labels.iter().map(|&l| Cell::Int(l)).collect(),
+        })
+        .collect();
+    let table = read_node_table(&names, leading, &opts.metadata_files)?;
 
-    if let Some(labels) = &cluster_labels {
-        columns.push(CLUSTER_COLUMN.to_string());
-        coltypes.push(ColType::Integer);
-        for i in 0..n {
-            cells[i].push(Cell::Int(labels[i]));
+    let colors = resolve_colors(
+        &table,
+        &ColorOptions {
+            color_by: opts.color_by.as_deref(),
+            color_table: opts.color_table.as_ref(),
+            max_color_groups: opts.max_color_groups,
+            palette_offset: opts.palette_offset,
+        },
+    );
+
+    let bundle = match &opts.viewer {
+        None => None,
+        Some(viewer) => {
+            let defaults = viewer_defaults(
+                &table,
+                &ViewerDefaults {
+                    color_by: opts.color_by.as_deref(),
+                    color_table: viewer_colors(
+                        opts.color_table.as_ref(),
+                        colors.as_ref().map(|c| &c.table),
+                        opts.palette_offset,
+                        opts.max_color_groups,
+                    ),
+                    label_by: viewer.label_by.as_deref(),
+                    categorical: &viewer.categorical,
+                },
+            )?;
+            let tree = tree.as_ref().expect("a tree is built for the viewer");
+            let view = ssn_view(tree, opts.threshold, &viewer.merge_impact_metric)?;
+            Some(viewer_bundle(
+                &viewer.name,
+                &names,
+                &table,
+                defaults,
+                "ssn",
+                view,
+            ))
         }
-    }
-
-    for path in &opts.metadata_files {
-        let (mcols, map) = read_metadata(path)?;
-        for (ci, col) in mcols.iter().enumerate() {
-            // Gather present values in node order; note missing nodes.
-            let mut present: Vec<&str> = Vec::new();
-            let mut has_missing = false;
-            let per_node: Vec<Option<String>> = names
-                .iter()
-                .map(|nm| match map.get(nm).and_then(|v| v[ci].clone()) {
-                    Some(s) => Some(s),
-                    None => {
-                        has_missing = true;
-                        None
-                    }
-                })
-                .collect();
-            for v in per_node.iter().flatten() {
-                present.push(v);
-            }
-            let ct = infer_type(&present, has_missing);
-            columns.push(col.clone());
-            coltypes.push(ct);
-            for (i, v) in per_node.into_iter().enumerate() {
-                let cell = match (v, ct) {
-                    (None, _) => Cell::Missing,
-                    (Some(s), ColType::Integer) => Cell::Int(s.parse().unwrap_or(0)),
-                    (Some(s), ColType::Real) => Cell::Real(s.parse().unwrap_or(0.0)),
-                    (Some(s), ColType::Str) => Cell::Text(s),
-                };
-                cells[i].push(cell);
-            }
-        }
-    }
-
-    let table = NodeTable {
-        names: names.clone(),
-        columns,
-        coltypes,
-        cells,
     };
 
-    // Color resolution.
-    let (node_fills, resolved_color_table, palette_has_missing) = resolve_colors(&table, opts);
-
+    let (node_fills, resolved_color_table, palette_has_missing) = match colors {
+        Some(c) => (Some(c.fills), Some(c.table), c.palette_has_missing),
+        None => (None, None, false),
+    };
     Ok(BuildSsnResult {
         table,
         edges,
@@ -425,63 +399,6 @@ pub fn build_ssn(matrix: &DataMatrix, opts: &BuildSsnOptions) -> io::Result<Buil
         resolved_color_table,
         palette_has_missing,
         cluster_labels,
+        bundle,
     })
-}
-
-fn resolve_colors(table: &NodeTable, opts: &BuildSsnOptions) -> ResolvedColors {
-    let color_by = match &opts.color_by {
-        Some(c) => c,
-        None => return (None, None, false),
-    };
-    let col_idx = match table.columns.iter().position(|c| c == color_by) {
-        Some(i) => i,
-        None => return (None, None, false),
-    };
-    let ct = table.coltypes[col_idx];
-    let value_of = |i: usize| -> Option<String> {
-        match &table.cells[i][col_idx] {
-            Cell::Missing => None,
-            Cell::Int(v) => Some(v.to_string()),
-            Cell::Real(v) => Some(crate::matrix::text::py_float_str(*v)),
-            Cell::Text(s) => Some(s.clone()),
-        }
-    };
-    let _ = ct;
-
-    // Resolve/extend the color table.
-    let mut table_map = opts.color_table.clone().unwrap_or_default();
-    if opts.color_table.is_none() {
-        // Per-node values, kept with duplicates so `--max_color_groups` can rank
-        // groups by frequency the way Python's pandas Series path does.
-        let mut present: Vec<String> = Vec::new();
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for i in 0..table.names.len() {
-            if let Some(v) = value_of(i) {
-                *counts.entry(v.clone()).or_insert(0) += 1;
-                present.push(v);
-            }
-        }
-        table_map = crate::palette::get_palette(
-            &present,
-            opts.max_color_groups,
-            Some(&counts),
-            opts.palette_offset,
-        );
-    }
-
-    let fills: Vec<Option<String>> = (0..table.names.len())
-        .map(|i| match value_of(i) {
-            Some(v) => Some(
-                table_map
-                    .get(&v)
-                    .cloned()
-                    .unwrap_or_else(|| DEFAULT_COLOR.to_string()),
-            ),
-            None => Some(DEFAULT_COLOR.to_string()),
-        })
-        .collect();
-
-    let palette_has_missing =
-        opts.color_table.is_none() && (0..table.names.len()).any(|i| value_of(i).is_none());
-    (Some(fills), Some(table_map), palette_has_missing)
 }

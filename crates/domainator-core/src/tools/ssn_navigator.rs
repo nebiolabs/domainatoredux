@@ -1,4 +1,5 @@
-//! `ssn_navigator`: read-only navigation of a `build_ssn_viewer` `.dsnv` bundle.
+//! `ssn_navigator`: read-only navigation of the network in a Domainator Viewer bundle
+//! (`build_ssn --dvb_out`), or an older `.dsnv` network bundle.
 //!
 //! Mirrors `domainator.ssn_navigator`. An agent-friendly companion to the interactive
 //! HTML viewer: instead of rendering the whole network it answers targeted questions
@@ -20,7 +21,7 @@ use crate::matrix::ssn::{MergeEvent, SliderStop, DEFAULT_MAX_MERGE_EVENTS};
 
 use super::ssn_bundle::{
     cluster_for_node, clusters_at_threshold, coarsest_threshold, component_members, component_size,
-    merge_event_rows, merge_event_series, node_index_by_name, slider_stops,
+    merge_event_rows, merge_event_series, network, node_index_by_name, node_names, slider_stops,
     summarize_cluster_metadata,
 };
 
@@ -237,17 +238,14 @@ fn metadata_row(bundle: &Value, node_index: usize) -> Value {
     Value::Object(out)
 }
 
-/// Answer a single navigation query against a loaded `.dsnv` bundle.
+/// Answer a single navigation query against a bundle with a network view, as
+/// [`super::ssn_bundle::load_bundle`] returns it.
 pub fn ssn_navigator(bundle: &Value, opts: &SsnNavigatorOptions) -> Result<Value, String> {
-    let graph = bundle.get("graph").ok_or("bundle has no 'graph' section")?;
+    let graph = network(bundle).ok_or("bundle has no network view")?;
     let hierarchy = graph
         .get("hierarchy")
-        .ok_or("bundle graph has no 'hierarchy'")?;
-    let empty = Vec::new();
-    let node_names = graph
-        .get("nodes")
-        .and_then(Value::as_array)
-        .unwrap_or(&empty);
+        .ok_or("bundle network has no 'hierarchy'")?;
+    let node_names = node_names(bundle);
     let threshold = resolve_threshold(opts.threshold.as_deref(), hierarchy)?;
     let mut derived = Derived::default();
 
@@ -486,7 +484,7 @@ mod tests {
         assert_eq!(threshold_out(3.5), json!(3.5));
     }
 
-    /// A real bundle, so the cut-points under test are the ones a `.dsnv` would give.
+    /// A real bundle, so the cut-points under test are the ones a `.dvb` would give.
     fn six_node_bundle() -> Value {
         let mut dense = vec![0.0f64; 36];
         for &(i, j, w) in &[
@@ -509,11 +507,17 @@ mod tests {
             data_type: "score".into(),
             storage: crate::matrix::Storage::Dense(dense),
         };
-        let opts = super::super::build_ssn_viewer::BuildSsnViewerOptions {
-            name: "t".into(),
-            ..Default::default()
-        };
-        super::super::build_ssn_viewer::build_ssn_viewer_bundle(&m, &opts).unwrap()
+        let view = super::super::ssn_bundle::ssn_view(
+            &crate::matrix::ssn::MaxTree::from_matrix(&m),
+            0.0,
+            crate::matrix::ssn::MERGE_IMPACT_MIN_CHILD,
+        )
+        .unwrap();
+        json!({
+            "format": super::super::viewer_bundle::VIEWER_BUNDLE_FORMAT, "version": 1,
+            "name": "t", "nodes": m.rows, "metadata": {"columns": [], "rows": []},
+            "defaults": {}, "views": {"ssn": view},
+        })
     }
 
     fn run(bundle: &Value, opts: SsnNavigatorOptions) -> Value {
@@ -525,7 +529,7 @@ mod tests {
         // `--query node` walks up from the leaf instead of rebuilding the partition at
         // each cut-point. The two must agree everywhere, or the cheap path is a lie.
         let bundle = six_node_bundle();
-        let hierarchy = &bundle["graph"]["hierarchy"];
+        let hierarchy = &bundle["views"]["ssn"]["hierarchy"];
         let out = run(
             &bundle,
             SsnNavigatorOptions {

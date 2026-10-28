@@ -1,8 +1,8 @@
 use super::CommonArgs;
 use crate::types::{Finite, PositiveInt};
 
-/// Builds a Cytoscape sequence similarity network from a similarity matrix
-/// (upstream `build_ssn.py`).
+/// Builds a sequence similarity network from a similarity matrix, for Cytoscape or the
+/// Domainator Viewer (upstream `build_ssn.py`).
 #[derive(clap::Args, Clone, Debug, Default)]
 #[command(rename_all = "snake_case")]
 pub struct BuildSsnArgs {
@@ -56,8 +56,33 @@ pub struct BuildSsnArgs {
     #[arg(long)]
     pub color_table_out: Option<String>,
     /// Write the network to this Cytoscape xgmml file.
-    #[arg(short = 'o', long, required = true)]
-    pub xgmml_out: String,
+    #[arg(short = 'o', long)]
+    pub xgmml_out: Option<String>,
+    /// Write the Domainator Viewer, showing this network, to this HTML file. The viewer
+    /// shows the network's maximum spanning tree above --threshold, whatever --mst and
+    /// --knn say.
+    #[arg(long)]
+    pub html_out: Option<String>,
+    /// Write the gzip-compressed JSON Domainator Viewer bundle (.dvb) to this file. The
+    /// viewer opens it (domainatoredux viewer), and saves sessions in the same format.
+    #[arg(long)]
+    pub dvb_out: Option<String>,
+    /// How the viewer's split chart measures a merge: min_child (node count of the
+    /// smaller piece) or product (the two piece sizes multiplied). Switchable in the
+    /// viewer.
+    #[arg(long, default_value = "min_child", value_parser = ["product", "min_child"])]
+    pub merge_impact_metric: String,
+    /// Label the nodes in the html viewer by this metadata column at first.
+    #[arg(long)]
+    pub label_by: Option<String>,
+    /// Numeric metadata columns (for example integer cluster numbers) that the html
+    /// viewer should color as discrete categories instead of a gradient.
+    #[arg(long, num_args = 1..)]
+    pub categorical: Option<Vec<String>>,
+    /// The network's name, shown in the html viewer. Defaults to the html (or dvb)
+    /// output's file name.
+    #[arg(long)]
+    pub name: Option<String>,
     /// Creates a new metadata column called 'SSN_cluster', replacing that column from
     /// the metadata file if already present. Finds clusters by following connectivity,
     /// assigns each cluster a distinct integer, based on size rank, bigger clusters get

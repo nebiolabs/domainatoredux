@@ -29,6 +29,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
 shlex = "2"
+faer = { version = "0.24", default-features = false, features = ["std"] }
 
 # Lint policy lives here, not in CI flags, so a local `cargo clippy` enforces the same
 # rules CI does. Every member opts in with `[lints] workspace = true`.

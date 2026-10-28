@@ -7,8 +7,9 @@
 //! names are upstream's parameter names, which are also the long flags (every struct
 //! is `rename_all = "snake_case"`) and the config-file keys.
 
+mod build_projection;
 mod build_ssn;
-mod build_ssn_viewer;
+mod build_tree;
 mod clean_sequences;
 mod color_genbank;
 mod color_table_to_legend;
@@ -42,9 +43,11 @@ mod ssn_navigator;
 mod summary_report;
 mod transform_matrix;
 mod trim_contigs;
+mod viewer;
 
+pub use build_projection::BuildProjectionArgs;
 pub use build_ssn::BuildSsnArgs;
-pub use build_ssn_viewer::BuildSsnViewerArgs;
+pub use build_tree::BuildTreeArgs;
 pub use clean_sequences::CleanSequencesArgs;
 pub use color_genbank::ColorGenbankArgs;
 pub use color_table_to_legend::ColorTableToLegendArgs;
@@ -78,6 +81,7 @@ pub use ssn_navigator::SsnNavigatorArgs;
 pub use summary_report::SummaryReportArgs;
 pub use transform_matrix::TransformMatrixArgs;
 pub use trim_contigs::TrimContigsArgs;
+pub use viewer::ViewerArgs;
 
 /// The `clap::Command` of a tool, built from its args struct alone, for
 /// callers that have no CLI to ask (the GUI's tool dialogs).
@@ -107,7 +111,9 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "compare_contigs" => CompareContigsArgs::augment_args(cmd),
         "transform_matrix" => TransformMatrixArgs::augment_args(cmd),
         "build_ssn" => BuildSsnArgs::augment_args(cmd),
-        "build_ssn_viewer" => BuildSsnViewerArgs::augment_args(cmd),
+        "build_tree" => BuildTreeArgs::augment_args(cmd),
+        "build_projection" => BuildProjectionArgs::augment_args(cmd),
+        "viewer" => ViewerArgs::augment_args(cmd),
         "matrix_report" => MatrixReportArgs::augment_args(cmd),
         "ssn_navigator" => SsnNavigatorArgs::augment_args(cmd),
         "summary_report" => SummaryReportArgs::augment_args(cmd),

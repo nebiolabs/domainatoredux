@@ -20,7 +20,7 @@ currently unavailable (an unplugged drive, say) is hidden rather than forgotten.
 
 App state lives in a single hidden directory at the workspace root, `.domainatoredux/`:
 the file manifest, the database registry, job provenance records, per-file notes
-(description and color), and any subsets the SSN viewer extracts. **Your data files are
+(description and color), and any subsets the viewer extracts. **Your data files are
 never rewritten to carry app state.** `.domainatoredux/` is hidden from the tree, refused as
 a folder name, and protected from deletion.
 
@@ -102,8 +102,10 @@ the copy as a database and use **Build Index** to make a new one.
 | | **Enum Report** | The [`enum_report`](cli-reference.md#enum_report) table, live: per contig, CDS or domain, sortable, with per-column filters. **Columns** opens the same column builder as the export (every column type, parameters included), and **Taxonomy** picks the database the taxonomy columns use. Each file remembers its granularity and the columns last applied at each one (kept with the file's workspace metadata, so they follow a rename or move); a granularity it has none for starts from the default set in **Preferences**, which **Defaults** returns to. Each row's checkbox selects its contig, CDS or domain in Contig View; Shift+click a second checkbox to set every row between the two (in the current sort and filter) the same way, and the header checkbox selects every row the filters leave. |
 | | **Summary** | A dashboard of the dataset: counts, a contig-length histogram, top domains / databases / organisms, and a taxonomy icicle plot built from the records' own lineage — no taxdump needed. This one has no CLI equivalent. |
 | `.hdf5` `.hdf` `.h5` | **Matrix Report** | The score histogram and suggested clustering cutoffs. Click a threshold to select it. |
-| `.dsnv` (and legacy `.ssnv`) | **SSN Viewer** | The interactive network: drag the threshold slider to split it into clusters, switch between force-directed, grid, packed and treemap layouts, edit and chart metadata columns, color by gradient, and save sessions. Save session, Save extraction and the view, table,
-chart and legend exports open a Save dialog. Select nodes and click **Open sequence(s)** to pull those records out of the workspace into a new sequence tab. |
+| | **Alignment** | Shown for every FASTA file; says so when the file is not an alignment. See `.afa` below. |
+| `.dvb`, and the older `.dsnv` (and legacy `.ssnv`) | **Viewer** | The Domainator Viewer, for whichever view the bundle holds. **A network** (`build_ssn`): drag the threshold slider to split it into clusters, switch between force-directed, grid, packed and treemap layouts. **A tree** (`build_tree`): select, collapse and ladderize clades, cut it into numbered clades with a slider, and read its alignment beside it. **A projection** (`build_projection`): select points by dragging. All three edit and chart metadata columns, color by category or gradient, and save sessions; Save session, Save extraction and the view, table, chart, legend, Newick and FASTA exports open a Save dialog. **Save as HTML page** writes the viewer with its bundle as one shareable file. Select nodes and click **Extract selected** to pull those records out of the workspace into a new sequence file. |
+| `.afa` (aligned FASTA) | **Alignment** | The residue grid, colored by residue class or by agreement with the consensus, under tracks of each column's conservation and occupancy and the consensus residue. Filter the rows by id, select them (Ctrl/Cmd+click toggles, Shift+click selects a range), and **Export aligned** or **Export sequences** writes them to a new file with or without their gaps. Rows and columns are drawn as they scroll into view, so a large alignment opens quickly. |
+| `.nwk` `.newick` | **Text** | A Newick tree, as text; [`build_tree --newick`](cli-reference.md#build_tree) puts it in the viewer. |
 | `.hmm` `.hmmer` | **Profiles** | A filterable table of every profile in the file. Opens instantly even for tens of thousands of profiles, because it never computes a logo up front. Extract a subset to a new `.hmm`. |
 | | **Logo** | A sequence logo for one profile, with an occupancy strip, horizontal virtualization, and **Export SVG**. |
 | `.tsv` `.csv` `.tab` | **Table** | View and edit a delimited table. Every row is editable however long the file is — rendering is virtualized, and past the point where a browser stops growing a scrollbar the scroll position maps onto the row range instead. |
@@ -113,12 +115,12 @@ chart and legend exports open a Save dialog. Select nodes and click **Open seque
 
 ## Running tools
 
-The **Tools** menu runs 30 of the command-line tools, grouped as upstream groups them:
+The **Tools** menu runs 32 of the command-line tools, grouped as upstream groups them:
 Annotation & search, Selection & editing, Conversion, HMM profiles, Comparison,
 Networks, Reports and Figures. The **Tools** button in the middle of the toolbar offers the same groups cut
 down to the tools that can take the selected files as inputs, and the dialog it opens
 starts with those files filled in. Selecting a matrix `.hdf5` and a `.tsv`, for example,
-offers only Build SSN and Build SSN Viewer, with the matrix as the input and the table as
+offers only Build SSN, Build tree and Build projection, with the matrix as the input and the table as
 metadata. A tool is offered only if every selected file fits one of its inputs at the
 same time. An input that takes a single file takes only one of them, so two Stockholm
 alignments do not offer hmmer_build. Fields that take several files (enum_report's
@@ -146,7 +148,8 @@ starts an option at a different value from the command line, the dialog says so 
 - **Output fields** are filenames; the app fills in a sensible default from the input's
   name and writes into the folder you are looking at.
 - Output types are chosen so that pipelines chain: the matrix tools write `.hdf5`, which
-  appears in the SSN tools' input dropdowns, whose `.dsnv` opens in the SSN viewer.
+  appears in the network, tree and projection tools' input dropdowns, whose `.dvb` opens
+  in the Viewer tab.
 - **Report columns** (enum_report and hmmer_report) are an ordered list: add a column, pick
   its type, and fill in what that type needs: ranks for a taxon name, a feature and
   qualifier, a PROSITE pattern, a pH. The order of the list is the order of the columns
@@ -157,7 +160,7 @@ starts an option at a different value from the command line, the dialog says so 
   from [Reference databases](#reference-databases) once you have installed it.
 
 The whole SSN pipeline runs from the menu: **domain_search → domainate → seq_dist (or
-compare_contigs) → transform_matrix → build_ssn / build_ssn_viewer**, including
+compare_contigs) → transform_matrix → build_ssn / build_tree / build_projection**, including
 neighborhood extraction, taxonomy filters and decoys.
 
 ## Jobs and provenance
@@ -170,8 +173,9 @@ config file; the config and the tool's full output are kept in
 dialog, copy its parameters as JSON, reveal its output, or remove it from the history.
 
 Every completed run writes a provenance record under `.domainatoredux/jobs/`, and stamps each
-output file with the job that made it. That record is what lets the SSN viewer trace a
-network back to the sequence file it came from, which is how **Open sequence(s)** works.
+output file with the job that made it. That record is what lets the viewer trace a
+network, tree or projection back to the sequence file its matrix came from, which is how
+**Extract selected** works.
 
 **Jobs at once.** By default two jobs run at the same time and the rest wait in the queue,
 marked *queued*. Change the number in **Preferences → Jobs at once**. Each job uses the
@@ -320,7 +324,7 @@ Worth knowing before you hit them:
 - **The matrix report assumes a symmetric matrix**; a query × reference matrix is not
   meaningfully displayed.
 - **`.cm` and Stockholm files have no viewer**, only tool-dropdown recognition.
-- **The SSN viewer doesn't follow the app theme** — it is a shared artifact generated from
-  the Python viewer.
+- **The Domainator Viewer doesn't follow the app theme** — it is a shared artifact
+  generated from the Python viewer.
 - Some tools are not in the menu at all: see the GUI column of
   [Porting status](porting-status.md).

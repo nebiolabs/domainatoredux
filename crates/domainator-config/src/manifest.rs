@@ -27,6 +27,8 @@ const INPUT_PATHS: &[&str] = &[
     "color_table",
     "coords",
     "foldseek",
+    "newick",
+    "msa",
     "esm2_3di_weights",
     "matrix",
     "ncbi_summary",

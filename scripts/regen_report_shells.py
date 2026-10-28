@@ -6,7 +6,7 @@ authored by hand. Each is upstream's ``domainator.report_html.report_shell(name)
 report page with its title, data and (for a table) rows left as the tokens
 ``@@REPORT_TITLE@@``, ``@@REPORT_DATA@@`` and ``@@REPORT_ROWS@@``, which
 ``crates/domainator-core/src/tools/report_html.rs`` fills at runtime. Unlike the SSN viewer
-shell (``regen_ssn_viewer_shell.py``) they carry no local patches: the shell is upstream's
+shell (``regen_viewer_shell.py``) they carry no local patches: the shell is upstream's
 page byte for byte.
 
 Usage:

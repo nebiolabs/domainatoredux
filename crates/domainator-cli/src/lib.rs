@@ -91,15 +91,21 @@ enum Command {
     CompareContigs(config::args::CompareContigsArgs),
     /// Normalize / convert / sparsify a score matrix (dense<->sparse, --mode, --mst_knn).
     TransformMatrix(config::args::TransformMatrixArgs),
-    /// Build a Cytoscape XGMML sequence-similarity network from a score matrix.
+    /// Build a sequence-similarity network for Cytoscape or the Domainator Viewer.
     BuildSsn(config::args::BuildSsnArgs),
-    /// Build a compact `.dsnv` bundle (+ standalone HTML) for the interactive SSN viewer.
-    BuildSsnViewer(config::args::BuildSsnViewerArgs),
+    /// Build a UPGMA tree from a matrix, or read a Newick tree, for Newick, Cytoscape or
+    /// the Domainator Viewer.
+    BuildTree(config::args::BuildTreeArgs),
+    /// Project a matrix's rows into 2D or 3D with PCA.
+    BuildProjection(config::args::BuildProjectionArgs),
+    /// Write the Domainator Viewer page, empty or opening a viewer bundle.
+    Viewer(config::args::ViewerArgs),
     /// Summarize a similarity matrix (stats, cluster-vs-threshold, merge events) as text or JSON.
     MatrixReport(config::args::MatrixReportArgs),
     /// Dataset-level statistics: contig/CDS counts, domain frequency, taxonomy.
     SummaryReport(config::args::SummaryReportArgs),
-    /// Navigate a `.dsnv` bundle: clusters, cluster contents, and metadata, as JSON.
+    /// Navigate the network in a viewer bundle: clusters, cluster contents, and
+    /// metadata, as JSON.
     SsnNavigator(config::args::SsnNavigatorArgs),
     /// Print a JSON description of every command and its options (the tool manifest).
     Describe {
@@ -467,7 +473,9 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::CompareContigs(args) => commands::compare_contigs::run(&args)?,
         Command::TransformMatrix(args) => commands::transform_matrix::run(&args)?,
         Command::BuildSsn(args) => commands::build_ssn::run(&args)?,
-        Command::BuildSsnViewer(args) => commands::build_ssn_viewer::run(&args)?,
+        Command::BuildTree(args) => commands::build_tree::run(&args)?,
+        Command::BuildProjection(args) => commands::build_projection::run(&args)?,
+        Command::Viewer(args) => commands::viewer::run(&args)?,
         Command::MatrixReport(args) => commands::matrix_report::run(&args)?,
         Command::SummaryReport(args) => commands::summary_report::run(&args)?,
         Command::SsnNavigator(args) => commands::ssn_navigator::run(&args)?,

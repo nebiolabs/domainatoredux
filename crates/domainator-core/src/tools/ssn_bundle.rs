@@ -1,51 +1,136 @@
-//! Read-only helpers for navigating a `build_ssn_viewer` `.dsnv` bundle.
+//! The network view of a Domainator Viewer bundle: writing it, and read-only helpers for
+//! navigating it.
 //!
-//! Mirrors `domainator.ssn_bundle`. The bundle is a gzip-compressed JSON document
-//! storing an MST merge tree plus a positional metadata table; these helpers let
-//! non-browser callers (notably [`super::ssn_navigator`]) reconstruct the clusters
+//! Mirrors `domainator.ssn_bundle`. `build_ssn --dvb_out` writes a `.dvb` bundle
+//! ([`super::viewer_bundle`]) whose `views.ssn` ([`ssn_view`]) stores an MST merge tree;
+//! the bundle's `nodes` and positional `metadata` table describe its nodes. These helpers
+//! let non-browser callers (notably [`super::ssn_navigator`]) reconstruct the clusters
 //! active at a chosen similarity threshold and summarize their members, mirroring the
 //! viewer's `activeClustersAtThreshold` / `componentMembers`.
 //!
-//! From v6 the bundle carries only what cannot be derived from the merge order, so the
-//! split-event series, its moving sum and the threshold slider's stops are computed
-//! here on demand — [`merge_event_rows`], [`merge_event_series`], [`moving_sum`] and
-//! [`slider_stops`] — rather than read out of the file. The viewer does the same thing
-//! in JavaScript. A caller therefore picks its own `max_merge_events` at the point of
-//! display instead of inheriting one chosen when the file was written. Pre-v6 bundles
-//! carry the derived keys as well; they are **ignored in favor of recomputing**, so a
-//! capped series written into an old file cannot silently limit what is shown now.
+//! The bundle carries only what cannot be derived from the merge order, so the split-event
+//! series, its moving sum and the threshold slider's stops are computed here on demand —
+//! [`merge_event_rows`], [`merge_event_series`], [`moving_sum`] and [`slider_stops`] —
+//! rather than read out of the file. The viewer does the same thing in JavaScript. A
+//! caller therefore picks its own `max_merge_events` at the point of display instead of
+//! inheriting one chosen when the file was written.
 //!
-//! A v4 bundle may also carry a top-level `app_state` section written by the HTML
-//! viewer's "Save session" button. It holds viewer UI state only and is ignored here;
-//! the rest of such a file is an ordinary bundle, so a saved session's `metadata`
-//! simply reflects whatever was edited in the viewer.
+//! A bundle may also carry a top-level `app_state` section written by the viewer's "Save
+//! session" button. It holds viewer UI state only and is ignored here; the rest of such a
+//! file is an ordinary bundle, so a saved session's `metadata` simply reflects whatever
+//! was edited in the viewer.
+//!
+//! Earlier versions wrote networks to their own format, `.dsnv`
+//! ([`SSN_VIEWER_BUNDLE_FORMAT`]); [`load_bundle`] and the viewer still read those, as the
+//! `.dvb` bundle they correspond to ([`upgrade_ssn_viewer_bundle`]). Pre-v6 `.dsnv` files
+//! also carry derived keys; they are **ignored in favor of recomputing**, so a capped
+//! series written into an old file cannot silently limit what is shown now.
 
 use crate::stats::percentile;
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
-use serde_json::Value;
+use serde_json::{json, Map, Value};
 
 use crate::matrix::ssn::{
-    component_size_summary_by_threshold, filter_merge_event_rows, floor_threshold_value,
-    merge_event_moving_sum, threshold_merge_event_rows, threshold_slider_stops, MaxTree,
-    MergeEvent, MovingSum, SliderStop, MERGE_IMPACT_MIN_CHILD, MOVING_SUM_GRID_POINTS,
+    build_mst_component_hierarchy, component_size_summary_by_threshold, filter_merge_event_rows,
+    floor_threshold_value, merge_event_moving_sum, threshold_merge_event_rows,
+    threshold_slider_stops, HierNode, MaxTree, MergeEvent, MovingSum, SliderStop,
+    MERGE_IMPACT_CHOICES, MERGE_IMPACT_MIN_CHILD, MOVING_SUM_GRID_POINTS,
     MOVING_SUM_WINDOW_FRACTION,
 };
-
-pub use super::build_ssn_viewer::{
-    SSN_VIEWER_BUNDLE_FORMAT, SSN_VIEWER_BUNDLE_VERSION, SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS,
+use crate::tools::viewer_bundle::{
+    num_or_null, SUPPORTED_VIEWER_BUNDLE_VERSIONS, VIEWER_BUNDLE_FORMAT,
 };
+
+/// The format of the network bundles (`.dsnv`) that `build_ssn_viewer` wrote before
+/// networks moved into the Domainator Viewer bundle. Read, never written.
+pub const SSN_VIEWER_BUNDLE_FORMAT: &str = "domainator_ssn_viewer_bundle";
+/// The `.dsnv` versions this build reads. v3 added per-event merge sizes and the moving
+/// sum; v4 an optional top-level `app_state`; v5 `graph.merge_event_total` and
+/// `graph.max_merge_events`; v6 dropped every derived key, leaving `graph` holding only
+/// `nodes`, `mst_edges`, `merge_impact_metric` and `hierarchy` — all that `views.ssn`
+/// holds now. Everything v6 needs has been in the format since v3, so all of these
+/// versions read the same way.
+pub const SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS: [i64; 4] = [3, 4, 5, 6];
+/// What a network view holds; the rest of a `.dsnv` graph is derived, and recomputed
+/// instead.
+const SSN_VIEW_KEYS: [&str; 3] = ["mst_edges", "merge_impact_metric", "hierarchy"];
 
 fn invalid(msg: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg)
 }
 
+fn hier_node_json(n: &HierNode) -> Value {
+    let parent = match n.parent {
+        Some(p) => json!(p),
+        None => Value::Null,
+    };
+    if n.is_leaf {
+        json!({
+            "id": n.id,
+            "kind": "leaf",
+            "node_index": n.node_index,
+            "size": n.size,
+            "parent": parent,
+            "leaf_start": n.leaf_start,
+            "leaf_count": n.leaf_count,
+        })
+    } else {
+        json!({
+            "id": n.id,
+            "kind": "cluster",
+            "left": n.left,
+            "right": n.right,
+            "threshold": num_or_null(n.threshold.unwrap_or(f64::NAN)),
+            "size": n.size,
+            "parent": parent,
+            "leaf_start": n.leaf_start,
+            "leaf_count": n.leaf_count,
+        })
+    }
+}
+
+/// A bundle's `views.ssn` for the network of `tree`'s edges that score above
+/// `threshold` (`ssn_view`).
+///
+/// Only what cannot be derived from the merge order itself. The split-event series, its
+/// moving sum and the threshold slider's stops are all a pure function of (nodes,
+/// mst_edges, merge_impact_metric), so readers compute them rather than carrying a copy:
+/// the viewer via its JavaScript ports, other readers via [`merge_event_rows`] /
+/// [`slider_stops`]. That keeps the file a function of the network alone — no selection
+/// baked in at build time — and keeps it O(nodes) on a network with hundreds of
+/// thousands of split events.
+pub fn ssn_view(tree: &MaxTree, threshold: f64, merge_impact_metric: &str) -> io::Result<Value> {
+    if !MERGE_IMPACT_CHOICES.contains(&merge_impact_metric) {
+        let mut choices = MERGE_IMPACT_CHOICES.to_vec();
+        choices.sort_unstable();
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("merge_impact_metric must be one of {choices:?}"),
+        ));
+    }
+    let edges: Vec<(usize, usize, f64)> = tree
+        .mst_edges()
+        .filter(|&(_, _, score)| score > threshold)
+        .collect();
+    let hierarchy = build_mst_component_hierarchy(&MaxTree::from_mst_edges(tree.n_nodes, &edges));
+    Ok(json!({
+        "mst_edges": edges.iter().map(|&(i, j, w)| json!([i, j, w])).collect::<Vec<_>>(),
+        "merge_impact_metric": merge_impact_metric,
+        "hierarchy": {
+            "nodes": hierarchy.nodes.iter().map(hier_node_json).collect::<Vec<_>>(),
+            "roots": hierarchy.roots,
+            "leaf_order": hierarchy.leaf_order,
+        },
+    }))
+}
+
 /// Decompress a gzip member fully via libdeflater, sizing the buffer from the ISIZE
 /// trailer. ISIZE is mod 2^32, so a >4 GiB bundle needs the grow loop rather than
 /// silently truncating.
-fn gunzip(bytes: &[u8]) -> io::Result<Vec<u8>> {
+pub fn gunzip(bytes: &[u8]) -> io::Result<Vec<u8>> {
     if bytes.len() < 18 {
         return Err(invalid("truncated gzip".into()));
     }
@@ -70,20 +155,65 @@ fn gunzip(bytes: &[u8]) -> io::Result<Vec<u8>> {
     }
 }
 
-/// Load and validate a `.dsnv` bundle (gzip JSON, or plain JSON as a fallback).
+/// The `.dvb` bundle a `.dsnv` one corresponds to, `app_state` included
+/// (`upgrade_ssn_viewer_bundle`).
+pub fn upgrade_ssn_viewer_bundle(bundle: &Value) -> Value {
+    let graph = &bundle["graph"];
+    let mut view = Map::new();
+    for key in SSN_VIEW_KEYS {
+        if let Some(value) = graph.get(key) {
+            view.insert(key.into(), value.clone());
+        }
+    }
+    let mut views = Map::new();
+    views.insert("ssn".into(), Value::Object(view));
+    let mut upgraded = Map::new();
+    upgraded.insert("format".into(), json!(VIEWER_BUNDLE_FORMAT));
+    upgraded.insert(
+        "version".into(),
+        json!(SUPPORTED_VIEWER_BUNDLE_VERSIONS.iter().max()),
+    );
+    upgraded.insert(
+        "name".into(),
+        bundle.get("name").cloned().unwrap_or(Value::Null),
+    );
+    upgraded.insert(
+        "domainator_version".into(),
+        bundle
+            .get("domainator_version")
+            .cloned()
+            .unwrap_or(Value::Null),
+    );
+    upgraded.insert(
+        "nodes".into(),
+        graph.get("nodes").cloned().unwrap_or(json!([])),
+    );
+    upgraded.insert("metadata".into(), bundle["metadata"].clone());
+    upgraded.insert(
+        "defaults".into(),
+        bundle.get("defaults").cloned().unwrap_or(json!({})),
+    );
+    upgraded.insert("views".into(), Value::Object(views));
+    if let Some(app_state) = bundle.get("app_state") {
+        upgraded.insert("app_state".into(), app_state.clone());
+    }
+    Value::Object(upgraded)
+}
+
+/// Load a bundle with a network view (gzip JSON, or plain JSON as a fallback).
 ///
-/// Detection is by the gzip magic number, not the file name, so a bundle written
+/// A `.dsnv` file is returned as the `.dvb` bundle it corresponds to. Detection is by
+/// the gzip magic number and the `format` key, not the file name, so a bundle written
 /// under the pre-0.11 `.ssnv` spelling loads unchanged.
 pub fn load_bundle(path: &Path) -> io::Result<Value> {
     let raw = std::fs::read(path)?;
     parse_bundle(&raw, &path.display().to_string())
 }
 
-/// Validate an in-memory bundle. `display` only names the source in error messages.
-///
-/// Split out from [`load_bundle`] so the version/format contract can be tested without
-/// touching the filesystem, keeping these tests fixture-free like the rest of the suite.
-pub fn parse_bundle(raw: &[u8], display: &str) -> io::Result<Value> {
+/// Parse and check a bundle file's bytes against the formats and versions this build
+/// reads, without requiring any particular view. `display` only names the source in
+/// error messages. A `.dsnv` file comes back as its `.dvb` equivalent.
+pub fn parse_any_bundle(raw: &[u8], display: &str) -> io::Result<Value> {
     let bytes = if raw.starts_with(&[0x1f, 0x8b]) {
         gunzip(raw)?
     } else {
@@ -93,32 +223,72 @@ pub fn parse_bundle(raw: &[u8], display: &str) -> io::Result<Value> {
         serde_json::from_slice(&bytes).map_err(|e| invalid(format!("invalid JSON: {e}")))?;
 
     let fmt = bundle.get("format").and_then(Value::as_str);
-    if fmt != Some(SSN_VIEWER_BUNDLE_FORMAT) {
+    let supported: &[i64] = match fmt {
+        Some(SSN_VIEWER_BUNDLE_FORMAT) => &SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS,
+        Some(VIEWER_BUNDLE_FORMAT) => &SUPPORTED_VIEWER_BUNDLE_VERSIONS,
+        _ => {
+            return Err(invalid(format!(
+                "'{display}' is not a Domainator Viewer bundle \
+                 (format='{}', expected '{VIEWER_BUNDLE_FORMAT}').",
+                fmt.unwrap_or("None")
+            )))
+        }
+    };
+    let version = bundle.get("version").and_then(Value::as_i64);
+    if !version.is_some_and(|v| supported.contains(&v)) {
+        let supported: Vec<String> = supported.iter().map(|v| v.to_string()).collect();
         return Err(invalid(format!(
-            "'{display}' is not a Domainator Similarity Network Viewer bundle \
-             (format='{}', expected '{SSN_VIEWER_BUNDLE_FORMAT}').",
-            fmt.unwrap_or("None")
+            "Unsupported {} version {}; this build understands version(s) {}.",
+            fmt.unwrap_or("None"),
+            version
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".into()),
+            supported.join(", ")
         )));
     }
-    let version = bundle.get("version").and_then(Value::as_i64);
-    match version {
-        Some(v) if SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS.contains(&v) => {}
-        _ => {
-            let supported: Vec<String> = SUPPORTED_SSN_VIEWER_BUNDLE_VERSIONS
-                .iter()
-                .map(|v| v.to_string())
-                .collect();
-            return Err(invalid(format!(
-                "Unsupported Domainator Similarity Network Viewer bundle version {}; \
-                 this build understands version(s) {}.",
-                version
-                    .map(|v| v.to_string())
-                    .unwrap_or_else(|| "None".into()),
-                supported.join(", ")
-            )));
-        }
+    if fmt == Some(SSN_VIEWER_BUNDLE_FORMAT) {
+        return Ok(upgrade_ssn_viewer_bundle(&bundle));
     }
     Ok(bundle)
+}
+
+/// Validate an in-memory bundle that must hold a network view. `display` only names the
+/// source in error messages.
+///
+/// Split out from [`load_bundle`] so the version/format contract can be tested without
+/// touching the filesystem, keeping these tests fixture-free like the rest of the suite.
+pub fn parse_bundle(raw: &[u8], display: &str) -> io::Result<Value> {
+    let bundle = parse_any_bundle(raw, display)?;
+    if network(&bundle).is_none() {
+        let views: Vec<&str> = bundle
+            .get("views")
+            .and_then(Value::as_object)
+            .map(|v| v.keys().map(String::as_str).collect())
+            .unwrap_or_default();
+        let views = if views.is_empty() {
+            "none".to_string()
+        } else {
+            views.join(", ")
+        };
+        return Err(invalid(format!(
+            "'{display}' has no network view (it has: {views})."
+        )));
+    }
+    Ok(bundle)
+}
+
+/// A bundle's network view, `views.ssn`.
+pub fn network(bundle: &Value) -> Option<&Value> {
+    bundle.get("views")?.get("ssn")
+}
+
+/// A bundle's node ids, `nodes`.
+pub fn node_names(bundle: &Value) -> &[Value] {
+    bundle
+        .get("nodes")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
 }
 
 /// Adapt a loaded bundle to what the `ssn_hierarchy` mirror in [`crate::matrix::ssn`]
@@ -126,13 +296,8 @@ pub fn parse_bundle(raw: &[u8], display: &str) -> io::Result<Value> {
 /// both. Everything else on a real [`MaxTree`] is derived from the input matrix, which
 /// a bundle does not carry. Mirrors upstream's `ssn_bundle._BundleTree`.
 pub fn bundle_tree(bundle: &Value) -> MaxTree {
-    let graph = bundle.get("graph");
-    let n_nodes = graph
-        .and_then(|g| g.get("nodes"))
-        .and_then(Value::as_array)
-        .map(Vec::len)
-        .unwrap_or(0);
-    let edges: Vec<(usize, usize, f64)> = graph
+    let n_nodes = node_names(bundle).len();
+    let edges: Vec<(usize, usize, f64)> = network(bundle)
         .and_then(|g| g.get("mst_edges"))
         .and_then(Value::as_array)
         .map(|rows| {
@@ -153,8 +318,8 @@ pub fn bundle_tree(bundle: &Value) -> MaxTree {
 
 /// The bundle's **complete, uncapped** split-event series.
 ///
-/// Recomputed from `graph.mst_edges` rather than read from the file. Before v6 a capped
-/// copy was stored under `graph.merge_event_series`; deriving it here means a caller is
+/// Recomputed from `views.ssn.mst_edges` rather than read from the file. Before `.dsnv`
+/// v6 a capped copy was stored under `graph.merge_event_series`; deriving it here means a caller is
 /// never silently limited to whatever cap the file happened to be built with, and
 /// pre-v6 bundles get the full series too.
 ///
@@ -162,8 +327,7 @@ pub fn bundle_tree(bundle: &Value) -> MaxTree {
 /// recompute under the other one — the series is a pure function of the merge order and
 /// the metric, so nothing about the file constrains the choice.
 pub fn merge_event_rows(bundle: &Value, merge_impact_metric: Option<&str>) -> Vec<MergeEvent> {
-    let recorded = bundle
-        .get("graph")
+    let recorded = network(bundle)
         .and_then(|g| g.get("merge_impact_metric"))
         .and_then(Value::as_str);
     let metric = merge_impact_metric
@@ -334,20 +498,13 @@ pub fn component_size(hierarchy: &Value, component_id: usize) -> usize {
         .unwrap_or(0)
 }
 
-/// Map node id string -> position in `graph.nodes` (== metadata row index).
+/// Map node id string -> position in `nodes` (== metadata row index).
 pub fn node_index_by_name(bundle: &Value) -> HashMap<&str, usize> {
-    bundle
-        .get("graph")
-        .and_then(|g| g.get("nodes"))
-        .and_then(Value::as_array)
-        .map(|names| {
-            names
-                .iter()
-                .enumerate()
-                .filter_map(|(i, v)| v.as_str().map(|s| (s, i)))
-                .collect()
-        })
-        .unwrap_or_default()
+    node_names(bundle)
+        .iter()
+        .enumerate()
+        .filter_map(|(i, v)| v.as_str().map(|s| (s, i)))
+        .collect()
 }
 
 /// The cluster containing `node_index` at `threshold`, by walking up from its leaf.
@@ -416,22 +573,22 @@ pub fn summarize_cluster_metadata(
         let present: Vec<&Value> = values.iter().copied().filter(|v| !v.is_null()).collect();
         let missing = values.len() - present.len();
 
-        let mut summary = serde_json::Map::new();
-        summary.insert("name".into(), serde_json::json!(name));
-        summary.insert("type".into(), serde_json::json!(ty));
-        summary.insert("count".into(), serde_json::json!(present.len()));
-        summary.insert("missing".into(), serde_json::json!(missing));
+        let mut summary = Map::new();
+        summary.insert("name".into(), json!(name));
+        summary.insert("type".into(), json!(ty));
+        summary.insert("count".into(), json!(present.len()));
+        summary.insert("missing".into(), json!(missing));
 
         if matches!(ty, "int" | "float") && !present.is_empty() {
             let mut nums: Vec<f64> = present.iter().filter_map(|v| v.as_f64()).collect();
             nums.sort_by(f64::total_cmp);
             let sum: f64 = nums.iter().sum();
-            summary.insert("min".into(), serde_json::json!(nums[0]));
-            summary.insert("max".into(), serde_json::json!(nums[nums.len() - 1]));
-            summary.insert("mean".into(), serde_json::json!(sum / nums.len() as f64));
-            summary.insert("p25".into(), serde_json::json!(percentile(&nums, 25.0)));
-            summary.insert("median".into(), serde_json::json!(percentile(&nums, 50.0)));
-            summary.insert("p75".into(), serde_json::json!(percentile(&nums, 75.0)));
+            summary.insert("min".into(), json!(nums[0]));
+            summary.insert("max".into(), json!(nums[nums.len() - 1]));
+            summary.insert("mean".into(), json!(sum / nums.len() as f64));
+            summary.insert("p25".into(), json!(percentile(&nums, 25.0)));
+            summary.insert("median".into(), json!(percentile(&nums, 50.0)));
+            summary.insert("p75".into(), json!(percentile(&nums, 75.0)));
         } else {
             let mut counts: HashMap<String, usize> = HashMap::new();
             for v in &present {
@@ -444,19 +601,19 @@ pub fn summarize_cluster_metadata(
             let mut ranked: Vec<(String, usize)> = counts.into_iter().collect();
             // (-count, value): Rust's byte-wise str Ord matches Python's code-point order.
             ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-            summary.insert("unique".into(), serde_json::json!(ranked.len()));
+            summary.insert("unique".into(), json!(ranked.len()));
             summary.insert(
                 "top".into(),
                 Value::Array(
                     ranked
                         .iter()
                         .take(top_n)
-                        .map(|(value, count)| serde_json::json!({"value": value, "count": count}))
+                        .map(|(value, count)| json!({"value": value, "count": count}))
                         .collect(),
                 ),
             );
             if ranked.len() > top_n {
-                summary.insert("truncated".into(), serde_json::json!(ranked.len() - top_n));
+                summary.insert("truncated".into(), json!(ranked.len() - top_n));
             }
         }
         out.push(Value::Object(summary));
@@ -467,7 +624,6 @@ pub fn summarize_cluster_metadata(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     fn tiny(version: i64) -> Value {
         json!({
@@ -508,17 +664,48 @@ mod tests {
         let err = parse(&json!({"format": "something_else", "version": 5}))
             .unwrap_err()
             .to_string();
-        assert!(
-            err.contains("is not a Domainator Similarity Network Viewer bundle"),
-            "{err}"
-        );
+        assert!(err.contains("is not a Domainator Viewer bundle"), "{err}");
+    }
+
+    #[test]
+    fn a_dsnv_bundle_reads_as_the_dvb_bundle_it_corresponds_to() {
+        let mut old = tiny(6);
+        old["graph"]["mst_edges"] = json!([[0, 1, 5.0]]);
+        old["graph"]["merge_impact_metric"] = json!("product");
+        old["graph"]["merge_event_series"] = json!([]); // a pre-v6 derived key
+        old["app_state"] = json!({"state_version": 1});
+        let upgraded = parse(&old).unwrap();
+        assert_eq!(upgraded["format"], json!(VIEWER_BUNDLE_FORMAT));
+        assert_eq!(upgraded["version"], json!(1));
+        assert_eq!(upgraded["nodes"], json!(["a", "b"]));
+        assert_eq!(upgraded["defaults"], json!({}));
+        assert_eq!(upgraded["app_state"], json!({"state_version": 1}));
+        let mut keys: Vec<&String> = upgraded["views"]["ssn"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["hierarchy", "merge_impact_metric", "mst_edges"]);
+    }
+
+    #[test]
+    fn a_bundle_without_a_network_is_refused() {
+        let tree = json!({
+            "format": VIEWER_BUNDLE_FORMAT, "version": 1, "name": "t", "nodes": ["a"],
+            "metadata": {"columns": [], "rows": [[]]}, "defaults": {},
+            "views": {"tree": {}},
+        });
+        let err = parse(&tree).unwrap_err().to_string();
+        assert!(err.contains("has no network view (it has: tree)"), "{err}");
+        assert!(parse_any_bundle(&serde_json::to_vec(&tree).unwrap(), "t").is_ok());
     }
 
     #[test]
     fn reads_gzip_and_plain_json_alike() {
         // Detection is by magic number, not file name, so a pre-0.11 `.ssnv` loads.
         let plain = serde_json::to_vec(&tiny(5)).unwrap();
-        let gz = super::super::build_ssn_viewer::gzip(&plain);
+        let gz = crate::tools::viewer_bundle::gzip(&plain);
         assert_eq!(&gz[..2], &[0x1f, 0x8b]);
         assert_eq!(
             parse_bundle(&gz, "t").unwrap(),
@@ -526,14 +713,15 @@ mod tests {
         );
     }
 
-    /// A real bundle built the way `build_ssn_viewer` builds one, so the derivation
+    /// A real bundle built the way `build_ssn --dvb_out` builds one, so the derivation
     /// under test is exercised against the values the matrix itself produces.
     fn bundle_from_matrix(m: &crate::matrix::DataMatrix) -> Value {
-        let opts = super::super::build_ssn_viewer::BuildSsnViewerOptions {
-            name: "t".into(),
-            ..Default::default()
-        };
-        super::super::build_ssn_viewer::build_ssn_viewer_bundle(m, &opts).unwrap()
+        let view = ssn_view(&MaxTree::from_matrix(m), 0.0, MERGE_IMPACT_MIN_CHILD).unwrap();
+        json!({
+            "format": VIEWER_BUNDLE_FORMAT, "version": 1, "name": "t", "nodes": m.rows,
+            "metadata": {"columns": [], "rows": []}, "defaults": {},
+            "views": {"ssn": view},
+        })
     }
 
     fn six_node_matrix() -> crate::matrix::DataMatrix {
@@ -561,20 +749,33 @@ mod tests {
     }
 
     #[test]
-    fn a_v6_bundle_carries_only_what_cannot_be_derived() {
+    fn a_network_view_carries_only_what_cannot_be_derived() {
         let bundle = bundle_from_matrix(&six_node_matrix());
-        assert_eq!(bundle["version"], json!(6));
-        let mut keys: Vec<&str> = bundle["graph"]
+        let mut keys: Vec<&str> = bundle["views"]["ssn"]
             .as_object()
             .unwrap()
             .keys()
             .map(String::as_str)
             .collect();
         keys.sort_unstable();
-        assert_eq!(
-            keys,
-            vec!["hierarchy", "merge_impact_metric", "mst_edges", "nodes"]
-        );
+        assert_eq!(keys, vec!["hierarchy", "merge_impact_metric", "mst_edges"]);
+    }
+
+    #[test]
+    fn the_view_keeps_only_edges_above_the_threshold() {
+        // `build_ssn --threshold 4.5 --dvb_out`: the 4.0 MST edge is cut, so n3 and n4
+        // fall into separate components of the view's forest.
+        let tree = MaxTree::from_matrix(&six_node_matrix());
+        let view = ssn_view(&tree, 4.5, MERGE_IMPACT_MIN_CHILD).unwrap();
+        let weights: Vec<f64> = view["mst_edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e[2].as_f64().unwrap())
+            .collect();
+        assert_eq!(weights, [10.0, 9.0, 8.0, 5.0]);
+        assert_eq!(view["hierarchy"]["roots"].as_array().unwrap().len(), 2);
+        assert!(ssn_view(&tree, 0.0, "nope").is_err());
     }
 
     #[test]
@@ -633,16 +834,22 @@ mod tests {
         // The regression this change exists to prevent: a v5 file stored a series
         // capped by whoever wrote it, and honoring that would silently limit what a
         // caller can see now. Everything is recomputed from the merge order instead.
-        let mut bundle = bundle_from_matrix(&six_node_matrix());
+        let bundle = bundle_from_matrix(&six_node_matrix());
         let full = merge_event_rows(&bundle, None);
         assert!(full.len() > 1, "need a series worth truncating");
 
-        bundle["version"] = json!(5);
-        bundle["graph"]["merge_event_series"] = json!([]);
-        bundle["graph"]["merge_event_total"] = json!(1);
-        bundle["graph"]["max_merge_events"] = json!(1);
-        bundle["graph"]["slider_stops"] = json!([]);
-        bundle["graph"]["merge_moving_sum"] = json!({"window": 0.0, "x": [], "y": []});
+        let mut graph = bundle["views"]["ssn"].clone();
+        graph["nodes"] = bundle["nodes"].clone();
+        graph["merge_event_series"] = json!([]);
+        graph["merge_event_total"] = json!(1);
+        graph["max_merge_events"] = json!(1);
+        graph["slider_stops"] = json!([]);
+        graph["merge_moving_sum"] = json!({"window": 0.0, "x": [], "y": []});
+        let old = json!({
+            "format": SSN_VIEWER_BUNDLE_FORMAT, "version": 5, "name": "t",
+            "graph": graph, "metadata": {"columns": [], "rows": []},
+        });
+        let bundle = parse_bundle(&serde_json::to_vec(&old).unwrap(), "t").unwrap();
 
         assert_eq!(merge_event_rows(&bundle, None).len(), full.len());
         assert_eq!(slider_stops(&bundle, 0, None).len(), full.len() + 2);
@@ -675,7 +882,7 @@ mod tests {
         // partitioning. The two must never disagree — including at the ∞ cut, where
         // every node stands alone, and below the coarsest merge.
         let bundle = bundle_from_matrix(&six_node_matrix());
-        let hierarchy = &bundle["graph"]["hierarchy"];
+        let hierarchy = &bundle["views"]["ssn"]["hierarchy"];
         let cuts: Vec<f64> = vec![f64::INFINITY, 10.0, 9.0, 8.0, 5.0, 4.0, 2.0, 1.9, -1.0];
         for cut in cuts {
             let active =

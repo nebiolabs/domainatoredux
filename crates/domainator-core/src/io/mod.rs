@@ -1,10 +1,12 @@
 //! Sequence and database I/O: GenBank/FASTA reading and writing, BGZF random
 //! access, offset scanning, `.didx` indexes, and shard resolution.
 
+pub mod alignment;
 pub mod bgzf;
 pub mod didx;
 pub mod fasta;
 pub mod genbank;
+pub mod newick;
 pub mod partition;
 pub mod python_json;
 pub mod shards;

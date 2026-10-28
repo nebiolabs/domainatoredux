@@ -121,7 +121,7 @@ Use these before writing an ad-hoc comparison:
 
 - `scripts/json_parity.py EXPECTED ACTUAL [--rtol] [--ignore PATH]` — recursive JSON
   compare reporting the first differing path. Ignores key *order* but not key *spelling*.
-  Accepts a `.dsnv` directly.
+  Accepts a `.dvb` or `.dsnv` bundle directly.
 - `scripts/ssn_probe.py MATRIX` — the Python twin of
   `cargo run -p domainator-core --example ssn_probe -- MATRIX`. Both print the **same**
   JSON document; keep them in lockstep or the gate silently stops covering a field.
@@ -190,7 +190,7 @@ Python release it reproduces is recorded separately and reported next to it.
 - **Upstream parity** is `UPSTREAM_VERSION` (upstream's `__version__` at the pin) and
   `UPSTREAM_COMMIT` (the pin itself) in `crates/domainator-core/src/version.rs`. They
   appear in `domainatoredux --version`, the About box, the diagnostics blob and every job's
-  provenance (`upstream_version`). `UPSTREAM_VERSION` is also what a `.dsnv` bundle's
+  provenance (`upstream_version`). `UPSTREAM_VERSION` is also what a `.dvb` bundle's
   `domainator_version` key holds, because upstream reads that key as "which domainator
   release wrote this". Three guards keep the constants honest:
   - a unit test that `UPSTREAM_COMMIT` equals `UPSTREAM.md`'s pin;
@@ -220,10 +220,10 @@ full workflow. The essentials:
 - **The pin.** `UPSTREAM.md` records the upstream commit the port is caught up to, and
   `external/domainator/` is a clone kept there. CI greps that file for the pin, so it stays
   at the repo root.
-- **The SSN viewer shell is a generated artifact, never hand-edited.**
-  `crates/domainator-core/assets/ssn_viewer_shell.html` is the render of Python's
-  `ssn_viewer_html(...)` plus one local patch (the GUI host hook that posts node selection
-  to the Tauri host). Regenerate with `scripts/regen_ssn_viewer_shell.py`; `--check` is the
+- **The Domainator Viewer shell is a generated artifact, never hand-edited.**
+  `crates/domainator-core/assets/viewer_shell.html` is the render of Python's
+  `viewer_html(...)` plus one local patch (the GUI host hook that posts node selection
+  to the Tauri host). Regenerate with `scripts/regen_viewer_shell.py`; `--check` is the
   drift guard.
 - **So are the `--html_out` report shells** in `crates/domainator-core/assets/report_shells/`:
   upstream's `report_html.report_shell(page)`, unpatched, written by

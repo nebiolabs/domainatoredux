@@ -1,8 +1,9 @@
 //! The bodies of the tools, one module each: `run(&XArgs)` does the I/O
 //! wiring around the core library function.
 
+pub mod build_projection;
 pub mod build_ssn;
-pub mod build_ssn_viewer;
+pub mod build_tree;
 pub mod clean_sequences;
 pub mod color_genbank;
 pub mod color_table_to_legend;
@@ -36,6 +37,9 @@ pub mod ssn_navigator;
 pub mod summary_report;
 pub mod transform_matrix;
 pub mod trim_contigs;
+pub mod viewer;
+
+use std::io::Write;
 
 use anyhow::{Context, Result};
 use domainator_core::io::genbank::read_genbank;
@@ -43,7 +47,7 @@ use domainator_core::search::hmm_read::{read_hmm_file, Hmm};
 use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::SeqRecord;
 
-use crate::output::is_stdin;
+use crate::output::{is_stdin, Output};
 
 /// A usage error: reported like clap's own (`error: ...`, exit 2), for a check that
 /// clap cannot express, as upstream's `parser.error` is.
@@ -136,15 +140,69 @@ pub fn read_hmm_inputs(paths: &[String]) -> Result<Vec<(String, Vec<Hmm>)>> {
 /// gzip, `.bgz` refused, a failed run leaves no file).
 pub fn write_hmm_out<T>(
     path: &str,
-    write: impl FnOnce(&mut dyn std::io::Write) -> Result<T, String>,
+    write: impl FnOnce(&mut dyn Write) -> Result<T, String>,
 ) -> Result<T> {
     if crate::output::is_stdout(path) {
         let stdout = std::io::stdout();
         let mut handle = stdout.lock();
         let value = write(&mut handle).map_err(anyhow::Error::msg)?;
-        std::io::Write::flush(&mut handle)?;
+        Write::flush(&mut handle)?;
         Ok(value)
     } else {
         write_hmm_output(path, |out| write(out)).map_err(anyhow::Error::msg)
     }
+}
+
+/// Write a Domainator Viewer bundle to a `.dvb` file at `dvb_out` and as a viewer page
+/// that opens it at `html_out`, each optional, failing first if either would exceed
+/// `max_bytes` (upstream `write_viewer_outputs`).
+pub fn write_viewer_outputs(
+    bundle: &serde_json::Value,
+    html_out: Option<&str>,
+    dvb_out: Option<&str>,
+    max_bytes: Option<u64>,
+    mitigation: &[&str],
+) -> Result<()> {
+    use domainator_core::tools::output_guardrails::output_limit_message;
+    use domainator_core::tools::viewer_bundle::serialize_bundle;
+    use domainator_core::tools::viewer_html::{projected_html_bytes, render_html, VIEWER_APP_NAME};
+
+    let compressed = serialize_bundle(bundle);
+    let check = |description: String, bytes: u64| -> Result<()> {
+        match max_bytes.filter(|&max| bytes > max) {
+            Some(max) => Err(anyhow::anyhow!(output_limit_message(
+                &description,
+                bytes,
+                max,
+                mitigation,
+                None
+            ))),
+            None => Ok(()),
+        }
+    };
+    if let Some(path) = dvb_out {
+        check(
+            format!("Domainator Viewer bundle output '{path}'"),
+            compressed.len() as u64,
+        )?;
+        let mut out = Output::create(path)?;
+        out.write_all(&compressed)?;
+        out.finish()?;
+    }
+    if let Some(path) = html_out {
+        // The page embeds the bundle's bytes in base64.
+        check(
+            format!("Domainator Viewer page '{path}'"),
+            projected_html_bytes(compressed.len()),
+        )?;
+        let name = bundle
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .filter(|n| !n.is_empty())
+            .unwrap_or(VIEWER_APP_NAME);
+        let mut out = Output::create(path)?;
+        out.write_all(render_html(name, Some(&compressed)).as_bytes())?;
+        out.finish()?;
+    }
+    Ok(())
 }

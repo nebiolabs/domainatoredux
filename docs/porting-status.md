@@ -15,9 +15,9 @@ Three counts appear in this project and they measure different things:
 
 | Count | What it is |
 | --- | --- |
-| **39** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 36 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
-| **34** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
-| **31** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator` and `summary_report`, which the app covers with panels and viewers |
+| **41** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 38 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
+| **36** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
+| **32** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator`, `summary_report` and `viewer`, which the app covers with panels and viewers |
 | **44 rows below** | upstream's tools (`domainator describe`), ported *and* deliberately unported |
 
 Related: [deliberate deferrals and the upstream pin](https://github.com/nebiolabs/domainatoredux/blob/main/UPSTREAM.md),
@@ -56,10 +56,9 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 
 | upstream tool | implementation status | GUI (Tauri app) |
 | ------------- | ------------------- | ------------------- |
-| build_projection | deferred | — |
-| build_ssn | finished | Tools menu ("Build SSN (XGMML)") |
-| build_ssn_viewer | finished (`.dsnv` bundle v6 — nodes + MST + hierarchy only, everything else derived by the reader; there is no `--max_merge_events`, the cap is a viewer control; `--categorical`) | Tools menu ("Build SSN viewer"); output `.dsnv` opens in the **SSN viewer** tab (interactive network, node→sequence cross-nav into a detached window). Layout algorithms: force-directed, grid, packed, and **treemap** (fixed-lattice, no edges). The shell also carries upstream's saved sessions, extractions, metadata editing, per-column charts and gradient colors. Viewer shell is generated from the Python source — see `UPSTREAM.md` |
-| build_tree | deferred | — |
+| build_projection | partial: `pca` and `coords` (scikit-learn's `PCA`, or `TruncatedSVD` for a mostly-empty matrix, as an exact SVD with `svd_flip`'s signs, via `faer`; coordinates within 1e-3 of upstream's, whose sparse solver is randomized). `tsne` and `umap` are refused (stochastic; deferred) | Tools menu ("Build projection (PCA)"); output `.dvb` opens in the **Viewer** tab |
+| build_ssn | finished, including the Domainator Viewer outputs (`--html_out`, `--dvb_out`) | Tools menu ("Build SSN"); output `.dvb` opens in the **Viewer** tab (network, node→sequence extraction). Layout algorithms: force-directed, grid, packed, and **treemap**. The viewer also carries upstream's saved sessions, extractions, metadata editing, per-column charts and gradient colors. It is generated from the Python source — see `UPSTREAM.md` |
+| build_tree | finished: UPGMA (scipy's `average` linkage, `matrix/hierarchy.rs`) or a Newick tree read as Biopython reads it; Newick, rectangular-tree XGMML and the viewer bundle with `--msa` byte-identical or parse-equal | Tools menu ("Build tree"); output `.dvb` opens in the **Viewer** tab, `--msa` takes aligned FASTA from the workspace, which also opens in the **Alignment** tab |
 | clean_sequences | finished (byte-identical parity) | Tools menu ("Clean sequences") |
 | color_genbank | finished (byte-identical parity incl. auto-color) | Tools menu ("Color GenBank") for batch color-by-name/database, **plus** per-feature editing in the contig viewer |
 | color_table_to_legend | finished (byte-identical SVG) | Tools menu ("Color table → legend") — reads a `table` file (`.tsv`/`.csv`), writes SVG |
@@ -92,7 +91,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | seq_dist | finished, `--symmetrize` included (`--progress` accepted, no bar drawn; the explained diamond failures are not ported, and the large-search advisory has no free-disk-space note) | Tools menu ("Sequence distance") — `diamond_*` algorithms need the `diamond` binary, **auto-downloadable** from the External tools panel |
 | sort_contigs | finished (byte-identical parity; ties keep input order) | Tools menu ("Sort contigs") |
 | split_by_cluster | deferred (optional; skipped for now) | — |
-| ssn_navigator | finished (all five `--query` modes verified against Python on both implementations' bundles, at three `--max_merge_events` caps, on v5 and v6 files) | — (the SSN viewer tab covers interactive exploration; the navigator writes stdout JSON with no workspace artifact) |
+| ssn_navigator | finished (all five `--query` modes verified against Python on both implementations' bundles, at three `--max_merge_events` caps, on `.dvb` and v5/v6 `.dsnv` files) | — (the SSN viewer tab covers interactive exploration; the navigator writes stdout JSON with no workspace artifact) |
 | structure_dist | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
 | structure_domainate | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
 | structure_search | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
@@ -100,3 +99,4 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | summary_report | finished: `--json_out` (upstream's agent contract), `--html_out` (upstream's generated page) and the `-o` text report, all as upstream writes them | **Summary dashboard** tab (pure-data stats + length histogram + taxonomy icicle) — GUI-only, separate from the CLI tool's page |
 | transform_matrix | finished | Tools menu ("Transform matrix") |
 | trim_contigs | finished (parity-verified) | Tools menu ("Trim contigs") |
+| viewer | finished (byte-identical outside the embedded bundle, apart from the GUI host hook; reads `.dvb` and `.dsnv`) | — (the **Viewer** tab's **Save as HTML page** writes the same page) |
