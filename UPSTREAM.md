@@ -7,9 +7,10 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `377cdff` — *Report pages: compact figures, a zoomable length
-  histogram, no text selection; plain text tables* (2026-10-28; upstream `__version__`
-  1.0.0rc1, on the `version_one` branch).
+- **Caught up to:** `d3ccc35` — *matrix_report's threshold slider starts at the lowest
+  threshold* (2026-10-28; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`d3ccc35`**, page only: matrix_report's slider opens at the lowest threshold. The
+  regenerated `report_shells/matrix_report.html` is the whole port.
 - **`377cdff`**, ported. The report pages' CSS and JS changed (compact figure blocks in
   the new `common/panels.js`, restyled matrix_report sliders, no text selection while
   dragging a chart), which regenerated the summary_report, matrix_report and plot_contigs
