@@ -6,14 +6,17 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `5405402`.
+Parity: Python domainator 1.0.0rc1 @ `377cdff`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **`enum_report` and `hmmer_report --html_out`** (and `--html_max_height`): upstream's
   new interactive table page, which works offline. It is generated from upstream's own
   page (`scripts/regen_report_shells.py`), so the two write the same file.
-- **`summary_report --html_out`**: upstream's new offline page, with the contig length
-  histogram, sortable domain and co-occurrence tables, and a zoomable taxonomy chart.
+- **`summary_report --html_out`**: upstream's new offline page, with a contig length
+  histogram that zooms, pans and rebins, sortable domain and co-occurrence tables, and a
+  zoomable taxonomy chart.
+- **`summary_report -o`** writes upstream's text report, histogram and tables included, so
+  it is now the same file `domainator` writes.
 - **`matrix_report --html_out` and `--knn_projection`**: upstream's new offline page, with
   clusters and edges by threshold, the split-event chart above a threshold slider, the
   clusters at the chosen threshold, and (with `--knn_projection`) the edges

@@ -6,9 +6,6 @@
 # directory `generated_fixtures.py` fills once per sweep (upstream's own helpers);
 # `@DATA@` and `@TMP@` are as in the harvest. Keys are `extra:<upstream test>#<n>`, and
 # `known_gaps.tsv` tracks them like any other invocation.
-#
-# The summary_report --html_out rows are upstream tests without their `-o` text report, which
-# this port does not reproduce (`deferred:text-report`), so the page is still compared.
 domainate	extra:test_domainate_partial_cds_codon_start#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb
 domainate	extra:test_domainate_partial_filter#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--partial	include
 domainate	extra:test_domainate_partial_filter#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--partial	exclude
@@ -121,7 +118,3 @@ rotate_contigs	extra:test_rotate_infernal#0	extra_invocations.tsv	-i	@DATA@/pANT
 rotate_contigs	extra:test_rotate_fasta_out#0	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--domains	DHFR_1	--fasta_out	@TMP@/out.fasta
 compare_contigs	extra:test_compare_contigs_name_by_order_reorders_clustered_records#0	extra_invocations.tsv	-i	@GEN@/compare_reorder.gb	--ji	1.0	--ai	0.0	--genbank_out	@TMP@/sorted.gb	--name_by_order
 compare_contigs	extra:test_compare_contigs_sorts_with_max_hits_per_query#0	extra_invocations.tsv	-i	@GEN@/compare_max_hits.gb	--ji	1.0	--ai	0	--max_hits_per_query	2	--genbank_out	@TMP@/sorted.gb
-summary_report	extra:test_contig_stats_1#0	extra_invocations.tsv	-i	@DATA@/FeSOD_20_pfam.gb	--html_out	@TMP@/contig_stats_test.html	--domains	Sod_Fe_C	Sod_Fe_N
-summary_report	extra:test_contig_stats_empty_input#0	extra_invocations.tsv	-i	@DATA@/empty.gb	--html_out	@TMP@/contig_stats_test.html
-summary_report	extra:test_contig_stats_taxonomy_1#0	extra_invocations.tsv	-i	@DATA@/swissprot_CuSOD_subset.fasta	--html_out	@TMP@/contig_stats_test.html	--taxonomy	--ncbi_taxonomy_path	@DATA@/taxdmp
-summary_report	extra:test_summary_report_database_1#0	extra_invocations.tsv	-i	@DATA@/pDONR201_multi_genemark_domainator_multi_hmm_2.gb	--html_out	@TMP@/contig_stats_test.html	--databases	pdonr_hmms_1

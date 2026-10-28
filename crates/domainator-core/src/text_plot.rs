@@ -1,4 +1,4 @@
-//! Plain-text plots for the text reports (upstream `text_plot.py`).
+//! Plain-text plots and tables for the text reports (upstream `text_plot.py`).
 
 use crate::search::results::py_g;
 use crate::stats::floor_index;
@@ -83,6 +83,39 @@ pub fn text_histogram(values: &[f64], title: &str, bins: usize, height: usize) -
     lines.join("\n") + "\n"
 }
 
+/// Columns of text two spaces apart, each as wide as its widest cell, a header line first
+/// (upstream `text_table`).
+///
+/// The cells are already formatted. A column is right-aligned (numbers) or left-aligned
+/// (text), its header with it, and every line loses its trailing spaces. Widths count
+/// characters, as Python's `len` does.
+pub fn text_table(header: &[&str], rows: &[Vec<String>], right_aligned: &[bool]) -> String {
+    let mut widths: Vec<usize> = header.iter().map(|name| name.chars().count()).collect();
+    for row in rows {
+        for (width, cell) in widths.iter_mut().zip(row) {
+            *width = (*width).max(cell.chars().count());
+        }
+    }
+    let line = |cells: &mut dyn Iterator<Item = &str>| {
+        let padded: Vec<String> = cells
+            .zip(widths.iter().zip(right_aligned))
+            .map(|(cell, (&width, &right))| {
+                if right {
+                    format!("{cell:>width$}")
+                } else {
+                    format!("{cell:<width$}")
+                }
+            })
+            .collect();
+        padded.join("  ").trim_end().to_string() + "\n"
+    };
+    let mut out = line(&mut header.iter().copied());
+    for row in rows {
+        out.push_str(&line(&mut row.iter().map(String::as_str)));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,5 +143,24 @@ mod tests {
             expected
         );
         assert_eq!(text_histogram(&[], "t", 3, 5), " t\n (no values)\n");
+    }
+
+    #[test]
+    fn text_table_aligns_columns() {
+        let rows = vec![
+            vec!["a".to_string(), "8".to_string(), "x".to_string()],
+            vec!["longer".to_string(), "12".to_string(), String::new()],
+        ];
+        assert_eq!(
+            text_table(&["name", "count", "note"], &rows, &[false, true, false]),
+            "name    count  note\na           8  x\nlonger     12\n"
+        );
+        assert_eq!(text_table(&["name", "n"], &[], &[false, true]), "name  n\n");
+        // Widths count characters, not bytes.
+        let rows = vec![vec!["é".to_string(), "1".to_string()]];
+        assert_eq!(
+            text_table(&["ab", "n"], &rows, &[false, true]),
+            "ab  n\né   1\n"
+        );
     }
 }

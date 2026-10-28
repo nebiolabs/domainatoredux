@@ -6,12 +6,11 @@
 //!
 //! The JSON payload is one of upstream's four documented agent contracts. The HTML page
 //! is upstream's generated shell ([`report_html`](crate::tools::report_html)) filled with
-//! [`to_html_data`]: that document plus the contig length histogram and the taxonomy
-//! tree the page draws, both computed here by upstream's integer rules. The text report
-//! reproduces everything except the ASCII length histogram (bashplotlib is not
-//! replicated, as in `matrix_report`).
+//! [`to_html_data`]: that document plus the contig lengths and the taxonomy tree the page
+//! draws (the page bins the lengths itself). The text report ([`render_text`]) is
+//! upstream's, laid out with [`text_table`].
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde_json::{json, Map, Value};
 
@@ -20,6 +19,7 @@ use crate::matrix::{DataMatrix, Storage};
 use crate::seq::partial::{feature_fragment_status, record_fragment_status, Partial};
 use crate::seq::taxonomy::NCBITaxonomy;
 use crate::seq::SeqRecord;
+use crate::text_plot::{text_histogram, text_table};
 use crate::tools::select_common::get_cds_unique_name;
 use crate::DOMAIN_FEATURE_NAME;
 
@@ -46,14 +46,6 @@ pub struct TaxonRow {
     pub lineage: Vec<(i64, String, String)>,
 }
 
-/// Contig lengths binned for the HTML page: bin `i` counts the lengths in
-/// `[bin_edges[i], bin_edges[i + 1])`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LengthHistogram {
-    pub bin_edges: Vec<i64>,
-    pub counts: Vec<u64>,
-}
-
 /// Length statistics over the contigs; `None` when there are no records.
 #[derive(Debug, Clone)]
 pub struct LengthStats {
@@ -74,8 +66,8 @@ pub struct SummaryReport {
     pub fragment_proteins: usize,
     pub cds_per_10kb: f64,
     pub length: Option<LengthStats>,
-    /// `None` when there are no records.
-    pub length_histogram: Option<LengthHistogram>,
+    /// Every counted contig's length, in input order.
+    pub lengths: Vec<f64>,
     pub domains: Vec<DomainRow>,
     /// `(row_domain, [(col_domain, percent)])` for the requested focus domains, each
     /// row's columns in the order upstream's dict holds them (the order the pairs were
@@ -368,7 +360,7 @@ pub fn summary_report(
         fragment_proteins: num_fragment_proteins,
         cds_per_10kb,
         length,
-        length_histogram: length_histogram(&lengths.iter().map(|&l| l as i64).collect::<Vec<_>>()),
+        lengths,
         domains: rows,
         cooccurrence,
         cooccurrence_domains,
@@ -546,47 +538,20 @@ pub fn to_json(r: &SummaryReport) -> Value {
     Value::Object(payload)
 }
 
-/// At most this many bins in the length histogram (upstream `MAX_HISTOGRAM_BINS`).
-pub const MAX_HISTOGRAM_BINS: u64 = 50;
-
-/// Upstream `length_histogram`, integer arithmetic only: `n` lengths from `lo` to `hi` aim
-/// for `min(50, max(ceil(log2(n)) + 1, isqrt(n)))` bins; the width is the smallest 1, 2 or
-/// 5 times a power of ten that is at least `ceil((hi - lo + 1) / target)`, and the first
-/// edge is `lo` rounded down to a multiple of it.
-pub fn length_histogram(lengths: &[i64]) -> Option<LengthHistogram> {
-    let lo = *lengths.iter().min()?;
-    let hi = *lengths.iter().max()?;
-    let n = lengths.len() as u64;
-    // Python's `(n - 1).bit_length() + 1`.
-    let sturges = u64::from(u64::BITS - (n - 1).leading_zeros()) + 1;
-    let target = MAX_HISTOGRAM_BINS.min(sturges.max(n.isqrt())) as i64;
-    let raw = (hi - lo + 1 + target - 1) / target;
-    let width = nice_bin_width(raw);
-    let start = lo.div_euclid(width) * width;
-    let bins = (hi - start) / width + 1;
-    // Every length is at least `start`, so no bin index is negative.
-    let bin = |length: i64| usize::try_from((length - start) / width).expect("length >= start");
-    let mut counts = vec![0u64; bin(hi) + 1];
+/// The contig lengths for the page's histogram (upstream `length_counts`): the distinct
+/// lengths in ascending order and how many contigs have each, or `None` for no contigs.
+pub fn length_counts(lengths: &[f64]) -> Option<Value> {
+    if lengths.is_empty() {
+        return None;
+    }
+    let mut tally: BTreeMap<i64, u64> = BTreeMap::new();
     for &length in lengths {
-        counts[bin(length)] += 1;
+        *tally.entry(length as i64).or_default() += 1;
     }
-    Some(LengthHistogram {
-        bin_edges: (0..=bins).map(|i| start + i * width).collect(),
-        counts,
-    })
-}
-
-/// The smallest 1, 2 or 5 times a power of ten that is at least `raw` (>= 1).
-fn nice_bin_width(raw: i64) -> i64 {
-    let mut power = 1;
-    loop {
-        for factor in [1, 2, 5] {
-            if factor * power >= raw {
-                return factor * power;
-            }
-        }
-        power *= 10;
-    }
+    Some(json!({
+        "lengths": tally.keys().collect::<Vec<_>>(),
+        "counts": tally.values().collect::<Vec<_>>(),
+    }))
 }
 
 /// Ranks kept in the taxonomy tree even when they add nothing (upstream `TREE_KEPT_RANKS`).
@@ -680,84 +645,96 @@ pub fn taxonomy_tree(taxa: &[TaxonRow]) -> Value {
 }
 
 /// The data of the `--html_out` page (upstream `SummaryHTMLWriter`): the `--json_out`
-/// document, the length histogram, and with `--taxonomy` the taxonomy tree.
+/// document, the contig lengths, and with `--taxonomy` the taxonomy tree.
 pub fn to_html_data(r: &SummaryReport) -> Value {
     json!({
         "summary": to_json(r),
-        "length_histogram": r.length_histogram.as_ref().map(|h| json!({
-            "bin_edges": h.bin_edges,
-            "counts": h.counts,
-        })),
+        "length_counts": length_counts(&r.lengths),
         "taxonomy_tree": if r.report_taxonomy { taxonomy_tree(&r.taxonomy) } else { Value::Null },
     })
 }
 
-/// The human-readable text report.
-///
-/// Reproduces every section except the ASCII contig-length histogram, which bashplotlib
-/// renders and this port does not replicate (the same gap `matrix_report` has).
+/// The text report (upstream `SummaryTextWriter`).
 pub fn render_text(r: &SummaryReport) -> String {
-    let mut s = String::new();
-    s.push_str("Contig Stats\n\n");
-    s.push_str(&format!("contigs: {}\n", r.contigs));
-    s.push_str(&format!("CDSs: {}\n", r.cdss));
-    s.push_str(&format!("partial CDSs: {}\n", r.partial_cdss));
-    s.push_str(&format!("protein fragments: {}\n", r.fragment_proteins));
-    s.push_str(&format!("CDSs per 10 kb: {:.2}\n\n", r.cds_per_10kb));
-
-    s.push_str("Domain Stats\n        \n        Domain Frequency\n\n");
-    if r.domains.is_empty() {
-        s.push_str("  (no domain annotations found)\n");
-    } else {
-        s.push_str(&format!(
-            "{:<24} {:<20} {:>7}  {:<44} {:>9}\n",
-            "domain", "database", "count", "description", "avg score"
-        ));
-        for d in &r.domains {
-            s.push_str(&format!(
-                "{:<24} {:<20} {:>7}  {:<44} {:>9.0}\n",
-                d.domain, d.database, d.count, d.description, d.avg_score
-            ));
-        }
+    let mut s = format!(
+        "Contig Stats\n\ncontigs: {}\nCDSs: {}\npartial CDSs: {}\nprotein fragments: {}\n\
+         CDSs per 10 kb: {:.2}\n\n",
+        r.contigs, r.cdss, r.partial_cdss, r.fragment_proteins, r.cds_per_10kb
+    );
+    if !r.lengths.is_empty() {
+        s.push_str(&text_histogram(&r.lengths, "Contig Lengths", 50, 20));
+        s.push('\n');
     }
+
+    let rows: Vec<Vec<String>> = r
+        .domains
+        .iter()
+        .map(|d| {
+            vec![
+                d.domain.clone(),
+                d.database.clone(),
+                d.count.to_string(),
+                d.description.clone(),
+                format!("{:.1}", d.avg_score),
+            ]
+        })
+        .collect();
+    s.push_str("Domain Frequency\n");
+    s.push_str(&text_table(
+        &["domain", "database", "count", "description", "avg score"],
+        &rows,
+        &[false, false, true, false, true],
+    ));
     s.push('\n');
 
     if !r.cooccurrence.is_empty() {
+        let columns = cooccurrence_columns(r);
+        let rows: Vec<Vec<String>> = r
+            .cooccurrence
+            .iter()
+            .map(|(row, values)| {
+                let mut cells = vec![row.clone()];
+                cells.extend(columns.iter().map(|&c| {
+                    values
+                        .iter()
+                        .find(|(d, _)| d == c)
+                        .map_or(String::new(), |(_, v)| format!("{v:.1}"))
+                }));
+                cells
+            })
+            .collect();
+        let mut header = vec!["domain"];
+        header.extend(columns.iter().map(|c| c.as_str()));
+        let mut right = vec![false];
+        right.extend(columns.iter().map(|_| true));
         s.push_str(
-            "Domain Co-occurence (what percent of the time when the row-domain occurs \
-             does the column domain occur on the same contig)\n",
+            "Domain Co-occurrence (the percent of the contigs with the row's domain that \
+             also have the column's domain)\n",
         );
-        let cols = cooccurrence_columns(r);
-        s.push_str(&format!("{:<24}", ""));
-        for c in &cols {
-            s.push_str(&format!("{c:>14}"));
-        }
-        s.push('\n');
-        for (row, vals) in &r.cooccurrence {
-            s.push_str(&format!("{row:<24}"));
-            for c in &cols {
-                match vals.iter().find(|(d, _)| d == *c) {
-                    Some((_, v)) => s.push_str(&format!("{v:>14.1}")),
-                    None => s.push_str(&format!("{:>14}", "")),
-                }
-            }
-            s.push('\n');
-        }
+        s.push_str(&text_table(&header, &rows, &right));
         s.push('\n');
     }
 
-    if !r.taxonomy.is_empty() {
+    if r.report_taxonomy {
+        let rows: Vec<Vec<String>> = r
+            .taxonomy
+            .iter()
+            .map(|t| {
+                vec![
+                    t.taxid.to_string(),
+                    t.name.clone(),
+                    t.rank.clone(),
+                    t.count.to_string(),
+                ]
+            })
+            .collect();
         s.push_str("Taxonomy\n");
-        s.push_str(&format!(
-            "{:<10} {:<34} {:<14} {:>7}\n",
-            "taxid", "name", "rank", "count"
+        s.push_str(&text_table(
+            &["taxid", "name", "rank", "count"],
+            &rows,
+            &[true, false, false, true],
         ));
-        for t in &r.taxonomy {
-            s.push_str(&format!(
-                "{:<10} {:<34} {:<14} {:>7}\n",
-                t.taxid, t.name, t.rank, t.count
-            ));
-        }
+        s.push('\n');
     }
     s
 }
@@ -767,23 +744,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn length_histogram_follows_upstreams_integer_rule() {
-        assert_eq!(length_histogram(&[]), None);
-        let one = length_histogram(&[7]).unwrap();
-        assert_eq!((one.bin_edges, one.counts), (vec![7, 8], vec![1]));
-        // 20 lengths aim for max(6, 4) = 6 bins: ceil(1000 / 6) = 167, rounded up to 200.
-        let lengths: Vec<i64> = (0..20).map(|i| 1000 + 50 * i).collect();
-        let h = length_histogram(&lengths).unwrap();
-        assert_eq!(h.bin_edges, vec![1000, 1200, 1400, 1600, 1800, 2000]);
-        assert_eq!(h.counts, vec![4, 4, 4, 4, 4]);
-        // 4 lengths aim for max(3, 2) = 3 bins: ceil(46 / 3) = 16, rounded up to 20.
-        let h = length_histogram(&[95, 96, 113, 140]).unwrap();
-        assert_eq!(h.bin_edges, vec![80, 100, 120, 140, 160]);
-        assert_eq!(h.counts, vec![2, 1, 0, 1]);
-        let lengths: Vec<i64> = (0..100_000).collect();
-        let h = length_histogram(&lengths).unwrap();
-        assert!(h.counts.len() as u64 <= MAX_HISTOGRAM_BINS);
-        assert_eq!(h.counts.iter().sum::<u64>(), 100_000);
+    fn length_counts_tally_the_distinct_lengths() {
+        assert_eq!(length_counts(&[]), None);
+        assert_eq!(
+            length_counts(&[7.0]),
+            Some(json!({"lengths": [7], "counts": [1]}))
+        );
+        assert_eq!(
+            length_counts(&[140.0, 95.0, 113.0, 95.0]),
+            Some(json!({"lengths": [95, 113, 140], "counts": [2, 1, 1]}))
+        );
     }
 
     fn taxon(lineage: &[(i64, &str, &str)], count: u64) -> TaxonRow {

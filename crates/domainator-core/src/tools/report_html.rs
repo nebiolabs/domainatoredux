@@ -21,7 +21,7 @@ use serde_json::Value;
 use crate::io::python_json;
 
 /// Upstream's `report_html.PAYLOAD_VERSION`.
-pub const PAYLOAD_VERSION: u64 = 1;
+pub const PAYLOAD_VERSION: u64 = 2;
 
 pub const TITLE_TOKEN: &str = "@@REPORT_TITLE@@";
 pub const DATA_TOKEN: &str = "@@REPORT_DATA@@";
@@ -281,7 +281,7 @@ mod tests {
         );
         assert_eq!(page.matches("S &amp; &lt;S&gt;").count(), 2);
         assert!(page.contains(
-            r#"{"report":"summary_report","payload_version":1,"encoding":"json","data":{"summary":{"note":"@@REPORT_TITLE@@"}}}"#
+            r#"{"report":"summary_report","payload_version":2,"encoding":"json","data":{"summary":{"note":"@@REPORT_TITLE@@"}}}"#
         ));
     }
 
@@ -302,7 +302,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             envelope,
-            json!({"report": "enum_report", "payload_version": 1, "encoding": "json", "data": {
+            json!({"report": "enum_report", "payload_version": 2, "encoding": "json", "data": {
                 "columns": [{"name": "name", "type": "str"}, {"name": "score", "type": "float"}],
                 "max_height": 300, "file_stem": "enum_report"}})
         );

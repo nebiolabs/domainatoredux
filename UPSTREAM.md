@@ -7,9 +7,22 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `5405402` — *Treat taxids missing from the taxonomy database as unknown;
-  sort summary ties stably* (2026-10-27; upstream `__version__` 1.0.0rc1, on the
-  `version_one` branch).
+- **Caught up to:** `377cdff` — *Report pages: compact figures, a zoomable length
+  histogram, no text selection; plain text tables* (2026-10-28; upstream `__version__`
+  1.0.0rc1, on the `version_one` branch).
+- **`377cdff`**, ported. The report pages' CSS and JS changed (compact figure blocks in
+  the new `common/panels.js`, restyled matrix_report sliders, no text selection while
+  dragging a chart), which regenerated the summary_report, matrix_report and plot_contigs
+  shells. summary_report's page now bins the contig lengths itself as its histogram zooms,
+  so its data carries `length_counts` (distinct lengths and their counts) in place of
+  `length_histogram`, and `PAYLOAD_VERSION` is 2 (`report_html.rs`). The `-o` text report
+  is now laid out by `text_plot.text_table` instead of pandas' `to_string`; the port
+  writes it with `text_plot::text_table`, so the four upstream tests that write it
+  reproduce, and the `deferred:text-report` rows and their `extra:` stand-ins are gone.
+- **`0118934`**, nothing to port: matplotlib and seaborn are gone from upstream entirely.
+- **`de65a3e`**, nothing to port: `build_projection --png_out` became an `--html_out` page.
+  The tool is unported here, so only the manifest snapshot changed, which its
+  `deferred:unported-tool` allowlist row already covers.
 - **`5405402`**, ported. Two bugs the example reports turned up. A taxid missing from the
   taxonomy database crashed upstream (`KeyError` in `lineage`); it is now unknown, with one
   warning per taxid, and summary_report gives it a blank name and rank. The port already
@@ -43,12 +56,11 @@ file records how far the port is caught up and how to advance it.
   its last digit (numpy's pairwise summation), as in `--json_out`.
 - **`920d690`**, ported. summary_report's `--html_out` page moved onto `report_html.py`:
   the `--json_out` document plus a `length_histogram` and a `taxonomy_tree`, computed by
-  integer rules this port reproduces (`summary_report::length_histogram`/`taxonomy_tree`);
+  integer rules this port reproduces (`summary_report::taxonomy_tree`; the histogram later
+  moved into the page);
   `common/charts.js` and `common/hierarchy.js` draw them. The shell is
   `report_shells/summary_report.html`. `table.js` gained an `idPrefix`, which regenerated
-  the table shell too. The four upstream tests that write the page also write the `-o`
-  text report, which this port does not reproduce, so they are `deferred:text-report`
-  rows and their pages are compared by `extra:` rows without `-o`.
+  the table shell too.
 - **`460f120`**, tests only: the HTML report tests call `main([...])` with literal lists
   again, and hmmer_report's page gained one, so the harvester replays all four.
 - **`a1aaa2f`**, ported. Upstream's `--html_out` pages are now built by `report_html.py`
@@ -138,7 +150,7 @@ Use this to triage which module a changed upstream file lands in:
 | `build_ssn_viewer.py`, `ssn_hierarchy.py` | `crates/domainator-core/src/tools/build_ssn_viewer.rs`, `.../matrix/ssn.rs` |
 | `ssn_bundle.py` | `.../tools/ssn_bundle.rs` (the `.dsnv` reader) |
 | `ssn_navigator.py` | `.../tools/ssn_navigator.rs` |
-| `summary_report.py` | `.../tools/summary_report.rs` (`length_histogram`, `taxonomy_tree` feed the HTML page) |
+| `summary_report.py` | `.../tools/summary_report.rs` (`length_counts`, `taxonomy_tree` feed the HTML page; `render_text` is `SummaryTextWriter`) |
 | `colors.py` | `.../palette.rs` |
 | `structure_*.py`, `structure_lib.py`, `foldseek.py` | **deferred** — see below |
 | `build_ssn.py` | `.../tools/build_ssn.rs` |
@@ -152,7 +164,7 @@ Use this to triage which module a changed upstream file lands in:
 | `domain_search.py`, `select_by_cds.py` | `.../tools/{domain_search,select_by_cds,neighborhood}.rs` |
 | `select_by_contig.py`, `enum_report.py` | `.../tools/{select_by_contig,enum_report,select_common}.rs` |
 | `matrix_report.py` | `.../tools/matrix_report.rs` |
-| `text_plot.py` (the text reports' histograms) | `.../text_plot.rs` |
+| `text_plot.py` (the text reports' histograms and tables) | `.../text_plot.rs` |
 | `hmmer_compare.py` | `.../tools/hmmer_compare.rs`, `.../search/hmm_compare.rs` |
 | `seqio.py`, `genbank.py` (Biopython subclasses), `lean_record.py`, `offsets.py`, `db_index.py`, `bgzf_compress.py` | `.../io/{genbank,fasta,bgzf,didx,shards,partition}.rs` |
 | `hmmio.py` | `.../search/{hmm_read,hmm_write,references}.rs` |
@@ -214,10 +226,6 @@ Tracked so a later sync does not mistake them for oversights:
   vendored viewer shell and matrix_report's page shell, which each carry their own copy.
 - **`hmmer_build --window_beta`.** Deriving MAXL from a tail mass needs builder calibration
   `hmmer-pure-rs` does not expose; the flag is refused rather than silently ignored.
-- **`summary_report`'s text report** (`-o`): its ASCII length histogram and pandas'
-  table layout are not reproduced; the JSON and HTML outputs are. Upstream's tests that
-  write it are `deferred:text-report` rows, and their HTML pages are compared by
-  `extra:` rows without `-o`.
 - **`--progress`** draws no progress bar: `seq_dist` and `compare_contigs` accept and
   ignore it.
 - **Infernal `.cm` references** in `domainate`/`domain_search`. (`deferred:infernal`.)
@@ -241,7 +249,6 @@ machine-checked on each sweep so none can be quietly forgotten. One open `gap:` 
 
 | class | rows | |
 |---|---|---|
-| `deferred:text-report` | 4 | `summary_report`'s text report, above |
 | `gap:feature-order` | 5 | `domain_search` emits tied-coordinate features in the other order, below |
 | `deferred:infernal` | 3 | `.cm` references |
 

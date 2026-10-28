@@ -7929,10 +7929,10 @@
     {
      "default": null,
      "flags": [
-      "--png_out"
+      "--html_out"
      ],
      "kind": "path",
-     "name": "png_out",
+     "name": "html_out",
      "required": false,
      "role": "output",
      "stdout": false,
@@ -8003,7 +8003,7 @@
    ],
    "required_outputs": [
     "xgmml_out",
-    "png_out",
+    "html_out",
     "coords_out"
    ]
   },
