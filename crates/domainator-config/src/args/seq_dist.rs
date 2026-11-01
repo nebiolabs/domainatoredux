@@ -114,7 +114,7 @@ pub struct SeqDistArgs {
     /// How many cpu threads to use. 0: all cores.
     #[arg(long, default_value_t = 0, allow_negative_numbers = true)]
     pub cpu: i64,
-    /// Accepted for compatibility with upstream; domainatoredux draws no progress bar.
+    /// Show a progress bar for long-running steps (on a terminal only).
     #[arg(long)]
     pub progress: bool,
     /// Fail if a projected output file would exceed this many GB. Set to 0 to disable

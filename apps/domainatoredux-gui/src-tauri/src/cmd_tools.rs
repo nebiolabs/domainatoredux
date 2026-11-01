@@ -1021,6 +1021,7 @@ pub(crate) mod tests {
         ("extract_peptides", "input", "sequence"),
         ("extract_unannotated", "input", "sequence"),
         ("filter_domains", "input", "sequence"),
+        ("find_features", "input", "sequence"),
         ("genbank_to_fasta", "input", "sequence"),
         ("hmmer_build", "input", "msa"),
         ("hmmer_compare", "input", "hmm"),
@@ -1038,6 +1039,8 @@ pub(crate) mod tests {
         ("seq_dist", "input", "sequence"),
         ("seq_dist", "reference", "reference"),
         ("sort_contigs", "input", "sequence"),
+        ("split_by_cluster", "input", "sequence"),
+        ("split_by_cluster", "matrix", "matrix"),
         ("transform_matrix", "input", "matrix"),
         ("trim_contigs", "input", "sequence"),
     ];
@@ -1387,8 +1390,9 @@ ORIGIN
                 "{} declares no input",
                 tool.id
             );
+            // split_by_cluster writes a folder of files, named by its `output_dir`.
             assert!(
-                roles.contains(&"output_file"),
+                roles.contains(&"output_file") || tool.id == "split_by_cluster",
                 "{} declares no output",
                 tool.id
             );

@@ -337,7 +337,13 @@ fn render_traceback(
 
 /// Score every query HMM against every reference HMM, keeping pairs with
 /// `score > lb`. `query == subject` orientation: row = input HMM, col = reference HMM.
-pub fn hmm_compare_scores(query: &[Hmm], reference: &[Hmm], lb: f64) -> Vec<CmpResult> {
+/// `progress` counts queries.
+pub fn hmm_compare_scores(
+    query: &[Hmm],
+    reference: &[Hmm],
+    lb: f64,
+    progress: &crate::progress::Progress,
+) -> Vec<CmpResult> {
     if query.is_empty() || reference.is_empty() {
         return Vec::new();
     }
@@ -361,6 +367,7 @@ pub fn hmm_compare_scores(query: &[Hmm], reference: &[Hmm], lb: f64) -> Vec<CmpR
                     subject: r.name.clone(),
                 });
             }
+            progress.inc(1);
             row.into_iter()
         })
         .collect()

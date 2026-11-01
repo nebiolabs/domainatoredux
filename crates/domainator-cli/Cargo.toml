@@ -18,7 +18,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-domainator-core = { path = "../domainator-core" }
+domainator-core = { path = "../domainator-core", features = ["network"] }
 domainator-config = { path = "../domainator-config" }
 clap.workspace = true
 clap_complete.workspace = true

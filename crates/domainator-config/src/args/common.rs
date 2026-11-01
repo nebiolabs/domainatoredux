@@ -22,9 +22,7 @@ pub struct CommonArgs {
 }
 
 /// The taxonomy restriction every selecting tool takes (upstream
-/// `cli.common.add_taxonomy_filters`), flattened into its args. Upstream's
-/// `--taxonomy_update` is listed as unsupported instead, since this port never
-/// downloads the taxonomy.
+/// `cli.common.add_taxonomy_filters`), flattened into its args.
 #[derive(clap::Args, Clone, Debug, Default)]
 #[command(rename_all = "snake_case")]
 pub struct TaxonomyArgs {
@@ -44,9 +42,12 @@ pub struct TaxonomyArgs {
     #[arg(long, default_value = "exclude",
           value_parser = ["exclude", "include", "evaluate", "error"])]
     pub taxonomy_unknown: String,
-    /// Path to an NCBI taxonomy database: a directory of extracted .dmp files, or a
-    /// taxdump.tar.gz. Default: /tmp/ncbi_taxonomy_USER, USER being your user name.
-    /// Unlike upstream, it is never downloaded.
+    /// NCBI taxonomy database directory; downloaded if missing and filtering is
+    /// active. It may also be the path of a taxdump.tar.gz. Default:
+    /// /tmp/ncbi_taxonomy_USER, USER being your user name.
     #[arg(long)]
     pub ncbi_taxonomy_path: Option<String>,
+    /// Check for an updated taxonomy database when filtering is active.
+    #[arg(long)]
+    pub taxonomy_update: bool,
 }

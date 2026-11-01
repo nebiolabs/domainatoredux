@@ -17,7 +17,7 @@ macro_rules! upstream_version {
 }
 macro_rules! upstream_commit {
     () => {
-        "cfa4193"
+        "f346a05"
     };
 }
 

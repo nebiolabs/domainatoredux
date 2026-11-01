@@ -3,7 +3,7 @@
 //! `SeqUtils.molecular_weight` + `SeqUtils.IsoelectricPoint`/`ProtParam`), and
 //! PROSITE-motif counting (`find_features.{prosite_to_regex,search_motif}`).
 
-use regex::RegexBuilder;
+use regex::{Regex, RegexBuilder};
 
 /// IUPAC average residue weights (`IUPACData.protein_weights`), only the 20
 /// standard letters used by the report.
@@ -196,86 +196,76 @@ pub fn isoelectric_point(seq: &[u8]) -> Option<f64> {
 
 // --- PROSITE motif counting ------------------------------------------------
 
-/// `find_features.prosite_to_regex`: translate a PROSITE pattern to a regex.
-pub fn prosite_to_regex(pattern: &str) -> String {
+/// `find_features.prosite_to_regex`: translate a PROSITE pattern to a regex. `None`
+/// where upstream raises, on a `[`, `{` or `(` that is never closed.
+pub fn prosite_to_regex(pattern: &str) -> Option<String> {
     let pattern: Vec<char> = pattern.trim().trim_end_matches('.').chars().collect();
+    let close = |from: usize, ch: char| {
+        pattern[from..]
+            .iter()
+            .position(|&c| c == ch)
+            .map(|e| from + e)
+    };
     let mut result = String::new();
     let mut i = 0;
     while i < pattern.len() {
-        let c = pattern[i];
-        match c {
-            '<' => {
-                result.push('^');
-                i += 1;
-            }
-            '>' => {
-                result.push('$');
-                i += 1;
-            }
-            '-' => i += 1,
-            'x' | 'X' => {
-                result.push('.');
-                i += 1;
-            }
+        match pattern[i] {
+            '<' => result.push('^'),
+            '>' => result.push('$'),
+            'x' | 'X' => result.push('.'),
             '[' => {
-                if let Some(end) = pattern[i..].iter().position(|&ch| ch == ']') {
-                    let end = i + end;
-                    let cls: String = pattern[i..=end].iter().collect();
-                    result.push_str(&cls.to_uppercase());
-                    i = end + 1;
-                } else {
-                    i += 1;
-                }
+                let end = close(i, ']')?;
+                let cls: String = pattern[i..=end].iter().collect();
+                result.push_str(&cls.to_uppercase());
+                i = end;
             }
             '{' => {
-                if let Some(end) = pattern[i..].iter().position(|&ch| ch == '}') {
-                    let end = i + end;
-                    let chars: String = pattern[i + 1..end].iter().collect();
-                    result.push_str(&format!("[^{}]", chars.to_uppercase()));
-                    i = end + 1;
-                } else {
-                    i += 1;
-                }
+                let end = close(i, '}')?;
+                let chars: String = pattern[i + 1..end].iter().collect();
+                result.push_str(&format!("[^{}]", chars.to_uppercase()));
+                i = end;
             }
             '(' => {
-                if let Some(end) = pattern[i..].iter().position(|&ch| ch == ')') {
-                    let end = i + end;
-                    let rep: String = pattern[i + 1..end].iter().collect();
-                    if let Some((n, m)) = rep.split_once(',') {
-                        result.push_str(&format!("{{{},{}}}", n.trim(), m.trim()));
-                    } else {
-                        result.push_str(&format!("{{{}}}", rep.trim()));
-                    }
-                    i = end + 1;
-                } else {
-                    i += 1;
+                let end = close(i, ')')?;
+                let rep: String = pattern[i + 1..end].iter().collect();
+                match rep.split_once(',') {
+                    Some((n, m)) => result.push_str(&format!("{{{},{}}}", n.trim(), m.trim())),
+                    None => result.push_str(&format!("{{{}}}", rep.trim())),
                 }
+                i = end;
             }
-            c if c.is_alphabetic() => {
-                result.push(c.to_ascii_uppercase());
-                i += 1;
-            }
-            _ => i += 1,
+            c if c.is_alphabetic() => result.extend(c.to_uppercase()),
+            // `-` separates elements; anything else unknown is skipped, as upstream does.
+            _ => {}
         }
+        i += 1;
     }
-    result
+    Some(result)
+}
+
+/// The case-insensitive regex `find_features.search_motif` searches with, or `None`
+/// for a pattern it warns about and skips (unclosed, or not a valid regex).
+pub fn prosite_regex(pattern: &str) -> Option<Regex> {
+    RegexBuilder::new(&prosite_to_regex(pattern)?)
+        .case_insensitive(true)
+        .build()
+        .ok()
+}
+
+/// `find_features.search_motif`'s matches of `re` in `sequence`: non-overlapping,
+/// left to right, as `(start, end)` residue offsets, with the sequence upper-cased and a
+/// trailing `*` stripped.
+pub fn motif_matches(re: &Regex, sequence: &str) -> Vec<(usize, usize)> {
+    let seq = sequence.to_uppercase();
+    re.find_iter(seq.trim_end_matches('*'))
+        .map(|m| (m.start(), m.end()))
+        .collect()
 }
 
 /// Count non-overlapping occurrences of a PROSITE motif in `sequence`
-/// (`find_features.search_motif`). Trailing `*` stripped; case-insensitive.
-/// Invalid patterns yield 0 (Python warns and returns no matches).
+/// ([`motif_matches`]). An invalid pattern counts 0, as upstream warns and finds none.
 pub fn motif_count(sequence: &str, pattern: &str) -> i64 {
-    let regex_pattern = prosite_to_regex(pattern);
-    let re = match RegexBuilder::new(&regex_pattern)
-        .case_insensitive(true)
-        .build()
-    {
-        Ok(re) => re,
-        Err(_) => return 0,
-    };
-    let seq = sequence.to_uppercase();
-    let seq = seq.trim_end_matches('*');
-    re.find_iter(seq).count() as i64
+    prosite_regex(pattern).map_or(0, |re| motif_matches(&re, sequence).len() as i64)
 }
 
 #[cfg(test)]
@@ -322,9 +312,15 @@ mod tests {
 
     #[test]
     fn prosite_translation_and_counting() {
-        assert_eq!(prosite_to_regex("M-A"), "MA");
-        assert_eq!(prosite_to_regex("[AG]-x-[DE]"), "[AG].[DE]");
-        assert_eq!(prosite_to_regex("<A-x(2)-{P}>"), "^A.{2}[^P]$");
+        assert_eq!(prosite_to_regex("M-A").unwrap(), "MA");
+        assert_eq!(prosite_to_regex("[AG]-x-[DE]").unwrap(), "[AG].[DE]");
+        assert_eq!(prosite_to_regex("<A-x(2)-{P}>").unwrap(), "^A.{2}[^P]$");
+        assert_eq!(prosite_to_regex("C-x(2,4)-C.").unwrap(), "C.{2,4}C");
+        // Upstream raises on an unclosed group, and skips the pattern.
+        for unclosed in ["[AG-x", "{P", "C-x(2"] {
+            assert_eq!(prosite_to_regex(unclosed), None, "{unclosed}");
+            assert_eq!(motif_count("CAAC", unclosed), 0);
+        }
         // Non-overlapping, case-insensitive, trailing '*' stripped.
         assert_eq!(motif_count("MAMAMA", "M-A"), 3);
         assert_eq!(motif_count("mama*", "M-A"), 2);

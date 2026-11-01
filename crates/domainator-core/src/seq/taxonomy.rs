@@ -2,8 +2,8 @@
 //! (`nodes.dmp` / `names.dmp` / `merged.dmp` / `delnodes.dmp`, read from a
 //! directory of extracted files or from `taxdump.tar.gz`), and answer lineage /
 //! rank / name queries plus compile include/exclude and boolean taxonomy
-//! filters into O(1) allowed-taxid sets. Downloading/refresh is out of scope:
-//! the caller points at a prepared directory.
+//! filters into O(1) allowed-taxid sets. Downloading and refreshing the taxdump is
+//! `taxonomy_download`'s (the `network` feature).
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -28,6 +28,14 @@ pub struct NCBITaxonomy {
     warned_unknown: Mutex<HashSet<i64>>,
 }
 
+/// The taxdump tables a database needs, in upstream's order.
+pub(crate) const DMP_NAMES: [&str; 4] = ["nodes.dmp", "merged.dmp", "delnodes.dmp", "names.dmp"];
+
+/// Whether `dir` holds every extracted taxdump table.
+pub(crate) fn has_extracted_dmps(dir: &Path) -> bool {
+    DMP_NAMES.iter().all(|name| dir.join(name).exists())
+}
+
 /// Split a taxdmp line into fields: strip the trailing `\n|\t` clutter, then
 /// split on `\t|\t` (matching Python's `rstrip("\n|\t").split("\t|\t")`).
 fn split_dmp(line: &str) -> Vec<&str> {
@@ -37,44 +45,38 @@ fn split_dmp(line: &str) -> Vec<&str> {
 }
 
 impl NCBITaxonomy {
-    /// Load from a directory containing either extracted `.dmp` files or
-    /// `taxdump.tar.gz`, or from the path of a taxdump archive itself (how the GUI
-    /// registers its managed NCBI Taxonomy download, as one file).
+    /// Load from a directory containing `taxdump.tar.gz` or the extracted `.dmp`
+    /// files, or from the path of a taxdump archive itself (how the GUI registers its
+    /// managed NCBI Taxonomy download, as one file). The tarball comes first, as
+    /// upstream reads it, so a refreshed archive is not shadowed by stale `.dmp`
+    /// files beside it; an unreadable one falls back to the `.dmp` files with a
+    /// warning. Never downloads: see `taxonomy_download` for that.
     pub fn load(dir: &Path) -> std::io::Result<NCBITaxonomy> {
-        let nodes_p = dir.join("nodes.dmp");
-        let names_p = dir.join("names.dmp");
-        let merged_p = dir.join("merged.dmp");
-        let delnodes_p = dir.join("delnodes.dmp");
-        if nodes_p.exists() && names_p.exists() && merged_p.exists() && delnodes_p.exists() {
-            let nodes = std::fs::read_to_string(&nodes_p)?;
-            let names = std::fs::read_to_string(&names_p)?;
-            let merged = std::fs::read_to_string(&merged_p)?;
-            let delnodes = std::fs::read_to_string(&delnodes_p)?;
-            return Ok(Self::from_texts(&nodes, &names, &merged, &delnodes));
-        }
         let tar = if dir.is_file() {
             dir.to_path_buf()
         } else {
             dir.join("taxdump.tar.gz")
         };
+        let dmps = DMP_NAMES.map(|name| dir.join(name));
+        let have_dmps = dir.is_dir() && has_extracted_dmps(dir);
         if tar.exists() {
-            let members = read_targz_members(&tar)?;
-            let get = |name: &str| -> std::io::Result<String> {
-                members
-                    .get(name)
-                    .map(|b| String::from_utf8_lossy(b).into_owned())
-                    .ok_or_else(|| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            format!("{} is missing {name}", tar.display()),
-                        )
-                    })
-            };
+            match Self::load_targz(&tar) {
+                Ok(tax) => return Ok(tax),
+                Err(e) if have_dmps => crate::log::warn(format_args!(
+                    "Could not read required taxonomy files from {}: {e}. Falling back to \
+                     extracted .dmp files.",
+                    tar.display()
+                )),
+                Err(e) => return Err(e),
+            }
+        }
+        if have_dmps {
+            let [nodes, merged, delnodes, names] = &dmps;
             return Ok(Self::from_texts(
-                &get("nodes.dmp")?,
-                &get("names.dmp")?,
-                &get("merged.dmp")?,
-                &get("delnodes.dmp")?,
+                &std::fs::read_to_string(nodes)?,
+                &std::fs::read_to_string(names)?,
+                &std::fs::read_to_string(merged)?,
+                &std::fs::read_to_string(delnodes)?,
             ));
         }
         Err(std::io::Error::new(
@@ -83,6 +85,27 @@ impl NCBITaxonomy {
                 "NCBI taxonomy database not found in {}: expected taxdump.tar.gz or extracted .dmp files",
                 dir.display()
             ),
+        ))
+    }
+
+    fn load_targz(tar: &Path) -> std::io::Result<NCBITaxonomy> {
+        let members = read_targz_members(tar)?;
+        let get = |name: &str| -> std::io::Result<String> {
+            members
+                .get(name)
+                .map(|b| String::from_utf8_lossy(b).into_owned())
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("{} is missing {name}", tar.display()),
+                    )
+                })
+        };
+        Ok(Self::from_texts(
+            &get("nodes.dmp")?,
+            &get("names.dmp")?,
+            &get("merged.dmp")?,
+            &get("delnodes.dmp")?,
         ))
     }
 
@@ -808,20 +831,11 @@ fn read_targz_members(path: &Path) -> std::io::Result<HashMap<String, Vec<u8>>> 
     Ok(out)
 }
 
+/// A tiny taxdump for tests here and in `taxonomy_download`.
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // A tiny tree: cellular organisms(131567) -> Bacteria(2) -> Proteobacteria
-    // (1224) -> {class 1236, genus Escherichia(561) -> species E. coli(562)}.
-    // 999000 is merged into 562; 888 is deleted.
-    fn tax() -> NCBITaxonomy {
-        let [nodes, names, merged, delnodes] = dmp_texts();
-        NCBITaxonomy::from_texts(nodes, names, merged, delnodes)
-    }
-
-    /// `nodes.dmp`, `names.dmp`, `merged.dmp`, `delnodes.dmp` for [`tax`].
-    fn dmp_texts() -> [&'static str; 4] {
+pub(crate) mod fixtures {
+    /// `nodes.dmp`, `names.dmp`, `merged.dmp`, `delnodes.dmp` for the tests' tiny tree.
+    pub(crate) fn dmp_texts() -> [&'static str; 4] {
         let nodes = "\
 1\t|\t1\t|\tno rank\t|\t
 131567\t|\t1\t|\tcellular root\t|\t
@@ -843,7 +857,7 @@ mod tests {
     }
 
     /// A gzipped ustar archive of `files`, laid out as NCBI's taxdump is.
-    fn targz(files: &[(&str, &str)]) -> Vec<u8> {
+    pub(crate) fn targz(files: &[(&str, &str)]) -> Vec<u8> {
         let mut tar = Vec::new();
         for (name, body) in files {
             let mut h = [0u8; 512];
@@ -866,6 +880,31 @@ mod tests {
         gz.finish().unwrap()
     }
 
+    /// [`dmp_texts`] as NCBI's `taxdump.tar.gz`.
+    pub(crate) fn taxdump() -> Vec<u8> {
+        let [nodes, names, merged, delnodes] = dmp_texts();
+        targz(&[
+            ("nodes.dmp", nodes),
+            ("names.dmp", names),
+            ("merged.dmp", merged),
+            ("delnodes.dmp", delnodes),
+        ])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fixtures::{dmp_texts, taxdump};
+    use super::*;
+
+    // A tiny tree: cellular organisms(131567) -> Bacteria(2) -> Proteobacteria
+    // (1224) -> {class 1236, genus Escherichia(561) -> species E. coli(562)}.
+    // 999000 is merged into 562; 888 is deleted.
+    fn tax() -> NCBITaxonomy {
+        let [nodes, names, merged, delnodes] = dmp_texts();
+        NCBITaxonomy::from_texts(nodes, names, merged, delnodes)
+    }
+
     /// The GUI registers its managed download as the archive's own path, while the
     /// CLI (and Python) pass the directory holding it; both must load.
     #[test]
@@ -873,23 +912,43 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("domainator-taxdump-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let [nodes, names, merged, delnodes] = dmp_texts();
         let archive = dir.join("taxdump.tar.gz");
-        std::fs::write(
-            &archive,
-            targz(&[
-                ("nodes.dmp", nodes),
-                ("names.dmp", names),
-                ("merged.dmp", merged),
-                ("delnodes.dmp", delnodes),
-            ]),
-        )
-        .unwrap();
+        std::fs::write(&archive, taxdump()).unwrap();
         for path in [dir.as_path(), archive.as_path()] {
             let t = NCBITaxonomy::load(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
             assert_eq!(t.name(562), Some("Escherichia coli"), "{}", path.display());
             assert_eq!(t.normalized_taxid(999000), 562);
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The tarball wins over extracted files beside it, as upstream reads them, so a
+    /// refreshed archive is not shadowed by stale tables; an unreadable one falls back.
+    #[test]
+    fn the_tarball_is_read_before_extracted_dmp_files() {
+        let dir = std::env::temp_dir().join(format!("domainator-taxprefer-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let [nodes, names, merged, delnodes] = dmp_texts();
+        let stale_names = names.replace("Escherichia coli", "Bacterium coli");
+        for (name, text) in [
+            ("nodes.dmp", nodes),
+            ("names.dmp", stale_names.as_str()),
+            ("merged.dmp", merged),
+            ("delnodes.dmp", delnodes),
+        ] {
+            std::fs::write(dir.join(name), text).unwrap();
+        }
+        std::fs::write(dir.join("taxdump.tar.gz"), taxdump()).unwrap();
+        let t = NCBITaxonomy::load(&dir).unwrap();
+        assert_eq!(t.name(562), Some("Escherichia coli"));
+
+        std::fs::write(dir.join("taxdump.tar.gz"), b"").unwrap();
+        let t = NCBITaxonomy::load(&dir).unwrap();
+        assert_eq!(t.name(562), Some("Bacterium coli"));
+
+        std::fs::remove_file(dir.join("names.dmp")).unwrap();
+        assert!(NCBITaxonomy::load(&dir).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

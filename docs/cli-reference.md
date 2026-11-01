@@ -87,10 +87,15 @@ know is an error.
 
 They need an NCBI taxdump, given by `--ncbi_taxonomy_path`; it defaults to
 `/tmp/ncbi_taxonomy_$USER` and is only loaded if you actually use a taxonomy filter or
-column. It can be a directory of extracted `.dmp` files, a directory holding
-`taxdump.tar.gz`, or the path of a taxdump archive itself (such as the desktop app's NCBI
-Taxonomy download). enum_report's `--rank_lineage` loads it too; the Python tool does not,
-and crashes on that column alone.
+column. It can be a directory holding `taxdump.tar.gz` or the extracted `.dmp` files, or
+the path of a taxdump archive itself (such as the desktop app's NCBI Taxonomy download).
+A directory with neither is created if need be and NCBI's `taxdump.tar.gz` (about 65 MB)
+is downloaded into it. With `--taxonomy_update`, a local `taxdump.tar.gz` is checked
+against the MD5 NCBI publishes and replaced if it differs; if NCBI cannot be reached, the
+local copy is used with a warning. Every download is checked against that MD5 before it
+replaces anything, and runs that share a database wait for each other's download rather
+than both fetching it. enum_report's `--rank_lineage` loads it too; the Python tool does
+not, and crashes on that column alone.
 
 **`--partial include|exclude|only`** selects by fragment status: a CDS with a `<`/`>`
 end, or a protein record marked as a fragment (UniProt ` (Fragment)`, `NON_TER`, ...).
@@ -104,10 +109,10 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 | Role | Tools |
 | --- | --- |
 | [I/O and diagnostics](#io-and-diagnostics) | `inspect`, `convert`, `genbank_to_fasta`, `describe`, `completion`, `doctor` |
-| [Annotation and search](#annotation-and-search) | `domainate`, `domain_search`, `gene_call`, `filter_domains` |
+| [Annotation and search](#annotation-and-search) | `domainate`, `domain_search`, `gene_call`, `filter_domains`, `find_features` |
 | [Selection and extraction](#selection-and-extraction) | `select_by_cds`, `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `rotate_contigs`, `sort_contigs`, `clean_sequences`, `deduplicate_genbank` |
 | [Color and plots](#color-and-plots) | `color_genbank`, `color_table_to_legend`, `plot_contigs` |
-| [Matrices and networks](#matrices-and-networks) | `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`, `build_projection`, `viewer` |
+| [Matrices and networks](#matrices-and-networks) | `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`, `build_projection`, `viewer`, `split_by_cluster` |
 | [Reports](#reports) | `enum_report`, `summary_report`, `matrix_report`, `ssn_navigator` |
 | [HMM profiles](#hmm-profiles) | `hmmer_build`, `hmmer_select`, `hmmer_search`, `hmmer_compare`, `hmmer_report`, `infernal_build` |
 | [Database preparation](#database-preparation) | `format_db` |
@@ -285,6 +290,24 @@ annotations) and `--databases` (filter only these databases) to act per database
 
 ```bash
 domainatoredux filter_domains -i annotated.gb -o clean.gb -e 1e-10 --max_overlap 0.5
+```
+
+### `find_features`
+
+Annotate each protein, or each CDS's translation, with the matches of PROSITE patterns
+(`--motif`; the syntax is EMBOSS `fuzzpro`'s: `x` any residue, `[DE]` either, `{P}` any
+but, `(2,4)` a repeat, `<`/`>` the ends). Each match is a `Domainator` annotation with
+program and database `MOTIF`, score and identity 100, e-value 0, and a name made from
+its pattern that `--domain_expr` can use (`C-x(2)-C` is `C_x__2____C`). `--gene_call`
+and `--partial` work as on `domainate`, and a run with no motif still adds a `cds_id`
+and an on-contig translation to every CDS.
+
+Upstream's `--tmbed` (transmembrane regions and signal peptides from a protein language
+model) is not supported; it and its `--device`, `--model_dir`, `--tmbed_model_dir` and
+`--batch_size` options are accepted, and `--tmbed` is refused.
+
+```bash
+domainatoredux find_features -i proteins.gb -o motifs.gb --motif "C-x(2)-C" "[DE](2)HS{P}"
 ```
 
 ---
@@ -652,6 +675,25 @@ from any of the three tools above or a saved session, or an older `.dsnv`), or, 
 domainatoredux viewer -i network.dvb -o network.html
 ```
 
+### `split_by_cluster`
+
+Split a file into one file per cluster of a similarity matrix (`--matrix`, HDF5 or dense
+text), so each family can be aligned, built into a profile or searched on its own. The
+input (`-i`) is GenBank, FASTA, an `.hmm` profile library or an Infernal `.cm` file, and
+its record or profile names must be exactly the matrix's labels. Clusters are the
+connected components of the scores above `--threshold`, numbered from 1 (the largest) as
+`build_ssn` numbers them, and each is written as `<number><ext>` into `--output_dir` in
+the input's format and compression (`.hmm.gz` profiles stay plain gzip; GenBank and FASTA
+are BGZF). Clusters smaller than `--min_cluster_size` are skipped, or pooled into
+`small_clusters<ext>` with `--write_small_clusters`. With `--pad_on_search_hits`, each
+GenBank contig is centered on its first `domain_search` hit and padded with `N` so the
+hits line up within each file. An existing output file is never overwritten.
+
+```bash
+domainatoredux split_by_cluster -i hits.gb --matrix dist.hdf5 --threshold 100 \
+  --output_dir families --min_cluster_size 5 --write_small_clusters
+```
+
 ---
 
 ## Reports
@@ -684,17 +726,14 @@ CSV/TSV/JSON. It shows floats to one decimal place, as the TSV does; the page ho
 same rows as `--json_out`, so copies and downloads keep every digit.
 `--html_max_height` caps the table's height in pixels. `--partial` filters rows by
 fragment status. The taxonomy columns read
-`--ncbi_taxonomy_path` (extracted `.dmp` files or a `taxdump.tar.gz`), which is never
-downloaded.
+`--ncbi_taxonomy_path`, downloaded if missing and refreshed by `--taxonomy_update` (see
+[Taxonomy filters](#taxonomy-filters)).
 
 ```bash
 domainatoredux enum_report -i annotated.gb --by cds \
   --columns domains length molecular_weight isoelectric_point taxname:genus:species \
   -o table.tsv
 ```
-
-`--taxonomy_update` is not ported. A config file may still name it at its default
-(`false`), so upstream's configs load.
 
 ### `summary_report`
 

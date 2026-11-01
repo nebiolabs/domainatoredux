@@ -214,3 +214,22 @@ deduplicate_genbank	extra:test_deduplicate_genbank_hash_both_strands#0	extra_inv
 # neighbors here unnoticed.
 domain_search	extra:nucleotide_multi_hit_cds_range#0	extra_invocations.tsv	--input	@DATA@/multi_hit_dna_target.fna	--alphabet	nucleotide	-r	@DATA@/multi_hit_dna_queries.fna	-o	@TMP@/out.gb	--add_annotations	--cds_range	1	--cpu	1	--evalue	0.1
 domain_search	extra:nucleotide_multi_hit_cds_range#1	extra_invocations.tsv	--input	@DATA@/multi_hit_dna_target.fna	--alphabet	nucleotide	-r	@DATA@/multi_hit_dna_queries.fna	-o	@TMP@/out.gb	--add_annotations	--cds_range	1	--cpu	1	--evalue	0.1	--keep_direction
+# test_split_by_cluster.py's compressed inputs and two-model .cm file, which it writes at
+# test time: a .hmm.gz splits into plain-gzip .hmm.gz files, a .gb.bgz into BGZF ones,
+# and each Infernal model keeps its filter HMM.
+split_by_cluster	extra:test_split_by_cluster_hmm_gzip#0	extra_invocations.tsv	-i	@GEN@/clusters.hmm.gz	--matrix	@DATA@/split_by_cluster/pdonr_hmms.matrix.tsv	--output_dir	@TMP@/out	--threshold	0	--min_cluster_size	2	--write_small_clusters
+split_by_cluster	extra:test_split_by_cluster_genbank_bgzf#0	extra_invocations.tsv	-i	@GEN@/in.gb.bgz	--matrix	@DATA@/split_by_cluster/FeSOD_20.matrix.tsv	--output_dir	@TMP@/out	--threshold	0	--min_cluster_size	2	--write_small_clusters
+split_by_cluster	extra:test_split_by_cluster_cm_keeps_each_filter_hmm_with_its_model#0	extra_invocations.tsv	-i	@GEN@/two.cm	--matrix	@GEN@/two_cm.matrix.tsv	--output_dir	@TMP@/out
+# find_features --motif: upstream's own tests build their input (test_motif_integration)
+# or loop over --partial values, so these stand in for them, adding protein GenBank and
+# FASTA, a circular nucleotide contig, a run with no option (translations normalized
+# only) and --gene_call all over existing domain annotations (needs $DOMAINATOREDUX_ORPHOS).
+find_features	extra:test_motif_integration#0	extra_invocations.tsv	--input	@GEN@/motif_test.fasta	-o	@TMP@/out.gb	--motif	[DE](2)HS
+find_features	extra:test_find_features_partial#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	--motif	A	-o	@TMP@/out.gb	--partial	include
+find_features	extra:test_find_features_partial#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	--motif	A	-o	@TMP@/out.gb	--partial	exclude
+find_features	extra:test_find_features_partial#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	--motif	A	-o	@TMP@/out.gb	--partial	only
+find_features	extra:find_features_motifs#0	extra_invocations.tsv	-i	@DATA@/FeSOD_20.gb	--motif	H-x(3)-[DE]	<M-x(2)	C-x(2,4)-C	[DE](2)HS{P}X(2)PX(2,4)C	-o	@TMP@/out.gb	--fasta_out	@TMP@/out.fasta
+find_features	extra:find_features_motifs#1	extra_invocations.tsv	-i	@DATA@/FeSOD_20.fasta	--motif	H-x(3)-[DE]	[AG](2)	-o	@TMP@/out.gb
+find_features	extra:find_features_motifs#2	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--motif	K-K	L-x-L	<M	W>	-o	@TMP@/out.gb
+find_features	extra:find_features_motifs#3	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb
+find_features	extra:find_features_gene_call#0	extra_invocations.tsv	-i	@DATA@/pDONR201_multi_genemark_domainator.gb	--gene_call	all	--motif	C-x(2)-C	-o	@TMP@/out.gb

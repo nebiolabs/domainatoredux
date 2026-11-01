@@ -27,3 +27,13 @@ serde.workspace = true
 serde_json.workspace = true
 faer.workspace = true
 shlex.workspace = true
+fs4.workspace = true
+indicatif.workspace = true
+# `network`: fetching NCBI's taxdump (`seq::taxonomy_download`).
+ureq = { workspace = true, optional = true }
+md-5 = { workspace = true, optional = true }
+
+[features]
+# Downloads over HTTPS (the NCBI taxdump). Off by default so the library carries no
+# HTTP/TLS client unless a front end asks for one; the CLI turns it on.
+network = ["dep:ureq", "dep:md-5"]

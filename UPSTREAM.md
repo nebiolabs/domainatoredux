@@ -7,8 +7,18 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `cfa4193` — *test fix* (2026-11-01; upstream `__version__`
-  1.0.0rc1, on the `version_one` branch).
+- **Caught up to:** `f346a05` — *make test fixtures explicit*
+  (2026-11-01; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`f346a05`**, ported: `split_by_cluster` splits a real Infernal `.cm` file, each CM
+  block kept with the filter HMM that follows it under the same name (it used to report
+  duplicate labels), and `find_features --gene_call all` drops the `Domainator`
+  annotations of the CDSs it replaces, as `domainate` does. Its `split_by_cluster` tests
+  read committed matrices (`test/data/split_by_cluster/`) instead of writing them at run
+  time, so the sweep replays them.
+- **`aa6ef74`**, ported: `--cds_range` counts protein-coding CDSs only
+  (`select_by_cds.cds_range_members`, `neighborhood::cds_range_members`); a nucleotide hit
+  can be the focus but is never a neighbor. Also ignores the taxonomy loader's
+  `*.tar.gz.lock` files. See "What the parity sweep still tracks".
 - **`cfa4193`**, nothing to port: a browser test finds the Bacteria node by label, and
   the empty `test/data/taxdmp/taxdump.tar.gz.lock` (a lock file the taxonomy loader leaves
   beside the tarball) is deleted.
@@ -316,23 +326,22 @@ Tracked so a later sync does not mistake them for oversights:
 - **`merge_impact_axis_labels`** (`ssn_hierarchy.py`). Its consumers are `viewer_html.py`
   (the viewer config's `splitAxisLabels`) and matrix_report's page; both generated shells
   carry its values pre-rendered, so a shell regeneration is all a change to it needs.
-- **`--progress`** draws no progress bar: `seq_dist` and `compare_contigs` accept and
-  ignore it.
-- **`seq_dist`'s diamond diagnostics**: the explained failures (out of disk or memory, a
-  rejected `--diamond_args` option, unreadable input: `build_diamond_failure_message`); a
-  failed run reports diamond's own stderr instead. The advisory before a large all-vs-all
-  search is ported without its free-disk-space note, which needs a disk-usage call.
-- **`--partial` on `find_features` and `db_download`** (`bdc74bb`). Neither tool
-  is ported. The GUI's managed UniProt download could take the same filter later.
+- **`--partial` on `db_download`** (`bdc74bb`). The tool is not ported. The GUI's
+  managed UniProt download could take the same filter later.
+- **`find_features --tmbed`**: TMbed runs ProtT5 (a protein language model) and a CNN
+  through torch. The option and its `--device`/`--model_dir`/`--tmbed_model_dir`/
+  `--batch_size` are accepted, so the manifest matches, and `--tmbed` is refused. Upstream
+  raises too when TMbed is not installed, as in the parity env, so its two TMbed
+  invocations sweep as `skipped`. `--motif`, `--gene_call` and `--partial` are ported.
 - **`build_projection --algorithm tsne|umap`** (scikit-learn's `TSNE`, umap-learn): both
   are stochastic, so there is nothing to hold a port to beyond the shape of the output. The
   CLI keeps them in its choices, so the manifest matches, and refuses them at run time
   (`deferred:projection-umap-tsne`). A Python projection reads back in with
   `--algorithm coords`.
-- **Unported tools:** `kmer_dist`, `split_by_cluster`,
+- **Unported tools:** `kmer_dist`,
   `db_download` (the app's
   managed downloads cover UniProt, Pfam and NCBI Taxonomy),
-  `find_features` (torch), and the structure tools above. Their manifest entries are
+  and the structure tools above. Their manifest entries are
   `deferred:` rows of `scripts/parity/manifest_allowlist.tsv`.
 
 ## What the parity sweep still tracks

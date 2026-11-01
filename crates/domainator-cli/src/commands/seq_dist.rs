@@ -46,6 +46,7 @@ pub fn run(args: &SeqDistArgs) -> Result<()> {
         diamond_args,
         diamond_path: args.diamond_path.clone(),
         cpu: cpu_threads(args.cpu)?,
+        progress: args.progress,
     };
     let matrix = seq_dist(
         &args.input,

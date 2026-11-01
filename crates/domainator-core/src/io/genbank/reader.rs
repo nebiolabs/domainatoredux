@@ -127,18 +127,23 @@ impl Iterator for GenbankReader {
     }
 }
 
-/// Read all records from an uncompressed GenBank file.
+/// Read all records from a GenBank file: plain, gzip or BGZF, judged by its content
+/// as upstream's `parse_seqfiles` reads it (see [`crate::io::open_decompressed`]).
 pub fn read_genbank(path: &str) -> std::io::Result<Vec<SeqRecord>> {
-    GenbankReader::open(path, 0, false, None)?.collect()
+    GenbankReader {
+        lines: BufReader::new(crate::io::open_decompressed(std::path::Path::new(path))?),
+        default_molecule_type: None,
+    }
+    .collect()
 }
 
-/// Fast scan of an uncompressed GenBank file: each record's `(id, name)` in file
+/// Fast scan of a GenBank file (plain, gzip or BGZF): each record's `(id, name)` in file
 /// order, WITHOUT parsing features or reading the sequence (framing stops at
 /// `ORIGIN`). For resolving a label to a (file, contig index) far more cheaply than
 /// [`read_genbank`], which matters when a workspace holds large annotated genomes.
 /// id/name match [`parse_record`] exactly (via `record_identity`).
 pub fn scan_genbank_ids(path: &str) -> std::io::Result<Vec<(String, String)>> {
-    let mut reader = BufReader::new(open_at(path, 0, false)?);
+    let mut reader = BufReader::new(crate::io::open_decompressed(std::path::Path::new(path))?);
     let mut out: Vec<(String, String)> = Vec::new();
     let mut header_lines: Vec<String> = Vec::new();
     let mut started = false;

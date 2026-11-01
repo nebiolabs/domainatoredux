@@ -25,7 +25,7 @@ pub fn run(args: &EnumReportArgs) -> Result<()> {
             .ncbi_taxonomy_path
             .clone()
             .unwrap_or_else(default_ncbi_taxonomy_path);
-        Some(crate::load_taxonomy(&path)?)
+        Some(crate::load_taxonomy(&path, args.taxonomy_update)?)
     } else {
         None
     };

@@ -103,11 +103,18 @@ pub const TOOLS: &[ToolInfo] = &[
         stdin: false,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
-        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "domain_search",
             "annotate",
             "Search a large database with a few references and extract the hits.",
+        )
+    },
+    ToolInfo {
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        ..tool(
+            "find_features",
+            "annotate",
+            "Annotate transmembrane regions, signal peptides, and other sequence features.",
         )
     },
     // edit
@@ -142,7 +149,6 @@ pub const TOOLS: &[ToolInfo] = &[
     ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
-        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "extract_domains",
             "edit",
@@ -152,7 +158,6 @@ pub const TOOLS: &[ToolInfo] = &[
     ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
-        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "extract_peptides",
             "edit",
@@ -162,7 +167,6 @@ pub const TOOLS: &[ToolInfo] = &[
     ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
-        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "extract_unannotated",
             "edit",
@@ -188,7 +192,6 @@ pub const TOOLS: &[ToolInfo] = &[
     ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
-        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "select_by_cds",
             "edit",
@@ -198,7 +201,6 @@ pub const TOOLS: &[ToolInfo] = &[
     ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
-        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "select_by_contig",
             "edit",
@@ -333,6 +335,14 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     ToolInfo {
         stdin: false,
+        ..tool(
+            "split_by_cluster",
+            "network",
+            "Split a sequence or profile file into one file per cluster of a similarity matrix.",
+        )
+    },
+    ToolInfo {
+        stdin: false,
         required_outputs: Some(&["newick_out", "xgmml_out", "html_out", "dvb_out"]),
         no_stdout: &["xgmml_out", "html_out", "dvb_out", "color_table_out"],
         ..tool(
@@ -372,7 +382,6 @@ pub const TOOLS: &[ToolInfo] = &[
         required_outputs: Some(&["tsv_out", "html_out", "json_out"]),
         dynamic_defaults: &["ncbi_taxonomy_path"],
         columns: Some(ENUM_COLUMNS),
-        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "enum_report",
             "report",
@@ -403,7 +412,6 @@ pub const TOOLS: &[ToolInfo] = &[
             "co_occurrence_count_out",
         ],
         dynamic_defaults: &["ncbi_taxonomy_path"],
-        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "summary_report",
             "report",

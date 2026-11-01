@@ -10,6 +10,7 @@ pub mod log;
 pub mod matrix;
 pub mod palette;
 pub mod parallel;
+pub mod progress;
 pub mod search;
 pub mod seq;
 pub mod stats;

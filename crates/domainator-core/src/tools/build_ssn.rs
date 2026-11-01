@@ -203,7 +203,7 @@ fn cluster_from_tree(tree: &MaxTree, lb: f64) -> Vec<i64> {
     size_ranked_labels(tree.n_nodes, &roots)
 }
 
-fn cluster_from_graph(m: &DataMatrix, lb: f64) -> Vec<i64> {
+pub(crate) fn cluster_from_graph(m: &DataMatrix, lb: f64) -> Vec<i64> {
     let n = m.nrows();
     let d = m.densify();
     let mut uf = Uf::new(n);

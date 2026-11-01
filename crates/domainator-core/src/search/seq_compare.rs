@@ -4,6 +4,7 @@
 //! value is the full-sequence bit score (`hit.score`), rounded to two decimals,
 //! for query=input-sequence (row) vs subject=reference (col).
 
+use crate::progress::Progress;
 use rayon::prelude::*;
 
 use hmmer_pure_rs::profile::{profile_config, P7_LOCAL};
@@ -88,8 +89,13 @@ fn search_model(
 }
 
 /// `--algorithm hmmer` with an HMM reference: search each profile against the
-/// input sequences. `input_seqs` are `(name, residues)`.
-pub fn hmmsearch_scores(input_seqs: &[(String, Vec<u8>)], hmms: &[Hmm], lb: f64) -> Vec<CmpResult> {
+/// input sequences. `input_seqs` are `(name, residues)`; `progress` counts profiles.
+pub fn hmmsearch_scores(
+    input_seqs: &[(String, Vec<u8>)],
+    hmms: &[Hmm],
+    lb: f64,
+    progress: &Progress,
+) -> Vec<CmpResult> {
     // Each profile is independent: build its own profile/pipeline and search the
     // shared (read-only) input sequences, digitized once. Parallelize over profiles.
     let Some(first) = hmms.first() else {
@@ -110,17 +116,21 @@ pub fn hmmsearch_scores(input_seqs: &[(String, Vec<u8>)], hmms: &[Hmm], lb: f64)
             let mut gm = Profile::new(hmm.m, &abc);
             profile_config(hmm, &bg, &mut gm, 400, P7_LOCAL);
             let om = OProfile::convert(&gm);
-            search_model(&hmm.name, gm, om, &bg, hmm, &targets, lb).into_iter()
+            let hits = search_model(&hmm.name, gm, om, &bg, hmm, &targets, lb);
+            progress.inc(1);
+            hits.into_iter()
         })
         .collect()
 }
 
 /// `--algorithm hmmer` with a sequence reference (phmmer): build a single-sequence
-/// HMM from each reference and search it against the input sequences.
+/// HMM from each reference and search it against the input sequences. `progress`
+/// counts references.
 pub fn phmmer_scores(
     input_seqs: &[(String, Vec<u8>)],
     ref_seqs: &[(String, Vec<u8>)],
     lb: f64,
+    progress: &Progress,
 ) -> Vec<CmpResult> {
     let abc = Alphabet::amino();
     let bg = Bg::new(&abc);
@@ -133,7 +143,12 @@ pub fn phmmer_scores(
     // shared (read-only) targets. Parallelize over references.
     ref_seqs
         .par_iter()
-        .filter(|(_, ref_res)| !ref_res.is_empty())
+        .filter(|(_, ref_res)| {
+            if ref_res.is_empty() {
+                progress.inc(1);
+            }
+            !ref_res.is_empty()
+        })
         .flat_map_iter(|(ref_name, ref_res)| {
             let dsq = abc.digitize(ref_res);
             let hmm = hmmer_pure_rs::seqmodel::build_single_seq_hmm(
@@ -150,7 +165,9 @@ pub fn phmmer_scores(
             let mut gm = Profile::new(hmm.m, &abc);
             profile_config(&hmm, &local_bg, &mut gm, 400, P7_LOCAL);
             let om = OProfile::convert(&gm);
-            search_model(ref_name, gm, om, &local_bg, &hmm, &targets, lb).into_iter()
+            let hits = search_model(ref_name, gm, om, &local_bg, &hmm, &targets, lb);
+            progress.inc(1);
+            hits.into_iter()
         })
         .collect()
 }

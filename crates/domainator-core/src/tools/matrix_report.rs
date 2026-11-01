@@ -3,6 +3,7 @@
 //! `--json_out` document, the `--html_out` page's data ([`to_html_data`]) and the
 //! `--knn_projection` edge counts. [`to_viewer_json`] is this port's own, for the GUI.
 
+use crate::progress::Stages;
 use serde_json::{json, Value};
 
 use crate::matrix::ssn::{
@@ -109,12 +110,16 @@ fn strongest_merge_events(events: &[MergeEvent]) -> Vec<MergeEvent> {
 /// Build the report. `merge_impact_metric` is `min_child`/`product`;
 /// `max_merge_events` caps the retained split events (0 = all); `with_knn_projection`
 /// also counts the MST + kNN edges of every threshold and `k` (`--knn_projection`).
+/// `stages` hears about each stage, upstream's `progress_callback` and
+/// `stage_timings`.
 pub fn matrix_report(
     matrix: &DataMatrix,
     merge_impact_metric: &str,
     max_merge_events: usize,
     with_knn_projection: bool,
+    stages: &mut Stages,
 ) -> MatrixReport {
+    let since = stages.begin("building edge table");
     let scores = edge_scores_desc(matrix); // descending
     let n = scores.len();
     let mean = if n > 0 {
@@ -132,7 +137,18 @@ pub fn matrix_report(
     let max = scores.first().copied().unwrap_or(0.0);
     let min = scores.last().copied().unwrap_or(0.0);
 
+    stages.record("build_edge_table", since, || {
+        vec![
+            ("n_edges", n.to_string()),
+            ("n_nodes", matrix.nrows().to_string()),
+        ]
+    });
+
+    let since = stages.begin("building maximum spanning tree");
     let tree = MaxTree::from_matrix(matrix);
+    stages.record("build_max_tree", since, || {
+        vec![("n_mst_edges", tree.export_mst_edges().len().to_string())]
+    });
     let summary = component_size_summary_by_threshold(&tree, merge_impact_metric);
     // The uncapped rows are kept: `merge_event_total` reports them, and the moving sum
     // MUST be computed from them. Filtering first keeps the top rows by `merge_impact`,
@@ -150,6 +166,17 @@ pub fn matrix_report(
     // `true`: this report, unlike a `.dsnv` bundle, carries the threshold tables and
     // reads each cut's edge count out of them.
     let slider_stops = threshold_slider_stops(&merge_events, Some(&tree), true);
+    let knn_projection = with_knn_projection.then(|| {
+        let since = stages.begin("building kNN projection threshold counts");
+        let projection = knn_projection(matrix, &tree);
+        stages.record("build_mst_knn_counts", since, || {
+            vec![
+                ("thresholds", tree.thresholds().len().to_string()),
+                ("max_k", projection.max_k.to_string()),
+            ]
+        });
+        projection
+    });
 
     MatrixReport {
         n_nodes: tree.n_nodes,
@@ -171,7 +198,7 @@ pub fn matrix_report(
         slider_stops,
         mst_edges: tree.export_mst_edges(),
         thresholds: tree.thresholds().to_vec(),
-        knn_projection: with_knn_projection.then(|| knn_projection(matrix, &tree)),
+        knn_projection,
     }
 }
 

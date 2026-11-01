@@ -44,6 +44,8 @@ pub struct CompareContigsOptions {
     pub knn: Option<usize>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
+    /// Draw a bar of the contigs scored (`--progress`).
+    pub progress: bool,
 }
 
 impl Default for CompareContigsOptions {
@@ -57,6 +59,7 @@ impl Default for CompareContigsOptions {
             mst: false,
             knn: None,
             cpu: 0,
+            progress: false,
         }
     }
 }
@@ -180,6 +183,7 @@ fn combined_matrix(
 
     // Each row's scores are computed independently (reading the shared, read-only
     // feature sets); parallelize over rows, then concatenate the triples.
+    let bar = crate::progress::Progress::new(opts.progress, n, "Scoring contigs");
     let per_row: Vec<Vec<(i64, i64, f64)>> = crate::parallel::with_threads(opts.cpu, || {
         use rayon::prelude::*;
         (0..n)
@@ -218,6 +222,7 @@ fn combined_matrix(
                     entries.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
                     entries.truncate(k);
                 }
+                bar.inc(1);
                 entries
                     .into_iter()
                     .filter(|&(_, v)| !(opts.threshold > 0.0 && v <= opts.threshold))
@@ -226,6 +231,7 @@ fn combined_matrix(
             })
             .collect()
     });
+    drop(bar);
 
     let mut rows_v: Vec<i64> = Vec::new();
     let mut cols_v: Vec<i64> = Vec::new();

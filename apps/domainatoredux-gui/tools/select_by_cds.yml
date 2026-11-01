@@ -94,3 +94,8 @@ fields:
     file_type: taxonomy
     sources: databases_first
     select: "database:ncbi_taxonomy"
+  - name: taxonomy_update
+    # The Databases panel checks and refreshes the managed taxdump and records
+    # its version; a job refreshing it in place would bypass that.
+    show: false
+    label: "Update taxonomy"

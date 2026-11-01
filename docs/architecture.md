@@ -25,7 +25,8 @@ convention, which is what makes the GUI able to reuse them directly.
   (`parts: Vec<(start, end, strand, before, after)>`, 0-based half-open, complement-joins
   pre-reversed). Plus `translate.rs` (genetic code, revcomp, location extraction),
   `taxid.rs`, `taxonomy.rs` (taxdmp parser, lineage/rank/name, filter and expression
-  compilation) and `protein_analysis.rs` (isoelectric point, net charge, molecular weight,
+  compilation), `taxonomy_download.rs` (fetching and refreshing NCBI's taxdump, behind
+  the `network` feature the CLI turns on) and `protein_analysis.rs` (isoelectric point, net charge, molecular weight,
   PROSITE motif counting).
 - **`io/`** — the project's own GenBank `parse`/`reader`/`writer`/`offsets`, plus `fasta`,
   `bgzf` (random access and virtual offsets), `didx`, `shards` and `partition`.

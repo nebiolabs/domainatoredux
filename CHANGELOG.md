@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `cfa4193`.
+Parity: Python domainator 1.0.0rc1 @ `f346a05`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
@@ -61,6 +61,38 @@ Parity: Python domainator 1.0.0rc1 @ `cfa4193`.
 - **`--cds_range` counts protein-coding CDSs only** (`domain_search`, `select_by_cds`):
   hits on a nucleotide reference are never neighbors, though one can be the focus. A
   region used to stop at the next nucleotide hit instead of reaching the next gene.
+- **`find_features`**, a new tool: PROSITE motif matches (`--motif`) on every protein and
+  CDS translation as domain annotations, with `--gene_call` and `--partial`. Upstream's
+  TMbed prediction (`--tmbed`) needs torch and is not supported. In the desktop app as
+  "Find features (motifs)".
+- **An unclosed `[`, `{` or `(` in a PROSITE motif** makes `enum_report`'s
+  `motif_count:` column count nothing, as upstream does, instead of the matches of the
+  motif with that character dropped.
+- **`split_by_cluster`**, a new tool: one file per cluster of a similarity matrix, from
+  GenBank, FASTA, `.hmm` or `.cm` input, with small clusters skipped or pooled and
+  optionally each contig centered on its search hit. In the desktop app as "Split by
+  cluster".
+- **The NCBI taxonomy is downloaded when it is missing**, as `domainator` does, and
+  **`--taxonomy_update`** (`domain_search`, `enum_report`, `summary_report`,
+  `select_by_cds`, `select_by_contig` and the three extract tools) checks a local
+  `taxdump.tar.gz` against NCBI's MD5 and replaces an outdated one. Downloads are checked
+  against that MD5 before they replace anything, and runs sharing a database wait for
+  each other's download. When `--ncbi_taxonomy_path` holds both, the tarball is now read
+  before extracted `.dmp` files, as upstream reads them, so an update is not shadowed by
+  older tables.
+- **`--progress`** draws a progress bar on `seq_dist` (queries scored, for diamond,
+  hmmsearch, phmmer and hmmer_compare alike) and `compare_contigs` (contigs scored), as
+  upstream's tqdm bars do, but only when stderr is a terminal and not under `-q`.
+  `matrix_report --progress` prints a line as each stage starts, and
+  `--profile_stages` each stage's time; both used to be accepted and ignored.
+- **Compressed GenBank and FASTA inputs are read** by every tool, gzip or BGZF alike, as
+  `domainator` reads them. Most tools used to read such a file as plain text, find no
+  records in it, and finish with empty output and no error.
+- **`seq_dist` explains a failed diamond run** as `domainator` does: running out of
+  scratch disk or memory, a rejected `--diamond_args` option or an unreadable input each
+  get a cause and suggested fixes, with diamond's own stderr (repeated lines collapsed)
+  and the command to reproduce it. The large-search advisory now shows the scratch
+  directory's free space.
 - **`hmmer_build --window_beta`** derives a nucleotide profile's MAXL from a tail mass
   as hmmbuild does (`0` gives 4×M), where it used to be refused.
 - **GenBank COMMENT lines are read as Biopython reads them**: without trailing spaces,

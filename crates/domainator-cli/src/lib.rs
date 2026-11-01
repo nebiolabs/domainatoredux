@@ -21,6 +21,7 @@ pub mod output;
 use domainator_core::io::genbank::{read_genbank, write_genbank};
 use domainator_core::io::{detect_filetype, fasta, FileType};
 use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
+use domainator_core::seq::taxonomy_download;
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools;
 use domainator_core::tools::gene_call;
@@ -68,6 +69,8 @@ enum Command {
     /// Filter Domainator/Domain_Search annotations by evalue, overlap, database, name.
     #[command(allow_negative_numbers = true)]
     FilterDomains(config::args::FilterDomainsArgs),
+    /// Annotate CDSs and proteins with PROSITE motif matches.
+    FindFeatures(config::args::FindFeaturesArgs),
     /// Assign hex colors to domain and/or CDS features (Color qualifier).
     ColorGenbank(config::args::ColorGenbankArgs),
     /// Generate an SVG legend from a color table.
@@ -107,6 +110,8 @@ enum Command {
     /// Navigate the network in a viewer bundle: clusters, cluster contents, and
     /// metadata, as JSON.
     SsnNavigator(config::args::SsnNavigatorArgs),
+    /// Split a sequence or profile file into one file per cluster of a similarity matrix.
+    SplitByCluster(config::args::SplitByClusterArgs),
     /// Print a JSON description of every command and its options (the tool manifest).
     Describe {
         /// Describe only these commands.
@@ -187,9 +192,10 @@ pub(crate) fn max_output_gb_to_bytes(max_gb: f64) -> Result<Option<u64>> {
 }
 
 /// Load an `NCBITaxonomy` from `--ncbi_taxonomy_path` (only when a taxonomy
-/// filter/column is in use).
-fn load_taxonomy(path: &str) -> Result<NCBITaxonomy> {
-    NCBITaxonomy::load(Path::new(path)).context("loading NCBI taxonomy")
+/// filter/column is in use), downloading NCBI's taxdump when the path has none or,
+/// with `--taxonomy_update`, an outdated one.
+fn load_taxonomy(path: &str, update: bool) -> Result<NCBITaxonomy> {
+    taxonomy_download::open_taxonomy(Path::new(path), update).context("loading NCBI taxonomy")
 }
 
 /// Load a sequence file, treating FASTA as `fasta_type` (protein/nucleotide).
@@ -252,6 +258,7 @@ pub(crate) fn taxonomy_filter(
             .ncbi_taxonomy_path
             .clone()
             .unwrap_or_else(default_ncbi_taxonomy_path),
+        args.taxonomy_update,
     )?;
     let unknown = args.taxonomy_unknown.parse().map_err(anyhow::Error::msg)?;
     tax.compile_filter(include, exclude, expression, unknown)
@@ -454,6 +461,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::SortContigs(args) => commands::sort_contigs::run(&args)?,
         Command::SelectByCoord(args) => commands::select_by_coord::run(&args)?,
         Command::FilterDomains(args) => commands::filter_domains::run(&args)?,
+        Command::FindFeatures(args) => commands::find_features::run(&args)?,
         Command::ColorGenbank(args) => commands::color_genbank::run(&args)?,
         Command::ColorTableToLegend(args) => commands::color_table_to_legend::run(&args)?,
         Command::PlotContigs(args) => commands::plot_contigs::run(&args)?,
@@ -472,6 +480,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::MatrixReport(args) => commands::matrix_report::run(&args)?,
         Command::SummaryReport(args) => commands::summary_report::run(&args)?,
         Command::SsnNavigator(args) => commands::ssn_navigator::run(&args)?,
+        Command::SplitByCluster(args) => commands::split_by_cluster::run(&args)?,
         Command::Describe { tool, indent } => {
             for t in &tool {
                 if !config::registry::tool_info(t).is_some_and(|i| i.in_manifest) {

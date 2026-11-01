@@ -1,0 +1,45 @@
+# GUI dialog for `domainatoredux find_features`. Format: see README.md in this directory.
+id: find_features
+label: "Find features (motifs)"
+description: "Annotate each protein and CDS with matches to PROSITE motifs."
+fields:
+  - name: input
+    label: "Input sequences"
+    file_type: sequence
+    sources: workspace_first
+    select: first
+  - name: genbank_out
+    label: "Output (GenBank)"
+    output_name: "{stem}.features.gb"
+  - name: fasta_out
+    label: "Output (FASTA)"
+  - name: motif
+    label: "PROSITE motifs"
+    help: "One or more PROSITE patterns, comma-separated, e.g. C-x(2)-C, [DE](2)HS{P}. Each match is a Domainator feature named after its pattern."
+  - name: gene_call
+    label: "Gene calling"
+    help: "Call genes with Orphos (Tools → External tools) before searching: all re-calls every nucleotide contig, unannotated only those with no CDS."
+  - name: partial
+    label: "Fragments"
+    help: "Which CDSs/proteins to search, by fragment status: include (all), exclude (skip fragments), only (only fragments). Records are written either way."
+  - name: alphabet
+    show: false
+    label: "Alphabet"
+  - name: cpu
+    show: false
+    label: "Cpu"
+  - name: tmbed
+    show: false
+    label: "TMbed"
+  - name: batch_size
+    show: false
+    label: "Batch size"
+  - name: device
+    show: false
+    label: "Device"
+  - name: model_dir
+    show: false
+    label: "Model folder"
+  - name: tmbed_model_dir
+    show: false
+    label: "TMbed model folder"

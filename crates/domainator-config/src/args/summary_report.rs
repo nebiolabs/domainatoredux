@@ -36,9 +36,13 @@ pub struct SummaryReportArgs {
     /// Write a summary of the taxonomic origins of the contigs.
     #[arg(long)]
     pub taxonomy: bool,
-    /// Path to an NCBI taxonomy database: a directory of extracted .dmp files, or a
-    /// taxdump.tar.gz. Default: /tmp/ncbi_taxonomy_USER, USER being your user name.
-    /// Unlike upstream, it is never downloaded.
+    /// If taxonomy database exists, check it against the version on the ncbi server
+    /// and update if there is a newer version.
+    #[arg(long)]
+    pub taxonomy_update: bool,
+    /// Path to NCBI taxonomy database directory, or a taxdump.tar.gz. Will be created
+    /// and downloaded if it does not exist. Default: /tmp/ncbi_taxonomy_USER, USER
+    /// being your user name.
     #[arg(long)]
     pub ncbi_taxonomy_path: Option<String>,
     /// Only consider contigs with these names.

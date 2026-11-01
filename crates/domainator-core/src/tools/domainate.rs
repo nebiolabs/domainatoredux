@@ -58,7 +58,7 @@ fn cds_unique_name(feature: &SeqFeature) -> String {
 /// translated from the contig at its `/codon_start` frame when absent or empty, and
 /// trimmed when a partial CDS carries residues encoded off the edge of the contig.
 /// Mutates in place; returns the CDS count.
-fn clean_rec_nucleotide(rec: &mut SeqRecord) -> usize {
+pub(crate) fn clean_rec_nucleotide(rec: &mut SeqRecord) -> usize {
     let seq = rec.seq.clone();
     let mut count = 0;
     for feature in &mut rec.features {
@@ -83,7 +83,7 @@ fn clean_rec_nucleotide(rec: &mut SeqRecord) -> usize {
 /// starting `offset` bases into the CDS (port of `SimpleLocation`/
 /// `CompoundLocation.overlay`). `None` where Python raises -- a negative offset or
 /// length, or a span running past the end of the location.
-fn overlay(loc: &Location, mut offset: i64, mut length: i64) -> Option<Location> {
+pub(crate) fn overlay(loc: &Location, mut offset: i64, mut length: i64) -> Option<Location> {
     if offset < 0 || length < 0 || offset + length > loc.len() {
         return None;
     }

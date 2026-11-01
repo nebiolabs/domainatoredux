@@ -20,6 +20,7 @@ use crate::matrix::{build_sparse_max, DataMatrix};
 /// matrix maxima), and therefore compatible with `--mst`/`--knn`. Mirrors
 /// `seq_dist.SPARSIFY_STREAMABLE_MODES`, in the sorted order its errors print.
 pub const SPARSIFY_STREAMABLE_MODES: [&str; 3] = ["bool", "efi_score", "score"];
+use crate::progress::Progress;
 use crate::search::hmm_compare::hmm_compare_scores;
 use crate::search::seq_compare::{hmmsearch_scores, phmmer_scores, CmpResult};
 
@@ -198,6 +199,8 @@ pub struct SeqDistOptions {
     pub diamond_path: Option<String>,
     /// Worker threads (`0` = all available cores).
     pub cpu: usize,
+    /// Draw a bar of the queries scored (`--progress`).
+    pub progress: bool,
 }
 
 impl Default for SeqDistOptions {
@@ -213,6 +216,7 @@ impl Default for SeqDistOptions {
             diamond_args: Vec::new(),
             diamond_path: None,
             cpu: 0,
+            progress: false,
         }
     }
 }
@@ -332,36 +336,53 @@ pub fn seq_dist(
                     if algorithm == Algorithm::HmmerCompare {
                         // hmmer_compare: profile-vs-profile Viterbi alignment.
                         let (q_hmms, row_index) = load_hmms(input)?;
+                        let bar =
+                            Progress::new(opts.progress, q_hmms.len(), "hmmer_compare queries");
                         if same {
-                            let results = hmm_compare_scores(&q_hmms, &q_hmms, opts.threshold);
+                            let results =
+                                hmm_compare_scores(&q_hmms, &q_hmms, opts.threshold, &bar);
                             let col_index = clone_index(&row_index);
                             (results, row_index, col_index)
                         } else {
                             let (r_hmms, col_index) = load_hmms(ref_path)?;
-                            let results = hmm_compare_scores(&q_hmms, &r_hmms, opts.threshold);
+                            let results =
+                                hmm_compare_scores(&q_hmms, &r_hmms, opts.threshold, &bar);
                             (results, row_index, col_index)
                         }
                     } else {
                         let input_seqs = load_seqs(input, input_kind)?;
                         if ref_kind == InputKind::Hmm {
                             let (hmms, col_index) = load_hmms(ref_path)?;
+                            let bar = Progress::new(opts.progress, hmms.len(), "hmmsearch queries");
                             let results =
-                                hmmsearch_scores(&input_seqs.records, &hmms, opts.threshold);
+                                hmmsearch_scores(&input_seqs.records, &hmms, opts.threshold, &bar);
                             (results, input_seqs.index, col_index)
                         } else if same {
                             let col_index = clone_index(&input_seqs.index);
+                            let bar = Progress::new(
+                                opts.progress,
+                                input_seqs.records.len(),
+                                "phmmer queries",
+                            );
                             let results = phmmer_scores(
                                 &input_seqs.records,
                                 &input_seqs.records,
                                 opts.threshold,
+                                &bar,
                             );
                             (results, input_seqs.index, col_index)
                         } else {
                             let ref_seqs = load_seqs(ref_path, ref_kind)?;
+                            let bar = Progress::new(
+                                opts.progress,
+                                ref_seqs.records.len(),
+                                "phmmer queries",
+                            );
                             let results = phmmer_scores(
                                 &input_seqs.records,
                                 &ref_seqs.records,
                                 opts.threshold,
+                                &bar,
                             );
                             (results, input_seqs.index, ref_seqs.index)
                         }
@@ -596,8 +617,228 @@ fn diamond_preflight_warning(
   does change which hits are found.",
         thousands(n_sequences as u64),
         thousands(u64::try_from(total_letters).unwrap_or(0)),
-        tmpdir.display()
+        scratch_directory(tmpdir)
     ))
+}
+
+/// `<dir>` plus its free space when it can be read (upstream `_describe_free_space`).
+fn scratch_directory(dir: &Path) -> String {
+    match describe_free_space(dir) {
+        Some(free) => format!("{} ({free})", dir.display()),
+        None => dir.display().to_string(),
+    }
+}
+
+/// Upstream `_describe_free_space`: the free (to this user) and total size of the
+/// filesystem holding `path`, as `format_bytes` writes them.
+fn describe_free_space(path: &Path) -> Option<String> {
+    use super::output_guardrails::format_bytes;
+    let free = fs4::available_space(path).ok()?;
+    let total = fs4::total_space(path).ok()?;
+    Some(format!(
+        "{} free of {}",
+        format_bytes(free),
+        format_bytes(total)
+    ))
+}
+
+// Substrings diamond writes when a run dies for a reason the caller can act on,
+// matched case-insensitively against its stderr (upstream `_DIAMOND_*_PATTERNS`).
+const DIAMOND_DISK_PATTERNS: &[&str] = &[
+    "no space left on device",
+    "error writing to file",
+    "write error in",
+    "disk full",
+    "enospc",
+];
+const DIAMOND_MEMORY_PATTERNS: &[&str] = &[
+    "std::bad_alloc",
+    "failed to allocate",
+    "out of memory",
+    "cannot allocate memory",
+    "bad_alloc",
+];
+const DIAMOND_OPTION_PATTERNS: &[&str] =
+    &["invalid option", "unknown option", "unrecognized option"];
+const DIAMOND_INPUT_PATTERNS: &[&str] = &[
+    "error opening file",
+    "no such file or directory",
+    "invalid input file format",
+    "empty database",
+    "error detecting input file format",
+    "seems to be empty",
+    "invalid character",
+    "unrecognized sequence type",
+];
+
+const DISK_MITIGATIONS: &[&str] = &[
+    "Lower the sensitivity: --algorithm diamond_s (16 seed shapes) or diamond_mids (8), \
+     instead of diamond_us (64). This is usually the single largest reduction.",
+    "Shrink diamond's query blocks so less scratch is live at once, e.g. \
+     --diamond_args=\"-b 0.01 -c 4\". Peak scratch scales roughly with -b.",
+    "Put the scratch on a larger filesystem: set TMPDIR, or \
+     --diamond_args=\"--tmpdir /path/with/space\".",
+    "Consider fewer input sequences (for example dereplicating first); the seed-hit \
+     volume grows quadratically with the size of a redundant input.",
+];
+const MEMORY_MITIGATIONS: &[&str] = &[
+    "Shrink diamond's query blocks: --diamond_args=\"-b 0.01 -c 4\".",
+    "Lower the sensitivity: --algorithm diamond_s or diamond_mids.",
+    "Use fewer threads (--cpu N); diamond allocates per-thread buffers.",
+];
+
+/// Upstream `_collapse_stderr`: runs of identical lines become one line with a count
+/// (diamond repeats a write error once per thread), keeping the last `max_lines`, each
+/// indented four spaces. Empty when there is nothing but blank lines.
+fn collapse_stderr(text: &str, max_lines: usize) -> String {
+    let mut collapsed: Vec<(&str, usize)> = Vec::new();
+    for line in text.lines().map(str::trim_end).filter(|l| !l.is_empty()) {
+        match collapsed.last_mut() {
+            Some((last, count)) if *last == line => *count += 1,
+            _ => collapsed.push((line, 1)),
+        }
+    }
+    let mut rendered: Vec<String> = collapsed
+        .iter()
+        .map(|&(line, count)| {
+            if count > 1 {
+                format!("{line} (x{count})")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    if rendered.len() > max_lines {
+        let hidden = rendered.len() - max_lines;
+        rendered.drain(..hidden);
+        rendered.insert(0, format!("... {hidden} earlier line(s) omitted ..."));
+    }
+    rendered
+        .iter()
+        .map(|line| format!("    {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A process's exit code as Python's `returncode` reports it: the signal number,
+/// negated, for a process a signal killed.
+fn exit_code(status: std::process::ExitStatus) -> i32 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return -signal;
+        }
+    }
+    status.code().unwrap_or(-1)
+}
+
+/// Upstream `build_diamond_failure_message`: explain a failed diamond run, suggesting
+/// what the caller can change for the causes that are actionable from the command line
+/// (scratch disk or memory exhaustion, a rejected `--diamond_args` flag, unreadable
+/// input), and always ending with diamond's own stderr.
+fn diamond_failure_message(
+    stage: &str,
+    returncode: i32,
+    stderr_text: &str,
+    input_fasta: &Path,
+    tmpdir: Option<&Path>,
+    command: &[String],
+    diamond_args: Option<&[(String, Option<String>)]>,
+) -> String {
+    let haystack = stderr_text.to_lowercase();
+    let matches = |patterns: &[&str]| patterns.iter().any(|p| haystack.contains(p));
+    let mut lines = vec![format!(
+        "diamond {stage} failed (exit code {returncode}) on: {}",
+        input_fasta.display()
+    )];
+    let add_mitigations = |lines: &mut Vec<String>, mitigations: &[&str]| {
+        lines.push(String::new());
+        lines.push("  Suggested mitigations, roughly most effective first:".into());
+        for (number, text) in mitigations.iter().enumerate() {
+            lines.push(format!("    {}. {text}", number + 1));
+        }
+    };
+
+    if matches(DIAMOND_DISK_PATTERNS) {
+        lines.push(String::new());
+        lines
+            .push("  Cause: diamond ran out of disk space writing its seed-search scratch.".into());
+        if let Some(dir) = tmpdir {
+            lines.push(format!("  Scratch directory: {}", scratch_directory(dir)));
+            lines.push(
+                "  Note: diamond unlinks these files while holding them open, so they".into(),
+            );
+            lines.push(
+                "        never appear in `du` or `ls` -- only free space reflects them.".into(),
+            );
+        }
+        lines.push("  This happens before diamond emits any results, so --mst/--knn".into());
+        lines.push("  streaming cannot reduce it: all seed hits for a query block are".into());
+        lines.push("  materialized before that block produces any output.".into());
+        add_mitigations(&mut lines, DISK_MITIGATIONS);
+    } else if matches!(returncode, -9 | 137) || matches(DIAMOND_MEMORY_PATTERNS) {
+        lines.push(String::new());
+        if matches!(returncode, -9 | 137) {
+            lines.push("  Cause: diamond was killed with SIGKILL, which usually means the".into());
+            lines
+                .push("         out-of-memory killer stopped it. Check `dmesg` to confirm.".into());
+        } else {
+            lines.push("  Cause: diamond could not allocate memory.".into());
+        }
+        add_mitigations(&mut lines, MEMORY_MITIGATIONS);
+    } else if matches(DIAMOND_OPTION_PATTERNS) {
+        lines.push(String::new());
+        lines.push("  Cause: diamond rejected one of its command line options.".into());
+        match diamond_args.filter(|args| !args.is_empty()) {
+            Some(args) => {
+                let rendered: Vec<String> = args
+                    .iter()
+                    .map(|(flag, value)| match value {
+                        Some(v) => format!("{flag} {v}"),
+                        None => flag.clone(),
+                    })
+                    .collect();
+                lines.push(format!(
+                    "  Options passed via --diamond_args: {}",
+                    rendered.join(" ")
+                ));
+                lines.push(
+                    "  Check these against `diamond blastp --help`; --diamond_args is forwarded as-is."
+                        .into(),
+                );
+            }
+            None => lines.push(
+                "  No --diamond_args were supplied, so this may be a diamond version mismatch."
+                    .into(),
+            ),
+        }
+    } else if matches(DIAMOND_INPUT_PATTERNS) {
+        lines.push(String::new());
+        lines.push("  Cause: diamond could not read an input or database file.".into());
+        lines.push("  Check that the file is non-empty, readable, and valid protein FASTA.".into());
+    }
+
+    if !command.is_empty() {
+        lines.push(String::new());
+        lines.push(format!("  Command: {}", command.join(" ")));
+    }
+    lines.push(String::new());
+    lines.push("  diamond stderr:".into());
+    let stderr = collapse_stderr(stderr_text, 15);
+    lines.push(if stderr.is_empty() {
+        "    (no stderr captured)".into()
+    } else {
+        stderr
+    });
+    lines.join("\n")
+}
+
+/// `program` and its arguments, as one list for [`diamond_failure_message`].
+fn command_line(program: &Path, cmd: &Command) -> Vec<String> {
+    std::iter::once(program.to_string_lossy().into_owned())
+        .chain(cmd.get_args().map(|a| a.to_string_lossy().into_owned()))
+        .collect()
 }
 
 /// Run DIAMOND `blastp` for the diamond algorithms and reduce the streamed hit
@@ -652,20 +893,31 @@ fn run_diamond(
     let dbpath = tmp.path().join("db");
     let mut makedb_cmd = Command::new(&diamond_bin);
     super::external::hide_console(&mut makedb_cmd);
-    let makedb = makedb_cmd
+    makedb_cmd
         .arg("makedb")
         .arg("--in")
         .arg(&ref_fasta)
         .arg("-d")
         .arg(&dbpath)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    let makedb = makedb_cmd
         .output()
         .map_err(|e| diamond_spawn_error(e, &diamond_bin))?;
     if !makedb.status.success() {
-        return Err(std::io::Error::other(format!(
-            "diamond makedb failed:\n{}",
-            String::from_utf8_lossy(&makedb.stderr)
+        let output = format!(
+            "{}{}",
+            String::from_utf8_lossy(&makedb.stderr),
+            String::from_utf8_lossy(&makedb.stdout)
+        );
+        return Err(std::io::Error::other(diamond_failure_message(
+            "makedb",
+            exit_code(makedb.status),
+            &output,
+            Path::new(ref_path),
+            Some(tmp.path()),
+            &command_line(&diamond_bin, &makedb_cmd),
+            None,
         )));
     }
 
@@ -701,6 +953,13 @@ fn run_diamond(
     // Defaults --diamond_args may replace. --tmpdir defaults into the managed temp dir so
     // diamond's unlinked scratch lands beside the db rather than in the cwd.
     let tmpdir = dbpath.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    // Where diamond's scratch actually goes, for the failure message.
+    let scratch = opts
+        .diamond_args
+        .iter()
+        .find(|(f, _)| f == "--tmpdir")
+        .and_then(|(_, v)| v.as_deref())
+        .map_or_else(|| tmpdir.clone(), PathBuf::from);
     for (flag, default) in [
         ("--algo", "0".to_string()),
         ("--tmpdir", tmpdir.to_string_lossy().into_owned()),
@@ -741,6 +1000,9 @@ fn run_diamond(
     // Stream the tab-separated hit table (qseqid, sseqid, bitscore) straight into
     // the per-cell max map.
     let mut cells: HashMap<(i64, i64), f64> = HashMap::new();
+    // Diamond reports each query's hits together, in input order, so the bar moves to
+    // the current query's position (upstream `_advance_query_progress`).
+    let bar = Progress::new(opts.progress, row_index.names.len(), "diamond queries");
     let reader = BufReader::new(stdout);
     for line in reader.lines() {
         let line = line?;
@@ -749,6 +1011,9 @@ fn run_diamond(
         let (Some(q), Some(s), Some(b), None) = (it.next(), it.next(), it.next(), it.next()) else {
             continue;
         };
+        if let Some(&ri) = row_index.idx.get(q) {
+            bar.advance_to(ri as u64 + 1);
+        }
         let Ok(score) = b.trim().parse::<f64>() else {
             continue;
         };
@@ -770,10 +1035,18 @@ fn run_diamond(
     let status = child.wait()?;
     let stderr_text = stderr_handle.join().unwrap_or_default();
     if !status.success() {
-        return Err(std::io::Error::other(format!(
-            "diamond blastp failed:\n{stderr_text}"
+        return Err(std::io::Error::other(diamond_failure_message(
+            "blastp",
+            exit_code(status),
+            &stderr_text,
+            Path::new(input),
+            Some(&scratch),
+            &command_line(&diamond_bin, &cmd),
+            Some(&opts.diamond_args),
         )));
     }
+    // Queries with no hits after the last one reported are done too.
+    bar.advance_to(row_index.names.len() as u64);
 
     Ok((cells, row_index, col_index))
 }
@@ -835,6 +1108,105 @@ mod tests {
         assert!(warn(Sensitivity::Sensitive, 50_000, true, &[]).is_none());
         let tuned = [("-b".to_string(), Some("0.07".to_string()))];
         assert!(warn(Sensitivity::VerySensitive, 50_000, true, &tuned).is_none());
+    }
+
+    /// Upstream `test_diamond_failure_message_diagnoses_disk_exhaustion`: the scratch
+    /// directory, the actionable mitigations, and repeated lines collapsed to one.
+    #[test]
+    fn diamond_failure_message_diagnoses_disk_exhaustion() {
+        use super::diamond_failure_message;
+        let dir = std::env::temp_dir();
+        let stderr = format!(
+            "Searching alignments... No space left on device\n{}Error: Write error in HitBuffer\n",
+            "No space left on device\n".repeat(27)
+        );
+        let message = diamond_failure_message(
+            "blastp",
+            1,
+            &stderr,
+            std::path::Path::new("GT2.fasta"),
+            Some(&dir),
+            &words("diamond blastp -q GT2.fasta"),
+            None,
+        );
+        assert!(message.contains("ran out of disk space"), "{message}");
+        assert!(message.contains(&dir.display().to_string()), "{message}");
+        assert!(message.contains(" free of "), "{message}");
+        assert!(message.contains("--algorithm diamond_s"), "{message}");
+        assert!(
+            message.contains("--diamond_args=\"-b 0.01 -c 4\""),
+            "{message}"
+        );
+        assert!(message.contains("TMPDIR"), "{message}");
+        assert!(message.contains("streaming cannot reduce it"), "{message}");
+        assert!(
+            message.contains("No space left on device (x27)"),
+            "{message}"
+        );
+        assert_eq!(message.matches("No space left on device").count(), 2);
+        assert!(message.contains("  Command: diamond blastp -q GT2.fasta"));
+    }
+
+    /// Upstream `test_diamond_failure_message_diagnoses_memory_and_options` and
+    /// `test_diamond_failure_message_falls_back_to_stderr`.
+    #[test]
+    fn diamond_failure_message_diagnoses_memory_options_and_input() {
+        use super::diamond_failure_message;
+        let message = |stage, code, stderr: &str, args: Option<&[(String, Option<String>)]>| {
+            diamond_failure_message(
+                stage,
+                code,
+                stderr,
+                std::path::Path::new("in.fasta"),
+                None,
+                &[],
+                args,
+            )
+        };
+        let killed = message("blastp", -9, "some output\n", None);
+        assert!(killed.contains("SIGKILL") && killed.contains("out-of-memory"));
+        assert!(killed.contains("--cpu"));
+        let alloc = message("blastp", 1, "Error: std::bad_alloc\n", None);
+        assert!(alloc.contains("could not allocate memory"));
+
+        let args = [("--no-such-flag".to_string(), Some("1".to_string()))];
+        let bad_option = message(
+            "blastp",
+            1,
+            "Error: Invalid option: no-such-flag\n",
+            Some(&args),
+        );
+        assert!(bad_option.contains("rejected one of its command line options"));
+        assert!(bad_option.contains("Options passed via --diamond_args: --no-such-flag 1"));
+        let version = message("blastp", 1, "Error: Invalid option: x\n", Some(&[]));
+        assert!(version.contains("diamond version mismatch"), "{version}");
+
+        let bad_input = message(
+            "makedb",
+            1,
+            "Error: Error detecting input file format. Input file seems to be empty.\n",
+            None,
+        );
+        assert!(bad_input.contains("could not read an input or database file"));
+        assert!(bad_input.starts_with("diamond makedb failed (exit code 1) on: in.fasta"));
+
+        let unknown = message("blastp", 3, "Error: something entirely new\n", None);
+        assert!(unknown.contains("    Error: something entirely new"));
+        assert!(unknown.contains("exit code 3"));
+        assert!(!unknown.contains("Suggested mitigations"));
+        assert!(message("blastp", 3, "\n\n", None).ends_with("    (no stderr captured)"));
+    }
+
+    /// Upstream `_collapse_stderr` keeps the last 15 distinct runs, noting the rest.
+    #[test]
+    fn long_diamond_stderr_keeps_its_tail() {
+        let text: String = (0..20).map(|i| format!("line {i}\n")).collect();
+        let collapsed = super::collapse_stderr(&text, 15);
+        let lines: Vec<&str> = collapsed.lines().collect();
+        assert_eq!(lines.len(), 16);
+        assert_eq!(lines[0], "    ... 5 earlier line(s) omitted ...");
+        assert_eq!(lines[1], "    line 5");
+        assert_eq!(lines[15], "    line 19");
     }
 
     /// Upstream's `test_parse_diamond_args_*`: a value follows its flag unless it is

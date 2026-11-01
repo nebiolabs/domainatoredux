@@ -190,4 +190,51 @@ mod tests {
         }
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    /// Upstream's `parse_seqfiles` reads plain, gzip and BGZF sequence files alike.
+    /// The whole-file readers used to open every file as plain text, so a compressed
+    /// input parsed as zero records and the tool succeeded with empty output.
+    #[test]
+    fn sequence_files_read_the_same_plain_gzip_or_bgzf() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("seq_compression_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let genbank = "LOCUS       p1 6 aa                     UNK 01-JAN-2000\n\
+                       DEFINITION  one.\nFEATURES             Location/Qualifiers\n\
+                       ORIGIN\n        1 acdefg\n//\n\
+                       LOCUS       p2 3 aa                     UNK 01-JAN-2000\n\
+                       DEFINITION  two.\nFEATURES             Location/Qualifiers\n\
+                       ORIGIN\n        1 klm\n//\n";
+        let fasta = ">p1 one\nACDEFG\n>p2 two\nKLM\n";
+        for (ext, text) in [("gb", genbank), ("fasta", fasta)] {
+            let plain = dir.join(format!("in.{ext}"));
+            std::fs::write(&plain, text).unwrap();
+            let gzip = dir.join(format!("in.{ext}.gz"));
+            let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            gz.write_all(text.as_bytes()).unwrap();
+            std::fs::write(&gzip, gz.finish().unwrap()).unwrap();
+            let bgzf_path = dir.join(format!("in.{ext}.bgz"));
+            let level = ::bgzf::CompressionLevel::new(6).unwrap();
+            let mut w = ::bgzf::Writer::new(std::fs::File::create(&bgzf_path).unwrap(), level);
+            w.write_all(text.as_bytes()).unwrap();
+            w.finish().unwrap();
+            let read = |p: &Path| {
+                let p = p.to_str().unwrap();
+                let records = if ext == "gb" {
+                    genbank::reader::read_genbank(p).unwrap()
+                } else {
+                    fasta::read_fasta(p, None).unwrap()
+                };
+                records
+                    .into_iter()
+                    .map(|r| (r.id, r.seq))
+                    .collect::<Vec<_>>()
+            };
+            let expected = read(&plain);
+            assert_eq!(expected.len(), 2, "{ext}");
+            assert_eq!(read(&gzip), expected, "{ext}.gz");
+            assert_eq!(read(&bgzf_path), expected, "{ext}.bgz");
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

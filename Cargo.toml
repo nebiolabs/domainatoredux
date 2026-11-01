@@ -32,6 +32,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
 shlex = "2"
+# Free disk space, for the scratch notes in seq_dist's diamond messages and the GUI's
+# download checks.
+fs4 = { version = "1.1", default-features = false }
+# HTTP(S) downloads: the GUI's managed tools and databases, and the taxdump fetch
+# (`domainator-core`'s `network` feature).
+ureq = "2"
+md-5 = "0.10"
+# `--progress` bars (`domainator_core::progress`).
+indicatif = { version = "0.17", default-features = false }
 faer = { version = "0.24", default-features = false, features = ["std"] }
 
 # Lint policy lives here, not in CI flags, so a local `cargo clippy` enforces the same

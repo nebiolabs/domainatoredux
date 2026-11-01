@@ -24,6 +24,7 @@ pub fn run(args: &CompareContigsArgs) -> Result<()> {
         mst: args.mst,
         knn: args.knn.map(|k| k.0 as usize),
         cpu: cpu_threads(args.cpu)?,
+        progress: args.progress,
     };
     let contigs = parse_name_list(
         args.contigs.as_deref().unwrap_or_default(),

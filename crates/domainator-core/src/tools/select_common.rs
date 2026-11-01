@@ -98,6 +98,29 @@ pub struct BooleanEvaluator {
 }
 
 impl BooleanEvaluator {
+    /// Upstream `BooleanEvaluator.sanitize_identifier`: `identifier` with the
+    /// characters an expression gives meaning to (and PROSITE's `-`, `<`, `>`, `.`)
+    /// replaced, so a name such as a motif pattern can be used in `--domain_expr`.
+    pub fn sanitize_identifier(identifier: &str) -> String {
+        const REPLACEMENTS: [(&str, &str); 10] = [
+            ("(", "__"),
+            (")", "___"),
+            ("&", "_AND_"),
+            ("|", "_OR_"),
+            ("~", "_NOT_"),
+            (" ", "_"),
+            ("-", "_"),
+            ("<", "Nterm_"),
+            (">", "_Cterm"),
+            (".", ""),
+        ];
+        let mut result = identifier.to_string();
+        for (old, new) in REPLACEMENTS {
+            result = result.replace(old, new);
+        }
+        result.trim_end_matches('_').to_string()
+    }
+
     pub fn new(expression: &str) -> Result<Self, String> {
         let mut tokens: Vec<String> = Vec::new();
         let mut name = String::new();

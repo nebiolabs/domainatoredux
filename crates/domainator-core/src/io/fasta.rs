@@ -7,17 +7,18 @@ use std::io::{self, BufRead, BufReader, Write};
 use crate::io::bgzf::open_at;
 use crate::seq::{Annotations, SeqRecord, Topology};
 
-/// Read all records from an uncompressed FASTA file.
+/// Read all records from a FASTA file: plain, gzip or BGZF, judged by its content
+/// (see [`read_fasta_decompressed`]).
 pub fn read_fasta(path: &str, molecule_type: Option<&str>) -> io::Result<Vec<SeqRecord>> {
-    read_fasta_partition(path, 0, false, u64::MAX, molecule_type)
+    read_fasta_decompressed(path, molecule_type)
 }
 
-/// Fast scan of an uncompressed FASTA file: each record's `(id, name)` in file
+/// Fast scan of a FASTA file (plain, gzip or BGZF): each record's `(id, name)` in file
 /// order, reading only `>` header lines (sequence bodies are skipped). For FASTA,
 /// `id` and `name` are both the first whitespace token of the title (matching
 /// [`read_fasta`]). Used for cheap cross-file record resolution.
 pub fn scan_fasta_ids(path: &str) -> io::Result<Vec<(String, String)>> {
-    let mut reader = BufReader::new(open_at(path, 0, false)?);
+    let mut reader = BufReader::new(super::open_decompressed(std::path::Path::new(path))?);
     let mut out: Vec<(String, String)> = Vec::new();
     let mut raw: Vec<u8> = Vec::new();
     loop {

@@ -37,7 +37,7 @@ serde_json = { workspace = true }
 # The embedded tool spec files (`tool_specs.rs`).
 serde_yaml = { workspace = true }
 # External-tool auto-download (diamond, and future binaries):
-ureq = "2"
+ureq.workspace = true
 flate2.workspace = true
 tar = "0.4"
 zip.workspace = true
@@ -48,7 +48,7 @@ bgzf.workspace = true
 # locking half of the crate (and its async runtimes) -- all that is wanted here is
 # `available_space`, which is three platform statfs calls we would otherwise write
 # by hand. It pulls in nothing new: libc and windows-sys are already in the tree.
-fs4 = { version = "1.1", default-features = false }
+fs4.workspace = true
 tauri-plugin-window-state = "2.4.1"
 tauri-plugin-opener = "2.5.5"
 # `save_binary_file`: the JSON IPC bridge carries the PNG payload base64-encoded.

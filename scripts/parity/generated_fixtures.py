@@ -78,6 +78,11 @@ def generate(data_dir, test_dir, out_dir):
     _compare_contigs_fixtures(out)
     _infernal_fixtures(data, out)
     _selection_fixtures(data, out)
+    _split_by_cluster_fixtures(data, out)
+
+    # test_find_features.py's test_motif_integration writes this protein to a
+    # temporary file.
+    (out / "motif_test.fasta").write_text(">test\nMKFLDDHSAXXPXXXXCILLFNILCLFPVLA\n")
 
 
 def _compare_contigs_fixtures(out):
@@ -124,6 +129,20 @@ def _infernal_fixtures(data, out):
     # One model twice: the second replaces the first, with a warning.
     model = (data / "RF00042.cm").read_text()
     (out / "copa_twice.cm").write_text(model + model)
+
+
+def _split_by_cluster_fixtures(data, out):
+    """The compressed inputs test_split_by_cluster.py writes with helpers.gzip_file and
+    helpers.bgzip_file, and the two-model .cm file (with its matrix) of
+    test_split_by_cluster_cm_keeps_each_filter_hmm_with_its_model."""
+    import helpers
+    from test_split_by_cluster import _write_test_matrix
+
+    helpers.gzip_file(data / "pdonr_hmms.hmm", out / "clusters.hmm.gz")
+    helpers.bgzip_file(data / "FeSOD_20.gb", out / "in.gb.bgz")
+    copa = (data / "RF00042.cm").read_text()
+    (out / "two.cm").write_text(copa + copa.replace("CopA", "CopB"))
+    _write_test_matrix(out / "two_cm.matrix.tsv", ["CopA", "CopB"])
 
 
 def _rotate_contigs_fixtures(data, out):

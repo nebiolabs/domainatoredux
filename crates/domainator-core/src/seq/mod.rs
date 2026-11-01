@@ -15,6 +15,8 @@ pub mod partial;
 pub mod protein_analysis;
 pub mod taxid;
 pub mod taxonomy;
+#[cfg(feature = "network")]
+pub mod taxonomy_download;
 pub mod translate;
 
 pub use location::{CompoundOp, Location};

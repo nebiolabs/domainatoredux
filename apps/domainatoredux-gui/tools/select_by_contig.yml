@@ -74,6 +74,11 @@ fields:
     file_type: taxonomy
     sources: databases_first
     select: "database:ncbi_taxonomy"
+  - name: taxonomy_update
+    # The Databases panel checks and refreshes the managed taxdump and records
+    # its version; a job refreshing it in place would bypass that.
+    show: false
+    label: "Update taxonomy"
   - name: partial
     label: "Fragments"
     help: "Which contigs to select, by fragment status. A nucleotide contig is a fragment if any of its CDSs is. Not affected by Invert."

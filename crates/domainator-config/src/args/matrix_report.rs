@@ -35,12 +35,10 @@ pub struct MatrixReportArgs {
     /// stretch of its own axis blank. Use 0 to include all merge events.
     #[arg(long, default_value_t = 500, allow_negative_numbers = true)]
     pub max_merge_events: i64,
-    /// Accepted for compatibility with upstream; domainatoredux prints no progress
-    /// updates.
+    /// Print live progress updates to stderr during long-running matrix_report stages.
     #[arg(long)]
     pub progress: bool,
-    /// Accepted for compatibility with upstream; domainatoredux prints no stage
-    /// timings.
+    /// Print per-stage runtime timings to stderr for profiling large matrix_report runs.
     #[arg(long)]
     pub profile_stages: bool,
 }

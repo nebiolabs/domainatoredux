@@ -64,6 +64,7 @@ pub async fn load_matrix_report(path: String) -> Result<Value, String> {
             DEFAULT_MERGE_IMPACT_METRIC,
             DEFAULT_MAX_MERGE,
             false,
+            &mut domainator_core::progress::Stages::silent(),
         );
         let histogram = histogram(&report.scores_desc, 40);
         // The viewer payload, not the agent-facing --json contract: this tab draws

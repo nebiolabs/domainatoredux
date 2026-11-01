@@ -84,8 +84,9 @@ def main(argv=None):
                        if f.is_file() and (tracked is None or str(f.relative_to(src)) in tracked)}
         else:
             needed.add(rel)
+    # *.lock: the taxonomy loader's lock files, left beside a taxdump (gitignored).
     held = {str(p.relative_to(dest)) for p in dest.rglob("*")
-            if p.is_file() and p.name != "README.md"}
+            if p.is_file() and p.name != "README.md" and p.suffix != ".lock"}
 
     missing = sorted(f for f in needed if f not in held)
     stale = sorted(f for f in needed & held if not filecmp.cmp(src / f, dest / f, shallow=False))

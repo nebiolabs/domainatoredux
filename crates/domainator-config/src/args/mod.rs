@@ -23,6 +23,7 @@ mod extract_domains;
 mod extract_peptides;
 mod extract_unannotated;
 mod filter_domains;
+mod find_features;
 mod format_db;
 mod genbank_to_fasta;
 mod gene_call;
@@ -40,6 +41,7 @@ mod select_by_contig;
 mod select_by_coord;
 mod seq_dist;
 mod sort_contigs;
+mod split_by_cluster;
 mod ssn_navigator;
 mod summary_report;
 mod transform_matrix;
@@ -62,6 +64,7 @@ pub use extract_domains::ExtractDomainsArgs;
 pub use extract_peptides::ExtractPeptidesArgs;
 pub use extract_unannotated::ExtractUnannotatedArgs;
 pub use filter_domains::FilterDomainsArgs;
+pub use find_features::FindFeaturesArgs;
 pub use format_db::FormatDbArgs;
 pub use genbank_to_fasta::GenbankToFastaArgs;
 pub use gene_call::GeneCallArgs;
@@ -79,6 +82,7 @@ pub use select_by_contig::SelectByContigArgs;
 pub use select_by_coord::SelectByCoordArgs;
 pub use seq_dist::SeqDistArgs;
 pub use sort_contigs::SortContigsArgs;
+pub use split_by_cluster::SplitByClusterArgs;
 pub use ssn_navigator::SsnNavigatorArgs;
 pub use summary_report::SummaryReportArgs;
 pub use transform_matrix::TransformMatrixArgs;
@@ -92,12 +96,14 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
     let cmd = clap::Command::new(crate::registry::tool_info(name)?.name);
     Some(match name {
         "sort_contigs" => SortContigsArgs::augment_args(cmd),
+        "split_by_cluster" => SplitByClusterArgs::augment_args(cmd),
         "enum_report" => EnumReportArgs::augment_args(cmd),
         "hmmer_report" => HmmerReportArgs::augment_args(cmd),
         "select_by_contig" => SelectByContigArgs::augment_args(cmd),
         "select_by_cds" => SelectByCdsArgs::augment_args(cmd),
         "select_by_coord" => SelectByCoordArgs::augment_args(cmd),
         "filter_domains" => FilterDomainsArgs::augment_args(cmd),
+        "find_features" => FindFeaturesArgs::augment_args(cmd),
         "extract_domains" => ExtractDomainsArgs::augment_args(cmd),
         "extract_peptides" => ExtractPeptidesArgs::augment_args(cmd),
         "extract_unannotated" => ExtractUnannotatedArgs::augment_args(cmd),

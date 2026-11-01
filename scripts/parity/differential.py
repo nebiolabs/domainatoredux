@@ -8,7 +8,7 @@ scratch directories, then compares every file the two runs produced.
 
 Outcomes, worst-wins across an invocation's output files:
 
-    identical    byte-for-byte equal
+    identical    byte-for-byte equal (a gzip/BGZF output: once decompressed)
     tolerated    equal once search numerics are allowed to differ (hmmer-pure-rs
                  is a different HMMER3 implementation -- see CLAUDE.md)
     differs      a real divergence
@@ -299,8 +299,24 @@ def _compare_text(a, b, normalize=None):
 
 def compare(a, b, helpers, SeqIO):
     """Classify one pair of output files."""
-    if pathlib.Path(a).read_bytes() == pathlib.Path(b).read_bytes():
+    raw_a, raw_b = pathlib.Path(a).read_bytes(), pathlib.Path(b).read_bytes()
+    if raw_a == raw_b:
         return "identical", ""
+    compressed_name = pathlib.Path(a).suffix.lower() in (".gz", ".bgz", ".bgzf")
+    if compressed_name and raw_a[:2] == raw_b[:2] == b"\x1f\x8b":
+        # A compressed output is compared by its content, as the file it decompresses to
+        # (`1.hmm.gz` as an `.hmm`): the gzip/BGZF framing (header timestamp, block
+        # boundaries, the deflate implementation) is not a parity target. A format that
+        # is gzip inside (a `.dvb` bundle) has its own comparator below.
+        import gzip
+        import tempfile
+        inner = pathlib.Path(a).with_suffix("").name
+        with tempfile.TemporaryDirectory() as tmp:
+            pa, pb = pathlib.Path(tmp, "a", inner), pathlib.Path(tmp, "b", inner)
+            for path, raw in ((pa, raw_a), (pb, raw_b)):
+                path.parent.mkdir()
+                path.write_bytes(gzip.decompress(raw))
+            return compare(str(pa), str(pb), helpers, SeqIO)
     ext = pathlib.Path(a).suffix.lower()
     try:
         if ext in (".gb", ".gbk", ".genbank"):

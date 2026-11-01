@@ -15,9 +15,9 @@ Three counts appear in this project and they measure different things:
 
 | Count | What it is |
 | --- | --- |
-| **42** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 39 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
-| **37** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
-| **33** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator`, `summary_report` and `viewer`, which the app covers with panels and viewers |
+| **44** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 41 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
+| **39** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
+| **35** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator`, `summary_report` and `viewer`, which the app covers with panels and viewers |
 | **44 rows below** | upstream's tools (`domainator describe`), ported *and* deliberately unported |
 
 Related: [deliberate deferrals and the upstream pin](https://github.com/nebiolabs/domainatoredux/blob/main/UPSTREAM.md),
@@ -27,8 +27,8 @@ Partial features and fragments (upstream 0.12.0) are ported across every tool th
 them. That covers marker-preserving slicing with `<`/`>` on cut ends, `/codon_start`
 handling, `--partial` on the eight tools that take it, and `enum_report`'s `fragment` and
 `partial_count` columns. They are checked by the parity sweep's `extra:` invocations; see
-[File formats](file-formats.md#partial-features-and-fragments). `find_features` and
-`db_download` gained `--partial` upstream, but neither tool is ported.
+[File formats](file-formats.md#partial-features-and-fragments). `db_download` gained
+`--partial` upstream, but is not ported.
 
 Upstream 1.0's interface is ported for every tool in the table: the same tool and option
 names, explicit `--<content>_out` outputs, interchangeable `--config` files, and
@@ -62,7 +62,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | clean_sequences | finished (byte-identical parity) | Tools menu ("Clean sequences") |
 | color_genbank | finished (byte-identical parity incl. auto-color) | Tools menu ("Color GenBank") for batch color-by-name/database, **plus** per-feature editing in the contig viewer |
 | color_table_to_legend | finished (byte-identical SVG) | Tools menu ("Color table → legend") — reads a `table` file (`.tsv`/`.csv`), writes SVG |
-| compare_contigs | finished, including the sorted `--genbank_out` (scipy's `linkage`/`optimal_leaf_ordering` ported in `matrix/hierarchy.rs`, order byte-identical); `--progress` accepted, no bar drawn | Tools menu ("Compare contigs") |
+| compare_contigs | finished, including the sorted `--genbank_out` (scipy's `linkage`/`optimal_leaf_ordering` ported in `matrix/hierarchy.rs`, order byte-identical); `--progress` draws a bar on a terminal | Tools menu ("Compare contigs") |
 | db_download | deferred (network fetch; its `--gene_call` could now reuse `tools/gene_call.rs`) | — |
 | deduplicate_genbank | finished: hash/cd-hit/diamond/usearch backends, byte-identical incl. the `--cluster_tsv_out` row order, which follows the clustering tool's own order rather than the record order | Tools menu ("Deduplicate") — hash backend needs nothing; cd-hit/usearch/diamond need their binary, all three **auto-downloadable** from the External tools panel |
 | domain_search | protein (hmmsearch) + protein-FASTA (phmmer) + nucleotide-FASTA/HMM (nhmmer) references supported; whole-contig nhmmer hits flow through neighborhood extraction (default range, --add_annotations, and --whole_contig incl. circular rotation naming all at parity). --pad at parity (verified against the committed domain_search_test_out2.gb fixture). --gene_call ported (external Orphos binary; byte-identical). `--dedup` (all four policies, with and without `--max_hits`), per-protein/CDS/hit taxonomy filters with `--taxonomy_unknown`, `--anchor` and circular `--pad` at parity. Infernal `.cm` references via infernox, as for domainate. Every harvested invocation is byte-identical, including the whole-contig nucleotide and `.cm` ones; `--cds_range` counts protein-coding CDSs only, never nucleotide hits, as upstream does | Tools menu ("Domain search") — incl. neighborhood extraction, taxonomy filters, and decoys; HMM references come from the folder or the Databases panel |
@@ -72,7 +72,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | extract_peptides | finished (separate tool; byte-identical parity, `--domain_expr`, `--has_search_hit` and taxonomy filters included) | Tools menu ("Extract peptides") |
 | extract_unannotated | finished (protein-only, matches Python, taxonomy filters included) | Tools menu ("Extract unannotated") |
 | filter_domains | finished (parity-verified) | Tools menu ("Filter domains") |
-| find_features | deferred (too many torch dependencies) | — |
+| find_features | partial: `--motif` (PROSITE patterns), `--gene_call` and `--partial`, byte-identical on 9 `extra:` invocations (upstream's own tests build their inputs or loop over values). `--tmbed` is refused: TMbed needs torch and a protein language model; its options are accepted so upstream configs load | Tools menu ("Find features (motifs)") |
 | format_db | finished (shard/BGZF-compress/.didx-index; .didx byte-identical to Python; domain_search round-trip verified both ways. Supports plain + BGZF inputs; plain non-BGZF gzip rejected, matching the rest of the seekable-I/O layer) | not runnable as a tool; the **Databases panel** registers/classifies already-formatted DBs for use as references |
 | genbank_to_fasta | finished (byte-identical parity) | Tools menu ("GenBank → FASTA") |
 | hmmer_build | finished (gzip/BGZF `.hmm` read by magic bytes, `.gz` output as plain gzip, `.bgz` refused; Stockholm MSA -> HMM via hmmer-pure-rs build_hmm_from_msa; sets NAME/ACC/DESC; same NAME/LENG/DESC as Python and re-readable by pyhmmer. Limitations: Stockholm and aligned-FASTA input only (no Clustal/A2M/PHYLIP); emissions not byte-identical to pyhmmer/hmmbuild — different builder/calibration) | Tools menu ("HMM build") — Stockholm `.sto`/`.stockholm`/`.sth` input (a GUI-only file type); output `.hmm` feeds the reference dropdowns |
@@ -88,9 +88,9 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | select_by_cds | finished (upstream 1.0's selection contract: `--has_search_hit`, `--name_field`, `--dedup`, taxonomy filters on the focus CDS) | Tools menu ("Select by CDS") — name/domain/`domain_expr`/`annotation_type`/`unannotated`/search hits + neighborhood extraction + pad/dedup/strand/invert/taxonomy |
 | select_by_contig | finished | Tools menu ("Select by contig") — name/regex, domain content, search hits, taxonomy, length/CDS-count filters; GenBank and/or FASTA output |
 | select_by_coord | finished (parity-verified) | Tools menu ("Select by coordinate") — coordinate table is a `table` file (`.tsv`/`.csv`) |
-| seq_dist | finished, `--symmetrize` included (`--progress` accepted, no bar drawn; the explained diamond failures are not ported, and the large-search advisory has no free-disk-space note) | Tools menu ("Sequence distance") — `diamond_*` algorithms need the `diamond` binary, **auto-downloadable** from the External tools panel |
+| seq_dist | finished, `--symmetrize` included (`--progress` draws a bar of the queries on a terminal); a failed diamond run is explained as upstream explains it (scratch disk or memory exhausted, a rejected `--diamond_args` option, unreadable input), and the large-search advisory notes the scratch filesystem's free space | Tools menu ("Sequence distance") — `diamond_*` algorithms need the `diamond` binary, **auto-downloadable** from the External tools panel |
 | sort_contigs | finished (byte-identical parity; ties keep input order) | Tools menu ("Sort contigs") |
-| split_by_cluster | deferred (optional; skipped for now) | — |
+| split_by_cluster | finished: GenBank, FASTA, `.hmm` (plain or gzip) and `.cm` inputs, `--pad_on_search_hits`; byte-identical on all 8 harvested invocations and 3 `extra:` ones (gzip HMM, BGZF GenBank, a two-model CM) | Tools menu ("Split by cluster"), writing a folder of files |
 | ssn_navigator | finished (all five `--query` modes verified against Python on both implementations' bundles, at three `--max_merge_events` caps, on `.dvb` and v5/v6 `.dsnv` files) | — (the SSN viewer tab covers interactive exploration; the navigator writes stdout JSON with no workspace artifact) |
 | structure_dist | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
 | structure_domainate | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |

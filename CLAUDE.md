@@ -34,15 +34,15 @@ codebase, silence it with a narrow `#[allow(...)]` **plus a one-line reason** (t
 existing ones cover Tauri IPC signatures, parity-mirroring parameter lists, and HMMER's
 1-based node indices); never add a crate-wide allow.
 
-**39 tools** (`domainatoredux <tool>`) plus the `describe`, `completion` and `doctor` builtins,
+**41 tools** (`domainatoredux <tool>`) plus the `describe`, `completion` and `doctor` builtins,
 grouped: I/O and dev (`inspect`, `convert`, `genbank_to_fasta`, `format_db`); annotation
 and search (`domainate`,
-`domain_search`, `gene_call`, `filter_domains`); selection and extraction (`select_by_cds`,
+`domain_search`, `gene_call`, `filter_domains`, `find_features`); selection and extraction (`select_by_cds`,
 `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`,
 `extract_unannotated`, `trim_contigs`, `rotate_contigs`, `sort_contigs`, `clean_sequences`,
 `deduplicate_genbank`); color (`color_genbank`, `color_table_to_legend`); matrices and networks
 (`seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`,
-`build_projection`, `viewer`, `matrix_report`, `ssn_navigator`); reports (`enum_report`, `summary_report`); plots
+`build_projection`, `viewer`, `matrix_report`, `ssn_navigator`, `split_by_cluster`); reports (`enum_report`, `summary_report`); plots
 (`plot_contigs`); and the
 HMM/CM family (`hmmer_compare`, `hmmer_report`, `hmmer_select`, `hmmer_build`,
 `hmmer_search`, `infernal_build`). `docs/porting-status.md` holds the per-tool coverage ledger (keyed by upstream Python
@@ -246,7 +246,7 @@ is insertion order. Python writes bundles with `sort_keys=True`, which is why ev
 gate compares *parsed* JSON (`scripts/json_parity.py`) and byte equality is not a contract.
 
 Core module map:
-- `seq/` — `SeqRecord`, `SeqFeature`, `Annotations`, and the **lean `Location`** model (`parts: Vec<(start,end,strand,before,after)>`, 0-based half-open, complement-joins pre-reversed). `translate.rs` (genetic code, revcomp, location extraction), `taxid.rs`, `taxonomy.rs` (`NCBITaxonomy` taxdmp parser + lineage/rank/name + `compile_taxonomy_filter`/`compile_taxonomy_expression`; reads extracted `.dmp` or `taxdump.tar.gz`), `protein_analysis.rs` (ProtParam isoelectric point / net charge, `molecular_weight`, PROSITE `motif_count` via the `regex` crate).
+- `seq/` — `SeqRecord`, `SeqFeature`, `Annotations`, and the **lean `Location`** model (`parts: Vec<(start,end,strand,before,after)>`, 0-based half-open, complement-joins pre-reversed). `translate.rs` (genetic code, revcomp, location extraction), `taxid.rs`, `taxonomy.rs` (`NCBITaxonomy` taxdmp parser + lineage/rank/name + `compile_taxonomy_filter`/`compile_taxonomy_expression`; reads `taxdump.tar.gz` before extracted `.dmp`, as upstream does), `taxonomy_download.rs` (upstream's taxdump fetch: download when missing, `--taxonomy_update` MD5 check, the `taxdump.tar.gz.lock` advisory lock; behind core's `network` feature — ureq + rustls — which only the CLI enables), `protein_analysis.rs` (ProtParam isoelectric point / net charge, `molecular_weight`, PROSITE `motif_count` via the `regex` crate).
 - `io/` — own GenBank `parse`/`reader`/`writer`/`offsets`, `fasta`, `bgzf` (random access + virtual offsets), `didx` (`.didx` index), `shards`, `partition`.
 - `search/` — `hmmer` (hmmsearch for domainate), `seq_compare` (phmmer/hmmsearch scoring), `hmm_compare` (profile-vs-profile Viterbi), `results` (`SearchResult` → GenBank feature), `infernal` (`.cm` references: whole-contig `cmsearch` through the **infernox** crate, a byte-parity Rust port of Infernal 1.1.5, pinned `=0.2.0`. It reproduces `pyinfernal.cmsearch` with no options, which is not infernox's library default: `Z` = the targets' residue count, not doubled; truncated hits on; `E = 10` as the scan cutoff; strict (non-FMA) Forward so x86 and ARM agree; duplicate-flagged hits dropped. Details in `UPSTREAM.md`, "Pinned dependency: `infernox`").
 - `matrix/` — `DataMatrix` (dense/CSR) + `hdf5_io` (upstream's matrix file format 2.0: one `write`, canonical CSR stored as its upper triangle (`SPARSE_CSR_UPPER_TRIANGLE`) when the labels are symmetric and the values exactly so, dense HDF5 never written; reads majors 1 and 2 and mirrors a triangle back. Symmetric labels are inferred from `COL_LABELS` **presence** on read — the actual on-disk contract, robust even if the `SYMMETRIC_LABELS` attr is absent. The vendored `hdf5-pure` was also patched to decode enum attributes so h5py's numpy-bool `SYMMETRIC_LABELS` is no longer silently dropped — see `vendor/hdf5-pure/CHANGELOG.md`), `text` (TSV read+write), `transform` (`--mode`s + `apply_lower_bound`), `mst_knn` (MST∪kNN pruner; shares `UnionFind` and `mst_knn_kept` with `ssn`. Tied MST edges follow the tool's upstream counterpart: `TreeTies::Batch` (row-major index descending, `transform_matrix`/`build_ssn`) or `TreeTies::Streaming` (`seq_dist`/`compare_contigs`); kept edges are ordered MST first, then kNN), `hierarchy` (scipy's `linkage`/`leaves_list`/`optimal_leaf_ordering`, ported kernel for kernel -- single precision and the unstable quicksort included -- because `compare_contigs --genbank_out`'s order turns on exact ties; `examples/hierarchy_probe` prints what a scipy script can diff against), `cytoscape` (XGMML writer), and `ssn` (the SSN engine: `MaxTree` + `component_size_summary_by_threshold`/merge events + `build_mst_component_hierarchy` + `edge_scores_desc`/`mst_knn_edge_list` + `merge_event_moving_sum`/`filter_merge_event_rows_binned` (with the viewer's optional zoom `window` + `pinned_threshold`: the window narrows the top-N pool only, never the band back-fill)/`threshold_slider_stops` (`with_threshold_index` — only `matrix_report` has threshold tables to index; `MaxTree::from_mst_edges` rebuilds a tree from a bundle's stored merge order and has none)/`floor_threshold_value`, mirroring `ssn_edges`/`ssn_hierarchy`). **Threshold tables carry one row per distinct threshold**, and each row describes exactly the graph `build_ssn --lb T` keeps — edges scoring *strictly above* T — with a trailing synthetic `threshold = 0` row when every score is positive. Keying rows by MST edge position instead was upstream bug `9ab625f`. `read_matrix(path)` sniffs HDF5-vs-TSV by extension like Python's `DataMatrix.from_file`. MST edge ordering matches the Python **dense** `sorted_undirected_edges` fast path (score desc, ties by row-major index desc).
@@ -338,7 +338,8 @@ edge count *and* component count, sampled across the table, **on a matrix with d
 groups**. Ties are exactly where the old per-MST-edge keying was wrong, and a probe-vs-probe
 comparison alone would happily reproduce the same misunderstanding on both sides.
 
-Deferred (per plan / no clean path, all tracked in `UPSTREAM.md`): ESM, the
+Deferred (per plan / no clean path, all tracked in `UPSTREAM.md`): ESM and
+`find_features --tmbed` (torch), the
 `structure_*` subsystem (portable — foldseek/reseek subprocess, no torch — but out of scope;
 `SearchResult` already carries its four optional metrics),
 and `build_projection --algorithm tsne|umap` (stochastic, so

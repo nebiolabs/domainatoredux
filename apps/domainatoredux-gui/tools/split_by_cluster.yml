@@ -1,0 +1,26 @@
+# GUI dialog for `domainatoredux split_by_cluster`. Format: see README.md in this directory.
+id: split_by_cluster
+label: "Split by cluster"
+description: "Write one file per cluster of a similarity matrix, holding the input's records or profiles in that cluster."
+fields:
+  - name: input
+    label: "Input (sequences or profiles)"
+    file_type: [sequence, hmm, cm]
+    sources: workspace_first
+    select: first
+  - name: matrix
+    label: "Similarity matrix"
+    file_type: [hdf5, table]
+    sources: workspace_first
+    select: first
+  - name: output_dir
+    label: "Output folder"
+    gui_default: "clusters"
+  - name: threshold
+    label: "Threshold"
+  - name: min_cluster_size
+    label: "Minimum cluster size"
+  - name: write_small_clusters
+    label: "Pool small clusters"
+  - name: pad_on_search_hits
+    label: "Align on search hits (GenBank)"

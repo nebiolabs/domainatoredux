@@ -102,7 +102,7 @@ Worst-wins across an invocation's output files:
 
 | outcome | meaning |
 |---|---|
-| `identical` | byte-for-byte equal |
+| `identical` | byte-for-byte equal; a gzip or BGZF output is compared by what it decompresses to, since compressed framing (header timestamp, blocks, deflate implementation) is not a parity target |
 | `tolerated` | equal under the semantic comparator; bytes may differ |
 | `differs` | a real divergence |
 | `rust-failed` | the Rust tool exited non-zero where Python succeeded |
