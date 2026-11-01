@@ -1294,7 +1294,7 @@ ORIGIN
         let tax = dir.join("taxdmp");
         std::fs::create_dir_all(&tax).unwrap();
         for (file, body) in [
-            ("nodes.dmp", "1\t|\t1\t|\tno rank\t|\t\n2\t|\t1\t|\tsuperkingdom\t|\t\n561\t|\t2\t|\tgenus\t|\t\n562\t|\t561\t|\tspecies\t|\t\n"),
+            ("nodes.dmp", "1\t|\t1\t|\tno rank\t|\t\n2\t|\t1\t|\tdomain\t|\t\n561\t|\t2\t|\tgenus\t|\t\n562\t|\t561\t|\tspecies\t|\t\n"),
             ("names.dmp", "1\t|\troot\t|\t\t|\tscientific name\t|\t\n2\t|\tBacteria\t|\t\t|\tscientific name\t|\t\n561\t|\tEscherichia\t|\t\t|\tscientific name\t|\t\n562\t|\tEscherichia coli\t|\t\t|\tscientific name\t|\t\n"),
             ("merged.dmp", ""),
             ("delnodes.dmp", ""),
@@ -1320,7 +1320,7 @@ ORIGIN
                 "length",
                 "qualifier:CDS:product",
                 "taxname:species:genus",
-                "taxid:superkingdom",
+                "taxid:domain",
                 "rank_lineage",
                 "append:batch:int:7"
             ]
@@ -1332,11 +1332,11 @@ ORIGIN
         let mut lines = text.lines();
         assert_eq!(
             lines.next().unwrap(),
-            "contig\tcds\tlength\tqualifier_CDS_product\ttaxname_species\ttaxname_genus\ttaxid_superkingdom\trank_lineage\tbatch"
+            "contig\tcds\tlength\tqualifier_CDS_product\ttaxname_species\ttaxname_genus\ttaxid_domain\trank_lineage\tbatch"
         );
         assert_eq!(
             lines.next().unwrap(),
-            "rec1\tc1\t12\twidget\tEscherichia coli\tEscherichia\t2\tsuperkingdom; genus; species\t7"
+            "rec1\tc1\t12\twidget\tEscherichia coli\tEscherichia\t2\tdomain; genus; species\t7"
         );
         let job = domainator_core::app_support::provenance::load_job(&root, "job_test").unwrap();
         let inputs: Vec<(&str, &str)> = job

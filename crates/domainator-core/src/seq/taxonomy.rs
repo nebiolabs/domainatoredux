@@ -824,8 +824,8 @@ mod tests {
     fn dmp_texts() -> [&'static str; 4] {
         let nodes = "\
 1\t|\t1\t|\tno rank\t|\t
-131567\t|\t1\t|\tno rank\t|\t
-2\t|\t131567\t|\tsuperkingdom\t|\t
+131567\t|\t1\t|\tcellular root\t|\t
+2\t|\t131567\t|\tdomain\t|\t
 1224\t|\t2\t|\tphylum\t|\t
 1236\t|\t1224\t|\tclass\t|\t
 561\t|\t1224\t|\tgenus\t|\t
@@ -899,7 +899,7 @@ mod tests {
         assert_eq!(t.lineage(562), vec![562, 561, 1224, 2, 131567, 1]);
         assert_eq!(t.name(2), Some("Bacteria"));
         assert_eq!(t.name(562), Some("Escherichia coli"));
-        assert_eq!(t.rank(2), Some("superkingdom"));
+        assert_eq!(t.rank(2), Some("domain"));
         assert_eq!(t.rank(561), Some("genus"));
     }
 
@@ -1101,10 +1101,10 @@ mod tests {
         let t = tax();
         let td = TaxonomyData::new(&t, 562);
         assert_eq!(td.taxid_at("self"), Some(562));
-        assert_eq!(td.taxid_at("superkingdom"), Some(2));
+        assert_eq!(td.taxid_at("domain"), Some(2));
         assert_eq!(td.taxid_at("genus"), Some(561));
         assert_eq!(td.name_at("self"), Some("Escherichia coli"));
-        assert_eq!(td.name_at("superkingdom"), Some("Bacteria"));
+        assert_eq!(td.name_at("domain"), Some("Bacteria"));
         // Root-first lineage; the lineage column drops the root.
         assert_eq!(td.lineage, vec![1, 131567, 2, 1224, 561, 562]);
         assert_eq!(td.taxid_at("order"), None);

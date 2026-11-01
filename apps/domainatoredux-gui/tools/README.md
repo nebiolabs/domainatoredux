@@ -224,7 +224,7 @@ cannot hold one, stops the run before it starts, naming the column.
             label: "Ranks"         # the text beside the box (default: the argument name)
             help: "..."            # tooltip and placeholder
             default: [species]     # what a newly added column starts with
-            choices: [self, domain, superkingdom, phylum, genus, species]
+            choices: [self, domain, phylum, genus, species]
 ```
 
 Every key is optional. A repeating argument shows its `choices` as one-click chips that

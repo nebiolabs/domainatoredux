@@ -559,7 +559,13 @@ pub fn length_counts(lengths: &[f64]) -> Option<Value> {
 }
 
 /// Ranks kept in the taxonomy tree even when they add nothing (upstream `TREE_KEPT_RANKS`).
-const TREE_KEPT_RANKS: [&str; 4] = ["superkingdom", "domain", "realm", "kingdom"];
+const TREE_KEPT_RANKS: [&str; 5] = [
+    "cellular root",
+    "acellular root",
+    "domain",
+    "realm",
+    "kingdom",
+];
 
 #[derive(Default)]
 struct TreeNode {
@@ -778,7 +784,7 @@ mod tests {
     fn taxonomy_tree_skips_unranked_and_single_child_taxa() {
         let bacteria = [
             (1, "root", "no rank"),
-            (131567, "cellular organisms", "no rank"),
+            (131567, "cellular organisms", "cellular root"),
             (2, "Bacteria", "domain"),
         ];
         let bacillus = [
@@ -794,6 +800,17 @@ mod tests {
         let taxa = [
             taxon(&[&bacteria[..], &bacillus[..]].concat(), 3),
             taxon(&[&bacteria[..], &escherichia[..]].concat(), 5),
+            // root > Viruses (acellular root) > Riboviria (realm) > Orthornavirae (kingdom) > Pisuviricota (phylum)
+            taxon(
+                &[
+                    (1, "root", "no rank"),
+                    (10239, "Viruses", "acellular root"),
+                    (2559587, "Riboviria", "realm"),
+                    (2732396, "Orthornavirae", "kingdom"),
+                    (2732408, "Pisuviricota", "phylum"),
+                ],
+                2,
+            ),
             // An unranked taxon of its own is kept.
             taxon(
                 &[
@@ -804,12 +821,23 @@ mod tests {
             ),
         ];
         let leaf = |taxid: i64, name: &str, rank: &str, count: u64| json!({"taxid": taxid, "name": name, "rank": rank, "count": count, "children": []});
+        // The cellular and acellular roots, Bacteria (a domain), the realm and the kingdom are
+        // kept although each has one child; the single-child phyla and classes are not.
         assert_eq!(
             taxonomy_tree(&taxa),
             json!({"taxid": 1, "name": "All", "rank": "no rank", "count": 0, "children": [
-                {"taxid": 2, "name": "Bacteria", "rank": "domain", "count": 0, "children": [
-                    leaf(561, "Escherichia", "genus", 5),
-                    leaf(1386, "Bacillus", "genus", 3),
+                {"taxid": 131567, "name": "cellular organisms", "rank": "cellular root", "count": 0, "children": [
+                    {"taxid": 2, "name": "Bacteria", "rank": "domain", "count": 0, "children": [
+                        leaf(561, "Escherichia", "genus", 5),
+                        leaf(1386, "Bacillus", "genus", 3),
+                    ]},
+                ]},
+                {"taxid": 10239, "name": "Viruses", "rank": "acellular root", "count": 0, "children": [
+                    {"taxid": 2559587, "name": "Riboviria", "rank": "realm", "count": 0, "children": [
+                        {"taxid": 2732396, "name": "Orthornavirae", "rank": "kingdom", "count": 0, "children": [
+                            leaf(2732408, "Pisuviricota", "phylum", 2),
+                        ]},
+                    ]},
                 ]},
                 leaf(12908, "unclassified sequences", "no rank", 1),
             ]})

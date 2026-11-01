@@ -22,7 +22,10 @@ when reality and that list disagree in either direction, so a new divergence
 fails the gate and a fixed one is not allowed to linger as a stale entry.
 
 Requires the conda environment and the vendored upstream clone; it is not part
-of the CI check job. See `docs/parity.md`.
+of the CI check job. The Python side runs the clone's `src/` (`--src`), put first on
+PYTHONPATH, so a domainator the env has installed -- such as an editable install of a
+checkout with work in progress -- never decides what the sweep compares against.
+See `docs/parity.md`.
 """
 import argparse
 import os
@@ -374,7 +377,7 @@ def run_one(row, cfg, helpers, SeqIO):
             # otherwise every such record differs in the hours around midnight.
             py = subprocess.run([cfg.python, "-m", "domainator", module] + py_argv,
                                 capture_output=True, timeout=cfg.timeout, cwd=py_dir,
-                                stdin=subprocess.DEVNULL, env={**os.environ, "TZ": "UTC"})
+                                stdin=subprocess.DEVNULL, env={**cfg.py_env, "TZ": "UTC"})
             rs = subprocess.run([cfg.rust, module] + rs_argv,
                                 capture_output=True, timeout=cfg.timeout, cwd=rs_dir,
                                 stdin=subprocess.DEVNULL)
@@ -460,6 +463,9 @@ def main(argv=None):
     ap.add_argument("-i", "--invocations",
                     help="harvested TSV (default: harvest on the fly)")
     ap.add_argument("--test_dir", default=str(REPO / "external" / "domainator" / "test"))
+    ap.add_argument("--src", default=str(REPO / "external" / "domainator" / "src"),
+                    help="the domainator source the Python side runs (default: the "
+                         "vendored clone at the pin)")
     ap.add_argument("--data_dir", default=str(REPO / "test" / "data"),
                     help="fixture directory substituted for @DATA@")
     ap.add_argument("--python", default="/home/sean/miniforge3/envs/domainator/bin/python")
@@ -488,7 +494,13 @@ def main(argv=None):
 
     # `helpers.compare_seqfiles` is the upstream comparator; import it from the
     # vendored clone rather than copying it in, so it can never drift.
-    sys.path.insert(0, os.path.join(REPO, "external", "domainator", "src"))
+    cfg.src = os.path.abspath(cfg.src)
+    if not os.path.isdir(os.path.join(cfg.src, "domainator")):
+        sys.exit(f"no domainator package under {cfg.src}")
+    sys.path.insert(0, cfg.src)
+    # Every Python subprocess runs that source, ahead of whatever the env installed.
+    cfg.py_env = {**os.environ,
+                  "PYTHONPATH": os.pathsep.join(filter(None, [cfg.src, os.environ.get("PYTHONPATH")]))}
     sys.path.insert(0, cfg.test_dir)
     import helpers
     from Bio import SeqIO
@@ -520,7 +532,7 @@ def main(argv=None):
         cfg.gen_dir = tempfile.mkdtemp(prefix="domainator_gen_")
         subprocess.run([cfg.python, str(REPO / "scripts" / "parity" / "generated_fixtures.py"),
                         "--data_dir", cfg.data_dir, "--test_dir", cfg.test_dir,
-                        "-o", cfg.gen_dir], check=True, capture_output=True)
+                        "-o", cfg.gen_dir], check=True, capture_output=True, env=cfg.py_env)
 
     tally = {k: 0 for k in ("identical", "tolerated", "differs", "rust-failed", "error", "skipped")}
     found = {}

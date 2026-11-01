@@ -7,8 +7,13 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `ea5fd76` — *tree viewer tweaks* (2026-10-30; upstream `__version__`
+- **Caught up to:** `bc91aca` — *remove superkingdom* (2026-11-01; upstream `__version__`
   1.0.0rc1, on the `version_one` branch).
+- **`bc91aca`**, ported: NCBI dropped `superkingdom`, so `summary_report`'s
+  `TREE_KEPT_RANKS` keeps `cellular root` and `acellular root` instead
+  (`tools/summary_report.rs`), and the `taxid:`/`taxname:` column help (`columns.rs`)
+  says `domain`. The `taxdmp` fixtures follow NCBI's current ranks, as do the inline
+  taxdumps of our own tests.
 - **`b2e219c`, `aa7078c`, `3ee1b6a`, `ea5fd76`**, viewer: tree rooting (midpoint, on a
   selection, restore) and child swapping, ordered node and label styles with
   categorical shapes, and image export of the whole view. All of it is the page's own

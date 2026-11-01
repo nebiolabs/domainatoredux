@@ -24,7 +24,11 @@ signal in false positives.
 ## Running it
 
 Needs the conda environment and the vendored upstream clone, so it is **not**
-part of the CI check job. A full sweep takes about six minutes.
+part of the CI check job. A full sweep takes about six minutes. The Python side
+runs the clone's `src/` (put first on `PYTHONPATH`), not whatever `domainator` the
+environment has installed, so an editable install of a checkout with uncommitted
+work cannot change the result. To compare against such a checkout on purpose, pass
+`--src /path/to/domainator/src`.
 
 ```bash
 cargo build                                    # the harness runs target/debug/domainatoredux

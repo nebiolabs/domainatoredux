@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `ea5fd76`.
+Parity: Python domainator 1.0.0rc1 @ `bc91aca`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
@@ -36,7 +36,10 @@ Parity: Python domainator 1.0.0rc1 @ `ea5fd76`.
   page (`scripts/regen_report_shells.py`), so the two write the same file.
 - **`summary_report --html_out`**: upstream's new offline page, with a contig length
   histogram that zooms, pans and rebins, sortable domain and co-occurrence tables, and a
-  zoomable taxonomy chart.
+  zoomable taxonomy chart. Following NCBI's current ranks, the chart keeps the
+  `cellular root` ("cellular organisms") and `acellular root` ("Viruses") nodes beside
+  domains, realms and kingdoms; `superkingdom` is gone from NCBI's taxdumps, so ask
+  `enum_report` for `taxname:domain` instead.
 - **`summary_report -o`** writes upstream's text report, histogram and tables included, so
   it is now the same file `domainator` writes.
 - **`matrix_report --html_out` and `--knn_projection`**: upstream's new offline page, with
