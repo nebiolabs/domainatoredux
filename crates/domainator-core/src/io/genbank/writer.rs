@@ -62,7 +62,19 @@ fn fmt_location(loc: &Location, rec_len: i64) -> String {
             if all_minus {
                 parts.reverse();
             }
-            let inner: Vec<String> = parts.iter().map(|p| fmt_part(p, rec_len)).collect();
+            // A mixed-strand join (a trans-spliced tRNA) keeps each part's own strand,
+            // as Biopython's `_insdc_location_string` writes it.
+            let inner: Vec<String> = parts
+                .iter()
+                .map(|p| {
+                    let body = fmt_part(p, rec_len);
+                    if p.2 == -1 && !all_minus {
+                        format!("complement({body})")
+                    } else {
+                        body
+                    }
+                })
+                .collect();
             let joined = format!("{}({})", op.as_str(), inner.join(","));
             if all_minus {
                 format!("complement({joined})")
@@ -578,6 +590,21 @@ mod tests {
         );
         assert_eq!(fmt_location(&at(4000, 4000, 1), 4000), "4000^1");
         assert_eq!(fmt_location(&at(2644, 2645, 1), 4000), "2645");
+    }
+
+    /// A join whose parts are on different strands (a trans-spliced tRNA) writes each
+    /// part's strand; only an all-minus join is written `complement(join(...))`.
+    #[test]
+    fn mixed_strand_joins_keep_each_parts_strand() {
+        for text in [
+            "join(308963..309002,complement(380329..380364))",
+            "join(complement(331719..331758),487030..487064)",
+            "complement(join(490883..490885,1..879))",
+            "join(1..10,20..30)",
+        ] {
+            let loc = crate::seq::location::parse_location(text);
+            assert_eq!(fmt_location(&loc, 490885), text);
+        }
     }
 
     /// Biopython's `_write_comment`: structured blocks first, keys padded to the

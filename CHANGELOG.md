@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `fc10e7b`.
+Parity: Python domainator 1.0.0rc1 @ `6c9945a`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
@@ -99,6 +99,11 @@ Parity: Python domainator 1.0.0rc1 @ `fc10e7b`.
   gain a second `.` when the text already ends with one. A location on another sequence
   (`P68250-2:1`, `AL391218.9:105..208`) is read and written with its reference; it used
   to be read as an empty location.
+- **A join whose parts lie on different strands keeps them.** A trans-spliced tRNA's
+  `join(308963..309002,complement(380329..380364))` was written back as
+  `join(308963..309002,380329..380364)`, putting both parts on the forward strand, by any
+  tool that rewrote the record. Found in a real genome (Nanoarchaeum equitans) by
+  `db_download --gene_call`.
 - **`domain_search --kb_up`/`--kb_down` on a circular contig smaller than the window**
   keeps the window where its padding puts it, as upstream does: `--kb_down 100` around a
   plasmid gene starts the region at that gene. It used to be centered opposite the gene.

@@ -7,8 +7,16 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `fc10e7b` — *structure deterministic*
+- **Caught up to:** `6c9945a` — *db download fixtures*
   (2026-11-01; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`6c9945a`**, ported with `db_download`: `--uniprot_dir` reads UniProt from a local
+  mirror and an `--ncbi_summary` whose `ftp_path` is a local directory reads genomes from
+  disk, so the tests run offline on `test/data/db_download/` and the sweep replays them.
+  NCBI genomes are written by each worker to a temporary file and appended by the parent
+  in summary order (they used to be appended by the workers as they finished). Also
+  fixes UniProt `--append` (it overwrote), `ncbi_nonredundant_all` without a taxonomy
+  filter (it failed), and `ncbi_representative_all` keeping `refseq_category == na`
+  genomes (it now drops them, as its docstring says).
 - **`fc10e7b`**, ported with the structure tools: the by-target hit sort runs
   `LC_ALL=C sort -s` (byte order, stable; `structure_lib.sort_by_column`), so it no longer
   depends on the machine's locale, and reseek databases are built with `-threads 1`, whose
