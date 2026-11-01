@@ -8,6 +8,7 @@
 //! `join`). foldseek remains deferred.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use super::gene_call::{call_genes, clear_cds_annotations, GeneCall, GeneCallScope};
 use crate::search::hmmer::hmmsearch_db;
@@ -19,7 +20,8 @@ use crate::seq::partial::{
     codon_offset, feature_fragment_status, on_contig_cds_translation, record_fragment_status,
     Partial,
 };
-use crate::seq::taxid::record_taxid;
+use crate::seq::taxid::{feature_taxon, location_taxid, record_taxid};
+use crate::seq::taxonomy::{TaxonomyFilter, TaxonomyUnknown};
 use crate::seq::translate::is_searchable_cds;
 use crate::seq::Topology;
 use crate::seq::{Location, SeqFeature, SeqRecord};
@@ -459,10 +461,14 @@ fn add_contig_nucleic_acid_annotations(
 /// The nucleotide records as whole-contig search targets (`get_contig_search_sequence`):
 /// `"{i},contig,{len}"` and the residues, a circular contig followed by its first
 /// `extension` bases again.
-fn whole_contig_targets(records: &[SeqRecord], extension: usize) -> Vec<(String, Vec<u8>)> {
+fn whole_contig_targets(
+    records: &[SeqRecord],
+    searchable: &[bool],
+    extension: usize,
+) -> Vec<(String, Vec<u8>)> {
     let mut targets: Vec<(String, Vec<u8>)> = Vec::new();
     for (i, rec) in records.iter().enumerate() {
-        if rec.is_protein() {
+        if rec.is_protein() || !searchable[i] {
             continue;
         }
         let mut seq: Vec<u8> = rec
@@ -481,6 +487,38 @@ fn whole_contig_targets(records: &[SeqRecord], extension: usize) -> Vec<(String,
     targets
 }
 
+/// Upstream `_nucleotide_contig_searchable`: whether a nucleotide contig can yield a
+/// hit the taxonomy allows, so is worth searching. A record without sources (FASTA)
+/// has its header's taxid; a contig one source covers whole has that source's. A
+/// gappy multi-source contig is searched when an uncovered region or any of its
+/// sources could pass, and its hits are judged one by one afterwards.
+fn nucleotide_contig_searchable(
+    rec: &SeqRecord,
+    taxonomy: &TaxonomyFilter,
+) -> Result<bool, String> {
+    let context = || format!("record {:?}", rec.id);
+    let sources: Vec<&SeqFeature> = rec.features.iter().filter(|f| f.kind == "source").collect();
+    if sources.is_empty() {
+        return taxonomy.allows(Some(record_taxid(rec)), context);
+    }
+    let whole = Location::range(0, rec.len() as i64, 1);
+    if let Some(taxid) = location_taxid(&rec.features, &whole) {
+        return taxonomy.allows(Some(taxid), context);
+    }
+    if taxonomy.unknown() == TaxonomyUnknown::Error {
+        return Ok(true);
+    }
+    if taxonomy.allows(None, context)? {
+        return Ok(true);
+    }
+    for taxid in sources.iter().filter_map(|s| feature_taxon(s)) {
+        if taxonomy.allows(Some(taxid), context)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Options for [`domainate`].
 pub struct DomainateOptions {
     pub z: f64,
@@ -495,9 +533,10 @@ pub struct DomainateOptions {
     pub overlap_by_db: bool,
     /// hmmsearch `--max` (skip heuristic filters for maximum sensitivity).
     pub max_mode: bool,
-    /// Precompiled allowed-taxid set (`None` = no taxonomy filtering). Records
-    /// whose lineage is not in the set are dropped before searching.
-    pub allowed_taxids: Option<HashSet<i64>>,
+    /// Taxonomy restriction (`None`: none), domain_search's: a protein or CDS is
+    /// searched only when its taxid passes, and a whole-contig nucleotide hit is kept
+    /// only when the taxid of the source covering it does.
+    pub taxonomy: Option<Arc<TaxonomyFilter>>,
     /// Worker threads for the profile and database searches (`0` = all cores).
     pub cpu: usize,
     pub parallel_profiles: bool,
@@ -525,7 +564,7 @@ impl Default for DomainateOptions {
             hits_only: false,
             overlap_by_db: false,
             max_mode: false,
-            allowed_taxids: None,
+            taxonomy: None,
             cpu: 0,
             parallel_profiles: true,
             max_hits_per_contig: None,
@@ -546,12 +585,8 @@ pub fn domainate(
     opts: &DomainateOptions,
 ) -> std::io::Result<Vec<SeqRecord>> {
     let empty_dropped = HashSet::new();
-
-    // Taxonomy pre-filter: drop records whose lineage is not in the allowed set
-    // (mirrors Python `filter_by_taxonomy` applied to the input records).
-    if let Some(allowed) = &opts.allowed_taxids {
-        records.retain(|rec| allowed.contains(&record_taxid(rec)));
-    }
+    let taxonomy = opts.taxonomy.as_deref();
+    let rejected = |e: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, e);
 
     // clean_rec: nucleotide records get cds_id + /translation on every CDS. With
     // `--gene_call all` every CDS (and the domains anchored on them) goes first; then
@@ -588,6 +623,15 @@ pub fn domainate(
     };
     for (i, rec) in records.iter().enumerate() {
         if rec.is_protein() {
+            if let Some(taxonomy) = taxonomy {
+                let context = || format!("record {:?}", rec.id);
+                if !taxonomy
+                    .allows(Some(record_taxid(rec)), context)
+                    .map_err(rejected)?
+                {
+                    continue;
+                }
+            }
             if !opts.partial.allows(record_fragment_status(rec)) {
                 continue;
             }
@@ -600,6 +644,15 @@ pub fn domainate(
             add(format!("{i},0"), pep, rec);
         } else {
             for (j, pep) in rec.cds_peptides(&empty_dropped) {
+                if let Some(taxonomy) = taxonomy {
+                    // A CDS takes the taxid of the longest source covering it.
+                    let cds = &rec.features[j];
+                    let taxid = location_taxid(&rec.features, &cds.location);
+                    let context = || format!("record {:?}, CDS index {j}", rec.id);
+                    if !taxonomy.allows(taxid, context).map_err(rejected)? {
+                        continue;
+                    }
+                }
                 if !opts
                     .partial
                     .allows(feature_fragment_status(&rec.features[j]))
@@ -657,6 +710,14 @@ pub fn domainate(
     // contigs are extended by that program's longest reference so origin-spanning
     // hits are found.
     let mut contig_hits: HashMap<usize, Vec<SearchResult>> = HashMap::new();
+    let searchable: Vec<bool> = match taxonomy {
+        None => vec![true; records.len()],
+        Some(taxonomy) => records
+            .iter()
+            .map(|rec| nucleotide_contig_searchable(rec, taxonomy))
+            .collect::<Result<_, _>>()
+            .map_err(rejected)?,
+    };
     let mut add_contig_hits = |per_db: Vec<Vec<crate::search::hmmer::NamedHit>>| {
         for nhs in per_db {
             for nh in nhs {
@@ -678,7 +739,7 @@ pub fn domainate(
             .flat_map(|db| db.hmms.iter().map(|h| h.m))
             .max()
             .unwrap_or(0);
-        let targets = whole_contig_targets(&records, nhmmer_extension);
+        let targets = whole_contig_targets(&records, &searchable, nhmmer_extension);
         if !targets.is_empty() {
             let per_db: Vec<Vec<crate::search::hmmer::NamedHit>> =
                 crate::parallel::with_threads(opts.cpu, || {
@@ -701,7 +762,7 @@ pub fn domainate(
             .map(CmDb::max_states)
             .max()
             .unwrap_or(0);
-        let targets = whole_contig_targets(&records, infernal_extension);
+        let targets = whole_contig_targets(&records, &searchable, infernal_extension);
         if !targets.is_empty() {
             // Each search spreads its own windows over the pool, so databases run
             // one after another.
@@ -740,7 +801,26 @@ pub fn domainate(
                 );
             }
         } else {
-            if let Some(chits) = ncontig {
+            let mut ncontig = ncontig;
+            if let (Some(taxonomy), Some(chits)) = (taxonomy, ncontig.as_mut()) {
+                // A hit's region is known only now: keep the hits whose covering source
+                // passes. A record without sources (FASTA) was judged whole before the
+                // search, by its header's taxid.
+                if rec.features.iter().any(|f| f.kind == "source") {
+                    let length = rec.len() as i64;
+                    let mut kept = Vec::with_capacity(chits.len());
+                    for hit in chits.drain(..) {
+                        let location = build_contig_hit_location(rec.topology, length, &hit);
+                        let taxid = location_taxid(&rec.features, &location);
+                        let context = || format!("record {:?}, nucleotide hit", rec.id);
+                        if taxonomy.allows(taxid, context).map_err(rejected)? {
+                            kept.push(hit);
+                        }
+                    }
+                    *chits = kept;
+                }
+            }
+            if let Some(chits) = ncontig.filter(|c| !c.is_empty()) {
                 add_contig_nucleic_acid_annotations(
                     rec,
                     chits,

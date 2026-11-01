@@ -39,8 +39,7 @@ pub fn run(args: &SummaryReportArgs) -> Result<()> {
     if let Some(contigs) = &contigs {
         records.retain(|r| contigs.contains(&r.id));
     }
-    let mut focus_domains: Vec<String> = focus_domains.into_iter().flatten().collect();
-    focus_domains.sort();
+    let focus_domains: Vec<String> = focus_domains.into_iter().flatten().collect();
     let opts = SummaryReportOptions {
         focus_domains,
         databases: args.databases.clone().unwrap_or_default(),

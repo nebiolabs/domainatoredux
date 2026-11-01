@@ -1,4 +1,4 @@
-use super::CommonArgs;
+use super::{CommonArgs, TaxonomyArgs};
 use crate::types::{Finite, PositiveFloat};
 
 /// Extracts the regions of proteins not covered by any domain annotation (upstream
@@ -17,47 +17,47 @@ pub struct ExtractUnannotatedArgs {
     /// Write the records to this FASTA file. Use - for standard output.
     #[arg(long)]
     pub fasta_out: Option<String>,
-    /// Only extract regions from contigs with ids in this list. Additive with
-    /// --contigs_file. default: all contigs.
+    #[command(flatten)]
+    pub taxonomy: TaxonomyArgs,
+    /// Only read input protein records with these IDs; restricts where extraction
+    /// occurs. Additive with --contigs_file.
     #[arg(long, num_args = 1..)]
     pub contigs: Vec<String>,
-    /// Only extract regions from contigs with ids listed in this file (one per line).
-    /// Additive with --contigs. default: all contigs.
+    /// Only read input protein records with the IDs in this file: a plain-text file
+    /// (one per line), FASTA/GenBank record IDs, or HMM profile names. Additive with
+    /// --contigs.
     #[arg(long)]
     pub contigs_file: Option<String>,
-    /// The evalue cutoff (max) for domain annotations to be considered. default: no
-    /// cutoff.
+    /// Count only domain/search-hit annotations with e-value <= this when finding
+    /// unannotated gaps. Default: no cutoff.
     #[arg(short, long)]
     pub evalue: Option<PositiveFloat>,
-    /// The score cutoff (min) for domain annotations to be considered. default: no
-    /// cutoff.
+    /// Count only domain/search-hit annotations with score >= this when finding
+    /// unannotated gaps. Raising this can enlarge the gaps. Default: no cutoff.
     #[arg(long, allow_negative_numbers = true)]
-    pub min_score: Option<Finite>,
+    pub min_annotation_score: Option<Finite>,
     /// Only consider domains from these databases. default: all databases.
     #[arg(long, num_args = 1..)]
     pub databases: Option<Vec<String>>,
     /// Which annotations count as annotated. domainator: domain annotations (from
-    /// domainate). domain_search: best-hit annotations (from domain_search).
-    #[arg(long, default_value = "domainator", value_parser = ["domainator", "domain_search"])]
+    /// domainate). domain_search: best-hit annotations (from domain_search). all: both.
+    #[arg(long, default_value = "domainator",
+          value_parser = ["domainator", "domain_search", "all"])]
     pub annotation_type: String,
-    /// By default extracted regions will be flipped so that the source CDS will be on
-    /// the forward strand. Set this option to not reverse complement anything. In the
-    /// rare case of a split CDS with parts on different strands, the strand of the
-    /// first part will be considered.
+    /// Has no effect: this tool supports only protein sequences and never
+    /// reverse-complements them. Retained for compatibility with extract_domains.
     #[arg(long)]
     pub keep_direction: bool,
-    /// By default, extracted regions will be renamed to note their original
-    /// coordinates and whether they were reverse complemented. Set this option to keep
-    /// contigs with their original names. WARNING: if you aren't careful, this can
-    /// easily result in duplicate names.
+    /// Use the parent protein ID instead of a coordinate-based region ID. This can
+    /// produce duplicate IDs for different extracted sequences.
     #[arg(long)]
-    pub keep_name: bool,
+    pub keep_parent_id: bool,
     /// Extract only the largest unannotated region from each protein, providing it
-    /// passes the length cutoff specified by --min_length.
+    /// passes the length cutoff specified by --min_region_length.
     #[arg(long)]
     pub largest: bool,
-    /// Extract unannotated regions of at least this length from each protein. default:
-    /// no cutoff.
+    /// Extract only unannotated gaps of at least this many amino acids, before choosing
+    /// --largest. Not a cutoff on the input protein length. Default: no cutoff.
     #[arg(long, allow_negative_numbers = true)]
-    pub min_length: Option<i64>,
+    pub min_region_length: Option<i64>,
 }

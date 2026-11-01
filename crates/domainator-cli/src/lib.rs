@@ -229,42 +229,33 @@ pub(crate) fn gene_call_request(
         .transpose()
 }
 
-/// Compile `--include_taxids`/`--exclude_taxids`/`--taxonomy_expr` into an
-/// allowed-taxid set, loading the taxonomy from `path` when a filter is active.
-/// Returns `None` when no taxonomy filtering was requested.
-pub(crate) fn compile_allowed_taxids(
-    include: &[i64],
-    exclude: &[i64],
-    expr: Option<&str>,
-    path: Option<&str>,
-) -> Result<Option<std::collections::HashSet<i64>>> {
-    let has_expr = expr.is_some_and(|e| !e.trim().is_empty());
-    if include.is_empty() && exclude.is_empty() && !has_expr {
+/// Compile the taxonomy options into a filter (upstream `taxonomy_from_args` and
+/// `compile_taxonomy_filter`), loading the taxonomy database only when a criterion is
+/// given. `None` when there is none.
+pub(crate) fn taxonomy_filter(
+    args: &config::args::TaxonomyArgs,
+) -> Result<Option<domainator_core::seq::taxonomy::TaxonomyFilter>> {
+    use domainator_core::seq::taxonomy::taxonomy_active;
+    let include = args.include_taxids.as_deref().unwrap_or_default();
+    let exclude = args.exclude_taxids.as_deref().unwrap_or_default();
+    let expression = args.taxonomy_expr.as_deref();
+    if expression.is_some_and(|e| !e.trim().is_empty())
+        && (!include.is_empty() || !exclude.is_empty())
+    {
+        anyhow::bail!("taxonomy_expr is mutually exclusive with include_taxids/exclude_taxids.");
+    }
+    if !taxonomy_active(include, exclude, expression) {
         return Ok(None);
     }
-    if has_expr && (!include.is_empty() || !exclude.is_empty()) {
-        anyhow::bail!(
-            "--taxonomy_expr is mutually exclusive with --include_taxids/--exclude_taxids."
-        );
-    }
     let tax = load_taxonomy(
-        &path
-            .map(str::to_string)
+        &args
+            .ncbi_taxonomy_path
+            .clone()
             .unwrap_or_else(default_ncbi_taxonomy_path),
     )?;
-    let allowed = if has_expr {
-        tax.compile_taxonomy_expression(expr.unwrap())
-            .map_err(anyhow::Error::msg)?
-    } else {
-        use std::collections::HashSet;
-        let inc: HashSet<i64> = include.iter().copied().collect();
-        let exc: HashSet<i64> = exclude.iter().copied().collect();
-        tax.compile_taxonomy_filter(
-            if inc.is_empty() { None } else { Some(&inc) },
-            if exc.is_empty() { None } else { Some(&exc) },
-        )
-    };
-    Ok(allowed)
+    let unknown = args.taxonomy_unknown.parse().map_err(anyhow::Error::msg)?;
+    tax.compile_filter(include, exclude, expression, unknown)
+        .map_err(anyhow::Error::msg)
 }
 
 /// Run one `domainatoredux` command line. `args` includes the program name first, as

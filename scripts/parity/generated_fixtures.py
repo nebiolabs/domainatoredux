@@ -77,6 +77,7 @@ def generate(data_dir, test_dir, out_dir):
     _rotate_contigs_fixtures(data, out)
     _compare_contigs_fixtures(out)
     _infernal_fixtures(data, out)
+    _selection_fixtures(data, out)
 
 
 def _compare_contigs_fixtures(out):
@@ -152,6 +153,48 @@ def _rotate_contigs_fixtures(data, out):
     circular.annotations["topology"] = "circular"
     SeqIO.write([circular], str(out / "circular_test.gb"), "genbank")
     (out / "origin_query.fna").write_text(f">origin_query\n{sequence[-18:] + sequence[:18]}\n")
+
+
+def _selection_fixtures(data, out):
+    """Inputs for the shared selection contract (upstream 1.0's taxonomy filters,
+    --dedup, --has_search_hit), whose tests call the tools as library functions or
+    through `getattr`, so the harvester sees none of them."""
+    from Bio.Seq import Seq
+    from Bio import SeqIO
+    from domainator.seqio import write_genbank
+    import test_taxonomy_filters as tax
+
+    # The builders leave `name` unset, which Biopython writes as an ACCESSION of
+    # "<unknown name>"; name each record by its id, as a real file would.
+    def named(record):
+        record.name = record.id
+        return record
+
+    # The mixed-source contig: CDSs under E. coli (562), under B. subtilis (1423), and
+    # one straddling the two sources (so no source covers it).
+    with open(out / "mixed.gb", "w") as handle:
+        write_genbank([named(tax.mixed())], handle)
+    # Proteins under a known, a missing, a deleted and a merged taxid.
+    proteins = [tax.protein(562, "coli"), tax.protein(None, "unlabeled"), tax.protein(1423, "subtilis"),
+                tax.protein(1985417, "deleted"), tax.protein(17, "merged")]
+    with open(out / "tax_proteins.gb", "w") as handle:
+        write_genbank([named(p) for p in proteins], handle)
+    # test_search_worker_unknown_policy: a protein with no taxid beside labeled ones.
+    records = list(SeqIO.parse(str(data / "swissprot_CuSOD_subset.fasta"), "fasta"))
+    lines = [f">{r.description}\n{r.seq}\n" for r in records]
+    lines.append(f">unlabeled unlabeled\n{records[0].seq}\n")
+    (out / "sod_unlabeled.fasta").write_text("".join(lines))
+    # test_deduplicate_genbank_hash_both_strands: a sequence, its reverse complement,
+    # its complement and its reverse.
+    seq = "ACGTAAGT"
+    (out / "strands.fasta").write_text(
+        f">seq1\n{seq}\n>seq2\n{Seq(seq).reverse_complement()}\n"
+        f">complement_only\n{Seq(seq).complement()}\n>reverse_only\n{seq[::-1]}\n")
+    # A nucleotide target, an exact copy and its reverse complement, for --dedup.
+    target = next(SeqIO.parse(str(data / "simple_dna_target.fna"), "fasta"))
+    (out / "rc_pair.fna").write_text(
+        f">{target.id}\n{target.seq}\n>target_copy\n{target.seq}\n"
+        f">target_rc\n{target.seq.reverse_complement()}\n")
 
 
 def main(argv=None):

@@ -3,10 +3,11 @@
 //!
 //! Selection is:
 //! ```text
-//! (length in [lb,ub]) AND (cds_count in [lb,ub]) AND (taxonomy) AND (partial) AND
+//! (length in [lb,ub]) AND (cds_count in [lb,ub]) AND (partial) AND
 //! INVERT( name-in-list OR name-regex OR definition-regex OR sequence-regex
-//!         OR has-target-domain OR domain-expr OR unannotated OR search-score )
-//! AND (count <= first)
+//!         OR has-target-domain OR domain-expr OR unannotated OR has-search-hit
+//!         OR search-score )
+//! AND (taxonomy) AND (count <= first)
 //! ```
 //! Contig names are [`SeqRecord::id`] (GenBank LOCUS or FASTA header word).
 
@@ -15,37 +16,11 @@ use std::collections::HashSet;
 use regex::Regex;
 
 use crate::seq::partial::{contig_has_fragment, Partial};
-use crate::seq::taxid::record_taxid;
-use crate::seq::taxonomy::NCBITaxonomy;
+use crate::seq::taxonomy::TaxonomyFilter;
 use crate::seq::SeqRecord;
+pub use crate::tools::select_common::AnnotationType;
 use crate::tools::select_common::{evalue_passes, BooleanEvaluator};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
-
-/// Which annotations name a contig's domains (`--annotation_type`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum AnnotationType {
-    /// `Domainator` features, from domainate.
-    #[default]
-    Domainator,
-    /// `Domain_Search` best-hit features, from domain_search.
-    DomainSearch,
-    /// Both.
-    All,
-}
-
-impl std::str::FromStr for AnnotationType {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, String> {
-        match s {
-            "domainator" => Ok(AnnotationType::Domainator),
-            "domain_search" => Ok(AnnotationType::DomainSearch),
-            "all" => Ok(AnnotationType::All),
-            _ => Err(format!(
-                "invalid annotation type {s:?}: expected domainator, domain_search or all"
-            )),
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct SelectByContigOptions {
@@ -63,14 +38,18 @@ pub struct SelectByContigOptions {
     pub target_contigs: Option<HashSet<String>>,
     pub contigs_regex: Option<String>,
     pub invert: bool,
-    pub include_taxids: Option<HashSet<i64>>,
-    pub exclude_taxids: Option<HashSet<i64>>,
-    pub taxonomy_expr: Option<String>,
+    /// Taxonomy restriction on the selected records; never inverted.
+    pub taxonomy: Option<TaxonomyFilter>,
     pub databases: Option<HashSet<String>>,
     pub unannotated: bool,
+    /// `--min_search_score`/`--max_search_score`: also select records whose
+    /// `Domain_Search` hit scores in this inclusive range.
     pub search_score_lb: Option<f64>,
     pub search_score_ub: Option<f64>,
     pub annotation_type: AnnotationType,
+    /// `--has_search_hit`: also select records with a search hit passing the e-value
+    /// (and score range, when one is given), whatever its database.
+    pub has_search_hit: bool,
     /// `--partial`: contigs by fragment status ([`contig_has_fragment`]); never
     /// inverted by `invert`.
     pub partial: Partial,
@@ -95,10 +74,9 @@ fn db_ok(databases: Option<&HashSet<String>>, f: &crate::seq::SeqFeature) -> boo
     }
 }
 
-/// Run the selection. `ncbi_taxonomy` is required iff a taxonomy filter is set.
+/// Run the selection.
 pub fn select_by_contig(
     records: Vec<SeqRecord>,
-    ncbi_taxonomy: Option<&NCBITaxonomy>,
     opts: &SelectByContigOptions,
 ) -> Result<Vec<SeqRecord>, String> {
     let expr = opts
@@ -110,45 +88,6 @@ pub fn select_by_contig(
     let seq_re = compile(opts.sequence_regex.as_deref())?;
     let name_re = compile(opts.contigs_regex.as_deref())?;
 
-    // Taxonomy filter compiled to an allowed-taxid set (O(1) membership).
-    let allowed: Option<HashSet<i64>> = {
-        let has_tax = opts.include_taxids.as_ref().is_some_and(|s| !s.is_empty())
-            || opts.exclude_taxids.as_ref().is_some_and(|s| !s.is_empty())
-            || opts
-                .taxonomy_expr
-                .as_deref()
-                .is_some_and(|e| !e.trim().is_empty());
-        if !has_tax {
-            None
-        } else {
-            let tax = ncbi_taxonomy.ok_or("taxonomy filter requires an NCBI taxonomy database")?;
-            if opts
-                .taxonomy_expr
-                .as_deref()
-                .is_some_and(|e| !e.trim().is_empty())
-                && (opts.include_taxids.as_ref().is_some_and(|s| !s.is_empty())
-                    || opts.exclude_taxids.as_ref().is_some_and(|s| !s.is_empty()))
-            {
-                return Err(
-                    "--taxonomy_expr is mutually exclusive with --include_taxids/--exclude_taxids."
-                        .into(),
-                );
-            }
-            if let Some(e) = opts
-                .taxonomy_expr
-                .as_deref()
-                .filter(|e| !e.trim().is_empty())
-            {
-                tax.compile_taxonomy_expression(e)?
-            } else {
-                tax.compile_taxonomy_filter(
-                    opts.include_taxids.as_ref(),
-                    opts.exclude_taxids.as_ref(),
-                )
-            }
-        }
-    };
-
     let search_score_lb = opts.search_score_lb;
     let search_score_ub = opts.search_score_ub;
     let use_search_score = search_score_lb.is_some() || search_score_ub.is_some();
@@ -157,13 +96,7 @@ pub fn select_by_contig(
 
     let mut out = Vec::new();
     for contig in records {
-        // Taxonomy pre-filter (matches filter_by_taxonomy applied first).
-        if let Some(allowed) = &allowed {
-            if !allowed.contains(&record_taxid(&contig)) {
-                continue;
-            }
-        }
-        // Fragment filter (filter_by_partial), applied right after the taxonomy one.
+        // Fragment filter (filter_by_partial), applied before the others.
         if !opts.partial.is_include() {
             let status = contig_has_fragment(&contig).then_some("?");
             if !opts.partial.allows(status) {
@@ -220,15 +153,23 @@ pub fn select_by_contig(
         if opts.target_domains.is_some()
             || opts.domain_expr.is_some()
             || opts.unannotated
+            || opts.has_search_hit
             || use_search_score
         {
             at_least_one_test = true;
             let mut domains: HashSet<String> = HashSet::new();
             let mut search_feature: Option<&crate::seq::SeqFeature> = None;
             // Loop-invariant: which feature kinds `--annotation_type` draws names from.
-            let want_domain = opts.annotation_type != AnnotationType::DomainSearch;
-            let want_search = opts.annotation_type != AnnotationType::Domainator;
+            let want_domain = opts.annotation_type.includes(DOMAIN_FEATURE_NAME);
+            let want_search = opts.annotation_type.includes(DOMAIN_SEARCH_BEST_HIT_NAME);
             for f in &contig.features {
+                if opts.has_search_hit
+                    && f.kind == DOMAIN_SEARCH_BEST_HIT_NAME
+                    && evalue_passes(f, opts.domain_evalue)
+                    && (!use_search_score || (score_lb..=score_ub).contains(&feature_score(f)))
+                {
+                    selected = true;
+                }
                 if f.kind == DOMAIN_FEATURE_NAME
                     && evalue_passes(f, opts.domain_evalue)
                     && db_ok(opts.databases.as_ref(), f)
@@ -253,11 +194,7 @@ pub fn select_by_contig(
 
             if use_search_score {
                 if let Some(sf) = search_feature {
-                    let score: f64 = sf
-                        .get_first("score")
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(f64::NAN);
-                    if score >= score_lb && score <= score_ub {
+                    if (score_lb..=score_ub).contains(&feature_score(sf)) {
                         selected = true;
                     }
                 }
@@ -284,6 +221,11 @@ pub fn select_by_contig(
             selected = !selected;
         }
         if selected {
+            if let Some(taxonomy) = &opts.taxonomy {
+                if !taxonomy.matches(&contig, None)? {
+                    continue;
+                }
+            }
             out.push(contig);
             if let Some(first) = opts.first {
                 if out.len() == first {
@@ -293,6 +235,13 @@ pub fn select_by_contig(
         }
     }
     Ok(out)
+}
+
+/// A feature's `score` (NaN when it has none, which no range contains).
+fn feature_score(f: &crate::seq::SeqFeature) -> f64 {
+    f.get_first("score")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(f64::NAN)
 }
 
 fn compile(pattern: Option<&str>) -> Result<Option<Regex>, String> {

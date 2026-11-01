@@ -20,6 +20,8 @@ fields:
     file_type: text
     sources: workspace_first
     select: none
+  - name: name_field
+    label: "Name field"
   - name: domains
     label: "Domain names"
   - name: domains_file
@@ -35,6 +37,8 @@ fields:
     label: "Annotation type"
   - name: unannotated
     label: "Unannotated"
+  - name: has_search_hit
+    label: "Has search hit"
   - name: invert
     label: "Invert"
   - name: evalue
@@ -68,7 +72,7 @@ fields:
     label: "Pad to equal length"
   - name: anchor
     label: "Pad anchor"
-  - name: deduplicate
+  - name: dedup
     label: "Deduplicate"
   - name: max_region_overlap
     label: "Max region overlap"
@@ -77,3 +81,16 @@ fields:
   - name: partial
     label: "Fragments"
     help: "Which CDSs to extract regions around, by fragment status. Not affected by Invert."
+  - name: include_taxids
+    label: "Include taxids"
+  - name: exclude_taxids
+    label: "Exclude taxids"
+  - name: taxonomy_expr
+    label: "Taxonomy expr"
+  - name: taxonomy_unknown
+    label: "Unknown taxonomy"
+  - name: ncbi_taxonomy_path
+    label: "Taxonomy database"
+    file_type: taxonomy
+    sources: databases_first
+    select: "database:ncbi_taxonomy"

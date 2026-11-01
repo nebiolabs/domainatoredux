@@ -3,8 +3,8 @@ use crate::types::PositiveFloat;
 
 /// Rotates circular contigs so that their origin is set relative to a domain
 /// annotation (upstream `rotate_contigs.py`). The domain is the best of the new hits of
-/// a reference search and the pre-existing annotations named by --domains or
-/// --annotation_type domain_search: the highest score, then the lowest E-value, then
+/// a reference search and the pre-existing annotations chosen by --domains,
+/// --annotation_type and --has_search_hit: the highest score, then the lowest E-value, then
 /// the lowest position.
 #[derive(clap::Args, Clone, Debug, Default)]
 #[command(rename_all = "snake_case")]
@@ -42,20 +42,27 @@ pub struct RotateContigsArgs {
     /// annotations must pass this threshold. Must be <=10.
     #[arg(short, long, default_value = "0.001")]
     pub evalue: PositiveFloat,
-    /// Rotate on pre-existing domainator annotations with these names.
+    /// Rotate on pre-existing annotations with these names, from --annotation_type.
     #[arg(long, num_args = 1..)]
     pub domains: Option<Vec<String>>,
-    /// Text file containing names of pre-existing domainator annotations to rotate on.
+    /// Text file containing names of pre-existing annotations to rotate on, from
+    /// --annotation_type.
     #[arg(long)]
     pub domains_file: Option<String>,
     /// Consider only pre-existing annotations from these databases. default: all
     /// databases.
     #[arg(long, num_args = 1..)]
     pub databases: Option<Vec<String>>,
-    /// Which pre-existing annotations to rotate on. domainator: domain annotations
-    /// (from domainate). domain_search: best-hit annotations (from domain_search).
-    #[arg(long, default_value = "domainator", value_parser = ["domainator", "domain_search"])]
+    /// Which pre-existing annotations to rotate on. domainator: domain annotations (from
+    /// domainate). domain_search: best-hit annotations (from domain_search). all: both.
+    #[arg(long, default_value = "domainator",
+          value_parser = ["domainator", "domain_search", "all"])]
     pub annotation_type: String,
+    /// Also select existing domain_search hits, regardless of annotation_type, domain
+    /// names, domain expressions, or databases. Hits must pass the e-value and score
+    /// cutoffs where applicable. Participates in --invert where available.
+    #[arg(long)]
+    pub has_search_hit: bool,
     /// Where to put the origin, relative to the chosen domain in its own orientation
     /// (not relative to the original orientation of the contig). start: the first base
     /// of the domain becomes the first base of the contig. end: the last base of the

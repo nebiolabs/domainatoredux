@@ -8,12 +8,16 @@ use std::collections::HashSet;
 
 use crate::seq::location::to_index;
 use crate::seq::partial::{cds_fragment_status, Partial};
+use crate::seq::taxonomy::TaxonomyFilter;
 use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::tools::neighborhood::{
     cds_neighborhood, neighborhood_record, overlap_size, region_id, reverse_complement_record, Cds,
     Range, SliceLoc,
 };
-use crate::tools::select_common::{get_non_domainator_features, BooleanEvaluator, DomainatorCds};
+use crate::tools::select_common::{
+    cds_name_precedence, get_non_domainator_features, AnnotationType, BooleanEvaluator,
+    DomainatorCds, CDS_NAME_FIELDS,
+};
 
 #[derive(Default)]
 pub struct SelectByCdsOptions {
@@ -24,8 +28,19 @@ pub struct SelectByCdsOptions {
     pub normalize_direction: bool,
     /// Only annotations with an e-value at most this count (`None`: no cutoff).
     pub evalue: Option<f64>,
+    /// Negates the combined selectors, never the strand, partial or taxonomy
+    /// restrictions; ignored, with a warning, when there are no selectors.
     pub invert: bool,
-    pub search_hits: bool,
+    /// Which annotations supply the domain names `target_domains`, `domain_expr` and
+    /// `unannotated` look at. Selects nothing by itself.
+    pub annotation_type: AnnotationType,
+    /// `--has_search_hit`: also select CDSs marked as domain_search hits, whatever
+    /// their names; also admits contig-level nucleotide hits.
+    pub has_search_hit: bool,
+    /// `--name_field`: the qualifier `target_cdss` is matched against first.
+    pub name_field: Option<String>,
+    /// Taxonomy restriction on the focus CDS (not the neighborhood around it).
+    pub taxonomy: Option<TaxonomyFilter>,
     pub max_region_overlap: f64,
     /// `Some(1)` = forward only, `Some(-1)` = reverse only.
     pub strand: Option<i32>,
@@ -50,9 +65,19 @@ pub fn select_by_cds(
         .as_deref()
         .map(BooleanEvaluator::new)
         .transpose()?;
+    let no_selectors = opts.target_cdss.is_none()
+        && opts.target_domains.is_none()
+        && opts.domain_expr.is_none()
+        && !opts.has_search_hit
+        && !opts.unannotated;
+    if no_selectors && opts.invert {
+        crate::log::warn(format_args!(
+            "Invert supplied with no selection criteria. Invert will be ignored."
+        ));
+    }
     let mut out = Vec::new();
     for rec in records {
-        out.extend(select_one(rec, opts, expr.as_ref()));
+        out.extend(select_one(rec, opts, expr.as_ref(), no_selectors)?);
     }
     Ok(out)
 }
@@ -61,14 +86,22 @@ fn select_one(
     rec: &SeqRecord,
     opts: &SelectByCdsOptions,
     expr: Option<&BooleanEvaluator>,
-) -> Vec<Region> {
+    no_selectors: bool,
+) -> Result<Vec<Region>, String> {
     let rec_len = rec.seq.len() as i64;
     let circular = rec.topology == Topology::Circular;
 
     // DomainatorCDS list (nucleic-acid annotations included, evalue-filtered),
     // paired with the geometry Cds, then sorted by stranded start together.
-    let dom_cdss =
-        DomainatorCds::list_from_contig(rec, opts.evalue, f64::NEG_INFINITY, false, None, true);
+    let precedence = cds_name_precedence(opts.name_field.as_deref(), &CDS_NAME_FIELDS);
+    let dom_cdss = DomainatorCds::list_from_contig(
+        rec,
+        opts.evalue,
+        f64::NEG_INFINITY,
+        false,
+        Some(&precedence),
+        true,
+    );
     let mut paired: Vec<(DomainatorCds, Cds)> = dom_cdss
         .into_iter()
         .map(|d| {
@@ -94,12 +127,6 @@ fn select_one(
     let dom_list: Vec<DomainatorCds> = paired.iter().map(|(d, _)| d.clone()).collect();
     let nb_list: Vec<Cds> = paired.into_iter().map(|(_, nb)| nb).collect();
 
-    let no_selectors = opts.target_cdss.is_none()
-        && opts.target_domains.is_none()
-        && opts.domain_expr.is_none()
-        && !opts.search_hits
-        && !opts.unannotated;
-
     let non_dom: Vec<SeqFeature> = get_non_domainator_features(rec)
         .into_iter()
         .cloned()
@@ -112,7 +139,10 @@ fn select_one(
         let cds = &dom_list[focus_index];
         let strand = nb_list[focus_index].strand;
 
-        if cds.is_nucleic_acid && !opts.search_hits && !opts.include_nucleic_acids {
+        if cds.is_nucleic_acid
+            && !opts.include_nucleic_acids
+            && !(opts.has_search_hit && cds.domain_search_feature.is_some())
+        {
             continue;
         }
 
@@ -125,7 +155,7 @@ fn select_one(
                     k = true;
                 }
             }
-            let dnames = cds.get_domain_names(opts.databases.as_ref(), None);
+            let dnames = cds.get_domain_names(opts.databases.as_ref(), None, opts.annotation_type);
             if let Some(td) = &opts.target_domains {
                 if td.intersection(&dnames).next().is_some() {
                     k = true;
@@ -139,10 +169,10 @@ fn select_one(
             if opts.unannotated && dnames.is_empty() {
                 k = true;
             }
-            if opts.search_hits && cds.domain_search_feature.is_some() {
+            if opts.has_search_hit && cds.domain_search_feature.is_some() {
                 k = true;
             }
-            k
+            k != opts.invert
         };
 
         if let Some(sf) = opts.strand {
@@ -151,15 +181,17 @@ fn select_one(
                 keep = false;
             }
         }
-        if opts.invert {
-            keep = !keep;
-        }
         if keep
             && !opts
                 .partial
                 .allows(cds_fragment_status(rec, Some(&cds.feature)))
         {
             keep = false;
+        }
+        if keep {
+            if let Some(taxonomy) = &opts.taxonomy {
+                keep = taxonomy.matches(rec, Some(&cds.feature))?;
+            }
         }
         if !keep {
             continue;
@@ -215,7 +247,7 @@ fn select_one(
             focus_strand: if flipped { -1 } else { 1 },
         });
     }
-    out
+    Ok(out)
 }
 
 /// Where `--pad` lines the focus CDSs up (`--anchor`), relative to the focus CDS in

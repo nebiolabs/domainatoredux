@@ -31,7 +31,11 @@ pub fn run(args: &RotateContigsArgs) -> Result<()> {
         evalue: args.evalue.0,
         domains: domains.filter(|d| !d.is_empty()),
         databases: args.databases.as_ref().map(|d| d.iter().cloned().collect()),
-        search_hits: args.annotation_type == "domain_search",
+        annotation_type: args
+            .annotation_type
+            .parse()
+            .map_err(|e: String| anyhow!(e))?,
+        has_search_hit: args.has_search_hit,
         anchor: args.anchor.parse().map_err(|e: String| anyhow!(e))?,
         keep_direction: args.keep_direction,
         circularize: args.circularize,

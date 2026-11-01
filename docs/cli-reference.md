@@ -71,8 +71,21 @@ network output would exceed that size, before it writes. On `domainate`, `domain
 `compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`, `hmmer_compare` and
 `hmmer_search`.
 
-**Taxonomy flags** (`--include_taxids`, `--exclude_taxids`, `--taxonomy_expr`) need an
-NCBI taxdump, given by `--ncbi_taxonomy_path`; it defaults to
+<a id="taxonomy-filters"></a>**Taxonomy filters** (`--include_taxids`, `--exclude_taxids`,
+`--taxonomy_expr`) keep what lies in (or outside) the given NCBI taxa: `--include_taxids
+2` keeps bacteria, `--exclude_taxids 1224` drops proteobacteria (exclusion wins), and
+`--taxonomy_expr '2 & ~1224'` combines taxids with `&`, `|`, `~` and parentheses. On
+`domain_search`, `select_by_cds`, `select_by_contig`, `extract_domains`,
+`extract_peptides` and `extract_unannotated`; each judges its own candidate (a record, a
+CDS, an annotation or a hit), never the neighborhood extracted around it, and `--invert`
+never inverts them. A candidate's taxid comes from a UniProt `OX=`/UniRef `TaxID=` header,
+or else the longest `source` feature covering it. `--taxonomy_unknown` says what to do
+when that taxid is missing, "unidentified", or not in the taxonomy: `exclude` it (the
+default), `include` it, `evaluate` it as an empty lineage (so `~2` keeps it and `2` does
+not), or stop with an `error`. A taxid given as a criterion that the taxonomy does not
+know is an error.
+
+They need an NCBI taxdump, given by `--ncbi_taxonomy_path`; it defaults to
 `/tmp/ncbi_taxonomy_$USER` and is only loaded if you actually use a taxonomy filter or
 column. It can be a directory of extracted `.dmp` files, a directory holding
 `taxdump.tar.gz`, or the path of a taxdump archive itself (such as the desktop app's NCBI
@@ -177,14 +190,13 @@ standard input.
 
 Key flags: `-e/--evalue` (default 0.001, at most 10) and `--min_evalue`; `-Z` (database
 size for E-value calculation, default 1000; `0` counts the proteins and CDSs in the
-input, before any taxonomy filter); `--max_overlap` (default 1, i.e. disabled) to drop
-annotations overlapping a better hit, with `--overlap_by_db` to apply that per database;
-`--max_hits_per_cds` (default: all) and `--max_mode`; `--hits_only` to keep only
-records that hit something; `--no_annotations` (with `--hits_only`) to select records
-without writing features; `--alphabet` (default `protein`) to say how to read FASTA
-input; `--cpu` to parallelize independent reference profiles, including profiles in one
-HMM file; taxonomy filters; `--max_output_gb` (default 25, `0` disables) to stop before
-the outputs grow past that size. `--gene_call all|unannotated` calls genes first, exactly
+input); `--max_overlap` (default 1, i.e. disabled) to drop annotations overlapping a
+better hit, with `--overlap_by_db` to apply that per database; `--max_hits_per_cds`
+(default: all) and `--max_mode`; `--alphabet` (default `protein`) to say how to read
+FASTA input; `--cpu` to parallelize independent reference profiles, including profiles
+in one HMM file; `--max_output_gb` (default 25, `0` disables) to stop before the outputs
+grow past that size. Every input record is written, hit or not: to keep only the
+records that hit, or to filter by taxonomy, use [`domain_search`](#domain_search). `--gene_call all|unannotated` calls genes first, exactly
 as [`gene_call`](#gene_call) does in its default meta mode, so a bare genome can be
 annotated in one step; give a nonzero `-Z` with it, since the database size is fixed
 before genes are called.
@@ -210,18 +222,20 @@ hit is in the middle); `--cds_range`/`--cds_up`/
 window in kilobases. `--strand f|r` restricts by strand, `--keep_direction` preserves
 orientation, `--pad` pads with `N` so the focus CDSs line up at `--anchor start|end|center`
 (padded records are linear), `--translate` emits protein instead of nucleotide, and
-`--max_region_overlap` deduplicates overlapping windows. `--deduplicate` keeps one copy of
-a region extracted for several hits (by record id); `--deduplicate_by_sequence` drops a
-hit whose sequence (ignoring case and terminal `*`) matches an earlier one, with
-`--both_strands` counting complements and reverse complements as matches.
+`--max_region_overlap` deduplicates overlapping windows. `--dedup` sets which outputs
+count as copies: `none` (the default), `id` (a repeated record id, such as a region
+extracted for several hits), `sequence` (an identical sequence, ignoring case and a
+terminal `*`), or `sequence_rc` (also a nucleotide reverse complement). With
+`--max_hits`, the best-scoring copy is the one kept.
 
 Other key flags: `--add_annotations` to also write `Domainator` features (not just the
 `Domain_Search` best hit); `--max_hits` and `--max_hits_per_contig` to cap results
 (ranked by the focus CDS's own hit score); `--decoys`/`--decoys_file` to reject hits that
 score better against a decoy; `-e/--evalue` (at most 10) and `-Z` (`0` counts the
 input's proteins and CDSs); `--alphabet` for FASTA input; `--batch_size` (default 10000);
-taxonomy filters; `--max_output_gb` (default 25); `--gene_call all|unannotated`, as on
-`domainate`.
+[taxonomy filters](#taxonomy-filters), applied to each searched protein or CDS and to
+each nucleotide hit before ranking; `--max_output_gb` (default 25); `--gene_call
+all|unannotated`, as on `domainate`.
 
 ```bash
 # every gene within 10 kb of a Cas9 hit, across a formatted database
@@ -282,15 +296,19 @@ Extract contig regions around selected CDSs. Same neighborhood geometry as
 `domain_search`, but selecting on what is *already annotated* rather than by running a
 search.
 
-Select CDSs by `--cds`/`--cds_file` (name), `--domains`/`--domains_file` (domain content),
-`--domain_expr` (a boolean expression such as `'Sod_Fe_N and not Sod_Fe_C'`),
-or `--unannotated`; `--annotation_type domain_search` selects by the `Domain_Search`
-best hits instead of the `Domainator` domains. Then set the window with
-`--whole_contig`, `--cds_range`/`--cds_up`/`--cds_down` or
-`--kb_range`/`--kb_up`/`--kb_down`. `--invert` selects the complement,
-`--include_nucleic_acids` keeps nucleotide records, `--no_deduplicate` keeps a region
-extracted for several hits once per hit, and `--pad` pads the regions with `N` so the
-focus CDSs line up (at their start, end or center: `--anchor`).
+Select CDSs by `--cds`/`--cds_file` (name; `--name_field` picks the qualifier matched
+first), `--domains`/`--domains_file` (domain content), `--domain_expr` (a boolean
+expression such as `'Sod_Fe_N & ~Sod_Fe_C'`), `--unannotated`, or `--has_search_hit`
+(the CDSs a `domain_search` marked as hits). These selectors combine with OR; with none,
+every CDS is selected. `--annotation_type domainator|domain_search|all` says whose names
+the domain selectors read. `--contigs`, `--strand`, `--partial` and the
+[taxonomy filters](#taxonomy-filters) then restrict the result, judged on the selected
+CDS itself; `--invert` negates the selectors only, never these restrictions. Set the
+window with `--whole_contig`, `--cds_range`/`--cds_up`/`--cds_down` or
+`--kb_range`/`--kb_up`/`--kb_down`. `--include_nucleic_acids` keeps nucleotide records,
+`--dedup` (default `id`, see [`domain_search`](#domain_search)) drops copies of a region
+extracted for several CDSs (`--dedup none` keeps them), and `--pad` pads the regions with
+`N` so the focus CDSs line up (at their start, end or center: `--anchor`).
 
 ```bash
 domainatoredux select_by_cds -i annotated.gb -o operons.gb \
@@ -302,9 +320,11 @@ domainatoredux select_by_cds -i annotated.gb -o operons.gb \
 Select whole contigs, no extraction. Filter by name (`--contigs`, `--contigs_file`,
 `--contigs_regex`), description (`--definition_regex`), sequence (`--sequence_regex`),
 domain content (`--domains`, `--domain_expr`, `--annotation_type domainator|domain_search|all`),
-taxonomy, size (`--min_length`/`--max_length`, `--min_cds`/`--max_cds`), or search
-score (`--min_search_score`/`--max_search_score`). `--max_records` takes the first N,
-`--invert` complements; `-o/--genbank_out` and `--fasta_out` choose the outputs.
+search hits (`--has_search_hit`, or a `--min_search_score`/`--max_search_score` range);
+any of these selects a contig. Size (`--min_length`/`--max_length`, `--min_cds`/`--max_cds`),
+`--partial` and the [taxonomy filters](#taxonomy-filters) then restrict the result, and
+`--invert` negates the selectors only. `--max_records` takes the first N;
+`-o/--genbank_out` and `--fasta_out` choose the outputs.
 
 ```bash
 domainatoredux select_by_contig -i all.gb -o big_hits.gb \
@@ -321,12 +341,16 @@ domainatoredux select_by_coord -i contigs.gb --coords regions.tsv -o regions.gb
 
 ### `extract_domains`
 
-Extract just the domain-annotated regions as their own records. `--extend_range`, or
-`--extend_up`/`--extend_down`, extend the boundaries (negative values trim), `--combine`
-merges adjacent domains into one record, `--splice` joins non-adjacent ones,
-`--keep_direction` and `--keep_name` control orientation and naming. Filter by
-`-e/--evalue`, `--min_score`, `--domains`, `--databases`, or extract the `Domain_Search`
-best hits with `--annotation_type domain_search`.
+Extract just the domain-annotated regions as their own records, of the input's sequence
+type (nucleotide input gives nucleotide regions; for protein domains from contigs, run
+[`extract_peptides`](#extract_peptides) first). `--extend_range`, or
+`--extend_up`/`--extend_down`, extend the boundaries in residues or bases (negative
+values trim), `--combine` takes one span enclosing a record's selected annotations,
+`--splice` joins them, and `--keep_direction` and `--keep_parent_id` control orientation
+and naming. Filter by `-e/--evalue`, `--min_score`, `--domains`, `--databases`,
+`--partial` and the [taxonomy filters](#taxonomy-filters); `--annotation_type
+domainator|domain_search|all` says which annotations to extract, and `--has_search_hit`
+adds the `Domain_Search` best hits whatever their name.
 
 ```bash
 domainatoredux extract_domains -i annotated.gb --fasta_out domains.fasta \
@@ -335,9 +359,11 @@ domainatoredux extract_domains -i annotated.gb --fasta_out domains.fasta \
 
 ### `extract_peptides`
 
-Extract the peptide sequence of selected CDSs. Select with `--cds`/`--cds_file`,
-`--domains`, `--databases`, `--annotation_type domain_search` (the search hits),
-`--unannotated` or `--strand`; `--name_field` chooses the qualifier used for names.
+Extract the peptide sequence of selected CDSs. The selectors are the same as
+[`select_by_cds`](#select_by_cds)'s — `--cds`/`--cds_file`, `--domains`,
+`--domain_expr`, `--unannotated`, `--has_search_hit` — as are the restrictions
+(`--contigs`, `--strand`, `--partial`, taxonomy) and `--invert`. `--name_field` chooses
+the qualifier used for names; `--keep_parent_id` names each peptide after its contig.
 
 ```bash
 domainatoredux extract_peptides -i annotated.gb --fasta_out proteins.fasta --domains Cas9
@@ -346,12 +372,13 @@ domainatoredux extract_peptides -i annotated.gb --fasta_out proteins.fasta --dom
 ### `extract_unannotated`
 
 Extract the parts of proteins that *aren't* covered by a domain annotation — for finding
-novel regions. `--largest` keeps only the longest gap per protein, `--min_length` sets a
-minimum length, and `-e/--evalue`, `--min_score` and `--databases` decide which domains
-count as annotations.
+novel regions. `--largest` keeps only the longest gap per protein,
+`--min_region_length` sets a minimum gap length, and `-e/--evalue`,
+`--min_annotation_score`, `--databases` and `--annotation_type` decide which annotations
+count. The [taxonomy filters](#taxonomy-filters) choose the proteins.
 
 ```bash
-domainatoredux extract_unannotated -i annotated.gb --fasta_out novel.fasta --min_length 50 --largest
+domainatoredux extract_unannotated -i annotated.gb --fasta_out novel.fasta --min_region_length 50 --largest
 ```
 
 ### `trim_contigs`
@@ -369,9 +396,10 @@ domainatoredux trim_contigs -i neighborhoods.gb -o trimmed.gb --cds_range 1
 ### `rotate_contigs`
 
 Set the origin of circular contigs relative to a domain. The domain is chosen from the
-new hits of a reference search (`-r`), the pre-existing `Domainator` annotations named by
-`--domains`/`--domains_file`, or the `Domain_Search` hits (`--annotation_type
-domain_search`), all under `-e/--evalue` (pre-existing ones also under `--databases`):
+new hits of a reference search (`-r`), the pre-existing annotations named by
+`--domains`/`--domains_file` (of `--annotation_type`, `Domainator` by default), every
+pre-existing annotation of `--annotation_type domain_search|all`, or the `Domain_Search`
+hits (`--has_search_hit`), all under `-e/--evalue` (named ones also under `--databases`):
 the highest score wins, then the lowest E-value, then the lowest position. `--anchor`
 puts the origin at the domain's `start`, `end` or `center`, in the domain's own
 orientation, and the contig is reverse complemented to put the domain on the forward
@@ -416,10 +444,10 @@ Collapse redundant sequences, keeping one representative per cluster.
 `--algorithm` selects the backend: **`cd-hit`** (the default), `diamond`, `usearch` — each
 needing that external binary — or **`hash`**, which is pure Rust, needs nothing, and does
 exact deduplication only (so it requires `--identity 1`). `--identity` is required and is
-the identity threshold in `[0,1]`. `--cdhit_path`, `--cdhit_est_path`, `--usearch_path` and
+the identity threshold in `[0,1]` (`--id` is the same option). `--cdhit_path`, `--cdhit_est_path`, `--usearch_path` and
 `--diamond_path` point at the binaries; `--cluster_tsv_out` writes cluster membership;
 `--prefix_count`/`--suffix_count` annotate representative names with the cluster size;
-`--both_strands` for nucleotides. `--cdhit_args`, `--usearch_args` and `--diamond_args`
+`--both_strands` counts a nucleotide sequence's reverse complement as a copy. `--cdhit_args`, `--usearch_args` and `--diamond_args`
 pass extra options to the program, as one quoted string (`--cdhit_args="-s 0.9"`); an
 option Domainator sets itself is refused.
 

@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use crate::seq::location::to_index;
 use crate::seq::{SeqRecord, Topology};
 use crate::tools::neighborhood::{region_id, slice_annotations, slice_linear_features, Env};
-use crate::tools::select_common::{BooleanEvaluator, DomainatorCds};
+use crate::tools::select_common::{AnnotationType, BooleanEvaluator, DomainatorCds};
 
 /// A validated trim window: `(kb (left, right), cds (left, right))`, each
 /// `None` when that unit was not requested.
@@ -134,7 +134,13 @@ fn trim_contig(
                 cdss.iter().map(|c| c.domain_names.clone()).collect()
             } else {
                 cdss.iter()
-                    .map(|c| c.get_domain_names(opts.databases.as_ref(), opts.evalue))
+                    .map(|c| {
+                        c.get_domain_names(
+                            opts.databases.as_ref(),
+                            opts.evalue,
+                            AnnotationType::Domainator,
+                        )
+                    })
                     .collect()
             };
             let strip = opts.strip_domains.clone().unwrap_or_default();

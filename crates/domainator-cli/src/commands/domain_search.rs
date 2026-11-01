@@ -60,25 +60,13 @@ pub fn run(args: &DomainSearchArgs) -> Result<()> {
             "Protein sequence output is not compatible with neighborhood extraction or padding."
         );
     }
-    if args.both_strands {
-        if !args.deduplicate_by_sequence {
-            return Err(usage_error(
-                "--both_strands requires --deduplicate_by_sequence.",
-            ));
-        }
-        if protein || args.translate {
-            return Err(usage_error(
-                "--both_strands is only supported for nucleotide output.",
-            ));
-        }
+    if args.dedup == "sequence_rc" && (protein || args.translate) {
+        return Err(usage_error(
+            "--dedup sequence_rc is only supported for nucleotide output.",
+        ));
     }
 
-    let allowed_taxids = crate::compile_allowed_taxids(
-        args.include_taxids.as_deref().unwrap_or_default(),
-        args.exclude_taxids.as_deref().unwrap_or_default(),
-        args.taxonomy_expr.as_deref(),
-        args.ncbi_taxonomy_path.as_deref(),
-    )?;
+    let taxonomy = crate::taxonomy_filter(&args.taxonomy)?.map(std::sync::Arc::new);
     let decoys = parse_name_list(
         args.decoys.as_deref().unwrap_or_default(),
         args.decoys_file.as_deref(),
@@ -104,16 +92,14 @@ pub fn run(args: &DomainSearchArgs) -> Result<()> {
         max_region_overlap: args.max_region_overlap.0,
         translate: args.translate,
         max_mode: args.max_mode,
-        allowed_taxids,
+        taxonomy,
         decoys,
         max_hits_per_contig: args
             .max_hits_per_contig
             .and_then(|n| usize::try_from(n).ok()),
         pad: args.pad,
         anchor: args.anchor.parse().map_err(|e: String| anyhow!(e))?,
-        deduplicate: args.deduplicate && !args.no_deduplicate,
-        deduplicate_by_sequence: args.deduplicate_by_sequence,
-        both_strands: args.both_strands,
+        dedup: args.dedup.parse().map_err(|e: String| anyhow!(e))?,
         partial: args.partial.parse().map_err(|e: String| anyhow!(e))?,
         gene_call: crate::gene_call_request(args.gene_call.as_deref(), cpu)?,
     };

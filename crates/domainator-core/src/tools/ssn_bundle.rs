@@ -676,7 +676,7 @@ mod tests {
         old["app_state"] = json!({"state_version": 1});
         let upgraded = parse(&old).unwrap();
         assert_eq!(upgraded["format"], json!(VIEWER_BUNDLE_FORMAT));
-        assert_eq!(upgraded["version"], json!(1));
+        assert_eq!(upgraded["version"], json!(2));
         assert_eq!(upgraded["nodes"], json!(["a", "b"]));
         assert_eq!(upgraded["defaults"], json!({}));
         assert_eq!(upgraded["app_state"], json!({"state_version": 1}));

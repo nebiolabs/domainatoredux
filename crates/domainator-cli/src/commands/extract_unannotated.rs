@@ -8,12 +8,16 @@ use crate::output::write_seq_outputs;
 pub fn run(args: &ExtractUnannotatedArgs) -> Result<()> {
     let opts = ExtractUnannotatedOptions {
         evalue: args.evalue.map(|e| e.0),
-        score: args.min_score.map(|s| s.0),
-        keep_name: args.keep_name,
-        search_hits: args.annotation_type == "domain_search",
+        score: args.min_annotation_score.map(|s| s.0),
+        keep_parent_id: args.keep_parent_id,
+        annotation_type: args
+            .annotation_type
+            .parse()
+            .map_err(|e: String| anyhow!(e))?,
         databases: args.databases.as_ref().map(|d| d.iter().cloned().collect()),
         largest: args.largest,
-        lb: args.min_length,
+        lb: args.min_region_length,
+        taxonomy: crate::taxonomy_filter(&args.taxonomy)?,
     };
     let mut records = load_seq_inputs(&args.input)?;
     crate::filter_contigs(&mut records, &args.contigs, args.contigs_file.as_deref())?;

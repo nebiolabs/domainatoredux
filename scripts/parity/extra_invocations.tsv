@@ -14,9 +14,9 @@ domainate	extra:test_domainate_partial_filter_excludes_complete_with_only#0	extr
 domainate	extra:test_domainate_partial_filter_excludes_complete_with_only#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_fixture.hmm	-o	@TMP@/out.gb	--partial	exclude
 domainate	extra:test_domainate_partial_filter_excludes_complete_with_only#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_fixture.hmm	-o	@TMP@/out.gb	--partial	only
 domainate	extra:test_domainate_trims_overlong_partial_translation#0	extra_invocations.tsv	-i	@GEN@/overlong.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb
-domainate	extra:test_domainate_uniprot_fragment_filter#0	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	include	--hits_only
-domainate	extra:test_domainate_uniprot_fragment_filter#1	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	exclude	--hits_only
-domainate	extra:test_domainate_uniprot_fragment_filter#2	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	only	--hits_only
+domainate	extra:test_domainate_uniprot_fragment_filter#0	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	include
+domainate	extra:test_domainate_uniprot_fragment_filter#1	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	exclude
+domainate	extra:test_domainate_uniprot_fragment_filter#2	extra_invocations.tsv	-i	@GEN@/fragments.fasta	-r	@GEN@/sod.hmm	-o	@TMP@/out.gb	--partial	only
 domain_search	extra:test_domain_search_keeps_partial_markers#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb
 domain_search	extra:test_domain_search_keeps_partial_markers#1	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--kb_range	0.1
 domain_search	extra:test_domain_search_keeps_partial_markers#2	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--whole_contig
@@ -126,7 +126,84 @@ domainate	extra:test_domainator_infernal_skips_duplicate_hits#0	extra_invocation
 domainate	extra:infernal_truncated_hits#0	extra_invocations.tsv	--input	@GEN@/copa_fragments.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--evalue	10
 domainate	extra:infernal_truncated_hits#1	extra_invocations.tsv	--input	@GEN@/copa_fragments.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--evalue	10	--min_evalue	1e-8	--cpu	4
 domainate	extra:infernal_truncated_hits#2	extra_invocations.tsv	--input	@GEN@/copa_fragments.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--evalue	10	--max_overlap	0
-domainate	extra:infernal_circular_origin#0	extra_invocations.tsv	--input	@GEN@/copa_circular.gb	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--hits_only	--evalue	10
-domainate	extra:infernal_duplicate_model_names#0	extra_invocations.tsv	--input	@DATA@/pANT_R100.fa	--alphabet	nucleotide	-r	@GEN@/copa_twice.cm	--genbank_out	@TMP@/out.gb	--hits_only
+domainate	extra:infernal_circular_origin#0	extra_invocations.tsv	--input	@GEN@/copa_circular.gb	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--evalue	10
+domainate	extra:infernal_duplicate_model_names#0	extra_invocations.tsv	--input	@DATA@/pANT_R100.fa	--alphabet	nucleotide	-r	@GEN@/copa_twice.cm	--genbank_out	@TMP@/out.gb
 domain_search	extra:infernal_truncated_hits#0	extra_invocations.tsv	-i	@GEN@/copa_fragments.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	-o	@TMP@/out.gb	--whole_contig	--evalue	10
 rotate_contigs	extra:infernal_circular_origin#0	extra_invocations.tsv	-i	@GEN@/copa_circular.gb	-r	@DATA@/RF00042.cm	--cpu	1	--keep_annotation	-o	@TMP@/out.gb
+# Upstream 1.0's shared selection contract (taxonomy filters with --taxonomy_unknown,
+# --dedup, --has_search_hit, annotation_type all, --invert leaving the restrictions
+# alone). Upstream tests these through library calls, so these stand in for them.
+select_by_cds	extra:test_taxonomy_filters_select_by_cds#0	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--include_taxids	1423	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_cds	extra:test_taxonomy_filters_select_by_cds#1	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--include_taxids	1423	--whole_contig	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_cds	extra:test_taxonomy_filters_select_by_cds#2	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_cds	extra:test_taxonomy_filters_select_by_cds#3	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--taxonomy_unknown	evaluate	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_cds	extra:test_taxonomy_filters_select_by_cds#4	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--taxonomy_unknown	include	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_cds	extra:test_taxonomy_filters_select_by_cds#5	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--taxonomy_unknown	error	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_cds	extra:test_taxonomy_filters_select_by_cds#6	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--exclude_taxids	562	--cds_range	1	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_cds	extra:test_taxonomy_filters_select_by_cds#7	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--include_taxids	1423	--invert	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_cds	extra:test_taxonomy_filters_select_by_cds#8	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--cds	nonexistent	--invert	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_cds	extra:test_cds_selection_select_by_cds#0	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--has_search_hit	--cds_range	1
+select_by_cds	extra:test_cds_selection_select_by_cds#1	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--annotation_type	all	--domains	M.EcoGI	RusA
+select_by_cds	extra:test_cds_selection_select_by_cds#2	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--annotation_type	domain_search	--domains	M.EcoGI
+select_by_cds	extra:test_cds_selection_select_by_cds#3	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--annotation_type	domain_search	--unannotated
+select_by_cds	extra:test_cds_selection_select_by_cds#4	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--domains	RusA	--cds_range	3	--dedup	none
+select_by_cds	extra:test_cds_selection_select_by_cds#5	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--domains	RusA	--cds_range	3	--dedup	sequence
+select_by_cds	extra:test_cds_selection_select_by_cds#6	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--domains	RusA	--cds_range	3	--dedup	sequence_rc
+select_by_cds	extra:test_cds_selection_select_by_cds#7	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--domains	N6_N4_Mtase	--strand	f	--invert
+select_by_cds	extra:test_cds_selection_select_by_cds#8	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--has_search_hit	--invert	--strand	r
+select_by_cds	extra:test_cds_selection_select_by_cds#9	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--name_field	locus_tag	--cds	nonexistent	--domains	TrmB
+extract_peptides	extra:test_taxonomy_filters_extract_peptides#0	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--include_taxids	1423	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_peptides	extra:test_taxonomy_filters_extract_peptides#1	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--taxonomy_unknown	evaluate	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_peptides	extra:test_taxonomy_filters_extract_peptides#2	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--include_taxids	1423	--invert	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_peptides	extra:test_cds_selection_extract_peptides#0	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--domain_expr	RusA | TrmB
+extract_peptides	extra:test_cds_selection_extract_peptides#1	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--annotation_type	all	--domains	M.EcoGI
+extract_peptides	extra:test_cds_selection_extract_peptides#2	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--has_search_hit	--annotation_type	domainator
+extract_peptides	extra:test_cds_selection_extract_peptides#3	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--domains	N6_N4_Mtase	--strand	f	--invert
+extract_peptides	extra:test_cds_selection_extract_peptides#4	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--annotation_type	domain_search	--unannotated
+extract_domains	extra:test_taxonomy_filters_extract_domains#0	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--include_taxids	1423	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_domains	extra:test_taxonomy_filters_extract_domains#1	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--include_taxids	1423	--extend_range	40	--combine	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_domains	extra:test_taxonomy_filters_extract_domains#2	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--include_taxids	1423	--extend_range	40	--splice	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_domains	extra:test_taxonomy_filters_extract_domains#3	extra_invocations.tsv	-i	@GEN@/mixed.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--taxonomy_unknown	evaluate	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_domains	extra:test_annotation_selection_extract_domains#0	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--annotation_type	all
+extract_domains	extra:test_annotation_selection_extract_domains#1	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--annotation_type	domain_search
+extract_domains	extra:test_annotation_selection_extract_domains#2	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--has_search_hit
+extract_domains	extra:test_annotation_selection_extract_domains#3	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--has_search_hit	--domains	RusA
+extract_domains	extra:test_annotation_selection_extract_domains#4	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--annotation_type	all	--domains	RusA	M.EcoGI
+extract_unannotated	extra:test_taxonomy_filters_extract_unannotated#0	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_unannotated	extra:test_taxonomy_filters_extract_unannotated#1	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--taxonomy_unknown	evaluate	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_unannotated	extra:test_taxonomy_filters_extract_unannotated#2	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--include_taxids	2	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_unannotated	extra:test_taxonomy_filters_extract_unannotated#3	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--include_taxids	561	--ncbi_taxonomy_path	@DATA@/taxdmp
+extract_unannotated	extra:test_taxonomy_filters_extract_unannotated#4	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--annotation_type	domain_search	--include_taxids	2	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_contig	extra:test_taxonomy_filters_select_by_contig#0	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_contig	extra:test_taxonomy_filters_select_by_contig#1	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--taxonomy_unknown	evaluate	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_contig	extra:test_taxonomy_filters_select_by_contig#2	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--taxonomy_expr	~2	--taxonomy_unknown	include	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_contig	extra:test_taxonomy_filters_select_by_contig#3	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--include_taxids	561	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_contig	extra:test_taxonomy_filters_select_by_contig#4	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--include_taxids	17	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_contig	extra:test_taxonomy_filters_select_by_contig#5	extra_invocations.tsv	-i	@GEN@/tax_proteins.gb	-o	@TMP@/out.gb	--exclude_taxids	1224	--taxonomy_unknown	include	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_contig	extra:test_annotation_selection_select_by_contig#0	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--has_search_hit
+select_by_contig	extra:test_annotation_selection_select_by_contig#1	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--has_search_hit	--min_search_score	400
+select_by_contig	extra:test_annotation_selection_select_by_contig#2	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--has_search_hit	--invert
+select_by_contig	extra:test_annotation_selection_select_by_contig#3	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--annotation_type	all	--domains	M.EcoRI
+select_by_contig	extra:test_annotation_selection_select_by_contig#4	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--taxonomy_expr	2	--taxonomy_unknown	include	--ncbi_taxonomy_path	@DATA@/taxdmp
+select_by_contig	extra:test_annotation_selection_select_by_contig#5	extra_invocations.tsv	-i	@DATA@/MT_nbs.gb	-o	@TMP@/out.gb	--taxonomy_expr	2	--ncbi_taxonomy_path	@DATA@/taxdmp
+domain_search	extra:test_taxonomy_filters_domain_search#0	extra_invocations.tsv	-i	@GEN@/sod_unlabeled.fasta	-r	@DATA@/swissprot_CuSOD_subset.fasta	-Z	1000	--cpu	2	-o	@TMP@/out.gb	--taxonomy_expr	~2	--ncbi_taxonomy_path	@DATA@/taxdmp
+domain_search	extra:test_taxonomy_filters_domain_search#1	extra_invocations.tsv	-i	@GEN@/sod_unlabeled.fasta	-r	@DATA@/swissprot_CuSOD_subset.fasta	-Z	1000	--cpu	2	-o	@TMP@/out.gb	--taxonomy_expr	~2	--taxonomy_unknown	evaluate	--ncbi_taxonomy_path	@DATA@/taxdmp
+domain_search	extra:test_taxonomy_filters_domain_search#2	extra_invocations.tsv	-i	@GEN@/sod_unlabeled.fasta	-r	@DATA@/swissprot_CuSOD_subset.fasta	-Z	1000	--cpu	2	-o	@TMP@/out.gb	--taxonomy_expr	~2	--taxonomy_unknown	error	--ncbi_taxonomy_path	@DATA@/taxdmp
+domain_search	extra:test_taxonomy_filters_domain_search#3	extra_invocations.tsv	-i	@GEN@/sod_unlabeled.fasta	-r	@DATA@/swissprot_CuSOD_subset.fasta	-Z	1000	--cpu	2	-o	@TMP@/out.gb	--include_taxids	1224	--ncbi_taxonomy_path	@DATA@/taxdmp
+domain_search	extra:test_taxonomy_filters_domain_search#4	extra_invocations.tsv	-i	@GEN@/sod_unlabeled.fasta	-r	@DATA@/swissprot_CuSOD_subset.fasta	-Z	1000	--cpu	2	-o	@TMP@/out.gb	--include_taxids	1239	--taxonomy_unknown	include	--ncbi_taxonomy_path	@DATA@/taxdmp
+domain_search	extra:test_taxonomy_filters_domain_search#5	extra_invocations.tsv	-i	@GEN@/sod_unlabeled.fasta	-r	@DATA@/swissprot_CuSOD_subset.fasta	-Z	1000	--cpu	2	-o	@TMP@/out.gb	--dedup	sequence	--ncbi_taxonomy_path	@DATA@/taxdmp
+domain_search	extra:test_taxonomy_filters_domain_search#6	extra_invocations.tsv	-i	@GEN@/sod_unlabeled.fasta	-r	@DATA@/swissprot_CuSOD_subset.fasta	-Z	1000	--cpu	2	-o	@TMP@/out.gb	--dedup	sequence	--max_hits	2	--ncbi_taxonomy_path	@DATA@/taxdmp
+domain_search	extra:test_taxonomy_filters_domain_search#7	extra_invocations.tsv	-i	@GEN@/sod_unlabeled.fasta	-r	@DATA@/swissprot_CuSOD_subset.fasta	-Z	1000	--cpu	2	-o	@TMP@/out.gb	--dedup	id	--max_hits	1	--ncbi_taxonomy_path	@DATA@/taxdmp
+domain_search	extra:test_dedup_domain_search#0	extra_invocations.tsv	--input	@GEN@/rc_pair.fna	--alphabet	nucleotide	-r	@DATA@/simple_dna_queries.fna	-o	@TMP@/out.gb	--whole_contig	--cpu	1	--evalue	0.1	--dedup	none	--keep_direction
+domain_search	extra:test_dedup_domain_search#1	extra_invocations.tsv	--input	@GEN@/rc_pair.fna	--alphabet	nucleotide	-r	@DATA@/simple_dna_queries.fna	-o	@TMP@/out.gb	--whole_contig	--cpu	1	--evalue	0.1	--dedup	sequence	--keep_direction
+domain_search	extra:test_dedup_domain_search#2	extra_invocations.tsv	--input	@GEN@/rc_pair.fna	--alphabet	nucleotide	-r	@DATA@/simple_dna_queries.fna	-o	@TMP@/out.gb	--whole_contig	--cpu	1	--evalue	0.1	--dedup	sequence_rc	--keep_direction
+domain_search	extra:test_dedup_domain_search#3	extra_invocations.tsv	--input	@GEN@/rc_pair.fna	--alphabet	nucleotide	-r	@DATA@/simple_dna_queries.fna	-o	@TMP@/out.gb	--whole_contig	--cpu	1	--evalue	0.1	--dedup	sequence
+domain_search	extra:test_dedup_domain_search#4	extra_invocations.tsv	--input	@GEN@/rc_pair.fna	--alphabet	nucleotide	-r	@DATA@/simple_dna_queries.fna	-o	@TMP@/out.gb	--whole_contig	--cpu	1	--evalue	0.1	--dedup	sequence_rc	--max_hits	5	--keep_direction
+domain_search	extra:test_dedup_domain_search#5	extra_invocations.tsv	--input	@GEN@/rc_pair.fna	--alphabet	nucleotide	-r	@DATA@/simple_dna_queries.fna	-o	@TMP@/out.gb	--whole_contig	--cpu	1	--evalue	0.1	--dedup	id
+rotate_contigs	extra:test_annotation_selection_rotate_contigs#0	extra_invocations.tsv	-i	@GEN@/spr_search_hits.gb	--has_search_hit	-o	@TMP@/out.gb
+rotate_contigs	extra:test_annotation_selection_rotate_contigs#1	extra_invocations.tsv	-i	@GEN@/spr_search_hits.gb	--annotation_type	all	-o	@TMP@/out.gb
+rotate_contigs	extra:test_annotation_selection_rotate_contigs#2	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--annotation_type	all	-o	@TMP@/out.gb
+# test_deduplicate_genbank_hash is parametrized over --identity and its --id alias.
+deduplicate_genbank	extra:test_deduplicate_genbank_hash#0	extra_invocations.tsv	-i	@DATA@/extract_peptides_test_2.gb	--identity	1	--algorithm	hash	-o	@TMP@/out.gb	--prefix_count	--log_out	@TMP@/out.log	--cluster_tsv_out	@TMP@/cluster_table.tsv
+deduplicate_genbank	extra:test_deduplicate_genbank_hash#1	extra_invocations.tsv	-i	@DATA@/extract_peptides_test_2.gb	--id	1	--algorithm	hash	-o	@TMP@/out.gb	--prefix_count	--log_out	@TMP@/out.log	--cluster_tsv_out	@TMP@/cluster_table.tsv
+deduplicate_genbank	extra:test_deduplicate_genbank_hash_both_strands#0	extra_invocations.tsv	-i	@GEN@/strands.fasta	--alphabet	nucleotide	--id	1	--algorithm	hash	--both_strands	--prefix_count	--fasta_out	@TMP@/out.fasta	--log_out	@TMP@/out.log	--cluster_tsv_out	@TMP@/clusters.tsv

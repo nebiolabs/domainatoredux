@@ -86,14 +86,12 @@ pub const TOOLS: &[ToolInfo] = &[
     ToolInfo {
         stdin: false,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
-        dynamic_defaults: &["ncbi_taxonomy_path"],
         unsupported: &[
             ("foldseek", "null"),
             ("esm2_3di_weights", "null"),
             ("esm2_3di_device", "\"cuda:0\""),
             ("foldseek_device", "\"cpu\""),
             ("foldseek_path", "null"),
-            ("taxonomy_update", "false"),
         ],
         ..tool(
             "domainate",
@@ -143,6 +141,8 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
+        dynamic_defaults: &["ncbi_taxonomy_path"],
+        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "extract_domains",
             "edit",
@@ -151,6 +151,8 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
+        dynamic_defaults: &["ncbi_taxonomy_path"],
+        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "extract_peptides",
             "edit",
@@ -159,6 +161,8 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
+        dynamic_defaults: &["ncbi_taxonomy_path"],
+        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "extract_unannotated",
             "edit",
@@ -183,7 +187,8 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
-        switches_on: &["deduplicate"],
+        dynamic_defaults: &["ncbi_taxonomy_path"],
+        unsupported: &[("taxonomy_update", "false")],
         ..tool(
             "select_by_cds",
             "edit",

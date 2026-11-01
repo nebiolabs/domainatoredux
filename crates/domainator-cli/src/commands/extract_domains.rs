@@ -19,11 +19,16 @@ pub fn run(args: &ExtractDomainsArgs) -> Result<()> {
         pad_down: args.extend_down.unwrap_or(extend),
         combine: args.combine,
         keep_direction: args.keep_direction,
-        keep_name: args.keep_name,
-        search_hits: args.annotation_type == "domain_search",
+        keep_parent_id: args.keep_parent_id,
+        annotation_type: args
+            .annotation_type
+            .parse()
+            .map_err(|e: String| anyhow!(e))?,
+        has_search_hit: args.has_search_hit,
         databases: args.databases.as_ref().map(|d| d.iter().cloned().collect()),
         splice: args.splice,
         partial: args.partial.parse().map_err(|e: String| anyhow!(e))?,
+        taxonomy: crate::taxonomy_filter(&args.taxonomy)?,
     };
     let mut records = load_seq_inputs(&args.input)?;
     crate::filter_contigs(&mut records, &args.contigs, args.contigs_file.as_deref())?;

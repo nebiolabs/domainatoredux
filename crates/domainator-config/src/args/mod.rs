@@ -52,7 +52,7 @@ pub use build_tree::BuildTreeArgs;
 pub use clean_sequences::CleanSequencesArgs;
 pub use color_genbank::ColorGenbankArgs;
 pub use color_table_to_legend::ColorTableToLegendArgs;
-pub use common::CommonArgs;
+pub use common::{CommonArgs, TaxonomyArgs};
 pub use compare_contigs::CompareContigsArgs;
 pub use deduplicate_genbank::DeduplicateGenbankArgs;
 pub use domain_search::DomainSearchArgs;

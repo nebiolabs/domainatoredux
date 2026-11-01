@@ -2,7 +2,8 @@ use super::CommonArgs;
 use crate::types::{Finite, NonNegFloat, PositiveFloat};
 
 /// Annotates contigs or proteins with hits to HMM or sequence references (upstream
-/// `domainate.py`).
+/// `domainate.py`). Every input record is kept, with or without hits; domain_search
+/// selects the matching records or hit neighborhoods instead.
 #[derive(clap::Args, Clone, Debug, Default)]
 #[command(rename_all = "snake_case")]
 pub struct DomainateArgs {
@@ -17,7 +18,7 @@ pub struct DomainateArgs {
     /// declare their own molecule type.
     #[arg(long, default_value = "protein", value_parser = ["nucleotide", "protein"])]
     pub alphabet: String,
-    /// Reference files to search against the input. Supported types are protein HMMs,
+    /// References to search for in the --input records. Supported types are protein HMMs,
     /// protein FASTA, nucleotide FASTA and nucleotide HMMs (not Infernal CM files).
     #[arg(short, long, num_args = 1..)]
     pub reference: Option<Vec<String>>,
@@ -30,8 +31,7 @@ pub struct DomainateArgs {
     /// Passed as the -Z parameter to hmmsearch: Assert that the total number of targets
     /// in your searches is `<x>`, for the purposes of per-sequence E-value calculations,
     /// rather than the actual number of targets seen. Set to 0 to use the number of
-    /// target sequences in the input, counted before any taxonomy filter, so filtering
-    /// does not change E-values. Supplying -Z is recommended for most use cases of
+    /// target sequences in the input. Supplying -Z is recommended for most use cases of
     /// domainate, as it will speed up the search and make comparisons between searches
     /// more meaningful.
     #[arg(
@@ -57,20 +57,6 @@ pub struct DomainateArgs {
     /// slower, but more sensitive.
     #[arg(long)]
     pub max_mode: bool,
-    /// Space separated list of taxids to include. Contigs with taxonomy not in this
-    /// list will be skipped.
-    #[arg(long, num_args = 1.., allow_negative_numbers = true)]
-    pub include_taxids: Option<Vec<i64>>,
-    /// Space separated list of taxids to exclude. Contigs with taxonomy in this list
-    /// will be skipped.
-    #[arg(long, num_args = 1.., allow_negative_numbers = true)]
-    pub exclude_taxids: Option<Vec<i64>>,
-    /// A boolean expression over taxids using operators & (AND), | (OR), ~ (NOT), and
-    /// parentheses, e.g. "2 & ~1224" (within Bacteria but not Proteobacteria). A taxid
-    /// is true for a contig when it is in the contig's lineage. Mutually exclusive with
-    /// --include_taxids/--exclude_taxids.
-    #[arg(long)]
-    pub taxonomy_expr: Option<String>,
     /// Which CDSs/proteins to search, by fragment status. include: all. exclude: skip
     /// fragments. only: only fragments. A CDS is a fragment if its location has '<' or
     /// '>', or it has a /partial qualifier. A protein record is a fragment if it has a
@@ -79,11 +65,6 @@ pub struct DomainateArgs {
     /// '>' spanning it.
     #[arg(long, default_value = "include", value_parser = ["include", "exclude", "only"])]
     pub partial: String,
-    /// Path to an NCBI taxonomy database: a directory of extracted .dmp files, or a
-    /// taxdump.tar.gz. Default: /tmp/ncbi_taxonomy_USER, USER being your user name.
-    /// Unlike upstream, it is never downloaded.
-    #[arg(long)]
-    pub ncbi_taxonomy_path: Option<String>,
     /// The number of cores of the cpu which are used at a time to run the search (0:
     /// all cores).
     #[arg(long, default_value_t = 0, allow_negative_numbers = true)]
@@ -96,16 +77,6 @@ pub struct DomainateArgs {
     /// together.
     #[arg(long)]
     pub overlap_by_db: bool,
-    /// When activated, the output will only have contigs with at least one domain
-    /// annotation. In many cases, domainatoredux domain_search will be faster and more
-    /// appropriate.
-    #[arg(long)]
-    pub hits_only: bool,
-    /// When activated, new annotations will not be added to the file. This is useful
-    /// if you are just trying to extract a set of contigs for annotation in a later
-    /// step.
-    #[arg(long)]
-    pub no_annotations: bool,
     /// How many target sequences to search at one time in a batch. Accepted for
     /// compatibility with upstream; domainatoredux searches all of them at once.
     #[arg(long, default_value_t = 10000, allow_negative_numbers = true)]

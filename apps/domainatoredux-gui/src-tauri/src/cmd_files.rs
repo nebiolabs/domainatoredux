@@ -984,20 +984,11 @@ fn extract_selection_blocking(
     let ts = target.to_string_lossy().into_owned();
     if translate {
         let opts = ExtractPeptidesOptions {
-            evalue: None,
-            target_domains: None,
-            target_cdss: None,
-            search_hits: false,
-            strand: None,
-            unannotated: false,
-            invert: false,
-            databases: None,
-            keep_name: false,
-            name_field: None,
             extract_all: true,
             partial: Partial::Include,
+            ..Default::default()
         };
-        let peps = extract_peptides(&out, &opts);
+        let peps = extract_peptides(&out, &opts)?;
         if peps.is_empty() {
             return Err("no CDS features in the selection to translate".into());
         }

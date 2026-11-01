@@ -7,10 +7,13 @@
 use std::collections::HashSet;
 
 use crate::seq::partial::{codon_offset, feature_fragment_status, Partial};
+use crate::seq::taxonomy::TaxonomyFilter;
 use crate::seq::translate::translate_dna;
 use crate::seq::{Annotations, SeqFeature, SeqRecord};
 use crate::tools::extract_common::{dna_to_peptide_features, slice_from_location, Loc};
-use crate::tools::select_common::DomainatorCds;
+use crate::tools::select_common::{
+    cds_name_precedence, AnnotationType, BooleanEvaluator, DomainatorCds,
+};
 
 /// Options for [`extract_peptides`].
 #[derive(Default)]
@@ -20,29 +23,56 @@ pub struct ExtractPeptidesOptions {
     pub evalue: Option<f64>,
     pub target_domains: Option<HashSet<String>>,
     pub target_cdss: Option<HashSet<String>>,
-    pub search_hits: bool,
+    /// `--domain_expr`: also select CDSs whose domain names satisfy it.
+    pub domain_expr: Option<String>,
+    /// Which annotations supply the domain names the selectors look at.
+    pub annotation_type: AnnotationType,
+    /// `--has_search_hit`: also select CDSs marked as domain_search hits.
+    pub has_search_hit: bool,
     /// `Some("f")` / `Some("r")`.
     pub strand: Option<String>,
     pub unannotated: bool,
+    /// Negates the combined selectors, never the strand, partial or taxonomy
+    /// restrictions; ignored, with a warning, when there are no selectors.
     pub invert: bool,
     pub databases: Option<HashSet<String>>,
-    pub keep_name: bool,
+    /// `--keep_parent_id`: name each peptide after its contig, not its CDS.
+    pub keep_parent_id: bool,
     pub name_field: Option<String>,
-    /// Set when no selection criteria supplied (extract every CDS).
+    /// Select every CDS before the restrictions (implied when there are no selectors).
     pub extract_all: bool,
     /// `--partial`: CDSs by fragment status; never inverted by `invert`.
     pub partial: Partial,
+    /// Taxonomy restriction on each CDS, resolved before translation.
+    pub taxonomy: Option<TaxonomyFilter>,
 }
 
 /// Extract peptides from all records.
-pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) -> Vec<SeqRecord> {
+pub fn extract_peptides(
+    records: &[SeqRecord],
+    opts: &ExtractPeptidesOptions,
+) -> Result<Vec<SeqRecord>, String> {
     // Name precedence: name_field (if any) first, then the defaults.
-    let default_prec: [&str; 4] = ["protein_id", "gene_id", "locus_tag", "gene"];
-    let mut prec_owned: Vec<&str> = Vec::new();
-    if let Some(nf) = &opts.name_field {
-        prec_owned.push(nf.as_str());
+    let prec_owned = cds_name_precedence(
+        opts.name_field.as_deref(),
+        &["protein_id", "gene_id", "locus_tag", "gene"],
+    );
+    let expr = opts
+        .domain_expr
+        .as_deref()
+        .map(BooleanEvaluator::new)
+        .transpose()?;
+    let no_selectors = opts.target_cdss.is_none()
+        && opts.target_domains.is_none()
+        && expr.is_none()
+        && !opts.unannotated
+        && !opts.has_search_hit;
+    let invert = opts.invert && !no_selectors;
+    if opts.invert && no_selectors {
+        crate::log::warn(format_args!(
+            "Invert supplied with no selection criteria. Invert will be ignored."
+        ));
     }
-    prec_owned.extend_from_slice(&default_prec);
 
     let mut out = Vec::new();
     for contig in records {
@@ -61,34 +91,34 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
             .collect();
 
         for cds in &cdss {
-            let mut keep = false;
+            let mut keep = opts.extract_all || no_selectors;
             let target_cds_id = &cds.name; // cds_id_type == "name"
-            if opts.extract_all {
-                keep = true;
-            }
             if let Some(tc) = &opts.target_cdss {
                 if tc.contains(target_cds_id) {
                     keep = true;
                 }
             }
+            let domain_names =
+                cds.get_domain_names(opts.databases.as_ref(), None, opts.annotation_type);
             if let Some(td) = &opts.target_domains {
-                if td
-                    .intersection(&cds.get_domain_names(opts.databases.as_ref(), None))
-                    .next()
-                    .is_some()
-                {
+                if td.intersection(&domain_names).next().is_some() {
                     keep = true;
                 }
             }
-            if opts.search_hits && cds.domain_search_feature.is_some() {
-                keep = true;
-            }
-            if opts.unannotated
-                && cds
-                    .get_domain_names(opts.databases.as_ref(), None)
-                    .is_empty()
+            if expr
+                .as_ref()
+                .is_some_and(|e| e.check_expression(&domain_names))
             {
                 keep = true;
+            }
+            if opts.has_search_hit && cds.domain_search_feature.is_some() {
+                keep = true;
+            }
+            if opts.unannotated && domain_names.is_empty() {
+                keep = true;
+            }
+            if invert {
+                keep = !keep;
             }
 
             let strand = cds.feature.location.parts.first().map(|p| p.2).unwrap_or(1);
@@ -98,11 +128,13 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
                     keep = false;
                 }
             }
-            if opts.invert {
-                keep = !keep;
-            }
             if keep && !opts.partial.allows(feature_fragment_status(&cds.feature)) {
                 keep = false;
+            }
+            if keep {
+                if let Some(taxonomy) = &opts.taxonomy {
+                    keep = taxonomy.matches(contig, Some(&cds.feature))?;
+                }
             }
             if !keep {
                 continue;
@@ -151,9 +183,9 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
             region.molecule_type = Some("protein".to_string());
             dna_to_peptide_features(&mut region.features, frame);
 
-            // Name: the CDS name (or the contig name with --keep_name). Peptide has
+            // Name: the CDS name (or the contig name with --keep_parent_id). Peptide has
             // no carried accession identity.
-            let new_name = if opts.keep_name {
+            let new_name = if opts.keep_parent_id {
                 contig.id.clone()
             } else {
                 cds.name.clone()
@@ -161,16 +193,18 @@ pub fn extract_peptides(records: &[SeqRecord], opts: &ExtractPeptidesOptions) ->
             region.id = new_name.clone();
             region.name = new_name;
             region.description = contig.description.clone();
+            // Upstream copies these three and the contig's `dbxrefs` (DBLINK).
             region.annotations = Annotations {
                 source: contig.annotations.source.clone(),
                 organism: contig.annotations.organism.clone(),
                 taxonomy: contig.annotations.taxonomy.clone(),
+                dblink: contig.annotations.dblink.clone(),
                 ..Default::default()
             };
             out.push(region);
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -218,7 +252,7 @@ mod tests {
             extract_all: true,
             ..Default::default()
         };
-        let out = extract_peptides(&[r], &opts);
+        let out = extract_peptides(&[r], &opts).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].seq, b"MA");
         assert_eq!(out[0].name, "geneA");
@@ -237,7 +271,7 @@ mod tests {
             target_domains: Some(["D1".to_string()].into_iter().collect()),
             ..Default::default()
         };
-        let out = extract_peptides(&[r], &opts);
+        let out = extract_peptides(&[r], &opts).unwrap();
         assert_eq!(out.len(), 1);
         // domain feature remapped to peptide coords
         let dfeat = out[0]
@@ -260,6 +294,7 @@ mod tests {
             )],
             &opts2
         )
+        .unwrap()
         .is_empty());
         let _ = out;
     }
@@ -276,21 +311,31 @@ mod tests {
             strand: Some("f".into()),
             ..Default::default()
         };
-        let out = extract_peptides(&[r], &opts);
+        let out = extract_peptides(std::slice::from_ref(&r), &opts).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].name, "fwd");
+
+        // --invert negates the selectors only: the strand restriction still holds,
+        // so inverting a selection of "fwd" on the forward strand leaves nothing.
+        let opts = ExtractPeptidesOptions {
+            target_cdss: Some(["fwd".to_string()].into_iter().collect()),
+            strand: Some("f".into()),
+            invert: true,
+            ..Default::default()
+        };
+        assert!(extract_peptides(&[r], &opts).unwrap().is_empty());
     }
 
     #[test]
-    fn keep_name_uses_contig() {
+    fn keep_parent_id_uses_contig() {
         let r = contig(b"ATGGCT", vec![cds("C1", "geneA", 0, 6, 1)]);
         let opts = ExtractPeptidesOptions {
             evalue: None,
             extract_all: true,
-            keep_name: true,
+            keep_parent_id: true,
             ..Default::default()
         };
-        let out = extract_peptides(&[r], &opts);
+        let out = extract_peptides(&[r], &opts).unwrap();
         assert_eq!(out[0].id, "ctg");
     }
 }

@@ -1,8 +1,13 @@
-use super::CommonArgs;
+use super::{CommonArgs, TaxonomyArgs};
 use crate::types::PositiveFloat;
 
 /// Extracts translated CDSs as protein records, keeping their domain annotations
 /// (upstream `extract_peptides.py`).
+///
+/// CDS names, domain names, domain expressions, unannotated, and search-hit presence
+/// are OR selectors; with none, every eligible CDS is selected. Contig IDs, strand,
+/// fragment status, and taxonomy are independent AND restrictions. --invert negates
+/// only the combined selectors.
 #[derive(clap::Args, Clone, Debug, Default)]
 #[command(rename_all = "snake_case")]
 pub struct ExtractPeptidesArgs {
@@ -17,21 +22,28 @@ pub struct ExtractPeptidesArgs {
     /// Write the records to this FASTA file. Use - for standard output.
     #[arg(long)]
     pub fasta_out: Option<String>,
-    /// Only look for peptides on contigs with ids in this list. Additive with
-    /// --contigs_file. default: all contigs.
+    #[command(flatten)]
+    pub taxonomy: TaxonomyArgs,
+    /// Only read input records with these IDs; not inverted by --invert. Additive with
+    /// --contigs_file.
     #[arg(long, num_args = 1..)]
     pub contigs: Vec<String>,
-    /// Only look for peptides on contigs with ids listed in this file (one per line).
-    /// Additive with --contigs. default: all contigs.
+    /// Only read input records with the IDs in this file: a plain-text file (one per
+    /// line), FASTA/GenBank record IDs, or HMM profile names. Additive with --contigs.
     #[arg(long)]
     pub contigs_file: Option<String>,
-    /// Only extract peptides containing these domains.
+    /// Select CDSs containing these domain names, OR with other CDS selectors.
+    /// Additive with --domains_file.
     #[arg(long, num_args = 1..)]
     pub domains: Option<Vec<String>>,
-    /// Text file containing names of domains, where peptides containing these domains
-    /// will be extracted.
+    /// Select CDSs containing the domain names in this file: a plain-text file (one per
+    /// line), FASTA/GenBank record IDs, or HMM profile names. Additive with --domains.
     #[arg(long)]
     pub domains_file: Option<String>,
+    /// Boolean domain expression using &, |, ~, and parentheses. Additive with other
+    /// CDS selectors.
+    #[arg(long)]
+    pub domain_expr: Option<String>,
     /// Consider only domains from these databases when filtering by domain. default:
     /// all databases.
     #[arg(long, num_args = 1..)]
@@ -39,11 +51,16 @@ pub struct ExtractPeptidesArgs {
     /// Extract peptides from CDSs with no domain annotations.
     #[arg(long)]
     pub unannotated: bool,
-    /// Which annotations to select peptides by. With domain_search, the search hits are
-    /// extracted. domainator: domain annotations (from domainate). domain_search:
-    /// best-hit annotations (from domain_search).
-    #[arg(long, default_value = "domainator", value_parser = ["domainator", "domain_search"])]
+    /// Which annotations to select peptides by. domainator: domain annotations (from
+    /// domainate). domain_search: best-hit annotations (from domain_search). all: both.
+    #[arg(long, default_value = "domainator",
+          value_parser = ["domainator", "domain_search", "all"])]
     pub annotation_type: String,
+    /// Also select existing domain_search hits, regardless of annotation_type, domain
+    /// names, domain expressions, or databases. Hits must pass the e-value and score
+    /// cutoffs where applicable. Participates in --invert where available.
+    #[arg(long)]
+    pub has_search_hit: bool,
     /// Only extract peptides from CDSs on the specified strand.
     #[arg(long, value_parser = ["f", "r"])]
     pub strand: Option<String>,
@@ -55,9 +72,8 @@ pub struct ExtractPeptidesArgs {
     /// with '<' or '>' spanning it. Not affected by --invert.
     #[arg(long, default_value = "include", value_parser = ["include", "exclude", "only"])]
     pub partial: String,
-    /// Invert the CDS selection criteria. i.e. return peptides from CDSs that don't
-    /// match the CDS selection criteria. (Only applies to CDS selection, not contig
-    /// selection)
+    /// Invert the combined CDS selectors, not contigs, strand, partial, or taxonomy.
+    /// With no selectors, warn and ignore.
     #[arg(long)]
     pub invert: bool,
     /// Only look for peptides on cdss with these names.
@@ -66,19 +82,17 @@ pub struct ExtractPeptidesArgs {
     /// Only look for peptides on cdss with names listed in this text file.
     #[arg(long)]
     pub cds_file: Option<String>,
-    /// By default, extracted regions will be renamed to note their original
-    /// coordinates and whether they were reverse complemented. Set this option to keep
-    /// contigs with their original names. WARNING: if you aren't careful, this can
-    /// easily result in duplicate names.
+    /// Use the original contig ID instead of the resolved CDS name for peptide IDs.
+    /// This can produce duplicate IDs.
     #[arg(long)]
-    pub keep_name: bool,
-    /// The CDS qualifier to preferentially use as the name of the peptide. If not
+    pub keep_parent_id: bool,
+    /// The CDS qualifier to prefer for CDS name matching and peptide IDs. If not
     /// supplied, then qualifiers will be checked in order of: protein_id, gene_id,
     /// locus_tag, gene.
     #[arg(long)]
     pub name_field: Option<String>,
-    /// The evalue cutoff (max) for domain annotations to be put onto the new genbank
-    /// file. Default: no cutoff.
+    /// Maximum e-value of domain/search-hit annotations used for CDS selection and
+    /// carried onto peptide records. Default: no cutoff.
     #[arg(short, long)]
     pub evalue: Option<PositiveFloat>,
 }

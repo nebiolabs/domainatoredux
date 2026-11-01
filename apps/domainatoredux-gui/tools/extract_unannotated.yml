@@ -16,21 +16,34 @@ fields:
   - name: databases
     label: "Databases"
   - name: annotation_type
-    label: "Search hits"
+    label: "Annotation type"
   - name: largest
     label: "Largest only"
-  - name: min_length
-    label: "Min length"
+  - name: min_region_length
+    label: "Min region length"
   - name: keep_direction
     label: "Keep direction"
-  - name: keep_name
-    label: "Keep name"
+  - name: keep_parent_id
+    label: "Keep parent ID"
   - name: evalue
     label: "Max E-value"
-  - name: min_score
-    label: "Min score"
+  - name: min_annotation_score
+    label: "Min annotation score"
   - name: contigs
     label: "Restrict to contigs"
+  - name: include_taxids
+    label: "Include taxids"
+  - name: exclude_taxids
+    label: "Exclude taxids"
+  - name: taxonomy_expr
+    label: "Taxonomy expr"
+  - name: taxonomy_unknown
+    label: "Unknown taxonomy"
+  - name: ncbi_taxonomy_path
+    label: "Taxonomy database"
+    file_type: taxonomy
+    sources: databases_first
+    select: "database:ncbi_taxonomy"
   - name: contigs_file
     show: false
     label: "Contigs file"

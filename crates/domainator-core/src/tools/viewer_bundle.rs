@@ -22,9 +22,13 @@ use crate::matrix::cytoscape::{Cell, ColType, NodeTable};
 pub const VIEWER_BUNDLE_FORMAT: &str = "domainator_viewer_bundle";
 /// Bump for any change to the schema, keeping the old version in
 /// [`SUPPORTED_VIEWER_BUNDLE_VERSIONS`] when the change is additive.
-pub const VIEWER_BUNDLE_VERSION: i64 = 1;
+///
+/// Version 2 (upstream `aa7078c`) adds optional saved-session fields only: ordered
+/// node/label styles in `app_state.view` and categorical shape assignments in
+/// `app_state.shapes`. Nothing this port writes or reads changed.
+pub const VIEWER_BUNDLE_VERSION: i64 = 2;
 /// Versions this build reads.
-pub const SUPPORTED_VIEWER_BUNDLE_VERSIONS: [i64; 1] = [1];
+pub const SUPPORTED_VIEWER_BUNDLE_VERSIONS: [i64; 2] = [1, 2];
 
 fn invalid(msg: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, msg.into())

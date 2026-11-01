@@ -4,22 +4,27 @@
 
 use std::collections::HashSet;
 
+use crate::seq::taxonomy::TaxonomyFilter;
 use crate::seq::{SeqFeature, SeqRecord};
 use crate::tools::extract_common::{slice_from_location, Loc};
-use crate::tools::select_common::evalue_passes;
-use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
+use crate::tools::select_common::{evalue_passes, AnnotationType};
 
 /// Options for [`extract_unannotated`].
 #[derive(Default)]
 pub struct ExtractUnannotatedOptions {
     pub evalue: Option<f64>,
+    /// `--min_annotation_score`: only annotations scoring at least this count.
     pub score: Option<f64>,
-    pub keep_name: bool,
-    pub search_hits: bool,
+    /// `--keep_parent_id`: name each region after its protein, not its coordinates.
+    pub keep_parent_id: bool,
+    /// Which annotations count as annotated.
+    pub annotation_type: AnnotationType,
     pub databases: Option<HashSet<String>>,
     pub largest: bool,
-    /// Minimum unannotated region length (`None` = no cutoff).
+    /// `--min_region_length`: minimum unannotated region length (`None` = no cutoff).
     pub lb: Option<i64>,
+    /// Taxonomy restriction on each protein, before its gaps are extracted.
+    pub taxonomy: Option<TaxonomyFilter>,
 }
 
 fn feature_loc_parts(f: &SeqFeature) -> Vec<(i64, i64, i32)> {
@@ -34,9 +39,7 @@ fn feature_loc_parts(f: &SeqFeature) -> Vec<(i64, i64, i32)> {
 fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractUnannotatedOptions) -> Vec<&'a SeqFeature> {
     let mut hits = Vec::new();
     for feature in &rec.features {
-        let is_search = feature.kind == DOMAIN_SEARCH_BEST_HIT_NAME;
-        let is_dom = feature.kind == DOMAIN_FEATURE_NAME;
-        if !((opts.search_hits && is_search) || is_dom) {
+        if !opts.annotation_type.includes(&feature.kind) {
             continue;
         }
         if let Some(dbs) = &opts.databases {
@@ -122,6 +125,11 @@ pub fn extract_unannotated(
         if rec.molecule_type.as_deref() != Some("protein") {
             return Err("extract_unannotated currently only supports protein sequences.".into());
         }
+        if let Some(taxonomy) = &opts.taxonomy {
+            if !taxonomy.matches(rec, None)? {
+                continue;
+            }
+        }
         let rec_len = rec.seq.len() as i64;
         let hits = selected_hits(rec, opts);
 
@@ -157,7 +165,7 @@ pub fn extract_unannotated(
             let mut slice = slice_from_location(rec, &loc, &rec.features);
             // Only proteins are supported, so nothing is reverse complemented and
             // `--keep_direction` has no effect.
-            if !opts.keep_name {
+            if !opts.keep_parent_id {
                 slice.id = loc.region_id(rec, false);
             }
             out.push(slice);
@@ -170,6 +178,7 @@ pub fn extract_unannotated(
 mod tests {
     use super::*;
     use crate::seq::{Annotations, Location, Topology};
+    use crate::DOMAIN_FEATURE_NAME;
 
     fn dom(name: &str, start: i64, end: i64) -> SeqFeature {
         let mut f = SeqFeature::new(DOMAIN_FEATURE_NAME, Location::range(start, end, 1));

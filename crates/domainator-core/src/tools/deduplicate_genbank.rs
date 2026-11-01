@@ -18,7 +18,7 @@ use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::seq::translate::{complement, revcomp};
+use crate::seq::translate::revcomp;
 use crate::seq::SeqRecord;
 
 use super::external::{spawn_error, write_fasta_ids, TempDir};
@@ -112,13 +112,15 @@ fn hash_key(seq: &[u8]) -> Vec<u8> {
 
 /// The keys identifying a sequence for exact-duplicate detection (upstream
 /// `model.sequence_hashes`, with the normalized sequences standing in for their
-/// SHA-256 digests): the [`hash_key`], plus its complement and reverse complement with
-/// `both_strands`. Two sequences are duplicates if their keys share one.
+/// SHA-256 digests): the [`hash_key`], plus its reverse complement with
+/// `both_strands`. Two sequences are duplicates if their keys share one. A plain
+/// complement or reverse is not the other strand, so neither counts (upstream
+/// `09ddc4d`).
 pub(crate) fn sequence_keys(seq: &[u8], both_strands: bool) -> Vec<Vec<u8>> {
     let key = hash_key(seq);
     if both_strands {
-        let (c, rc) = (complement(&key), revcomp(&key));
-        vec![key, c, rc]
+        let rc = revcomp(&key);
+        vec![key, rc]
     } else {
         vec![key]
     }
@@ -132,7 +134,7 @@ fn hash_dedup(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupR
         ));
     }
     // Sequence key -> representative index. For both_strands a record registers
-    // its forward, complement, and reverse-complement keys (mirroring Python).
+    // its forward and reverse-complement keys (mirroring Python).
     let mut seen: HashMap<Vec<u8>, usize> = HashMap::new();
     let mut members: HashMap<usize, Vec<usize>> = HashMap::new();
     // Python keys `cluster_members` off `seen.values()`, i.e. first-occurrence

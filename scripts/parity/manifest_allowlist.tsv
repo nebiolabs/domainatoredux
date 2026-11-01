@@ -13,11 +13,14 @@ domainate	esm2_3di_weights	missing	null	{"default":null,"flags":["--esm2_3di_wei
 domainate	foldseek	missing	null	{"default":null,"flags":["--foldseek"],"kind":"path","multiple":true,"name":"foldseek","required":false,"role":"input","type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs
 domainate	foldseek_device	missing	null	{"default":"cpu","flags":["--foldseek_device"],"kind":"value","name":"foldseek_device","required":false,"type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs
 domainate	foldseek_path	missing	null	{"default":null,"flags":["--foldseek_path"],"kind":"path","name":"foldseek_path","required":false,"role":"program","type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs
-domainate	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 enum_report	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
+extract_domains	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
+extract_peptides	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
+extract_unannotated	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 find_features	-	tool	false	true	deferred:unported-tool	
 gene_call	-	tool	true	false	port-only:	
 kmer_dist	-	tool	false	true	deferred:unported-tool	
+select_by_cds	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 select_by_contig	taxonomy_update	missing	null	{"default":false,"flags":["--taxonomy_update"],"kind":"flag","name":"taxonomy_update","sets":true,"type":"boolean"}	deferred:taxonomy-download	never downloads taxonomy; accepted as false in configs
 split_by_cluster	-	tool	false	true	deferred:unported-tool	
 structure_dist	-	tool	false	true	deferred:structure	

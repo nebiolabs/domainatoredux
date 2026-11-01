@@ -20,3 +20,33 @@ pub struct CommonArgs {
     #[arg(long)]
     pub print_config: bool,
 }
+
+/// The taxonomy restriction every selecting tool takes (upstream
+/// `cli.common.add_taxonomy_filters`), flattened into its args. Upstream's
+/// `--taxonomy_update` is listed as unsupported instead, since this port never
+/// downloads the taxonomy.
+#[derive(clap::Args, Clone, Debug, Default)]
+#[command(rename_all = "snake_case")]
+pub struct TaxonomyArgs {
+    /// Include these NCBI taxids and their descendants (OR).
+    #[arg(long, num_args = 1.., allow_negative_numbers = true)]
+    pub include_taxids: Option<Vec<i64>>,
+    /// Exclude these NCBI taxids and their descendants; exclusions take precedence.
+    #[arg(long, num_args = 1.., allow_negative_numbers = true)]
+    pub exclude_taxids: Option<Vec<i64>>,
+    /// Boolean expression over taxid lineages using &, |, ~, and parentheses, e.g.
+    /// "2 & ~1224". Mutually exclusive with include/exclude_taxids.
+    #[arg(long)]
+    pub taxonomy_expr: Option<String>,
+    /// Unresolved taxonomy: exclude (default), include, evaluate against an empty
+    /// lineage, or error. With ~2, exclude rejects unlabeled candidates; evaluate and
+    /// include allow them. Only active with taxonomy criteria. Not inverted.
+    #[arg(long, default_value = "exclude",
+          value_parser = ["exclude", "include", "evaluate", "error"])]
+    pub taxonomy_unknown: String,
+    /// Path to an NCBI taxonomy database: a directory of extracted .dmp files, or a
+    /// taxdump.tar.gz. Default: /tmp/ncbi_taxonomy_USER, USER being your user name.
+    /// Unlike upstream, it is never downloaded.
+    #[arg(long)]
+    pub ncbi_taxonomy_path: Option<String>,
+}

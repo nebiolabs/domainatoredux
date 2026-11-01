@@ -38,7 +38,7 @@ pub fn run(args: &DomainateArgs) -> Result<()> {
         let path = Path::new(input);
         let loaded = crate::load_typed(path, &args.alphabet)?;
         // Upstream's count_peptides: one per FASTA record, else one per protein record
-        // or CDS feature, counted before any taxonomy filter.
+        // or CDS feature.
         if args.z == 0 {
             z += match detect_filetype(path) {
                 Some(FileType::Fasta) => loaded.len() as i64,
@@ -50,20 +50,6 @@ pub fn run(args: &DomainateArgs) -> Result<()> {
     if dbs.has_nucleotide() && records.iter().any(SeqRecord::is_protein) {
         anyhow::bail!("Cannot search protein inputs with a nucleotide reference.");
     }
-    if args.no_annotations && !args.hits_only {
-        anyhow::bail!(
-            "You've specified no_annotations, without specifying hits_only. This seems like a \
-             useless thing to do. If you want to select a subset of contigs, please use \
-             domainatoredux select_by_contig."
-        );
-    }
-    let allowed_taxids = crate::compile_allowed_taxids(
-        args.include_taxids.as_deref().unwrap_or_default(),
-        args.exclude_taxids.as_deref().unwrap_or_default(),
-        args.taxonomy_expr.as_deref(),
-        args.ncbi_taxonomy_path.as_deref(),
-    )?;
-
     let opts = DomainateOptions {
         z: z as f64,
         evalue: args.evalue.0,
@@ -73,11 +59,8 @@ pub fn run(args: &DomainateArgs) -> Result<()> {
             .and_then(|n| usize::try_from(n).ok())
             .unwrap_or(usize::MAX),
         max_overlap: args.max_overlap.0,
-        no_annotations: args.no_annotations,
-        hits_only: args.hits_only,
         overlap_by_db: args.overlap_by_db,
         max_mode: args.max_mode,
-        allowed_taxids,
         cpu,
         partial: args.partial.parse().map_err(|e: String| anyhow!(e))?,
         gene_call: crate::gene_call_request(args.gene_call.as_deref(), cpu)?,
@@ -90,7 +73,7 @@ pub fn run(args: &DomainateArgs) -> Result<()> {
         args.fasta_out.as_deref(),
         max_bytes.map(|max_bytes| OutputCap {
             max_bytes,
-            mitigation: &["--hits_only", "--max_hits_per_cds", "--evalue"],
+            mitigation: &["--max_hits_per_cds", "--evalue"],
             extra_guidance: None,
         }),
     )

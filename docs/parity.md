@@ -51,7 +51,7 @@ PATH=/path/to/conda/envs/domainator/bin:$PATH DOMAINATOREDUX_CDHIT=/path/to/cdhi
   scripts/parity/differential.py --only deduplicate_genbank -v
 ```
 
-`deduplicate_genbank` should report 8 identical and 1 skipped. If it reports more
+`deduplicate_genbank` should report 10 identical and 1 skipped. If it reports more
 skips, a binary is missing rather than anything being fine. `infernal_build` should
 report 4 `tolerated`. Never identical, because a CM's COM line records the `cmbuild`
 command with its temporary paths; the comparator drops DATE and COM, as it does for

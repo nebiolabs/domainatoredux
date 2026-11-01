@@ -254,38 +254,6 @@
      "type": "boolean"
     },
     {
-     "default": null,
-     "flags": [
-      "--include_taxids"
-     ],
-     "kind": "value",
-     "multiple": true,
-     "name": "include_taxids",
-     "required": false,
-     "type": "integer"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--exclude_taxids"
-     ],
-     "kind": "value",
-     "multiple": true,
-     "name": "exclude_taxids",
-     "required": false,
-     "type": "integer"
-    },
-    {
-     "default": null,
-     "flags": [
-      "--taxonomy_expr"
-     ],
-     "kind": "value",
-     "name": "taxonomy_expr",
-     "required": false,
-     "type": "string"
-    },
-    {
      "choices": [
       "include",
       "exclude",
@@ -299,27 +267,6 @@
      "name": "partial",
      "required": false,
      "type": "string"
-    },
-    {
-     "default_dynamic": true,
-     "flags": [
-      "--ncbi_taxonomy_path"
-     ],
-     "kind": "path",
-     "name": "ncbi_taxonomy_path",
-     "required": false,
-     "role": "directory",
-     "type": "string"
-    },
-    {
-     "default": false,
-     "flags": [
-      "--taxonomy_update"
-     ],
-     "kind": "flag",
-     "name": "taxonomy_update",
-     "sets": true,
-     "type": "boolean"
     },
     {
      "default": 0,
@@ -348,26 +295,6 @@
      ],
      "kind": "flag",
      "name": "overlap_by_db",
-     "sets": true,
-     "type": "boolean"
-    },
-    {
-     "default": false,
-     "flags": [
-      "--hits_only"
-     ],
-     "kind": "flag",
-     "name": "hits_only",
-     "sets": true,
-     "type": "boolean"
-    },
-    {
-     "default": false,
-     "flags": [
-      "--no_annotations"
-     ],
-     "kind": "flag",
-     "name": "no_annotations",
      "sets": true,
      "type": "boolean"
     },
@@ -605,6 +532,22 @@
      "type": "string"
     },
     {
+     "choices": [
+      "exclude",
+      "include",
+      "evaluate",
+      "error"
+     ],
+     "default": "exclude",
+     "flags": [
+      "--taxonomy_unknown"
+     ],
+     "kind": "value",
+     "name": "taxonomy_unknown",
+     "required": false,
+     "type": "string"
+    },
+    {
      "default_dynamic": true,
      "flags": [
       "--ncbi_taxonomy_path"
@@ -693,37 +636,20 @@
      "type": "boolean"
     },
     {
-     "default": false,
+     "choices": [
+      "none",
+      "id",
+      "sequence",
+      "sequence_rc"
+     ],
+     "default": "none",
      "flags": [
-      "--deduplicate"
+      "--dedup"
      ],
-     "kind": "flag",
-     "name": "deduplicate",
-     "negative_flags": [
-      "--no_deduplicate"
-     ],
-     "sets": true,
-     "type": "boolean"
-    },
-    {
-     "default": false,
-     "flags": [
-      "--deduplicate_by_sequence"
-     ],
-     "kind": "flag",
-     "name": "deduplicate_by_sequence",
-     "sets": true,
-     "type": "boolean"
-    },
-    {
-     "default": false,
-     "flags": [
-      "--both_strands"
-     ],
-     "kind": "flag",
-     "name": "both_strands",
-     "sets": true,
-     "type": "boolean"
+     "kind": "value",
+     "name": "dedup",
+     "required": false,
+     "type": "string"
     },
     {
      "default": 1.0,
@@ -1231,26 +1157,6 @@
      ],
      "kind": "flag",
      "name": "overlap_by_db",
-     "sets": true,
-     "type": "boolean"
-    },
-    {
-     "default": false,
-     "flags": [
-      "--hits_only"
-     ],
-     "kind": "flag",
-     "name": "hits_only",
-     "sets": true,
-     "type": "boolean"
-    },
-    {
-     "default": false,
-     "flags": [
-      "--no_annotations"
-     ],
-     "kind": "flag",
-     "name": "no_annotations",
      "sets": true,
      "type": "boolean"
     },
@@ -2302,7 +2208,8 @@
     {
      "default": null,
      "flags": [
-      "--identity"
+      "--identity",
+      "--id"
      ],
      "kind": "value",
      "name": "identity",
@@ -2479,6 +2386,75 @@
      "type": "string"
     },
     {
+     "default": null,
+     "flags": [
+      "--include_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "include_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exclude_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "exclude_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--taxonomy_expr"
+     ],
+     "kind": "value",
+     "name": "taxonomy_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "exclude",
+      "include",
+      "evaluate",
+      "error"
+     ],
+     "default": "exclude",
+     "flags": [
+      "--taxonomy_unknown"
+     ],
+     "kind": "value",
+     "name": "taxonomy_unknown",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default_dynamic": true,
+     "flags": [
+      "--ncbi_taxonomy_path"
+     ],
+     "kind": "path",
+     "name": "ncbi_taxonomy_path",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--taxonomy_update"
+     ],
+     "kind": "flag",
+     "name": "taxonomy_update",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
      "default": [],
      "flags": [
       "--contigs"
@@ -2558,7 +2534,8 @@
     {
      "choices": [
       "domainator",
-      "domain_search"
+      "domain_search",
+      "all"
      ],
      "default": "domainator",
      "flags": [
@@ -2568,6 +2545,16 @@
      "name": "annotation_type",
      "required": false,
      "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--has_search_hit"
+     ],
+     "kind": "flag",
+     "name": "has_search_hit",
+     "sets": true,
+     "type": "boolean"
     },
     {
      "choices": [
@@ -2647,10 +2634,10 @@
     {
      "default": false,
      "flags": [
-      "--keep_name"
+      "--keep_parent_id"
      ],
      "kind": "flag",
-     "name": "keep_name",
+     "name": "keep_parent_id",
      "sets": true,
      "type": "boolean"
     }
@@ -2732,6 +2719,75 @@
      "type": "string"
     },
     {
+     "default": null,
+     "flags": [
+      "--include_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "include_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exclude_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "exclude_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--taxonomy_expr"
+     ],
+     "kind": "value",
+     "name": "taxonomy_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "exclude",
+      "include",
+      "evaluate",
+      "error"
+     ],
+     "default": "exclude",
+     "flags": [
+      "--taxonomy_unknown"
+     ],
+     "kind": "value",
+     "name": "taxonomy_unknown",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default_dynamic": true,
+     "flags": [
+      "--ncbi_taxonomy_path"
+     ],
+     "kind": "path",
+     "name": "ncbi_taxonomy_path",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--taxonomy_update"
+     ],
+     "kind": "flag",
+     "name": "taxonomy_update",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
      "default": [],
      "flags": [
       "--contigs"
@@ -2778,6 +2834,16 @@
     {
      "default": null,
      "flags": [
+      "--domain_expr"
+     ],
+     "kind": "value",
+     "name": "domain_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
       "--databases"
      ],
      "kind": "value",
@@ -2799,7 +2865,8 @@
     {
      "choices": [
       "domainator",
-      "domain_search"
+      "domain_search",
+      "all"
      ],
      "default": "domainator",
      "flags": [
@@ -2809,6 +2876,16 @@
      "name": "annotation_type",
      "required": false,
      "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--has_search_hit"
+     ],
+     "kind": "flag",
+     "name": "has_search_hit",
+     "sets": true,
+     "type": "boolean"
     },
     {
      "choices": [
@@ -2874,10 +2951,10 @@
     {
      "default": false,
      "flags": [
-      "--keep_name"
+      "--keep_parent_id"
      ],
      "kind": "flag",
-     "name": "keep_name",
+     "name": "keep_parent_id",
      "sets": true,
      "type": "boolean"
     },
@@ -2981,6 +3058,75 @@
      "type": "string"
     },
     {
+     "default": null,
+     "flags": [
+      "--include_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "include_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exclude_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "exclude_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--taxonomy_expr"
+     ],
+     "kind": "value",
+     "name": "taxonomy_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "exclude",
+      "include",
+      "evaluate",
+      "error"
+     ],
+     "default": "exclude",
+     "flags": [
+      "--taxonomy_unknown"
+     ],
+     "kind": "value",
+     "name": "taxonomy_unknown",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default_dynamic": true,
+     "flags": [
+      "--ncbi_taxonomy_path"
+     ],
+     "kind": "path",
+     "name": "ncbi_taxonomy_path",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--taxonomy_update"
+     ],
+     "kind": "flag",
+     "name": "taxonomy_update",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
      "default": [],
      "flags": [
       "--contigs"
@@ -3017,10 +3163,10 @@
     {
      "default": null,
      "flags": [
-      "--min_score"
+      "--min_annotation_score"
      ],
      "kind": "value",
-     "name": "min_score",
+     "name": "min_annotation_score",
      "required": false,
      "type": "number"
     },
@@ -3038,7 +3184,8 @@
     {
      "choices": [
       "domainator",
-      "domain_search"
+      "domain_search",
+      "all"
      ],
      "default": "domainator",
      "flags": [
@@ -3062,10 +3209,10 @@
     {
      "default": false,
      "flags": [
-      "--keep_name"
+      "--keep_parent_id"
      ],
      "kind": "flag",
-     "name": "keep_name",
+     "name": "keep_parent_id",
      "sets": true,
      "type": "boolean"
     },
@@ -3082,10 +3229,10 @@
     {
      "default": null,
      "flags": [
-      "--min_length"
+      "--min_region_length"
      ],
      "kind": "value",
-     "name": "min_length",
+     "name": "min_region_length",
      "required": false,
      "type": "integer"
     }
@@ -3417,7 +3564,8 @@
     {
      "choices": [
       "domainator",
-      "domain_search"
+      "domain_search",
+      "all"
      ],
      "default": "domainator",
      "flags": [
@@ -3427,6 +3575,16 @@
      "name": "annotation_type",
      "required": false,
      "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--has_search_hit"
+     ],
+     "kind": "flag",
+     "name": "has_search_hit",
+     "sets": true,
+     "type": "boolean"
     },
     {
      "choices": [
@@ -3607,6 +3765,75 @@
     {
      "default": null,
      "flags": [
+      "--include_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "include_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--exclude_taxids"
+     ],
+     "kind": "value",
+     "multiple": true,
+     "name": "exclude_taxids",
+     "required": false,
+     "type": "integer"
+    },
+    {
+     "default": null,
+     "flags": [
+      "--taxonomy_expr"
+     ],
+     "kind": "value",
+     "name": "taxonomy_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "exclude",
+      "include",
+      "evaluate",
+      "error"
+     ],
+     "default": "exclude",
+     "flags": [
+      "--taxonomy_unknown"
+     ],
+     "kind": "value",
+     "name": "taxonomy_unknown",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default_dynamic": true,
+     "flags": [
+      "--ncbi_taxonomy_path"
+     ],
+     "kind": "path",
+     "name": "ncbi_taxonomy_path",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--taxonomy_update"
+     ],
+     "kind": "flag",
+     "name": "taxonomy_update",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
+     "default": null,
+     "flags": [
       "--kb_range"
      ],
      "kind": "value",
@@ -3721,6 +3948,16 @@
     {
      "default": null,
      "flags": [
+      "--name_field"
+     ],
+     "kind": "value",
+     "name": "name_field",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
       "--domains"
      ],
      "kind": "value",
@@ -3803,7 +4040,8 @@
     {
      "choices": [
       "domainator",
-      "domain_search"
+      "domain_search",
+      "all"
      ],
      "default": "domainator",
      "flags": [
@@ -3813,6 +4051,16 @@
      "name": "annotation_type",
      "required": false,
      "type": "string"
+    },
+    {
+     "default": false,
+     "flags": [
+      "--has_search_hit"
+     ],
+     "kind": "flag",
+     "name": "has_search_hit",
+     "sets": true,
+     "type": "boolean"
     },
     {
      "default": false,
@@ -3850,17 +4098,20 @@
      "type": "boolean"
     },
     {
-     "default": true,
+     "choices": [
+      "none",
+      "id",
+      "sequence",
+      "sequence_rc"
+     ],
+     "default": "id",
      "flags": [
-      "--deduplicate"
+      "--dedup"
      ],
-     "kind": "flag",
-     "name": "deduplicate",
-     "negative_flags": [
-      "--no_deduplicate"
-     ],
-     "sets": true,
-     "type": "boolean"
+     "kind": "value",
+     "name": "dedup",
+     "required": false,
+     "type": "string"
     },
     {
      "default": 1.0,
@@ -4096,6 +4347,16 @@
      "type": "string"
     },
     {
+     "default": false,
+     "flags": [
+      "--has_search_hit"
+     ],
+     "kind": "flag",
+     "name": "has_search_hit",
+     "sets": true,
+     "type": "boolean"
+    },
+    {
      "default": null,
      "flags": [
       "--databases"
@@ -4157,6 +4418,22 @@
      ],
      "kind": "value",
      "name": "taxonomy_expr",
+     "required": false,
+     "type": "string"
+    },
+    {
+     "choices": [
+      "exclude",
+      "include",
+      "evaluate",
+      "error"
+     ],
+     "default": "exclude",
+     "flags": [
+      "--taxonomy_unknown"
+     ],
+     "kind": "value",
+     "name": "taxonomy_unknown",
      "required": false,
      "type": "string"
     },

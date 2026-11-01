@@ -48,12 +48,8 @@ fields:
     label: "Strand (f/r)"
   - name: keep_direction
     label: "Keep direction"
-  - name: deduplicate
-    label: "Deduplicate regions"
-  - name: deduplicate_by_sequence
-    label: "Deduplicate by sequence"
-  - name: both_strands
-    label: "Both strands"
+  - name: dedup
+    label: "Deduplicate"
   - name: translate
     label: "Translate"
   - name: decoys
@@ -69,6 +65,8 @@ fields:
     label: "Exclude taxids"
   - name: taxonomy_expr
     label: "Taxonomy expr"
+  - name: taxonomy_unknown
+    label: "Unknown taxonomy"
   - name: ncbi_taxonomy_path
     label: "Taxonomy database"
     file_type: taxonomy

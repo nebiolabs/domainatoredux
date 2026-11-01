@@ -7,8 +7,66 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `961d817` — *delete some TODOs* (2026-10-28; upstream `__version__`
+- **Caught up to:** `ea5fd76` — *tree viewer tweaks* (2026-10-30; upstream `__version__`
   1.0.0rc1, on the `version_one` branch).
+- **`b2e219c`, `aa7078c`, `3ee1b6a`, `ea5fd76`**, viewer: tree rooting (midpoint, on a
+  selection, restore) and child swapping, ordered node and label styles with
+  categorical shapes, and image export of the whole view. All of it is the page's own
+  JS, so the regenerated `assets/viewer_shell.html` is the port, its GUI host hook
+  unchanged. The `.dvb` version is 2 (`viewer_bundle.rs`), which only adds optional
+  saved-session fields; version 1 is still read.
+- **`ab6af3e`**, help text only, ported into the args structs: `domainate` keeps every
+  record, `domain_search` selects, `extract_domains` keeps the input's sequence type.
+- **`7e48c69`**, interface only: `--contigs`/`--domains` and their `_file` twins are
+  upstream's shared `add_list_and_file` pair, as `parse_name_list` already read them.
+- **`49a0953`**, renames: `--keep_name` is `--keep_parent_id` on the three extract
+  tools, and `extract_unannotated`'s `--min_score`/`--min_length` are
+  `--min_annotation_score`/`--min_region_length` (`rotate_contigs` keeps `--keep_name`).
+- **`6fef445`, `664c70d`**, ported: the shared selection contract.
+  `--annotation_type domainator|domain_search|all` now only says whose names the
+  domain selectors read (`select_common::AnnotationType`, one enum for every tool);
+  selecting the `domain_search` hits themselves is the new **`--has_search_hit`** on
+  `select_by_cds`, `select_by_contig` (with the score range), `extract_peptides`,
+  `extract_domains` and `rotate_contigs`. `select_by_cds` and `extract_peptides` share
+  their OR-selectors-then-AND-restrictions logic: **`--invert` negates the selectors
+  before the strand restriction**, never after it, and is ignored with a warning when
+  there are no selectors. `extract_peptides` gains `--domain_expr`, `select_by_cds`
+  gains `--name_field` (`cds_name_precedence`).
+- **`aac61a9`**, ported: taxonomy filters move from `domainate` (which loses them, and
+  `--hits_only`/`--no_annotations`, to `domain_search`) to every selector, through one
+  contract: `seq::taxonomy::TaxonomyFilter`, compiled by `NCBITaxonomy::compile_filter`
+  with the new **`--taxonomy_unknown exclude|include|evaluate|error`** for a candidate
+  whose taxid the database cannot resolve (missing, 32644, deleted, absent). Before,
+  such a candidate passed whenever 32644 was allowed. A criterion the database does not
+  know is now an error, and a malformed taxon on the source a candidate's taxid comes
+  from is an error rather than "unknown". Each tool judges its own candidate: the focus
+  CDS (`select_by_cds`, `extract_peptides`), the annotation before extension
+  (`extract_domains`), the record (`select_by_contig`, after selection;
+  `extract_unannotated`). `domain_search` now judges each protein and CDS before the
+  search, and each whole-contig nucleotide hit by the source covering it before
+  ranking (`domainate::nucleotide_contig_searchable` and the hit filter), where the
+  port used to drop whole records by one taxid. The shared options are one flattened
+  `TaxonomyArgs`.
+- **`09ddc4d`, `d852e03`**, ported: `--dedup none|id|sequence|sequence_rc` replaces
+  `domain_search`'s `--deduplicate`/`--deduplicate_by_sequence`/`--both_strands` and
+  `select_by_cds`'s `--deduplicate` (default `id` there), through `tools/dedup.rs`
+  (upstream `dedup.py`). With `--max_hits` the top-N is now unique by the policy and a
+  better-scoring copy replaces its representative (`TopHits`). A sequence's
+  "other strand" is its reverse complement only: `sequence_keys` dropped the plain
+  complement, which changes `deduplicate_genbank --both_strands` too. `--id` is an alias
+  of `deduplicate_genbank --identity` (the manifest now lists visible aliases).
+- **`b10240a`**, ported: `summary_report`'s co-occurrence rows are sorted by focus domain,
+  in the library function now, not only in the CLI.
+- **`60095af`**, nothing to port: infernox already drops the hits Infernal marks as
+  duplicates (see "Pinned dependency: `infernox`").
+- **`9b7ad26`**, nothing to port: a TODO comment.
+- Upstream's new `test_taxonomy_filters.py`, `test_cds_selection.py`,
+  `test_annotation_selection.py` and `test_dedup.py` call the tools as library
+  functions or through `getattr`, so the harvester sees none of them. Their behaviors are
+  covered by `extra:` invocations built on upstream's own `mixed()`/`protein()`
+  builders (`generated_fixtures.py`, `_selection_fixtures`). Writing them found one
+  older difference: `extract_peptides` dropped the contig's DBLINK, which upstream
+  copies onto each peptide.
 - **`961d817`**, nothing to port: TODO comments deleted, no behavior changed.
 - **`73c7b84`**, ported: the **unified Domainator Viewer**. One page and one bundle format
   (`.dvb`, `tools/viewer_bundle.rs`) for networks, trees and projections; the shell is
@@ -185,6 +243,7 @@ Use this to triage which module a changed upstream file lands in:
 | `domainate.py` | `.../tools/domainate.rs`, `.../search/hmmer.rs`; the `infernal` program (`infernal_hits_to_search_results`) is `.../search/infernal.rs` |
 | `domainate.py` gene calling (`prodigal_CDS_annotate`, `_prodigal_linear_location`, `_prodigal_origin_genes`) | `.../tools/gene_call.rs` (drives the external Orphos binary; also the port-only `gene_call` tool) |
 | `domain_search.py`, `select_by_cds.py` | `.../tools/{domain_search,select_by_cds,neighborhood}.rs` |
+| `dedup.py` (`--dedup`, `RecordDeduplicator`, `TopHits`) | `.../tools/dedup.rs` |
 | `select_by_contig.py`, `enum_report.py` | `.../tools/{select_by_contig,enum_report,select_common}.rs` |
 | `matrix_report.py` | `.../tools/matrix_report.rs` |
 | `text_plot.py` (the text reports' histograms and tables) | `.../text_plot.rs` |
@@ -193,8 +252,8 @@ Use this to triage which module a changed upstream file lands in:
 | `hmmio.py` | `.../search/{hmm_read,hmm_write,references}.rs`; `read_infernal_cms` is `.../search/infernal.rs` (`load_cm_db`) |
 | `infernal_build.py` | `.../tools/infernal_build.rs` (drives the external `cmbuild`) |
 | `expr.py` | `.../tools/select_common.rs` (`BooleanEvaluator`), `.../seq/taxonomy.rs` (`--taxonomy_expr`) |
-| `model.py` (`region_id`, the per-CDS view) | `.../tools/neighborhood.rs` (`region_id`), `.../tools/select_common.rs` |
-| `taxonomy/`, the protein chemistry in `enum_report.py` | `.../seq/{protein_analysis,taxonomy,taxid,translate}.rs` |
+| `model.py` (`region_id`, the per-CDS view, `annotation_feature_types`, `cds_name_precedence`) | `.../tools/neighborhood.rs` (`region_id`), `.../tools/select_common.rs` (`AnnotationType`) |
+| `taxonomy/`, the protein chemistry in `enum_report.py` | `.../seq/{protein_analysis,taxonomy,taxid,translate}.rs`; `taxonomy/records.py`'s `TaxonomyFilter` is `seq/taxonomy.rs`'s, and `cli/common.py`'s `add_taxonomy_filters` is `args/common.rs`'s `TaxonomyArgs` |
 | `partial.py` (`get_fragment_status`, `on_contig_translation`, `codon_offset`, ...) | `.../seq/partial.rs` |
 | `locations.py` (`slice_record_from_location`, `slice_record`, `_truncate_cds_qualifiers`), `location_ops.py` (`merge_parts`) | `.../tools/neighborhood.rs` (`slice_features`), `.../seq/location.rs` (`merge_touching_parts`) |
 | `rotate_contigs.py` | `.../tools/rotate_contigs.rs` (the search is `domainate`, the slice `extract_common`) |

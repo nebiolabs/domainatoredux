@@ -5,12 +5,13 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::seq::partial::{cds_fragment_status, Partial};
+use crate::seq::taxonomy::TaxonomyFilter;
 use crate::seq::{SeqFeature, SeqRecord, Topology};
 use crate::tools::extract_common::{
     pad_location, revcomp_record, slice_from_location, slice_from_parts, Loc,
 };
 use crate::tools::neighborhood::{region_id, Env};
-use crate::tools::select_common::get_cds_unique_name;
+use crate::tools::select_common::{get_cds_unique_name, AnnotationType};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
 /// Options for [`extract_domains`].
@@ -23,12 +24,20 @@ pub struct ExtractDomainsOptions {
     pub pad_down: i64,
     pub combine: bool,
     pub keep_direction: bool,
-    pub keep_name: bool,
-    pub search_hits: bool,
+    /// `--keep_parent_id`: name each region after its record, not its coordinates.
+    pub keep_parent_id: bool,
+    /// Which annotations to extract.
+    pub annotation_type: AnnotationType,
+    /// `--has_search_hit`: also extract the search hits, whatever their names or
+    /// databases; alone (no `domains`), only them.
+    pub has_search_hit: bool,
     pub databases: Option<HashSet<String>>,
     pub splice: bool,
     /// `--partial`: domains by the fragment status of the CDS or protein they are on.
     pub partial: Partial,
+    /// Taxonomy restriction on each annotation, judged before extension, combining
+    /// or splicing; a protein's by the record's taxid.
+    pub taxonomy: Option<TaxonomyFilter>,
 }
 
 fn is_protein(rec: &SeqRecord) -> bool {
@@ -37,10 +46,15 @@ fn is_protein(rec: &SeqRecord) -> bool {
 
 /// Which domain features are selected on `rec`, mirroring the Python filter cascade.
 ///
-/// Python's `elif` chain stops at the first test that rejects, so a feature is kept
-/// only when every test passes: a matching `--domains` name does not exempt it
-/// from `--evalue`/`--score`/`--partial`.
-fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractDomainsOptions) -> Vec<&'a SeqFeature> {
+/// An annotation is a candidate when it is of `annotation_type` and passes `domains`
+/// and `databases`, or when it is a search hit under `has_search_hit` (which, without
+/// `domains`, makes the search hits the only candidates). Python's `elif` chain then
+/// stops at the first test that rejects, so a candidate is kept only when every test
+/// passes: `--evalue`, `--min_score`, `--partial`, then taxonomy.
+fn selected_hits<'a>(
+    rec: &'a SeqRecord,
+    opts: &ExtractDomainsOptions,
+) -> Result<Vec<&'a SeqFeature>, String> {
     // `--partial` judges a domain by the CDS (or protein record) it is on.
     let cds_by_id: HashMap<String, &SeqFeature> = if opts.partial.is_include() {
         HashMap::new()
@@ -53,21 +67,22 @@ fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractDomainsOptions) -> Vec<&'
     };
     let mut hits = Vec::new();
     for feature in &rec.features {
-        let is_search = feature.kind == DOMAIN_SEARCH_BEST_HIT_NAME;
-        let is_dom = feature.kind == DOMAIN_FEATURE_NAME;
-        if !((opts.search_hits && is_search) || is_dom) {
+        if feature.kind != DOMAIN_FEATURE_NAME && feature.kind != DOMAIN_SEARCH_BEST_HIT_NAME {
             continue;
         }
-        if let Some(dbs) = &opts.databases {
-            if !feature
-                .get_first("database")
-                .map(|d| dbs.contains(d))
-                .unwrap_or(false)
-            {
-                continue;
-            }
-        }
         let name = feature.get_first("name").unwrap_or("");
+        let search_hit = opts.has_search_hit && feature.kind == DOMAIN_SEARCH_BEST_HIT_NAME;
+        let selected = opts.annotation_type.includes(&feature.kind)
+            && (opts.domains.is_some() || !opts.has_search_hit)
+            && opts.domains.as_ref().is_none_or(|d| d.contains(name))
+            && opts.databases.as_ref().is_none_or(|dbs| {
+                feature
+                    .get_first("database")
+                    .is_some_and(|d| dbs.contains(d))
+            });
+        if !(selected || search_hit) {
+            continue;
+        }
         let evalue: f64 = feature
             .get_first("evalue")
             .and_then(|v| v.parse().ok())
@@ -76,10 +91,8 @@ fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractDomainsOptions) -> Vec<&'
             .get_first("score")
             .and_then(|v| v.parse().ok())
             .unwrap_or(f64::NEG_INFINITY);
-        let rejected = (is_dom && opts.domains.as_ref().is_some_and(|d| !d.contains(name)))
-            || (opts.search_hits && is_dom && opts.domains.is_none())
-            || opts.evalue.is_some_and(|e| evalue > e)
-            || opts.score.is_some_and(|s| score < s);
+        let rejected =
+            opts.evalue.is_some_and(|e| evalue > e) || opts.score.is_some_and(|s| score < s);
         let keep = if rejected {
             false
         } else if opts.partial.is_include() {
@@ -95,11 +108,15 @@ fn selected_hits<'a>(rec: &'a SeqRecord, opts: &ExtractDomainsOptions) -> Vec<&'
             };
             opts.partial.allows(status)
         };
+        let keep = match (&opts.taxonomy, keep) {
+            (Some(taxonomy), true) => taxonomy.matches(rec, Some(feature))?,
+            _ => keep,
+        };
         if keep {
             hits.push(feature);
         }
     }
-    hits
+    Ok(hits)
 }
 
 /// Convert a feature's location to a [`Loc`] (forward sub-parts + overall strand).
@@ -126,7 +143,7 @@ pub fn extract_domains(
     for rec in records {
         let rec_len = rec.seq.len() as i64;
         let protein = is_protein(rec);
-        let hits = selected_hits(rec, opts);
+        let hits = selected_hits(rec, opts)?;
         if hits.is_empty() {
             continue;
         }
@@ -179,7 +196,7 @@ pub fn extract_domains(
             let mut slice = slice_from_location(rec, &loc, &rec.features);
             // The region id goes on the LOCUS name (Python's record.id);
             // ACCESSION/VERSION are left unchanged.
-            if !opts.keep_name {
+            if !opts.keep_parent_id {
                 slice.id = loc.region_id(rec, false);
             }
             out.push(slice);
@@ -233,7 +250,7 @@ pub fn extract_domains(
             if rec.topology == Topology::Circular {
                 slice.topology = Topology::Circular;
             }
-            if !opts.keep_name {
+            if !opts.keep_parent_id {
                 slice.id = region_id(rec, &merged, false);
             }
             out.push(slice);
@@ -249,7 +266,7 @@ pub fn extract_domains(
                 if flip {
                     slice = revcomp_record(&slice);
                 }
-                if !opts.keep_name {
+                if !opts.keep_parent_id {
                     slice.id = loc.region_id(rec, flip);
                 }
                 out.push(slice);

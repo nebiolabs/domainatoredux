@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `961d817`.
+Parity: Python domainator 1.0.0rc1 @ `ea5fd76`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
@@ -57,6 +57,42 @@ Parity: Python domainator 1.0.0rc1 @ `961d817`.
   blank lines skipped, and the structured comment split out even when its lines are
   padded, as NCBI pads them. Such a record used to be written back with its structured
   comment inside the free text.
+- **One selection contract across the selecting tools**, as upstream 1.0 has it:
+  - **Taxonomy filters** (`--include_taxids`, `--exclude_taxids`, `--taxonomy_expr`) are
+    on `domain_search`, `select_by_cds`, `select_by_contig`, `extract_domains`,
+    `extract_peptides` and `extract_unannotated`, and each judges its own candidate (a
+    CDS, an annotation, a record, a hit), never the neighborhood around it. The new
+    **`--taxonomy_unknown exclude|include|evaluate|error`** decides what happens to a
+    candidate with no taxid the taxonomy knows; it used to slip through filters that
+    allowed "unidentified". A criterion taxid the taxonomy lacks is now an error.
+    `domain_search` filters each protein, CDS and nucleotide hit, where it used to keep
+    or drop whole records.
+  - **`domainate` annotates and keeps every record**: its taxonomy filters,
+    `--hits_only` and `--no_annotations` are gone; `domain_search` selects.
+  - **`--dedup none|id|sequence|sequence_rc`** on `domain_search` (default `none`) and
+    `select_by_cds` (default `id`) replaces `--deduplicate`, `--no_deduplicate`,
+    `--deduplicate_by_sequence` and `--both_strands`. With `--max_hits`, copies no longer
+    use up the top N, and the best-scoring copy is kept.
+  - **`--has_search_hit`** selects the `domain_search` hits on `select_by_cds`,
+    `select_by_contig`, `extract_peptides`, `extract_domains` and `rotate_contigs`;
+    `--annotation_type domainator|domain_search|all` now only says which annotations the
+    domain criteria read.
+  - **`--invert`** on `select_by_cds` and `extract_peptides` negates the selectors only,
+    so a `--strand` restriction still holds; with no selectors it is ignored, with a
+    warning.
+  - Also new: `extract_peptides --domain_expr`, `select_by_cds --name_field`, and
+    `deduplicate_genbank --id` (the same as `--identity`). Renamed: `--keep_name` is
+    `--keep_parent_id` on the extract tools, and `extract_unannotated`'s `--min_score`
+    and `--min_length` are `--min_annotation_score` and `--min_region_length`.
+  - A nucleotide sequence's other strand is its reverse complement only, so
+    `deduplicate_genbank --both_strands` no longer merges a sequence with its plain
+    complement.
+- **`extract_peptides` keeps the contig's DBLINK** on each peptide, as upstream does.
+- **`summary_report`'s co-occurrence rows** are in alphabetical order of focus domain.
+- **The Domainator Viewer** (upstream's): trees can be rerooted at their midpoint or on a
+  selection and their children swapped, nodes and labels take several ordered styles,
+  with shapes by category, and views export as an image of the whole view. Bundles are
+  `.dvb` version 2; version 1 still opens.
 - **A taxid missing from the taxonomy database is warned about**, once per taxid,
   suggesting `--taxonomy_update`; it is still reported as unknown (blank taxonomy).
 - **Upstream's 1.0 interface.** Python domainator 1.0 adopted a single `domainator <tool>`
@@ -84,8 +120,7 @@ Parity: Python domainator 1.0.0rc1 @ `961d817`.
 - **New options**: `compare_contigs --genbank_out` writes the contigs sorted by similarity
   (`--linkage`, `--leaf_ordering`, `--name_by_order`); `--symmetrize` on `seq_dist` and
   `transform_matrix`; `--threshold`, and `--mst` with `--knn K` (their union) replacing
-  `--mst_knn`; `domain_search --deduplicate_by_sequence`, `--anchor`, and circular
-  `--whole_contig` output; `select_by_contig` length, CDS-count, score and record-count
+  `--mst_knn`; `domain_search --anchor`, and circular `--whole_contig` output; `select_by_contig` length, CDS-count, score and record-count
   filters; `deduplicate_genbank --identity`, `--cluster_tsv_out` and per-program
   `--<program>_path`/`--<program>_args`; `build_ssn --palette_offset`, to color a second
   column without reusing the colors a first one took.

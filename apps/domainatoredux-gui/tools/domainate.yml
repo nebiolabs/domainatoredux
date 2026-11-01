@@ -30,19 +30,6 @@ fields:
     gui_default: 0.6
   - name: max_mode
     label: "Max mode"
-  - name: hits_only
-    label: "Hits only"
-  - name: include_taxids
-    label: "Include taxids"
-  - name: exclude_taxids
-    label: "Exclude taxids"
-  - name: taxonomy_expr
-    label: "Taxonomy expr"
-  - name: ncbi_taxonomy_path
-    label: "Taxonomy database"
-    file_type: taxonomy
-    sources: databases_first
-    select: "database:ncbi_taxonomy"
   - name: gene_call
     label: "Gene calling"
     help: "Call genes with Orphos (Tools → External tools) before searching: all re-calls every nucleotide contig, unannotated only those with no CDS. Set Z too."
@@ -55,9 +42,6 @@ fields:
   - name: overlap_by_db
     show: false
     label: "Overlap by db"
-  - name: no_annotations
-    show: false
-    label: "No annotations"
   - name: cpu
     show: false
     label: "Cpu"

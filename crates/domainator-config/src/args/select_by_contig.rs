@@ -1,4 +1,4 @@
-use super::CommonArgs;
+use super::{CommonArgs, TaxonomyArgs};
 use crate::types::PositiveFloat;
 
 /// Selects whole contigs by their names, domain content, taxonomy and size (upstream
@@ -7,8 +7,9 @@ use crate::types::PositiveFloat;
 /// The criteria combine as: length bounds AND CDS-count bounds AND taxonomy AND
 /// fragment status AND (any of: name in --contigs, name matches --contigs_regex,
 /// definition matches --definition_regex, sequence matches --sequence_regex, a domain
-/// in --domains, --domain_expr true, --unannotated and no domains), then at most
-/// --max_records contigs. --invert inverts only the "any of" part.
+/// in --domains, --domain_expr true, --unannotated and no domains, a search hit with
+/// --has_search_hit, a search-hit score in the --min/max_search_score range), then at
+/// most --max_records contigs. --invert inverts only the "any of" part.
 #[derive(clap::Args, Clone, Debug, Default)]
 #[command(rename_all = "snake_case")]
 pub struct SelectByContigArgs {
@@ -23,10 +24,12 @@ pub struct SelectByContigArgs {
     /// Write the records to this FASTA file. Use - for standard output.
     #[arg(long)]
     pub fasta_out: Option<String>,
-    /// Only consider contigs with these names.
+    /// Select records with these IDs, OR with other record selectors; affected by
+    /// --invert. Additive with --contigs_file.
     #[arg(long, num_args = 1..)]
     pub contigs: Option<Vec<String>>,
-    /// Text file containing names of contigs to select.
+    /// Select records with the IDs in this file: a plain-text file (one per line),
+    /// FASTA/GenBank record IDs, or HMM profile names. Additive with --contigs.
     #[arg(long)]
     pub contigs_file: Option<String>,
     /// Only consider contigs with names matching this regex.
@@ -38,10 +41,13 @@ pub struct SelectByContigArgs {
     /// Only keep contigs with a sequence that matches this regex.
     #[arg(long)]
     pub sequence_regex: Option<String>,
-    /// Include domains with these names.
+    /// Select records containing these domain names, OR with other record selectors.
+    /// Additive with --domains_file.
     #[arg(long, num_args = 1..)]
     pub domains: Option<Vec<String>>,
-    /// Text file containing names of domains to include.
+    /// Select records containing the domain names in this file: a plain-text file (one
+    /// per line), FASTA/GenBank record IDs, or HMM profile names. Additive with
+    /// --domains.
     #[arg(long)]
     pub domains_file: Option<String>,
     /// A boolean expression using operators & (AND), | (OR), and ~ (NOT), to specify a
@@ -61,6 +67,11 @@ pub struct SelectByContigArgs {
     #[arg(long, default_value = "domainator",
           value_parser = ["domainator", "domain_search", "all"])]
     pub annotation_type: String,
+    /// Also select existing domain_search hits, regardless of annotation_type, domain
+    /// names, domain expressions, or databases. Hits must pass the e-value and score
+    /// cutoffs where applicable. Participates in --invert where available.
+    #[arg(long)]
+    pub has_search_hit: bool,
     /// Consider only domains from these databases when filtering by domain. default:
     /// all databases.
     #[arg(long, num_args = 1..)]
@@ -72,30 +83,17 @@ pub struct SelectByContigArgs {
     /// by domain. Default: no cutoff.
     #[arg(short, long)]
     pub evalue: Option<PositiveFloat>,
-    /// Space separated list of taxids to include.
-    #[arg(long, num_args = 1.., allow_negative_numbers = true)]
-    pub include_taxids: Option<Vec<i64>>,
-    /// Space separated list of taxids to exclude.
-    #[arg(long, num_args = 1.., allow_negative_numbers = true)]
-    pub exclude_taxids: Option<Vec<i64>>,
-    /// A boolean expression over taxids using operators & (AND), | (OR), ~ (NOT), and
-    /// parentheses, e.g. "2 & ~1224" (within Bacteria but not Proteobacteria). A taxid
-    /// is true for a contig when it is in the contig's lineage. Mutually exclusive with
-    /// --include_taxids/--exclude_taxids.
-    #[arg(long)]
-    pub taxonomy_expr: Option<String>,
-    /// Path to an NCBI taxonomy database: a directory of extracted .dmp files, or a
-    /// taxdump.tar.gz. Default: /tmp/ncbi_taxonomy_USER, USER being your user name.
-    /// Unlike upstream, it is never downloaded.
-    #[arg(long)]
-    pub ncbi_taxonomy_path: Option<String>,
+    #[command(flatten)]
+    pub taxonomy: TaxonomyArgs,
     /// If set then stop after returning this many contigs.
     #[arg(long, allow_negative_numbers = true)]
     pub max_records: Option<i64>,
-    /// Skip contigs smaller than this. In units of bp (aa for protein input).
+    /// Keep only input records with length >= this, in bp for nucleotide input or
+    /// amino acids for protein input. Not affected by --invert.
     #[arg(long, allow_negative_numbers = true)]
     pub min_length: Option<i64>,
-    /// Skip contigs larger than this. In units of bp (aa for protein input).
+    /// Keep only input records with length <= this, in bp for nucleotide input or
+    /// amino acids for protein input. Not affected by --invert.
     #[arg(long, allow_negative_numbers = true)]
     pub max_length: Option<i64>,
     /// Skip contigs with fewer CDSs than this. Pseudogenes are not counted.
@@ -104,10 +102,15 @@ pub struct SelectByContigArgs {
     /// Skip contigs with more CDSs than this. Pseudogenes are not counted.
     #[arg(long, allow_negative_numbers = true)]
     pub max_cds: Option<i64>,
-    /// Skip contigs with a domain_search annotation score smaller than this.
+    /// Also select records with an existing Domain_Search annotation scoring >= this
+    /// and passing e-value/database filters. Paired with --max_search_score as an
+    /// inclusive range; OR with other selectors and affected by --invert. Also
+    /// restricts --has_search_hit scoring, which ignores databases.
     #[arg(long, allow_negative_numbers = true)]
     pub min_search_score: Option<crate::types::Finite>,
-    /// Skip contigs with a domain_search annotation score larger than this.
+    /// Upper bound (inclusive) of the search-score selector range. OR with other
+    /// selectors, not a restriction on records selected by other criteria. Also
+    /// restricts --has_search_hit scoring, which ignores databases.
     #[arg(long, allow_negative_numbers = true)]
     pub max_search_score: Option<crate::types::Finite>,
     /// Invert the selection criteria. i.e. return contigs that do not match the

@@ -99,6 +99,10 @@ pub fn flags(arg: &Arg) -> Vec<String> {
     if let Some(l) = arg.get_long() {
         out.push(format!("--{l}"));
     }
+    // Upstream's second spellings (`--identity`/`--id`), after the canonical one.
+    for alias in arg.get_visible_aliases().unwrap_or_default() {
+        out.push(format!("--{alias}"));
+    }
     out
 }
 

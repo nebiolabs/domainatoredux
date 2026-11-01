@@ -17,6 +17,7 @@ use crate::tools::domainate::{domainate, DomainateOptions};
 use crate::tools::extract_common::{circular_envelope, slice_from_location, Loc};
 use crate::tools::gene_call::{GeneCall, GeneCallScope};
 use crate::tools::select_by_cds::Anchor;
+use crate::tools::select_common::AnnotationType;
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
 /// What a FASTA record may hold and still be read as nucleotides.
@@ -28,12 +29,16 @@ pub struct RotateContigsOptions {
     pub z: f64,
     /// The largest e-value of a domain, new or pre-existing, to rotate on.
     pub evalue: f64,
-    /// Rotate on pre-existing `Domainator` annotations with these names.
+    /// Rotate on pre-existing `annotation_type` annotations with these names.
     pub domains: Option<HashSet<String>>,
     /// Consider only pre-existing annotations from these databases (`None`: all).
     pub databases: Option<HashSet<String>>,
-    /// `--annotation_type domain_search`: rotate on pre-existing `Domain_Search` hits.
-    pub search_hits: bool,
+    /// Which pre-existing annotations to rotate on. `Domainator` ones are used only
+    /// with `domains`; the others are used without them too.
+    pub annotation_type: AnnotationType,
+    /// `--has_search_hit`: also rotate on pre-existing search hits, whatever their
+    /// names or databases.
+    pub has_search_hit: bool,
     /// Where the origin goes, relative to the domain in its own orientation.
     pub anchor: Anchor,
     pub keep_direction: bool,
@@ -57,7 +62,8 @@ impl Default for RotateContigsOptions {
             evalue: 0.001,
             domains: None,
             databases: None,
-            search_hits: false,
+            annotation_type: AnnotationType::Domainator,
+            has_search_hit: false,
             anchor: Anchor::Start,
             keep_direction: false,
             circularize: false,
@@ -71,16 +77,26 @@ impl Default for RotateContigsOptions {
     }
 }
 
+impl RotateContigsOptions {
+    /// Whether pre-existing `annotation_type` annotations are candidates (upstream
+    /// `use_existing`): with `domains`, or for search-hit annotation types unless
+    /// `has_search_hit` already covers those.
+    fn use_existing(&self) -> bool {
+        self.domains.is_some()
+            || (self.annotation_type != AnnotationType::Domainator && !self.has_search_hit)
+    }
+}
+
 /// The checks upstream's `rotate_contigs` makes before it reads a record, with its
 /// messages. `has_references`: whether `-r` was given.
 pub fn check_options(has_references: bool, opts: &RotateContigsOptions) -> Result<(), String> {
     if opts.batch_size < 1 {
         return Err("batch_size must be at least 1.".into());
     }
-    if !has_references && opts.domains.is_none() && !opts.search_hits {
+    if !has_references && !opts.use_existing() && !opts.has_search_hit {
         return Err(
-            "Specify references, domains, or annotation_type=\"domain_search\" to \
-                    choose domains to rotate on."
+            "Specify references, domains, or annotation_type=\"domain_search\"/\"all\", \
+                    or has_search_hit to choose domains to rotate on."
                 .into(),
         );
     }
@@ -88,10 +104,11 @@ pub fn check_options(has_references: bool, opts: &RotateContigsOptions) -> Resul
         return Err("gene_call only applies when searching references.".into());
     }
     let call_all = matches!(&opts.gene_call, Some(g) if g.scope == GeneCallScope::All);
-    if call_all && (opts.domains.is_some() || opts.search_hits) {
+    if call_all && (opts.use_existing() || opts.has_search_hit) {
         return Err(
             "gene_call 'all' deletes pre-existing annotations, so it can't be \
-                    combined with domains or annotation_type=\"domain_search\"."
+                    combined with domains, annotation_type=\"domain_search\"/\"all\", \
+                    or has_search_hit."
                 .into(),
         );
     }
@@ -251,21 +268,19 @@ fn candidate_features(rec: &SeqRecord, is_new: &[bool], opts: &RotateContigsOpti
         .iter()
         .enumerate()
         .filter(|&(i, f)| {
-            let selected = is_new[i] || {
-                let by_type = match f.kind.as_str() {
-                    DOMAIN_FEATURE_NAME => opts
+            let use_existing = opts.use_existing();
+            let selected = is_new[i]
+                || (use_existing
+                    && opts.annotation_type.includes(&f.kind)
+                    && opts
                         .domains
                         .as_ref()
-                        .is_some_and(|d| f.get_first("name").is_some_and(|n| d.contains(n))),
-                    DOMAIN_SEARCH_BEST_HIT_NAME => opts.search_hits,
-                    _ => false,
-                };
-                let in_databases = opts
-                    .databases
-                    .as_ref()
-                    .is_none_or(|d| f.get_first("database").is_some_and(|db| d.contains(db)));
-                by_type && in_databases
-            };
+                        .is_none_or(|d| f.get_first("name").is_some_and(|n| d.contains(n)))
+                    && opts
+                        .databases
+                        .as_ref()
+                        .is_none_or(|d| f.get_first("database").is_some_and(|db| d.contains(db))))
+                || (opts.has_search_hit && f.kind == DOMAIN_SEARCH_BEST_HIT_NAME);
             selected && qualifier_f64(f, "evalue", f64::INFINITY) <= opts.evalue
         })
         .map(|(i, _)| i)

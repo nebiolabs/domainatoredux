@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::io::partition::partition_seqfile;
 use crate::io::shards::resolve_database_shards;
@@ -16,8 +17,9 @@ use crate::io::{
 };
 use crate::search::references::References;
 use crate::seq::partial::Partial;
+use crate::seq::taxonomy::TaxonomyFilter;
 use crate::seq::SeqRecord;
-use crate::tools::deduplicate_genbank::sequence_keys;
+use crate::tools::dedup::{Dedup, RecordDeduplicator, TopHits};
 use crate::tools::domainate::{domainate, DomainateOptions};
 use crate::tools::gene_call::GeneCall;
 use crate::tools::neighborhood::{select_by_cds_hits, Range, Region};
@@ -53,8 +55,9 @@ pub struct DomainSearchOptions {
     pub translate: bool,
     /// hmmsearch `--max` (skip heuristic filters for maximum sensitivity).
     pub max_mode: bool,
-    /// Precompiled allowed-taxid set (`None` = no taxonomy filtering).
-    pub allowed_taxids: Option<HashSet<i64>>,
+    /// Taxonomy restriction on the searched proteins/CDSs and nucleotide hits, applied
+    /// before ranking (`None` = none). The neighborhood around a hit is not filtered.
+    pub taxonomy: Option<Arc<TaxonomyFilter>>,
     /// Decoy domain names: if a hit CDS's best hit is a decoy, that hit is dropped.
     pub decoys: Option<HashSet<String>>,
     /// Cap on independent hits emitted per contig (`None` = all).
@@ -63,14 +66,9 @@ pub struct DomainSearchOptions {
     /// whole result and emits it in score order.
     pub pad: bool,
     pub anchor: Anchor,
-    /// `--deduplicate`: keep one copy of each region id (a region extracted for
-    /// several hits).
-    pub deduplicate: bool,
-    /// `--deduplicate_by_sequence`: drop a hit whose sequence equals an earlier
-    /// hit's, ignoring case and terminal `*`; with `both_strands`, its complement or
-    /// reverse complement too.
-    pub deduplicate_by_sequence: bool,
-    pub both_strands: bool,
+    /// `--dedup`: which output records count as copies. With `max_hits`, the
+    /// best-scoring copy is the one kept; otherwise the first.
+    pub dedup: Dedup,
     /// `--partial`: which proteins/CDSs are searched, by fragment status.
     pub partial: Partial,
     /// `--gene_call`: call genes (with Orphos) on each partition's nucleotide
@@ -96,14 +94,12 @@ impl Default for DomainSearchOptions {
             max_region_overlap: 1.0,
             translate: false,
             max_mode: false,
-            allowed_taxids: None,
+            taxonomy: None,
             decoys: None,
             max_hits_per_contig: None,
             pad: false,
             anchor: Anchor::Start,
-            deduplicate: false,
-            deduplicate_by_sequence: false,
-            both_strands: false,
+            dedup: Dedup::None,
             partial: Partial::Include,
             gene_call: None,
         }
@@ -159,15 +155,18 @@ fn best_score(rec: &SeqRecord) -> f64 {
         .fold(f64::NEG_INFINITY, f64::max)
 }
 
-/// Upstream `_is_new_sequence`: whether `rec`'s sequence is new to `seen`, adding its
-/// keys when it is.
-fn is_new_sequence(rec: &SeqRecord, seen: &mut HashSet<Vec<u8>>, both_strands: bool) -> bool {
-    let keys = sequence_keys(&rec.seq, both_strands);
-    if keys.iter().any(|k| seen.contains(k)) {
-        return false;
-    }
-    seen.extend(keys);
-    true
+fn invalid_input(e: String) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
+}
+
+/// Upstream `TopHits` over regions, ranked by [`best_score`].
+fn top_hits(max_hits: usize, dedup: Dedup) -> std::io::Result<TopHits<Region>> {
+    TopHits::new(max_hits, dedup).map_err(invalid_input)
+}
+
+fn add_hit(top: &mut TopHits<Region>, region: Region) -> std::io::Result<()> {
+    let score = best_score(&region.record);
+    top.add(region, |r| &r.record, score).map_err(invalid_input)
 }
 
 /// The molecule types of `input_files` (each resolved to its shards), read off the
@@ -235,6 +234,14 @@ pub fn domain_search(
     refs: &References,
     opts: &DomainSearchOptions,
 ) -> std::io::Result<Vec<SeqRecord>> {
+    if opts.dedup == Dedup::SequenceRc && opts.translate {
+        return Err(invalid_input(
+            "--dedup sequence_rc is only supported for nucleotide output.".into(),
+        ));
+    }
+    if opts.max_hits == Some(0) {
+        return Err(invalid_input("max_hits must be at least 1.".into()));
+    }
     // Collect every partition across all inputs/shards, then process them in
     // parallel (each is read independently via its own file handle / BGZF offset).
     let mut parts = Vec::new();
@@ -265,7 +272,7 @@ pub fn domain_search(
         no_annotations: !opts.add_annotations,
         hits_only: true,
         max_mode: opts.max_mode,
-        allowed_taxids: opts.allowed_taxids.clone(),
+        taxonomy: opts.taxonomy.clone(),
         max_hits_per_contig: opts.max_hits_per_contig,
         parallel_profiles: false,
         partial: opts.partial,
@@ -296,10 +303,6 @@ pub fn domain_search(
                         &opts.alphabet,
                     )?;
                     let mut emitted = Vec::new();
-                    // Sequence dedup runs per partition too, so a partition's
-                    // --max_hits trim below is not crowded out by copies of one
-                    // sequence; the global pass drops copies across partitions.
-                    let mut seen = opts.deduplicate_by_sequence.then(HashSet::new);
                     for rec in domainate(records, refs, &dopts)? {
                         // Protein hits pass through whole; nucleotide hits go through
                         // neighborhood extraction.
@@ -332,57 +335,54 @@ pub fn domain_search(
                             )?);
                         }
                     }
-                    if let Some(seen) = &mut seen {
-                        emitted.retain(|r: &Region| {
-                            is_new_sequence(&r.record, seen, opts.both_strands)
-                        });
-                    }
-                    // Bound each worker's result by --max_hits before it reaches the
-                    // parent: a single partition can contribute at most `max_hits` to a
-                    // global top-N, so this is lossless, and it turns the parent's peak
-                    // memory from every hit in the database into
-                    // O(partitions * max_hits). The sort is stable and the partitions are
-                    // merged in order below, so the surviving set is identical to sorting
-                    // everything at the end.
-                    if let Some(max_hits) = opts.max_hits {
-                        if emitted.len() > max_hits {
-                            emitted.sort_by(|a, b| {
-                                best_score(&b.record).total_cmp(&best_score(&a.record))
-                            });
-                            emitted.truncate(max_hits);
+                    // With --max_hits each partition keeps only its own top
+                    // `max_hits` unique keys before reaching the parent: a key it drops
+                    // already has `max_hits` better ones here, and the merge cannot lose
+                    // distinct keys (one ID is one sequence), so this is lossless and
+                    // bounds the parent's memory by O(partitions * max_hits).
+                    match opts.max_hits {
+                        None => Ok(emitted),
+                        Some(max_hits) => {
+                            let mut top = top_hits(max_hits, opts.dedup)?;
+                            for region in emitted {
+                                add_hit(&mut top, region)?;
+                            }
+                            Ok(top.into_sorted())
                         }
                     }
-                    Ok(emitted)
                 })
                 .collect()
         });
 
+    // Partitions merge in order, so "arrival" (the tie-break, and which copy is
+    // first) is deterministic here where upstream's process pool makes it arbitrary.
     let mut out: Vec<Region> = Vec::new();
-    let mut seen = opts.deduplicate_by_sequence.then(HashSet::new);
-    for part_result in per_part {
-        let part = part_result?;
-        match &mut seen {
-            Some(seen) => out.extend(
-                part.into_iter()
-                    .filter(|r| is_new_sequence(&r.record, seen, opts.both_strands)),
-            ),
-            None => out.extend(part),
+    match opts.max_hits {
+        None => {
+            let mut deduplicator = RecordDeduplicator::new(opts.dedup);
+            for part_result in per_part {
+                for region in part_result? {
+                    if deduplicator.keep(&region.record).map_err(invalid_input)? {
+                        out.push(region);
+                    }
+                }
+            }
         }
-    }
-
-    if let Some(max_hits) = opts.max_hits {
-        out.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
-        out.truncate(max_hits);
+        Some(max_hits) => {
+            let mut top = top_hits(max_hits, opts.dedup)?;
+            for part_result in per_part {
+                for region in part_result? {
+                    add_hit(&mut top, region)?;
+                }
+            }
+            out = top.into_sorted();
+        }
     }
 
     // Upstream `deduplicate_and_pad(best_first=True)`. `--pad` aligns the focus CDSs
     // across every region, so it can only run once the whole search is in, and
     // sorts by score first whether or not `--max_hits` is set (a stable sort, so a
     // `--max_hits` order stands).
-    if opts.deduplicate {
-        let mut ids = HashSet::new();
-        out.retain(|r| ids.insert(r.record.id.clone()));
-    }
     if opts.pad {
         out.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
         pad_records(&mut out, opts.anchor);

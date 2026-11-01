@@ -6,35 +6,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::seq::{SeqFeature, SeqRecord};
-use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
-/// Which annotation types to filter.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum AnnotationType {
-    Domainator,
-    DomainSearch,
-    All,
-}
-
-impl AnnotationType {
-    pub fn parse(s: &str) -> Result<Self, String> {
-        match s {
-            "domainator" => Ok(AnnotationType::Domainator),
-            "domain_search" => Ok(AnnotationType::DomainSearch),
-            "all" => Ok(AnnotationType::All),
-            _ => Err(format!("Invalid annotation type: {s}")),
-        }
-    }
-    fn matches(self, kind: &str) -> bool {
-        match self {
-            AnnotationType::Domainator => kind == DOMAIN_FEATURE_NAME,
-            AnnotationType::DomainSearch => kind == DOMAIN_SEARCH_BEST_HIT_NAME,
-            AnnotationType::All => {
-                kind == DOMAIN_FEATURE_NAME || kind == DOMAIN_SEARCH_BEST_HIT_NAME
-            }
-        }
-    }
-}
+pub use crate::tools::select_common::AnnotationType;
 
 /// Options for [`filter_domains`].
 pub struct FilterDomainsOptions {
@@ -108,7 +81,7 @@ pub fn filter_record(rec: &mut SeqRecord, opts: &FilterDomainsOptions) {
     let mut cds_seen: Vec<String> = Vec::new();
 
     for (idx, feat) in feats.iter().enumerate() {
-        if !opts.annotation_type.matches(&feat.kind) {
+        if !opts.annotation_type.includes(&feat.kind) {
             continue;
         }
         let cds_id = feat.get_first("cds_id").unwrap_or("").to_string();
@@ -170,7 +143,7 @@ pub fn filter_record(rec: &mut SeqRecord, opts: &FilterDomainsOptions) {
     let keep_idx: HashSet<usize> = kept.values().flatten().copied().collect();
     let mut new_features = Vec::with_capacity(rec.features.len());
     for (idx, feat) in rec.features.iter().enumerate() {
-        if opts.annotation_type.matches(&feat.kind) {
+        if opts.annotation_type.includes(&feat.kind) {
             if keep_idx.contains(&idx) {
                 new_features.push(feat.clone());
             }
@@ -193,6 +166,7 @@ pub fn filter_domains(mut records: Vec<SeqRecord>, opts: &FilterDomainsOptions) 
 mod tests {
     use super::*;
     use crate::seq::{Annotations, Location, Topology};
+    use crate::DOMAIN_FEATURE_NAME;
 
     fn dom(
         cds: &str,

@@ -240,8 +240,7 @@ pub fn get_cds_unique_name(feature: &SeqFeature) -> String {
 /// `utils.get_cds_name`: first present qualifier in `precedence`
 /// (default `gene_id, locus_tag, gene, protein_id`), else the unique name.
 pub fn get_cds_name(feature: &SeqFeature, precedence: Option<&[&str]>) -> String {
-    let default: [&str; 4] = ["gene_id", "locus_tag", "gene", "protein_id"];
-    let prec = precedence.unwrap_or(&default);
+    let prec = precedence.unwrap_or(&CDS_NAME_FIELDS);
     for p in prec {
         if let Some(v) = feature.get_first(p) {
             return v.to_string();
@@ -249,6 +248,58 @@ pub fn get_cds_name(feature: &SeqFeature, precedence: Option<&[&str]>) -> String
     }
     get_cds_unique_name(feature)
 }
+
+/// `--annotation_type`: which annotations a tool reads (upstream
+/// `model.ANNOTATION_TYPES`/`annotation_feature_types`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AnnotationType {
+    /// `Domainator` features, from domainate.
+    #[default]
+    Domainator,
+    /// `Domain_Search` best-hit features, from domain_search.
+    DomainSearch,
+    /// Both.
+    All,
+}
+
+impl std::str::FromStr for AnnotationType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "domainator" => Ok(AnnotationType::Domainator),
+            "domain_search" => Ok(AnnotationType::DomainSearch),
+            "all" => Ok(AnnotationType::All),
+            _ => Err(format!(
+                "annotation_type must be one of domainator, domain_search, all, not {s:?}."
+            )),
+        }
+    }
+}
+
+impl AnnotationType {
+    /// Whether a feature of type `kind` is one of these annotations.
+    pub fn includes(self, kind: &str) -> bool {
+        match self {
+            AnnotationType::Domainator => kind == DOMAIN_FEATURE_NAME,
+            AnnotationType::DomainSearch => kind == DOMAIN_SEARCH_BEST_HIT_NAME,
+            AnnotationType::All => {
+                kind == DOMAIN_FEATURE_NAME || kind == DOMAIN_SEARCH_BEST_HIT_NAME
+            }
+        }
+    }
+}
+
+/// Upstream `model.cds_name_precedence`: the qualifiers a CDS name is read from,
+/// `name_field` first when given, then `default`'s others in order.
+pub fn cds_name_precedence<'a>(name_field: Option<&'a str>, default: &[&'a str]) -> Vec<&'a str> {
+    name_field
+        .into_iter()
+        .chain(default.iter().copied().filter(|f| Some(*f) != name_field))
+        .collect()
+}
+
+/// `get_cds_name`'s default qualifier order.
+pub const CDS_NAME_FIELDS: [&str; 4] = ["gene_id", "locus_tag", "gene", "protein_id"];
 
 fn feature_evalue(f: &SeqFeature) -> f64 {
     f.get_first("evalue")
@@ -386,35 +437,31 @@ impl DomainatorCds {
         cdss
     }
 
-    /// `DomainatorCDS.get_domain_names`: domain names, optionally restricted to
-    /// `databases` and to e-values at most `evalue`.
+    /// `DomainatorCDS.get_domain_names`: the names of the CDS's `annotation_type`
+    /// annotations, optionally restricted to `databases` and to e-values at most
+    /// `evalue`.
     pub fn get_domain_names(
         &self,
         databases: Option<&HashSet<String>>,
         evalue: Option<f64>,
+        annotation_type: AnnotationType,
     ) -> HashSet<String> {
-        let mut out = HashSet::new();
-        for f in &self.domain_features {
-            let mut keep = true;
-            if let Some(dbs) = databases {
-                if !f
-                    .get_first("database")
-                    .map(|d| dbs.contains(d))
-                    .unwrap_or(false)
-                {
-                    keep = false;
-                }
-            }
-            if !evalue_passes(f, evalue) {
-                keep = false;
-            }
-            if keep {
-                if let Some(n) = f.get_first("name") {
-                    out.insert(n.to_string());
-                }
-            }
-        }
-        out
+        let domains = self
+            .domain_features
+            .iter()
+            .filter(|_| annotation_type.includes(DOMAIN_FEATURE_NAME));
+        let search_hit = self
+            .domain_search_feature
+            .iter()
+            .filter(|_| annotation_type.includes(DOMAIN_SEARCH_BEST_HIT_NAME));
+        domains
+            .chain(search_hit)
+            .filter(|f| {
+                databases.is_none_or(|dbs| f.get_first("database").is_some_and(|d| dbs.contains(d)))
+                    && evalue_passes(f, evalue)
+            })
+            .filter_map(|f| f.get_first("name").map(str::to_string))
+            .collect()
     }
 }
 
@@ -571,11 +618,11 @@ mod tests {
         let full =
             DomainatorCds::list_from_contig(&rec, None, f64::NEG_INFINITY, false, None, true);
         assert_eq!(
-            full[0].get_domain_names(Some(&set(&["DB"])), None),
+            full[0].get_domain_names(Some(&set(&["DB"])), None, AnnotationType::Domainator),
             set(&["D1", "D2"])
         );
         assert!(full[0]
-            .get_domain_names(Some(&set(&["OTHER"])), None)
+            .get_domain_names(Some(&set(&["OTHER"])), None, AnnotationType::Domainator)
             .is_empty());
     }
 }

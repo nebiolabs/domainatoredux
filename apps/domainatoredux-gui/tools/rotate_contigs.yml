@@ -28,7 +28,9 @@ fields:
   - name: databases
     label: "Databases"
   - name: annotation_type
-    label: "Annotations"
+    label: "Annotation type"
+  - name: has_search_hit
+    label: "Has search hit"
   - name: anchor
     label: "Anchor"
   - name: evalue

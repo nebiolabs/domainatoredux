@@ -46,7 +46,7 @@ pub struct DeduplicateGenbankArgs {
     /// Identity threshold (between 0 and 1), passed to cd-hit as the -c parameter, to
     /// usearch as the -id parameter, or to diamond as --approx-id after converting to
     /// percent.
-    #[arg(long, required = true)]
+    #[arg(long, visible_alias = "id", required = true)]
     pub identity: crate::types::Finite,
     /// In the output genbank file, will prepend X- to the names of contigs, where X is
     /// the number of contigs from the original file collapsed into this centroid.

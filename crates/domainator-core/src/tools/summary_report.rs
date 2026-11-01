@@ -87,7 +87,8 @@ pub struct SummaryReport {
 
 #[derive(Debug, Clone, Default)]
 pub struct SummaryReportOptions {
-    /// Domains to report co-occurrence for. Empty means no co-occurrence section.
+    /// Domains to report co-occurrence for, one row each in alphabetical order (upstream
+    /// `b10240a`). Empty means no co-occurrence section.
     pub focus_domains: Vec<String>,
     /// Restrict counted domains to these databases; empty means all.
     pub databases: Vec<String>,
@@ -276,7 +277,10 @@ pub fn summary_report(
 
     // Co-occurrence, as a percentage of the contigs carrying the row domain.
     let mut cooccurrence: Vec<(String, Vec<(String, f64)>)> = Vec::new();
-    for focus in &opts.focus_domains {
+    let mut focus_domains: Vec<&String> = opts.focus_domains.iter().collect();
+    focus_domains.sort();
+    focus_domains.dedup();
+    for focus in focus_domains {
         let Some(acc) = domains.get(focus) else {
             continue;
         };

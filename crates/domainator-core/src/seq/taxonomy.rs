@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 
+use super::{SeqFeature, SeqRecord};
 use crate::tools::select_common::BooleanEvaluator;
 
 /// "unidentified sequences" — the normalized taxid for deleted/unknown taxa.
@@ -338,6 +339,323 @@ impl NCBITaxonomy {
         let empty_passes = verdict(&[]);
         Ok(Some(self.finalize_allowed(allowed, empty_passes)))
     }
+
+    /// A criterion taxid, followed through `merged.dmp`; an error if it is not a
+    /// taxid of the database (upstream `compile_taxonomy_filter`'s `normalize`).
+    fn normalize_criterion(&self, taxid: i64) -> Result<i64, String> {
+        let mut taxid = taxid;
+        let mut seen = HashSet::new();
+        while let Some(&new) = self.merged.get(&taxid) {
+            if !seen.insert(taxid) {
+                return Err(format!("Cyclic merged taxonomy criterion: {taxid}."));
+            }
+            taxid = new;
+        }
+        if !self.nodes.contains_key(&taxid) {
+            return Err(format!(
+                "Taxonomy criterion {taxid} is deleted or absent from the database; check \
+                 the taxid or update the taxonomy database."
+            ));
+        }
+        Ok(taxid)
+    }
+
+    /// Upstream `taxonomy.records.compile_taxonomy_filter`: compile
+    /// `--include_taxids`/`--exclude_taxids` or `--taxonomy_expr` into a
+    /// [`TaxonomyFilter`] that applies `unknown` to every candidate whose taxid the
+    /// database cannot resolve. `None` when no criterion is given. A criterion that is
+    /// not a taxid of the database is an error, as is giving an expression together
+    /// with include/exclude taxids.
+    pub fn compile_filter(
+        &self,
+        include: &[i64],
+        exclude: &[i64],
+        expression: Option<&str>,
+        unknown: TaxonomyUnknown,
+    ) -> Result<Option<TaxonomyFilter>, String> {
+        let expression = expression.map(str::trim).filter(|e| !e.is_empty());
+        if expression.is_some() && (!include.is_empty() || !exclude.is_empty()) {
+            return Err(
+                "taxonomy_expr is mutually exclusive with include_taxids/exclude_taxids.".into(),
+            );
+        }
+        if !taxonomy_active(include, exclude, expression) {
+            return Ok(None);
+        }
+        let (allowed, empty_matches) = if let Some(expression) = expression {
+            // Each name becomes its normalized taxid, so a merged taxid selects
+            // what its replacement does.
+            let evaluator = BooleanEvaluator::new(expression)?;
+            let mut replacements = HashMap::new();
+            for name in evaluator.names() {
+                let taxid = name.parse::<i64>().map_err(|_| {
+                    format!("Invalid taxonomy criterion: {name:?}. Expected an NCBI taxid.")
+                })?;
+                replacements.insert(name.clone(), self.normalize_criterion(taxid)?.to_string());
+            }
+            let normalized = replace_names(expression, &replacements);
+            let empty_matches =
+                BooleanEvaluator::new(&normalized)?.check_expression(&HashSet::new());
+            let allowed = self
+                .compile_taxonomy_expression(&normalized)?
+                .unwrap_or_default();
+            (allowed, empty_matches)
+        } else {
+            let normalize = |taxids: &[i64]| {
+                taxids
+                    .iter()
+                    .map(|&t| self.normalize_criterion(t))
+                    .collect::<Result<HashSet<i64>, String>>()
+            };
+            let (include, exclude) = (normalize(include)?, normalize(exclude)?);
+            let allowed = self
+                .compile_taxonomy_filter(
+                    Some(&include).filter(|s| !s.is_empty()),
+                    Some(&exclude).filter(|s| !s.is_empty()),
+                )
+                .unwrap_or_default();
+            (allowed, include.is_empty())
+        };
+        // Every node but "unidentified" is resolved; a merged taxid is resolved when
+        // its replacement is, and takes its verdict.
+        let mut verdicts: HashMap<i64, bool> = self
+            .nodes
+            .keys()
+            .filter(|&&t| t != UNIDENTIFIED_TAXID)
+            .map(|&t| (t, allowed.contains(&t)))
+            .collect();
+        for &old in self.merged.keys() {
+            let mut replacement = old;
+            let mut seen = HashSet::new();
+            while let Some(&new) = self.merged.get(&replacement) {
+                if !seen.insert(replacement) {
+                    break;
+                }
+                replacement = new;
+            }
+            if let Some(&verdict) = verdicts.get(&replacement) {
+                verdicts.insert(old, verdict || allowed.contains(&old));
+            }
+        }
+        Ok(Some(TaxonomyFilter {
+            verdicts,
+            unknown,
+            empty_matches,
+        }))
+    }
+}
+
+/// Upstream `taxonomy_active`: whether any taxonomy criterion was given (a blank
+/// expression is none).
+pub fn taxonomy_active(include: &[i64], exclude: &[i64], expression: Option<&str>) -> bool {
+    !include.is_empty() || !exclude.is_empty() || expression.is_some_and(|e| !e.trim().is_empty())
+}
+
+/// `expression` with each name (a run of characters other than operators,
+/// parentheses and whitespace) replaced by its entry in `replacements`.
+fn replace_names(expression: &str, replacements: &HashMap<String, String>) -> String {
+    let is_name = |c: char| !"&|~()".contains(c) && !c.is_whitespace();
+    let mut out = String::with_capacity(expression.len());
+    let mut name = String::new();
+    for c in expression.chars().chain(std::iter::once(' ')) {
+        if is_name(c) {
+            name.push(c);
+            continue;
+        }
+        if !name.is_empty() {
+            out.push_str(replacements.get(&name).unwrap_or(&name));
+            name.clear();
+        }
+        out.push(c);
+    }
+    out.pop();
+    out
+}
+
+/// `--taxonomy_unknown`: what a taxonomy filter does with a candidate whose taxid the
+/// database cannot resolve — missing, "unidentified" (32644), deleted, or absent.
+/// Upstream `TAXONOMY_UNKNOWN_CHOICES`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TaxonomyUnknown {
+    /// Reject it (the default).
+    #[default]
+    Exclude,
+    /// Accept it.
+    Include,
+    /// Judge it as if its lineage were empty: `~2` accepts it, `2` does not.
+    Evaluate,
+    /// Fail the run.
+    Error,
+}
+
+impl std::str::FromStr for TaxonomyUnknown {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "exclude" => Ok(Self::Exclude),
+            "include" => Ok(Self::Include),
+            "evaluate" => Ok(Self::Evaluate),
+            "error" => Ok(Self::Error),
+            _ => Err(format!(
+                "Invalid taxonomy_unknown {s:?}; choose from exclude, include, evaluate, error."
+            )),
+        }
+    }
+}
+
+/// A compiled taxonomy gate, upstream `taxonomy.records.TaxonomyFilter`: a verdict for
+/// every taxid the database resolves, and the `--taxonomy_unknown` policy for the
+/// rest. Built by [`NCBITaxonomy::compile_filter`]; needs no database afterwards.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TaxonomyFilter {
+    verdicts: HashMap<i64, bool>,
+    unknown: TaxonomyUnknown,
+    /// Whether the criteria accept an empty lineage (`--taxonomy_unknown evaluate`).
+    empty_matches: bool,
+}
+
+impl TaxonomyFilter {
+    /// The unresolved-taxonomy policy.
+    pub fn unknown(&self) -> TaxonomyUnknown {
+        self.unknown
+    }
+
+    /// Whether a candidate with `taxid` (`None`: none found) passes. `context` names
+    /// the candidate for the error `--taxonomy_unknown error` raises.
+    pub fn allows(
+        &self,
+        taxid: Option<i64>,
+        context: impl FnOnce() -> String,
+    ) -> Result<bool, String> {
+        if let Some(&verdict) = taxid.and_then(|t| self.verdicts.get(&t)) {
+            return Ok(verdict);
+        }
+        match self.unknown {
+            TaxonomyUnknown::Error => Err(format!(
+                "Unresolved taxonomy for {}: taxid {} (missing, unidentified, deleted, or \
+                 absent from the taxonomy database).",
+                context(),
+                taxid.map_or_else(|| "None".to_string(), |t| t.to_string())
+            )),
+            TaxonomyUnknown::Include => Ok(true),
+            TaxonomyUnknown::Evaluate => Ok(self.empty_matches),
+            TaxonomyUnknown::Exclude => Ok(false),
+        }
+    }
+
+    /// Upstream `TaxonomyFilter.matches`: whether `record` passes, or with `feature`,
+    /// whether that feature of it does. A protein record, and a whole record, take
+    /// the record's taxid; a feature of a nucleotide record takes the taxid of the
+    /// longest `source` covering it. A malformed taxid is an error, never unknown.
+    pub fn matches(
+        &self,
+        record: &SeqRecord,
+        feature: Option<&SeqFeature>,
+    ) -> Result<bool, String> {
+        use super::taxid::location_taxid;
+        let mut context = format!("record {:?}", record.id);
+        if let Some(f) = feature {
+            context.push_str(&format!(", {} {}", f.kind, location_str(&f.location)));
+        }
+        let invalid = |e: String| format!("Invalid taxonomy for {context}: {e}");
+        let sources: Vec<&SeqFeature> = record
+            .features
+            .iter()
+            .filter(|f| f.kind == "source")
+            .collect();
+        let (taxid, mut candidates) = match feature {
+            Some(f) if !record.is_protein() => {
+                let region = f.location.intervals();
+                let covering: Vec<&SeqFeature> = sources
+                    .iter()
+                    .copied()
+                    .filter(|s| covers(&s.location.intervals(), &region))
+                    .collect();
+                (location_taxid(&record.features, &f.location), covering)
+            }
+            _ => {
+                // `get_taxid`: a UniProt/UniRef header wins over the sources.
+                let mut header = None;
+                for marker in [" OX=", " TaxID="] {
+                    if let Some(rest) = record
+                        .description
+                        .rsplit(marker)
+                        .next()
+                        .filter(|_| record.description.contains(marker))
+                    {
+                        let token = rest.split(' ').next().unwrap_or("");
+                        header = Some(token.parse::<i64>().map_err(|_| {
+                            invalid(format!("invalid literal for int() with base 10: {token:?}"))
+                        })?);
+                        break;
+                    }
+                }
+                match header {
+                    Some(t) => (Some(t), Vec::new()),
+                    None => (Some(super::taxid::record_taxid(record)), sources),
+                }
+            }
+        };
+        // The source the taxid came from must carry a well-formed taxon.
+        candidates.sort_by_key(|s| {
+            std::cmp::Reverse(
+                s.location
+                    .intervals()
+                    .iter()
+                    .map(|(a, b)| b - a)
+                    .sum::<i64>(),
+            )
+        });
+        if let Some(source) = candidates.first() {
+            let xrefs = source.qualifiers.iter().filter(|(k, _)| k == "db_xref");
+            for xref in xrefs.flat_map(|(_, values)| values) {
+                if let Some(rest) = xref.strip_prefix("taxon:") {
+                    let token = rest.rsplit(':').next().unwrap_or(rest);
+                    token.parse::<i64>().map_err(|_| {
+                        invalid(format!("invalid literal for int() with base 10: {token:?}"))
+                    })?;
+                }
+            }
+        }
+        self.allows(taxid, || context.clone())
+    }
+}
+
+/// Whether merged `outer` intervals cover every one of `inner` (`location_covers`).
+fn covers(outer: &[(i64, i64)], inner: &[(i64, i64)]) -> bool {
+    let mut merged: Vec<(i64, i64)> = outer.to_vec();
+    merged.sort_unstable();
+    let mut out: Vec<(i64, i64)> = Vec::new();
+    for (s, e) in merged {
+        match out.last_mut() {
+            Some(last) if s <= last.1 => last.1 = last.1.max(e),
+            _ => out.push((s, e)),
+        }
+    }
+    inner
+        .iter()
+        .all(|&(s, e)| out.iter().any(|&(os, oe)| os <= s && e <= oe))
+}
+
+/// A location as Biopython prints one, `[0:60](+)` or `join{[0:3](+), [9:12](+)}`,
+/// for naming a candidate in an error.
+fn location_str(location: &super::Location) -> String {
+    let parts: Vec<String> = location
+        .parts
+        .iter()
+        .map(|&(s, e, strand, ..)| {
+            let strand = match strand {
+                1 => "(+)",
+                -1 => "(-)",
+                _ => "",
+            };
+            format!("[{}:{}]{strand}", s.min(e), s.max(e))
+        })
+        .collect();
+    match parts.as_slice() {
+        [one] => one.clone(),
+        _ => format!("join{{{}}}", parts.join(", ")),
+    }
 }
 
 /// Per-record taxonomy view (`utils.TaxonomyData`): normalized taxid, lineage
@@ -633,6 +951,149 @@ mod tests {
         assert!(t.compile_taxonomy_expression("2 &").is_err());
         assert!(t.compile_taxonomy_expression("Bacteria").is_err());
         assert!(b.contains(&1224) && b.contains(&562) && !b.contains(&2));
+    }
+
+    /// Upstream `test_unknown_policies`: a missing, unidentified or unknown taxid
+    /// gets the `--taxonomy_unknown` verdict; `evaluate` judges an empty lineage.
+    #[test]
+    fn unresolved_taxids_follow_the_unknown_policy() {
+        let t = tax();
+        // (include, exclude, expression, whether an empty lineage passes)
+        type Criteria<'a> = (&'a [i64], &'a [i64], Option<&'a str>, bool);
+        let criteria: [Criteria<'_>; 4] = [
+            (&[], &[], Some("~2"), true),
+            (&[], &[2], None, true),
+            (&[2], &[], None, false),
+            (&[], &[], Some("2 & ~1224"), false),
+        ];
+        for (include, exclude, expr, empty) in criteria {
+            for unknown in [
+                TaxonomyUnknown::Exclude,
+                TaxonomyUnknown::Include,
+                TaxonomyUnknown::Evaluate,
+                TaxonomyUnknown::Error,
+            ] {
+                let gate = t
+                    .compile_filter(include, exclude, expr, unknown)
+                    .unwrap()
+                    .unwrap();
+                for taxid in [None, Some(UNIDENTIFIED_TAXID), Some(999_999_999), Some(888)] {
+                    let verdict = gate.allows(taxid, || "record 'unknown'".into());
+                    match unknown {
+                        TaxonomyUnknown::Error => {
+                            assert!(verdict.unwrap_err().contains("record 'unknown'"))
+                        }
+                        _ => assert_eq!(
+                            verdict.unwrap(),
+                            unknown == TaxonomyUnknown::Include
+                                || (unknown == TaxonomyUnknown::Evaluate && empty),
+                            "{expr:?} {include:?} {exclude:?} {unknown:?} {taxid:?}"
+                        ),
+                    }
+                }
+            }
+        }
+    }
+
+    /// Upstream `test_known_merged_deleted_and_criteria`.
+    #[test]
+    fn known_merged_and_criterion_taxids() {
+        let t = tax();
+        let gate = t
+            .compile_filter(&[2], &[1224], None, TaxonomyUnknown::Exclude)
+            .unwrap()
+            .unwrap();
+        let allows = |taxid| gate.allows(Some(taxid), String::new).unwrap();
+        assert!(allows(2) && !allows(562) && !allows(1224));
+        // A merged taxid takes its replacement's verdict, as a criterion too.
+        assert_eq!(allows(999000), allows(562));
+        assert_eq!(
+            t.compile_filter(&[], &[], Some("999000"), TaxonomyUnknown::Exclude),
+            t.compile_filter(&[562], &[], None, TaxonomyUnknown::Exclude)
+        );
+        // Criteria must be taxids the database knows.
+        for (include, expr) in [
+            (&[59919_i64][..], None),
+            (&[][..], Some("Bacteria")),
+            (&[888][..], None),
+        ] {
+            let err = t
+                .compile_filter(include, &[], expr, TaxonomyUnknown::Exclude)
+                .unwrap_err();
+            assert!(err.contains("criterion"), "{err}");
+        }
+        assert!(t
+            .compile_filter(&[2], &[], Some("~2"), TaxonomyUnknown::Exclude)
+            .unwrap_err()
+            .contains("mutually exclusive"));
+        assert_eq!(
+            t.compile_filter(&[], &[], Some("  "), TaxonomyUnknown::Exclude),
+            Ok(None)
+        );
+    }
+
+    /// Upstream `test_circular_anchor_source_precedence` and the malformed-taxid
+    /// check: a feature takes the longest source covering it; a whole record, its
+    /// longest source; a malformed taxon is an error, not "unknown".
+    #[test]
+    fn a_feature_takes_the_longest_source_covering_it() {
+        use crate::seq::{Annotations, CompoundOp, Location, Topology};
+        let source = |parts: Vec<(i64, i64)>, taxon: &str| {
+            let mut location = Location::range(parts[0].0, parts[0].1, 1);
+            if parts.len() > 1 {
+                location.operator = Some(CompoundOp::Order);
+                location.parts = parts
+                    .iter()
+                    .map(|&(s, e)| (s, e, 1, false, false))
+                    .collect();
+            }
+            let mut f = SeqFeature::new("source", location);
+            f.set("db_xref", format!("taxon:{taxon}"));
+            f
+        };
+        let mut record = SeqRecord {
+            id: "mixed".into(),
+            name: "mixed".into(),
+            description: "mixed".into(),
+            seq: b"ATG".repeat(100),
+            molecule_type: Some("DNA".into()),
+            topology: Topology::Circular,
+            annotations: Annotations::default(),
+            features: vec![
+                source(vec![(0, 90), (180, 300)], "562"),
+                source(vec![(90, 180)], "2"),
+            ],
+        };
+        let mut wrapped = SeqFeature::new("CDS", Location::range(270, 300, 1));
+        wrapped.location.operator = Some(CompoundOp::Join);
+        wrapped.location.parts.push((0, 30, 1, false, false));
+        let coli = t_filter(&[562]);
+        assert_eq!(coli.matches(&record, Some(&wrapped)), Ok(true));
+        let inside = SeqFeature::new("CDS", Location::range(100, 150, 1));
+        assert_eq!(coli.matches(&record, Some(&inside)), Ok(false));
+        // An uncovered CDS has no taxid.
+        let straddling = SeqFeature::new("CDS", Location::range(60, 120, 1));
+        assert_eq!(coli.matches(&record, Some(&straddling)), Ok(false));
+        // A source over the whole contig is longer, so it wins.
+        record.features.push(source(vec![(0, 300)], "2"));
+        assert_eq!(coli.matches(&record, Some(&wrapped)), Ok(false));
+        assert_eq!(t_filter(&[2]).matches(&record, Some(&wrapped)), Ok(true));
+        // The whole record takes its longest source.
+        assert_eq!(t_filter(&[2]).matches(&record, None), Ok(true));
+        record.features.push(source(vec![(0, 300)], "bad"));
+        record.features.swap(0, 3);
+        let err = t_filter(&[2]).matches(&record, None).unwrap_err();
+        assert!(
+            err.contains("Invalid taxonomy for record \"mixed\""),
+            "{err}"
+        );
+    }
+
+    fn t_filter(include: &[i64]) -> TaxonomyFilter {
+        tax()
+            .compile_filter(include, &[], None, TaxonomyUnknown::Exclude)
+            .unwrap()
+            .unwrap()
     }
 
     #[test]

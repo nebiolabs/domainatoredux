@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use anyhow::{anyhow, Result};
 use domainator_config::args::SelectByCdsArgs;
 use domainator_core::seq::SeqRecord;
+use domainator_core::tools::dedup::{Dedup, RecordDeduplicator};
 use domainator_core::tools::neighborhood::validate_range;
 use domainator_core::tools::select_by_cds::{pad_records, select_by_cds, SelectByCdsOptions};
 use domainator_core::tools::select_common::parse_name_list;
@@ -42,7 +43,13 @@ pub fn run(args: &SelectByCdsArgs) -> Result<()> {
         normalize_direction: !args.keep_direction,
         evalue: args.evalue.map(|e| e.0),
         invert: args.invert,
-        search_hits: args.annotation_type == "domain_search",
+        annotation_type: args
+            .annotation_type
+            .parse()
+            .map_err(|e: String| anyhow!(e))?,
+        has_search_hit: args.has_search_hit,
+        name_field: args.name_field.clone(),
+        taxonomy: crate::taxonomy_filter(&args.taxonomy)?,
         max_region_overlap: args.max_region_overlap.0,
         strand: match args.strand.as_deref() {
             Some("f") => Some(1),
@@ -62,11 +69,17 @@ pub fn run(args: &SelectByCdsArgs) -> Result<()> {
     if let Some(set) = &target_contigs {
         records.retain(|r| set.contains(&r.id));
     }
-    let mut regions = select_by_cds(&records, &opts).map_err(|e| anyhow!(e))?;
-    if !args.no_deduplicate {
-        let mut seen = HashSet::new();
-        regions.retain(|r| seen.insert(r.record.id.clone()));
+    let regions = select_by_cds(&records, &opts).map_err(|e| anyhow!(e))?;
+    // Upstream `deduplicate_and_pad`: the --dedup policy, before padding.
+    let dedup: Dedup = args.dedup.parse().map_err(|e: String| anyhow!(e))?;
+    let mut deduplicator = RecordDeduplicator::new(dedup);
+    let mut kept = Vec::with_capacity(regions.len());
+    for region in regions {
+        if deduplicator.keep(&region.record).map_err(|e| anyhow!(e))? {
+            kept.push(region);
+        }
     }
+    let mut regions = kept;
     if args.pad {
         pad_records(&mut regions, anchor);
     }

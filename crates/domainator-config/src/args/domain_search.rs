@@ -1,4 +1,4 @@
-use super::CommonArgs;
+use super::{CommonArgs, TaxonomyArgs};
 use crate::types::{Finite, NonNegFloat, PositiveFloat};
 
 /// Searches a large database with a few references and extracts the hits (upstream
@@ -17,7 +17,7 @@ pub struct DomainSearchArgs {
     /// declare their own molecule type.
     #[arg(long, default_value = "protein", value_parser = ["nucleotide", "protein"])]
     pub alphabet: String,
-    /// Reference files to search with. Supported types are protein HMMs, protein
+    /// References to search for in the --input records. Supported types are protein HMMs, protein
     /// FASTA, nucleotide FASTA and nucleotide HMMs (not Infernal CM files).
     #[arg(short, long, required = true, num_args = 1..)]
     pub reference: Vec<String>,
@@ -65,25 +65,8 @@ pub struct DomainSearchArgs {
     /// [default: unlimited]
     #[arg(long, allow_negative_numbers = true)]
     pub max_hits_per_contig: Option<i64>,
-    /// Space separated list of taxids to include. Contigs with taxonomy not in this
-    /// list will be skipped.
-    #[arg(long, num_args = 1.., allow_negative_numbers = true)]
-    pub include_taxids: Option<Vec<i64>>,
-    /// Space separated list of taxids to exclude. Contigs with taxonomy in this list
-    /// will be skipped.
-    #[arg(long, num_args = 1.., allow_negative_numbers = true)]
-    pub exclude_taxids: Option<Vec<i64>>,
-    /// A boolean expression over taxids using operators & (AND), | (OR), ~ (NOT), and
-    /// parentheses, e.g. "2 & ~1224" (within Bacteria but not Proteobacteria). A taxid
-    /// is true for a contig when it is in the contig's lineage. Mutually exclusive with
-    /// --include_taxids/--exclude_taxids.
-    #[arg(long)]
-    pub taxonomy_expr: Option<String>,
-    /// Path to an NCBI taxonomy database: a directory of extracted .dmp files, or a
-    /// taxdump.tar.gz. Default: /tmp/ncbi_taxonomy_USER, USER being your user name.
-    /// Unlike upstream, it is never downloaded.
-    #[arg(long)]
-    pub ncbi_taxonomy_path: Option<String>,
+    #[command(flatten)]
+    pub taxonomy: TaxonomyArgs,
     /// Which CDSs/proteins to search, by fragment status. include: all. exclude: skip
     /// fragments. only: only fragments. A CDS is a fragment if its location has '<' or
     /// '>', or it has a /partial qualifier. A protein record is a fragment if it has a
@@ -108,28 +91,17 @@ pub struct DomainSearchArgs {
     /// annotated genbank. If >= 1, then no overlap filtering will be done.
     #[arg(long, default_value = "1", allow_negative_numbers = true)]
     pub max_overlap: Finite,
-    /// When activated, new domainator annotations will be added to the file, not just
-    /// the domain_search annotations. Useful if you want to see what the non-best hits
-    /// score.
+    /// Add domain annotations (Domainator features) for retained hits, in addition to
+    /// the search best-hit annotations (Domain_Search features) already present.
     #[arg(long)]
     pub add_annotations: bool,
-    /// If the same region is extracted for multiple hits, then keep only one copy of
-    /// it (compared by record ID).
-    #[arg(long)]
-    pub deduplicate: bool,
-    /// Keep every copy of a region extracted for several hits (the default).
-    #[arg(long)]
-    pub no_deduplicate: bool,
-    /// Drop hits whose output sequence is identical to an earlier hit (ignoring case
-    /// and terminal '*', as in domainatoredux deduplicate_genbank --algorithm hash).
-    /// Useful for highly redundant databases. Independent of --deduplicate, which only
-    /// drops repeated record IDs.
-    #[arg(long)]
-    pub deduplicate_by_sequence: bool,
-    /// With --deduplicate_by_sequence, also treat complement and reverse-complement
-    /// nucleotide sequences as duplicates.
-    #[arg(long)]
-    pub both_strands: bool,
+    /// Output uniqueness policy: none keeps all records; id drops repeated output IDs;
+    /// sequence drops identical output sequences (ignoring case and terminal '*');
+    /// sequence_rc also collapses nucleotide reverse complements. The same ID must
+    /// identify the same sequence, so sequence uniqueness also ensures unique IDs.
+    /// Deduplication happens before padding.
+    #[arg(long, default_value = "none", value_parser = ["none", "id", "sequence", "sequence_rc"])]
+    pub dedup: String,
     /// The maximum fractional of overlap between any two output regions. If >= 1, then
     /// no overlap filtering will be done. Regions are output in a greedy fashion based
     /// on CDS start site. New regions are output if less than this fraction of them

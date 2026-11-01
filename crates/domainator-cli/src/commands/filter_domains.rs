@@ -21,7 +21,10 @@ pub fn run(args: &FilterDomainsArgs) -> Result<()> {
             args.domains.as_deref().unwrap_or_default(),
             args.domains_file.as_deref(),
         )?,
-        annotation_type: AnnotationType::parse(&args.annotation_type).map_err(|e| anyhow!(e))?,
+        annotation_type: args
+            .annotation_type
+            .parse::<AnnotationType>()
+            .map_err(|e| anyhow!(e))?,
     };
     let mut records = load_seq_inputs(&args.input)?;
     crate::filter_contigs(&mut records, &args.contigs, args.contigs_file.as_deref())?;
