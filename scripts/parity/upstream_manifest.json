@@ -9797,6 +9797,17 @@
     {
      "default": null,
      "flags": [
+      "--uniprot_dir"
+     ],
+     "kind": "path",
+     "name": "uniprot_dir",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": null,
+     "flags": [
       "--ncbi_summary"
      ],
      "kind": "path",

@@ -4,7 +4,7 @@
 domainatoredux <tool> [options]
 ```
 
-`domainatoredux --help` lists all 36 tools, plus `describe`, `completion` and `doctor`;
+`domainatoredux --help` lists all 47 tools, plus `describe`, `completion` and `doctor`;
 `domainatoredux <tool> --help` is the exhaustive,
 always-current list of that tool's flags. This page gives each tool's purpose, the flags
 that matter in practice, and a worked example. Filenames in the examples are
@@ -116,7 +116,7 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 | [Matrices and networks](#matrices-and-networks) | `seq_dist`, `kmer_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`, `build_projection`, `viewer`, `split_by_cluster` |
 | [Reports](#reports) | `enum_report`, `summary_report`, `matrix_report`, `ssn_navigator` |
 | [HMM profiles](#hmm-profiles) | `hmmer_build`, `hmmer_select`, `hmmer_search`, `hmmer_compare`, `hmmer_report`, `infernal_build` |
-| [Database preparation](#database-preparation) | `format_db` |
+| [Databases](#databases) | `db_download`, `format_db` |
 
 ---
 
@@ -171,7 +171,7 @@ domainatoredux completion bash > ~/.local/share/bash-completion/completions/doma
 ### `doctor`
 
 List the optional external programs (`diamond`, `cdhit`, `usearch`, `orphos`, `cmbuild`,
-`foldseek`, `reseek`): for each,
+`foldseek`, `reseek`, `datasets`): for each,
 whether a tool would find it and where (by the lookup order in
 [Installation](installation.md#optional-external-programs)), the commands that need it,
 and how to install it.
@@ -1015,7 +1015,49 @@ domainatoredux hmmer_report -i pfam-A.hmm --columns acc desc length -o profiles.
 
 ---
 
-## Database preparation
+## Databases
+
+### `db_download`
+
+Download a sequence database. `--db` picks it:
+
+| `--db` | What | Written as |
+| --- | --- | --- |
+| `swissprot`, `trembl`, `uniprot` | UniProtKB: reviewed, unreviewed, or both (SwissProt first) | FASTA (`--fasta_out`) |
+| `swissprot_gb`, `trembl_gb`, `uniprot_gb` | the same, with UniProt's annotations as GenBank features | GenBank (`-o`) |
+| `ncbi_all` | every NCBI GenBank genome assembly (10 TB or more) | GenBank (`-o`) |
+| `ncbi_nonredundant_all`, `ncbi_nonredundant_proks` | one assembly per taxid, representative and reference genomes first | GenBank (`-o`) |
+| `ncbi_representative_all`, `ncbi_representative_proks` | representative and reference genomes | GenBank (`-o`) |
+| `ncbi_complete_genome_proks`, `ncbi_complete_genome_nonredundant_proks` | assembly level "Complete Genome" (one per taxid for the second) | GenBank (`-o`) |
+
+The `_proks` databases leave out Eukaryota; the nonredundant ones keep every
+metagenome and environmental sample. `--include_taxids`, `--exclude_taxids` and
+`--taxonomy_expr` filter by taxonomy (with `--ncbi_taxonomy_path`, as for the other
+tools), `--max_records` stops after that many proteins or genomes, and `--append` adds to
+an existing file. For UniProt, `--partial exclude|only` keeps complete proteins or
+fragments only, and `--uniprot_dir` reads the release files from a local mirror. For
+NCBI, `--before`/`--after YYYY-MM-DD` filter by release date, `--exclude_accessions` and
+`--exclude_accessions_file` skip assemblies, `--success_log_out` lists the ones written,
+`--gene_call all|unannotated` calls genes with Orphos as `domainate --gene_call` does,
+and `--ncbi_summary` uses a downloaded (or edited) copy of NCBI's assembly summary,
+whose `ftp_path` may also name local directories.
+
+NCBI genomes come through `--download_backend datasets` (the default), which runs the
+[NCBI Datasets CLI](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/command-line-tools/download-and-install/)
+in `--datasets_workdir`, or `direct`, which downloads each `.gbff.gz` over HTTPS,
+`--download_workers` at a time (keep it near 3; NCBI limits concurrent connections).
+Either way, genomes are written in assembly-summary order.
+
+```bash
+domainatoredux db_download --db swissprot --fasta_out swissprot.fasta
+domainatoredux db_download --db ncbi_representative_proks -o reps.gb \
+  --download_backend direct --include_taxids 1224 --gene_call unannotated \
+  --success_log_out downloaded.txt
+```
+
+A large download can be resumed: point `--exclude_accessions_file` at the previous run's
+success log, write the new run's log to a different file, and `--append` to the same
+output.
 
 ### `format_db`
 

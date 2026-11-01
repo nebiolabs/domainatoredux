@@ -7,8 +7,13 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `8c4821f` — *domain search more deterministic*
+- **Caught up to:** `fc10e7b` — *structure deterministic*
   (2026-11-01; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`fc10e7b`**, ported with the structure tools: the by-target hit sort runs
+  `LC_ALL=C sort -s` (byte order, stable; `structure_lib.sort_by_column`), so it no longer
+  depends on the machine's locale, and reseek databases are built with `-threads 1`, whose
+  record order is the input order (a multithreaded `-convert` stores chains as threads
+  finish). Also moves two `domain_search` tests' gzip/BGZF copies out of `shared_datadir`.
 - **`8c4821f`**, nothing to port: `domain_search --cpu N` writes its records in input
   order (`_mp.imap_bounded`, ordered, replaces `imap_unordered_bounded`; partitions go
   through `pool.imap`), so which duplicate `--dedup` keeps no longer depends on timing.
@@ -265,6 +270,7 @@ Use this to triage which module a changed upstream file lands in:
 | `structure_lib.py` | `crates/domainator-core/src/tools/structure_lib.rs` (input resolution, the foldseek/reseek drivers, the by-target sort, hits → `SearchResult`) |
 | `structure_to_genbank.py`, `structure_domainate.py`, `structure_search.py`, `structure_dist.py` | `.../tools/structure_{to_genbank,domainate,search,dist}.rs` |
 | `foldseek.py` (`domainate --foldseek`) | **deferred** — see below |
+| `db_download.py` | `.../tools/db_download.rs` (the UniProt streams, the assembly summary and its filters, the `direct`/`datasets` backends); the SwissProt conversion is `.../io/swissprot.rs`, a port of Biopython's `Bio.SwissProt._read` and `SeqIO.SwissIO` (a Biopython upgrade that changes them needs the same change) |
 | `build_ssn.py` | `.../tools/build_ssn.rs` |
 | `ssn_edges.py`, `edge_types.py` | `.../matrix/ssn.rs` |
 | `sparsify.py` (`--mst`/`--knn`), `matrix_output.py`, `sparse_scores.py` | `.../matrix/mst_knn.rs`, `.../matrix/hdf5_io.rs`, and each matrix tool's output path |
@@ -337,8 +343,6 @@ Tracked so a later sync does not mistake them for oversights:
 - **`merge_impact_axis_labels`** (`ssn_hierarchy.py`). Its consumers are `viewer_html.py`
   (the viewer config's `splitAxisLabels`) and matrix_report's page; both generated shells
   carry its values pre-rendered, so a shell regeneration is all a change to it needs.
-- **`--partial` on `db_download`** (`bdc74bb`). The tool is not ported. The GUI's
-  managed UniProt download could take the same filter later.
 - **`find_features --tmbed`**: TMbed runs ProtT5 (a protein language model) and a CNN
   through torch. The option and its `--device`/`--model_dir`/`--tmbed_model_dir`/
   `--batch_size` are accepted, so the manifest matches, and `--tmbed` is refused. Upstream
@@ -349,9 +353,6 @@ Tracked so a later sync does not mistake them for oversights:
   CLI keeps them in its choices, so the manifest matches, and refuses them at run time
   (`deferred:projection-umap-tsne`). A Python projection reads back in with
   `--algorithm coords`.
-- **Unported tools:** `db_download` (the app's managed downloads cover UniProt, Pfam and
-  NCBI Taxonomy). Its manifest entry is a `deferred:` row of
-  `scripts/parity/manifest_allowlist.tsv`.
 
 ## What the parity sweep still tracks
 

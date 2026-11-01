@@ -8,6 +8,7 @@ pub mod clean_sequences;
 pub mod color_genbank;
 pub mod color_table_to_legend;
 pub mod compare_contigs;
+pub mod db_download;
 pub mod deduplicate_genbank;
 pub mod doctor;
 pub mod domain_search;

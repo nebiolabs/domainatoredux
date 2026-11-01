@@ -44,7 +44,10 @@ fn fmt_location(loc: &Location, rec_len: i64) -> String {
                 Some(p) => p,
                 None => return String::new(),
             };
-            let body = fmt_part(p, rec_len);
+            let mut body = fmt_part(p, rec_len);
+            if let Some(reference) = &loc.reference {
+                body = format!("{reference}:{body}");
+            }
             if p.2 == -1 {
                 format!("complement({body})")
             } else {
@@ -131,6 +134,15 @@ fn split_multi_line(text: &str, max_len: usize) -> Vec<String> {
     lines
 }
 
+/// Biopython's KEYWORDS and taxonomy rule: a `.` is added unless the text already ends
+/// with one (an empty list is a lone `.`).
+fn with_final_period(mut text: String) -> String {
+    if !text.ends_with('.') {
+        text.push('.');
+    }
+    text
+}
+
 /// Today's date as GenBank writes it, `DD-MON-YYYY` upper-cased.
 ///
 /// Python uses `date.today()`, i.e. *local* time; we have no timezone database and
@@ -176,7 +188,8 @@ fn write_references<W: Write>(w: &mut W, refs: &[crate::seq::Reference]) -> io::
             ("  TITLE", &r.title),
             ("  JOURNAL", &r.journal),
             ("  MEDLINE", &r.medline_id),
-            ("  PUBMED", &r.pubmed_id),
+            // Biopython's one three-space tag.
+            ("   PUBMED", &r.pubmed_id),
             ("  REMARK", &r.remark),
         ] {
             if !val.is_empty() {
@@ -497,29 +510,19 @@ pub fn write_record<W: Write>(w: &mut W, rec: &SeqRecord) -> io::Result<()> {
     if let Some(dbs) = &ann.db_source {
         write_wrapped(w, "DBSOURCE", dbs)?;
     }
-    // KEYWORDS: Biopython yields [""] for a `.`-only field.
-    let kw = if ann.keywords.iter().all(|k| k.is_empty()) {
-        ".".to_string()
-    } else {
-        format!("{}.", ann.keywords.join("; "))
-    };
-    write_wrapped(w, "KEYWORDS", &kw)?;
+    write_wrapped(w, "KEYWORDS", &with_final_period(ann.keywords.join("; ")))?;
     // Biopython always emits SOURCE / ORGANISM / taxonomy, defaulting to ".".
     write_wrapped(w, "SOURCE", ann.source.as_deref().unwrap_or("."))?;
     let org = ann.organism.as_deref().unwrap_or(".");
-    // ORGANISM must be a single line (continuations are taxonomy); truncate like Biopython.
-    let org_trunc = if org.len() > 67 {
-        format!("{}...", &org[..63])
+    // ORGANISM must be a single line (continuations are taxonomy); Biopython truncates
+    // anything longer than the 68 columns after the tag to 64 characters and `...`.
+    let org_trunc = if org.chars().count() > 80 - HEADER_INDENT.len() {
+        format!("{}...", org.chars().take(64).collect::<String>())
     } else {
         org.to_string()
     };
     writeln!(w, "{:<12}{}", "  ORGANISM", org_trunc)?;
-    let taxonomy = if ann.taxonomy.is_empty() {
-        ".".to_string()
-    } else {
-        format!("{}.", ann.taxonomy.join("; "))
-    };
-    write_wrapped(w, "", &taxonomy)?;
+    write_wrapped(w, "", &with_final_period(ann.taxonomy.join("; ")))?;
     write_references(w, &ann.references)?;
     write_comment(w, ann)?;
     writeln!(w, "FEATURES             Location/Qualifiers")?;
@@ -565,6 +568,7 @@ mod tests {
         let at = |start, end, strand| Location {
             operator: None,
             between: false,
+            reference: None,
             parts: vec![(start, end, strand, false, false)],
         };
         assert_eq!(fmt_location(&at(2645, 2645, 1), 4000), "2645^2646");
@@ -837,5 +841,47 @@ mod tests {
         let dcds = b.features.iter().find(|f| f.kind == "CDS").unwrap();
         assert_eq!(dcds.get_first("gene_id"), Some("geneA"));
         assert!(dcds.get_first("domainator_DB").is_some());
+    }
+
+    fn header(rec: &SeqRecord) -> String {
+        let mut out = Vec::new();
+        write_record(&mut out, rec).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        text[..text.find("FEATURES").unwrap()].to_string()
+    }
+
+    #[test]
+    fn organism_truncation_and_pubmed_indent_match_biopython() {
+        let mut r = rec(vec![], "d");
+        r.annotations.references = vec![crate::seq::Reference {
+            authors: "A B.".into(),
+            pubmed_id: "123".into(),
+            ..Default::default()
+        }];
+        // Biopython keeps an organism of 68 characters and cuts a longer one to 64 + "...".
+        r.annotations.organism = Some("x".repeat(68));
+        let text = header(&r);
+        assert!(text.contains(&format!("  ORGANISM  {}\n", "x".repeat(68))));
+        assert!(text.contains("\n   PUBMED   123\n"), "{text}");
+        r.annotations.organism = Some("x".repeat(69));
+        assert!(header(&r).contains(&format!("  ORGANISM  {}...\n", "x".repeat(64))));
+    }
+
+    #[test]
+    fn keywords_and_taxonomy_get_one_final_period() {
+        let mut r = rec(vec![], "d");
+        r.annotations.keywords = vec!["Hydrolase".into(), "Metal-binding.".into()];
+        r.annotations.taxonomy = vec!["Bacteria".into(), "Escherichia".into()];
+        let text = header(&r);
+        assert!(
+            text.contains("KEYWORDS    Hydrolase; Metal-binding.\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("            Bacteria; Escherichia.\n"),
+            "{text}"
+        );
+        r.annotations.keywords = vec![String::new()];
+        assert!(header(&r).contains("KEYWORDS    .\n"));
     }
 }

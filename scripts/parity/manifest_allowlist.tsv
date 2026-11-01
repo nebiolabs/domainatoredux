@@ -6,7 +6,6 @@
 # Classes: deferred: (not ported, on purpose)  port-only: (ours alone)
 #          upstream: (upstream should change)   todo: (the 1.0 migration; none may remain)
 tool	parameter	aspect	ours	upstream	class	note
-db_download	-	tool	false	true	deferred:unported-tool	
 domainate	esm2_3di_device	missing	null	{"default":"cuda:0","flags":["--esm2_3di_device"],"kind":"value","name":"esm2_3di_device","required":false,"type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs
 domainate	esm2_3di_weights	missing	null	{"default":null,"flags":["--esm2_3di_weights"],"kind":"path","name":"esm2_3di_weights","required":false,"role":"input","type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs
 domainate	foldseek	missing	null	{"default":null,"flags":["--foldseek"],"kind":"path","multiple":true,"name":"foldseek","required":false,"role":"input","type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs

@@ -111,12 +111,14 @@ pub(crate) fn overlay(loc: &Location, mut offset: i64, mut length: i64) -> Optio
         Location {
             operator: None,
             between: false,
+            reference: None,
             parts: new_parts,
         }
     } else {
         Location {
             operator: loc.operator,
             between: false,
+            reference: None,
             parts: new_parts,
         }
     })
@@ -380,6 +382,7 @@ fn build_contig_hit_location(
         Location {
             operator: Some(crate::seq::location::CompoundOp::Join),
             between: false,
+            reference: None,
             parts: vec![
                 (hit.start, contig_length, hit.strand, false, false),
                 (0, hit.end - contig_length, hit.strand, false, false),

@@ -945,6 +945,7 @@ pub(crate) fn slice_features(
             location: Location {
                 operator,
                 between: false,
+                reference: None,
                 parts: new_parts,
             },
             qualifiers,
@@ -1298,6 +1299,7 @@ pub(crate) fn reverse_complement_record(rec: &SeqRecord) -> SeqRecord {
                 location: Location {
                     operator,
                     between: f.location.between,
+                    reference: None,
                     parts,
                 },
                 qualifiers: f.qualifiers.clone(),
@@ -1512,6 +1514,7 @@ mod tests {
         Location {
             operator: Some(CompoundOp::Join),
             between: false,
+            reference: None,
             parts: parts
                 .iter()
                 .map(|&(s, e, st)| (s, e, st, false, false))
@@ -1892,6 +1895,7 @@ mod tests {
             Location {
                 operator,
                 between: false,
+                reference: None,
                 parts,
             },
         );
@@ -2084,6 +2088,7 @@ mod tests {
             Location {
                 operator: Some(CompoundOp::Join),
                 between: false,
+                reference: None,
                 parts: vec![(16, 20, 1, false, false), (0, 2, 1, false, false)],
             },
         );

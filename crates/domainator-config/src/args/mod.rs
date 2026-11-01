@@ -15,6 +15,7 @@ mod color_genbank;
 mod color_table_to_legend;
 mod common;
 mod compare_contigs;
+mod db_download;
 mod deduplicate_genbank;
 mod domain_search;
 mod domainate;
@@ -62,6 +63,7 @@ pub use color_genbank::ColorGenbankArgs;
 pub use color_table_to_legend::ColorTableToLegendArgs;
 pub use common::{CommonArgs, TaxonomyArgs};
 pub use compare_contigs::CompareContigsArgs;
+pub use db_download::{DbDownloadArgs, DB_CHOICES};
 pub use deduplicate_genbank::DeduplicateGenbankArgs;
 pub use domain_search::DomainSearchArgs;
 pub use domainate::DomainateArgs;
@@ -133,6 +135,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "structure_domainate" => StructureDomainateArgs::augment_args(cmd),
         "structure_search" => StructureSearchArgs::augment_args(cmd),
         "structure_to_genbank" => StructureToGenbankArgs::augment_args(cmd),
+        "db_download" => DbDownloadArgs::augment_args(cmd),
         "compare_contigs" => CompareContigsArgs::augment_args(cmd),
         "transform_matrix" => TransformMatrixArgs::augment_args(cmd),
         "build_ssn" => BuildSsnArgs::augment_args(cmd),

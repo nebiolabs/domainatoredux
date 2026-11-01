@@ -89,19 +89,20 @@ alignment or gene-calling program, and **only** if you ask for that algorithm:
 | `cmbuild` | `infernal_build` | you only search with existing `.cm` models (that needs nothing) |
 | `foldseek` | the `structure_*` tools (the default `--algorithm`) | you do not work with structures, or use reseek |
 | `reseek` | the `structure_*` tools with `--algorithm reseek` | you use foldseek |
+| `datasets` (the NCBI Datasets CLI) | `db_download` of an `ncbi_*` database with `--download_backend datasets` (the default) | you use `--download_backend direct`, or download UniProt |
 
 Each is found by the first of these that works:
 
 1. the tool's own path option (`--diamond_path`, `--cdhit_path`, `--usearch_path`;
    `gene_call --orphos_path`; `infernal_build --cmbuild_path`; `--foldseek_path`,
-   `--reseek_path`);
+   `--reseek_path`; `db_download --datasets_path`);
 2. the environment variable `$DOMAINATOREDUX_DIAMOND`, `$DOMAINATOREDUX_CDHIT`,
    `$DOMAINATOREDUX_USEARCH`, `$DOMAINATOREDUX_ORPHOS`, `$DOMAINATOREDUX_CMBUILD`,
-   `$DOMAINATOREDUX_FOLDSEEK` or `$DOMAINATOREDUX_RESEEK`;
+   `$DOMAINATOREDUX_FOLDSEEK`, `$DOMAINATOREDUX_RESEEK` or `$DOMAINATOREDUX_DATASETS`;
 3. a bundled copy at `external/<program>/` next to the executable;
 4. the bare program name on your `PATH`.
 
-**The desktop app can download all of them but `cmbuild`, `foldseek` and `reseek` for you** — open the *External tools* panel in
+**The desktop app can download all of them but `cmbuild`, `foldseek`, `reseek` and `datasets` for you** — open the *External tools* panel in
 the left sidebar and click Download. It installs them into the app's data directory and
 sets the environment variables, so the command-line tool finds them too if you launch it
 from the same session. See [the desktop app](gui.md#external-tools).
@@ -115,6 +116,9 @@ orphos-cli` and point `$DOMAINATOREDUX_ORPHOS` at the result (usually `~/.cargo/
 foldseek installs with `conda install -c conda-forge -c bioconda foldseek` or from its
 releases. reseek is built from source (its v3.01 release binary needs AVX-512). Like the
 programs above, both run as separate processes and are never bundled.
+
+`datasets` installs with `conda install -c conda-forge ncbi-datasets-cli` or from NCBI's
+site. `db_download` unpacks its packages itself, so no `unzip` is needed.
 
 `cmbuild` is Infernal's (`conda install -c bioconda infernal`, Linux and macOS). On any
 platform, Windows included, `cargo install infernox` builds a Rust port whose

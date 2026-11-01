@@ -492,6 +492,17 @@ pub const TOOLS: &[ToolInfo] = &[
     },
     // database
     ToolInfo {
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        no_stdout: &["success_log_out"],
+        dynamic_defaults: &["ncbi_taxonomy_path"],
+        switches_on: &["taxonomy_update"],
+        ..tool(
+            "db_download",
+            "database",
+            "Download sequence databases in formats Domainator reads.",
+        )
+    },
+    ToolInfo {
         stdin: false,
         stdin_reason: "it formats database files in place",
         no_stdout: &["log_out"],

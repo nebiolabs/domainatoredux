@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `8c4821f`.
+Parity: Python domainator 1.0.0rc1 @ `fc10e7b`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
@@ -86,6 +86,19 @@ Parity: Python domainator 1.0.0rc1 @ `8c4821f`.
   globs or a prebuilt database (`--db_out` keeps one). In the desktop app under the
   same names, with `.pdb`/`.cif` files recognized in the workspace. A structure file given
   to a sequence tool now says which structure tool to use.
+- **`db_download`**, upstream's last unported tool: UniProt (SwissProt, TrEMBL or both) as
+  FASTA, or as GenBank with UniProt's annotations as features, and NCBI genome assemblies
+  as GenBank, over HTTPS or through the NCBI Datasets CLI (`datasets`, now in `doctor`'s
+  list), with upstream's taxonomy, date, accession, `--partial` and `--gene_call` options.
+  Genomes are appended in assembly-summary order whatever order their downloads finish
+  in. `--uniprot_dir` reads a local UniProt mirror, and an `--ncbi_summary` may name local
+  genome directories. In the desktop app as "Download a database".
+- **GenBank output matches Biopython in three more places**: `PUBMED` reference lines
+  get their three-space indent, an `ORGANISM` of 68 characters is no longer truncated
+  (only longer ones are, to 64 and `...`), and `KEYWORDS` and the taxonomy lines no longer
+  gain a second `.` when the text already ends with one. A location on another sequence
+  (`P68250-2:1`, `AL391218.9:105..208`) is read and written with its reference; it used
+  to be read as an empty location.
 - **`domain_search --kb_up`/`--kb_down` on a circular contig smaller than the window**
   keeps the window where its padding puts it, as upstream does: `--kb_down 100` around a
   plasmid gene starts the region at that gene. It used to be centered opposite the gene.

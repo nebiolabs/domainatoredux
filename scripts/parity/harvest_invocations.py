@@ -25,6 +25,9 @@ with three placeholders substituted at replay time:
 A `@pytest.mark.parametrize`d test is harvested once per parameter set, keyed
 `<test_fn>[<pytest id>]#<n>`, so `pytest -k` finds the same case.
 
+A test marked `@pytest.mark.network` is not harvested: it reaches a live server,
+whose answer changes between runs.
+
 An invocation is dropped when any argument fails to resolve to a literal (a
 loop variable, a helper call, a parameter that is not a literal). That is
 deliberate: a half-resolved command line is worse than a missing one. See
@@ -297,6 +300,8 @@ def harvest(path, module, qualified_only=False):
     found = []
     for fn in ast.walk(tree):
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if any(ast.unparse(d) == "pytest.mark.network" for d in fn.decorator_list):
             continue
         cases = parameter_sets(fn)
         used = {a.arg: fixtures[a.arg] for a in fn.args.args if a.arg in fixtures}

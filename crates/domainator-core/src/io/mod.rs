@@ -10,6 +10,7 @@ pub mod newick;
 pub mod partition;
 pub mod python_json;
 pub mod shards;
+pub mod swissprot;
 
 use std::path::Path;
 

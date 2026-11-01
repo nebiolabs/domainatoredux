@@ -43,6 +43,28 @@ def referenced_fixtures(test_dir):
     return needed
 
 
+def _summary_genome_dirs(path):
+    """The local directories an NCBI assembly summary's `ftp_path` column names (those
+    that are neither URLs nor `na`), resolved against the summary's directory; nothing
+    for any other file."""
+    if not path.is_file() or path.suffix != ".txt":
+        return []
+    lines = path.read_text(errors="replace").splitlines()
+    if len(lines) < 2 or not lines[1].startswith("#assembly_accession"):
+        return []
+    header = lines[1].lstrip("# ").split("\t")
+    if "ftp_path" not in header:
+        return []
+    column = header.index("ftp_path")
+    dirs = []
+    for line in lines[2:]:
+        fields = line.strip().split("\t")
+        ftp_path = fields[column].strip() if column < len(fields) else ""
+        if ftp_path and ftp_path != "na" and "://" not in ftp_path and (path.parent / ftp_path).is_dir():
+            dirs.append(path.parent / ftp_path)
+    return dirs
+
+
 def _git_tracked(src):
     """Paths under `src` that upstream's git index knows about, or None."""
     proc = subprocess.run(["git", "-C", str(src), "ls-files"], capture_output=True, text=True)
@@ -94,6 +116,11 @@ def main(argv=None):
                        and (tracked is None or str(f.relative_to(src)) in tracked)}
         else:
             needed.add(rel)
+            # An NCBI assembly summary (db_download --ncbi_summary) names the genome
+            # directories of a local mirror in its ftp_path column, relative to itself.
+            for genome_dir in _summary_genome_dirs(src / rel):
+                needed |= {str(f.relative_to(src)) for f in genome_dir.rglob("*")
+                           if f.is_file() and (tracked is None or str(f.relative_to(src)) in tracked)}
     # *.lock: the taxonomy loader's lock files, left beside a taxdump (gitignored).
     held = {str(p.relative_to(dest)) for p in dest.rglob("*")
             if p.is_file() and p.name != "README.md" and p.suffix != ".lock"}

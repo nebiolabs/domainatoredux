@@ -70,7 +70,9 @@ and hits sorted by target are sorted the same way (stably, on the target column'
 A `--hits_tsv_out` table is compared as a set of lines: foldseek writes it in the order
 its threads finish, which changes from run to run. The FeSOD database fixture is a foldseek prefix,
 `foldseek/FeSOD`; `sync_fixtures.py` copies the files beside it that make up the
-database (`FeSOD.index`, `FeSOD_ss`, ...).
+database (`FeSOD.index`, `FeSOD_ss`, ...). Likewise an NCBI assembly summary
+(`db_download/assembly_summary.txt`) brings the genome directories its `ftp_path` column
+names, which no command line mentions.
 
 `--gene_call` is the reverse case. Python calls genes in-process with pyrodigal, so it
 never fails for want of a binary, while the Rust side needs Orphos. Without it, the 13
@@ -283,6 +285,10 @@ A tool's invocations are harvested from its own `test_<tool>.py` and, in the qua
 `<tool>.main([...])` form, from every other test module (keyed `<module>.<test>#n`). Each addition is a few
 lines. Multi-step tests (build a file, then consume it) would need the harness to
 replay a whole test function as a sequence, which it deliberately does not do.
+A test marked `@pytest.mark.network` is never harvested: it reaches a live server
+whose answer changes between runs. `db_download`'s tests replay instead against
+local mirrors (`--uniprot_dir`, and an `--ncbi_summary` whose `ftp_path` names local
+directories), under `test/data/db_download/`.
 
 Upstream 1.0 turned off argparse's option-prefix matching (`allow_abbrev=False`), so
 the harvested argument lists use full option names and are replayed unchanged.

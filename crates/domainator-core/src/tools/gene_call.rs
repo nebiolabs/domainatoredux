@@ -516,6 +516,7 @@ fn linear_location(pred: &Pred, len: usize) -> (Location, usize) {
         Location {
             operator: None,
             between: false,
+            reference: None,
             parts: vec![part],
         },
         usize::try_from(five_prime_extension).unwrap_or(0) + 1,
@@ -574,6 +575,7 @@ impl OriginWindow {
             let location = Location {
                 operator: Some(CompoundOp::Join),
                 between: false,
+                reference: None,
                 parts,
             };
             let conflict = existing.iter().any(|other| {
@@ -738,6 +740,7 @@ w2\tOrphos_v1.0.0\tCDS\t10\t99\t1.0\t-\t0\tID=1_1;partial=01;\n";
         let two_parts = Location {
             operator: Some(CompoundOp::Join),
             between: false,
+            reference: None,
             parts: vec![(0, 200, -1, false, false), (999, 1000, -1, false, false)],
         };
         assert!(w.origin_genes(&long, &[two_parts]).is_empty());

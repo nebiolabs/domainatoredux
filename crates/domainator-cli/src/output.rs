@@ -80,6 +80,36 @@ impl Output {
         })
     }
 
+    /// An output written in place rather than under a temporary name, appended to as
+    /// the run goes: for a long download, whose partial result must survive a failure
+    /// (its success log lists what is in it). With `append` the file's contents are
+    /// kept, else it starts empty. Compressed outputs append BGZF blocks.
+    pub fn in_place(path: &str, append: bool) -> Result<Output> {
+        if is_stdout(path) {
+            return Output::create(path);
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(append)
+            .write(true)
+            .truncate(!append)
+            .open(path)
+            .with_context(|| format!("opening output {path}"))?;
+        let file = BufWriter::new(file);
+        let sink = if path.ends_with(".gz") || path.ends_with(".bgz") {
+            let level = bgzf::CompressionLevel::new(6)
+                .map_err(|e| anyhow::anyhow!("BGZF compression level: {e:?}"))?;
+            Sink::Bgzf(bgzf::Writer::new(file, level))
+        } else {
+            Sink::File(file)
+        };
+        Ok(Output {
+            sink: Some(sink),
+            temp: None,
+            target: PathBuf::from(path),
+        })
+    }
+
     /// Flush, and move a file into place.
     pub fn finish(mut self) -> Result<()> {
         let what = || format!("writing {}", self.target.display());

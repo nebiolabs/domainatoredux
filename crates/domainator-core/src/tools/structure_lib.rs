@@ -32,7 +32,7 @@ use std::process::Command;
 
 use crate::search::results::SearchResult;
 use crate::seq::{Annotations, Location, SeqFeature, SeqRecord, Topology};
-use crate::tools::external::{hide_console, ExternalProgram, TempDir, FOLDSEEK, RESEEK};
+use crate::tools::external::{hide_console, resolve_binary, TempDir, FOLDSEEK, RESEEK};
 
 /// The foldseek executable's name, and the environment variable naming its path.
 pub const FOLDSEEK_BIN_NAME: &str = "foldseek";
@@ -707,52 +707,6 @@ fn sort_by_column_in_chunks(
         let _ = std::fs::remove_file(run);
     }
     out.flush()
-}
-
-/// The executable for `program` (upstream `resolve_binary`): the user's explicit path,
-/// which must be an executable file or a name on PATH, or else the program found the
-/// usual way (environment variable, bundled copy, PATH).
-fn resolve_binary(
-    program: &ExternalProgram,
-    path: Option<&str>,
-    hint: &str,
-) -> io::Result<PathBuf> {
-    if let Some(path) = path {
-        if is_executable_file(Path::new(path)) || on_path(path).is_some() {
-            return Ok(PathBuf::from(path));
-        }
-        return Err(other_error(format!("'{path}' is not an executable file.")));
-    }
-    program.locate().ok_or_else(|| {
-        other_error(format!(
-            "Could not find '{name}' on PATH. {hint} Alternatively pass an explicit path with \
-             --{name}_path.",
-            name = program.name
-        ))
-    })
-}
-
-/// A file the user may run: on Unix, one with an execute bit set.
-fn is_executable_file(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        path.metadata()
-            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-    }
-    #[cfg(not(unix))]
-    {
-        path.is_file()
-    }
-}
-
-fn on_path(name: &str) -> Option<PathBuf> {
-    if name.contains('/') {
-        return None;
-    }
-    std::env::split_paths(&std::env::var_os("PATH")?)
-        .map(|dir| dir.join(name))
-        .find(|candidate| candidate.is_file())
 }
 
 fn py_float(x: f64) -> String {

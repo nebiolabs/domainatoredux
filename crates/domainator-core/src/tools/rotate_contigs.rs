@@ -387,6 +387,7 @@ mod tests {
             Location {
                 operator: (parts.len() > 1).then_some(CompoundOp::Join),
                 between: false,
+                reference: None,
                 parts: parts
                     .iter()
                     .map(|&(s, e, st)| (s, e, st, false, false))

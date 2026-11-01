@@ -154,6 +154,8 @@ enum Command {
     HmmerSearch(config::args::HmmerSearchArgs),
     /// Build a covariance model from a multiple sequence alignment with cmbuild.
     InfernalBuild(config::args::InfernalBuildArgs),
+    /// Download UniProt or NCBI genome databases.
+    DbDownload(config::args::DbDownloadArgs),
     /// Shard / BGZF-compress / .didx-index a domain_search database.
     FormatDb(config::args::FormatDbArgs),
 }
@@ -545,6 +547,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::HmmerBuild(args) => commands::hmmer_build::run(&args)?,
         Command::HmmerSearch(args) => commands::hmmer_search::run(&args)?,
         Command::InfernalBuild(args) => commands::infernal_build::run(&args)?,
+        Command::DbDownload(args) => commands::db_download::run(&args)?,
         Command::FormatDb(args) => commands::format_db::run(&args)?,
     }
     Ok(())

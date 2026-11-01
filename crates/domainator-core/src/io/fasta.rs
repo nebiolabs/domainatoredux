@@ -67,62 +67,84 @@ pub fn read_fasta_decompressed(
 }
 
 fn parse_fasta<R: BufRead>(
-    mut reader: R,
+    reader: R,
     max_recs: u64,
     molecule_type: Option<&str>,
 ) -> io::Result<Vec<SeqRecord>> {
-    let mol = molecule_type.unwrap_or("protein").to_string();
-    let mut out: Vec<SeqRecord> = Vec::new();
+    let limit = usize::try_from(max_recs).unwrap_or(usize::MAX);
+    FastaReader::new(reader, molecule_type)
+        .take(limit)
+        .collect()
+}
 
-    let mut title: Option<String> = None;
-    let mut seq: Vec<u8> = Vec::new();
-    let mut line: Vec<u8> = Vec::new();
+/// The records of a FASTA stream, one at a time, so a file of any size can be read
+/// in constant memory. Every record gets `molecule_type` ("protein" when `None`).
+pub struct FastaReader<R> {
+    reader: R,
+    molecule_type: String,
+    title: Option<String>,
+    line: Vec<u8>,
+}
 
-    let flush =
-        |out: &mut Vec<SeqRecord>, title: &mut Option<String>, seq: &mut Vec<u8>, mol: &str| {
-            if let Some(t) = title.take() {
-                let id = t.split_whitespace().next().unwrap_or("").to_string();
-                out.push(SeqRecord {
-                    id,
-                    name: t.split_whitespace().next().unwrap_or("").to_string(),
-                    description: t,
-                    seq: std::mem::take(seq),
-                    molecule_type: Some(mol.to_string()),
-                    topology: Topology::Linear,
-                    annotations: Annotations::default(),
-                    features: Vec::new(),
-                });
-            } else {
-                seq.clear();
-            }
-        };
-
-    loop {
-        line.clear();
-        let n = reader.read_until(b'\n', &mut line)?;
-        if n == 0 {
-            break;
-        }
-        if line.first() == Some(&b'>') {
-            flush(&mut out, &mut title, &mut seq, &mol);
-            if out.len() as u64 >= max_recs {
-                return Ok(out); // partition limit reached; don't start the next record
-            }
-            title = Some(String::from_utf8_lossy(rstrip(&line[1..])).into_owned());
-        } else if title.is_some() {
-            // Upstream (Biopython) strips each line's trailing whitespace and drops
-            // spaces, tabs and carriage returns anywhere in the sequence.
-            seq.extend(
-                rstrip(&line)
-                    .iter()
-                    .filter(|&&b| !matches!(b, b' ' | b'\t' | b'\r')),
-            );
+impl<R: BufRead> FastaReader<R> {
+    pub fn new(reader: R, molecule_type: Option<&str>) -> Self {
+        FastaReader {
+            reader,
+            molecule_type: molecule_type.unwrap_or("protein").to_string(),
+            title: None,
+            line: Vec::new(),
         }
     }
-    if (out.len() as u64) < max_recs {
-        flush(&mut out, &mut title, &mut seq, &mol);
+}
+
+impl<R: BufRead> Iterator for FastaReader<R> {
+    type Item = io::Result<SeqRecord>;
+
+    fn next(&mut self) -> Option<io::Result<SeqRecord>> {
+        let mut seq: Vec<u8> = Vec::new();
+        loop {
+            self.line.clear();
+            match self.reader.read_until(b'\n', &mut self.line) {
+                Err(e) => return Some(Err(e)),
+                Ok(0) => break,
+                Ok(_) => {}
+            }
+            if self.line.first() == Some(&b'>') {
+                let next_title = String::from_utf8_lossy(rstrip(&self.line[1..])).into_owned();
+                match self.title.replace(next_title) {
+                    Some(title) => return Some(Ok(self.record(title, seq))),
+                    // Anything before the first title is not part of a record.
+                    None => seq.clear(),
+                }
+            } else if self.title.is_some() {
+                // Upstream (Biopython) strips each line's trailing whitespace and drops
+                // spaces, tabs and carriage returns anywhere in the sequence.
+                seq.extend(
+                    rstrip(&self.line)
+                        .iter()
+                        .filter(|&&b| !matches!(b, b' ' | b'\t' | b'\r')),
+                );
+            }
+        }
+        let title = self.title.take()?;
+        Some(Ok(self.record(title, seq)))
     }
-    Ok(out)
+}
+
+impl<R> FastaReader<R> {
+    fn record(&self, title: String, seq: Vec<u8>) -> SeqRecord {
+        let id = title.split_whitespace().next().unwrap_or("").to_string();
+        SeqRecord {
+            name: id.clone(),
+            id,
+            description: title,
+            seq,
+            molecule_type: Some(self.molecule_type.clone()),
+            topology: Topology::Linear,
+            annotations: Annotations::default(),
+            features: Vec::new(),
+        }
+    }
 }
 
 /// `line` without its trailing whitespace, as Python's `str.rstrip()` removes it.

@@ -158,8 +158,9 @@ impl ExternalProgram {
 }
 
 /// Every external program, in the order `doctor` lists them.
-pub const EXTERNAL_PROGRAMS: &[ExternalProgram] =
-    &[DIAMOND, CDHIT, USEARCH, ORPHOS, CMBUILD, FOLDSEEK, RESEEK];
+pub const EXTERNAL_PROGRAMS: &[ExternalProgram] = &[
+    DIAMOND, CDHIT, USEARCH, ORPHOS, CMBUILD, FOLDSEEK, RESEEK, DATASETS,
+];
 
 pub const DIAMOND: ExternalProgram = ExternalProgram {
     name: super::deduplicate_genbank::DIAMOND_BIN_NAME,
@@ -214,6 +215,15 @@ pub const FOLDSEEK: ExternalProgram = ExternalProgram {
               https://github.com/steineggerlab/foldseek/releases",
 };
 
+pub const DATASETS: ExternalProgram = ExternalProgram {
+    name: "datasets",
+    env_vars: &["DOMAINATOREDUX_DATASETS"],
+    bundled_dir: "datasets",
+    needed_by: "db_download --download_backend datasets (the default for the ncbi databases)",
+    install: "conda install -c conda-forge ncbi-datasets-cli, or \
+              https://www.ncbi.nlm.nih.gov/datasets/docs/v2/command-line-tools/download-and-install/",
+};
+
 pub const RESEEK: ExternalProgram = ExternalProgram {
     name: super::structure_lib::RESEEK_BIN_NAME,
     env_vars: &[super::structure_lib::RESEEK_ENV_VAR, "RESEEK"],
@@ -222,3 +232,51 @@ pub const RESEEK: ExternalProgram = ExternalProgram {
     install: "build it from https://github.com/rcedgar/reseek (the v3.01 release binary \
               requires AVX-512)",
 };
+
+/// The executable for `program` (upstream `resolve_binary`): the user's explicit path,
+/// which must be an executable file or a name on PATH, or else the program found the
+/// usual way (environment variable, bundled copy, PATH).
+pub fn resolve_binary(
+    program: &ExternalProgram,
+    path: Option<&str>,
+    hint: &str,
+) -> std::io::Result<PathBuf> {
+    if let Some(path) = path {
+        if is_executable_file(Path::new(path)) || on_path(path).is_some() {
+            return Ok(PathBuf::from(path));
+        }
+        return Err(std::io::Error::other(format!(
+            "'{path}' is not an executable file."
+        )));
+    }
+    program.locate().ok_or_else(|| {
+        std::io::Error::other(format!(
+            "Could not find '{name}' on PATH. {hint} Alternatively pass an explicit path with \
+             --{name}_path.",
+            name = program.name
+        ))
+    })
+}
+
+/// A file the user may run: on Unix, one with an execute bit set.
+pub(crate) fn is_executable_file(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata()
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
+}
+
+fn on_path(name: &str) -> Option<PathBuf> {
+    if name.contains('/') {
+        return None;
+    }
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
+}

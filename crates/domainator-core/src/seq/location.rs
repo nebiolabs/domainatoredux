@@ -30,6 +30,10 @@ impl CompoundOp {
 pub struct Location {
     pub operator: Option<CompoundOp>,
     pub between: bool,
+    /// The sequence a simple location is on when it is not this record, written
+    /// `ref:` before the span (Biopython's `SimpleLocation.ref`): an isoform for a
+    /// UniProt feature, or another entry in a GenBank file.
+    pub reference: Option<String>,
     pub parts: Vec<Part>,
 }
 
@@ -39,6 +43,7 @@ impl Location {
         Location {
             operator: None,
             between: false,
+            reference: None,
             parts: vec![(start, end, strand, false, false)],
         }
     }
@@ -175,7 +180,12 @@ fn parse_loc(s: &str, strand: i32) -> Option<Location> {
         if let Some(inner) = s.strip_prefix(kw).and_then(|x| x.strip_suffix(')')) {
             let mut groups: Vec<Vec<Part>> = Vec::new();
             for sub in split_top_commas(inner) {
-                groups.push(parse_loc(sub, strand)?.parts);
+                let sub = parse_loc(sub, strand)?;
+                // A part on another sequence has no coordinates on this one.
+                if sub.reference.is_some() {
+                    return None;
+                }
+                groups.push(sub.parts);
             }
             if strand == -1 {
                 groups.reverse();
@@ -184,15 +194,23 @@ fn parse_loc(s: &str, strand: i32) -> Option<Location> {
             return Some(Location {
                 operator: Some(op),
                 between,
+                reference: None,
                 parts: groups.into_iter().flatten().collect(),
             });
         }
     }
+    // A remote span, `AL391218.9:105173..108462`: the reference never holds `(`, `.`-
+    // separated spans do not hold `:`.
+    let (reference, s) = match s.split_once(':') {
+        Some((r, span)) if !r.is_empty() && !r.contains(['(', ',']) => (Some(r.to_string()), span),
+        _ => (None, s),
+    };
     let between = s.contains('^');
     let part = parse_span(s, strand)?;
     Some(Location {
         operator: None,
         between,
+        reference,
         parts: vec![part],
     })
 }
@@ -214,6 +232,7 @@ pub fn parse_location(s: &str) -> Location {
     parse_loc(s, 1).unwrap_or(Location {
         operator: None,
         between: false,
+        reference: None,
         parts: vec![(0, 0, 1, false, false)],
     })
 }
@@ -263,6 +282,21 @@ mod tests {
         // Untouched parts keep theirs.
         let fuzzy = [(0, 5, 1, true, false), (7, 10, 1, false, true)];
         assert_eq!(m(&fuzzy), fuzzy.to_vec());
+    }
+
+    #[test]
+    fn a_remote_span_keeps_its_reference() {
+        let l = parse_location("P68250-2:1");
+        assert_eq!(l.reference.as_deref(), Some("P68250-2"));
+        assert_eq!(l.parts, vec![(0, 1, 1, false, false)]);
+        let l = parse_location("complement(AL391218.9:105173..108462)");
+        assert_eq!(l.reference.as_deref(), Some("AL391218.9"));
+        assert_eq!((l.start(), l.end(), l.strand()), (105_172, 108_462, -1));
+        // A join that leaves this sequence cannot be placed on it.
+        assert_eq!(
+            parse_location("join(1..5,X1.1:8..9)").parts,
+            vec![(0, 0, 1, false, false)]
+        );
     }
 
     #[test]

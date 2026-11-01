@@ -15,9 +15,9 @@ Three counts appear in this project and they measure different things:
 
 | Count | What it is |
 | --- | --- |
-| **49** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 46 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
-| **44** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
-| **40** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator`, `summary_report` and `viewer`, which the app covers with panels and viewers |
+| **50** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 47 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
+| **45** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
+| **41** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator`, `summary_report` and `viewer`, which the app covers with panels and viewers |
 | **44 rows below** | upstream's tools (`domainator describe`), ported *and* deliberately unported |
 
 Related: [deliberate deferrals and the upstream pin](https://github.com/nebiolabs/domainatoredux/blob/main/UPSTREAM.md),
@@ -27,8 +27,8 @@ Partial features and fragments (upstream 0.12.0) are ported across every tool th
 them. That covers marker-preserving slicing with `<`/`>` on cut ends, `/codon_start`
 handling, `--partial` on the eight tools that take it, and `enum_report`'s `fragment` and
 `partial_count` columns. They are checked by the parity sweep's `extra:` invocations; see
-[File formats](file-formats.md#partial-features-and-fragments). `db_download` gained
-`--partial` upstream, but is not ported.
+[File formats](file-formats.md#partial-features-and-fragments), and `db_download`'s
+`--partial` by its own invocations.
 
 Upstream 1.0's interface is ported for every tool in the table: the same tool and option
 names, explicit `--<content>_out` outputs, interchangeable `--config` files, and
@@ -63,7 +63,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | color_genbank | finished (byte-identical parity incl. auto-color) | Tools menu ("Color GenBank") for batch color-by-name/database, **plus** per-feature editing in the contig viewer |
 | color_table_to_legend | finished (byte-identical SVG) | Tools menu ("Color table → legend") — reads a `table` file (`.tsv`/`.csv`), writes SVG |
 | compare_contigs | finished, including the sorted `--genbank_out` (scipy's `linkage`/`optimal_leaf_ordering` ported in `matrix/hierarchy.rs`, order byte-identical); `--progress` draws a bar on a terminal | Tools menu ("Compare contigs") |
-| db_download | deferred (network fetch; its `--gene_call` could now reuse `tools/gene_call.rs`) | — |
+| db_download | finished: UniProt as FASTA or as GenBank (the SwissProt flat-file parser, `io/swissprot.rs`, is a port of Biopython's, byte-identical to upstream on 92,000 SwissProt and TrEMBL entries), NCBI genomes over HTTPS (`direct`) or the NCBI Datasets CLI (`datasets`), every database's selection, every filter, `--gene_call` through Orphos. Every harvested invocation is byte-identical; they replay offline against the local mirrors in `test/data/db_download/` (`--uniprot_dir`, and an `--ncbi_summary` whose `ftp_path` names local directories) | Tools menu ("Download a database"); the **Databases** panel's managed UniProt, Pfam and taxonomy downloads are separate |
 | deduplicate_genbank | finished: hash/cd-hit/diamond/usearch backends, byte-identical incl. the `--cluster_tsv_out` row order, which follows the clustering tool's own order rather than the record order | Tools menu ("Deduplicate") — hash backend needs nothing; cd-hit/usearch/diamond need their binary, all three **auto-downloadable** from the External tools panel |
 | domain_search | protein (hmmsearch) + protein-FASTA (phmmer) + nucleotide-FASTA/HMM (nhmmer) references supported; whole-contig nhmmer hits flow through neighborhood extraction (default range, --add_annotations, and --whole_contig incl. circular rotation naming all at parity). --pad at parity (verified against the committed domain_search_test_out2.gb fixture). --gene_call ported (external Orphos binary; byte-identical). `--dedup` (all four policies, with and without `--max_hits`), per-protein/CDS/hit taxonomy filters with `--taxonomy_unknown`, `--anchor` and circular `--pad` at parity. Infernal `.cm` references via infernox, as for domainate. Every harvested invocation is byte-identical, including the whole-contig nucleotide and `.cm` ones; `--cds_range` counts protein-coding CDSs only, never nucleotide hits, as upstream does | Tools menu ("Domain search") — incl. neighborhood extraction, taxonomy filters, and decoys; HMM references come from the folder or the Databases panel |
 | domainate | protein (hmmsearch) + protein-FASTA (phmmer) + nucleotide-FASTA/HMM (nhmmer, whole-contig both-strand + circular origin-wrap) references supported; nucleotide-HMM & circular nhmmer are exact parity, phmmer is exact structural parity (evalue/score within HMMER-impl tolerance), and nucleotide-FASTA nhmmer is now exact parity too — byte-identical output, with coordinates, scores and E-values equal to pyhmmer's — via hmmer-pure-rs's single-sequence builder (see UPSTREAM.md, "Pinned dependency"). --gene_call ported (external Orphos binary; byte-identical). `--max_output_gb` checked per record as upstream does; `--batch_size` accepted and ignored (all records are searched at once). Infernal `.cm` references (whole-contig `cmsearch`, truncated hits included) via the infernox crate, a byte-parity port of Infernal 1.1.5: byte-identical output, every hit's coordinates, score and E-value equal to pyinfernal's. Still deferred: foldseek references. Taxonomy filters, `--hits_only` and `--no_annotations` left with upstream 1.0 (`domain_search` selects) | Tools menu ("Domainate") |

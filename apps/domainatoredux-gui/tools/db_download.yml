@@ -1,0 +1,87 @@
+# GUI dialog for `domainatoredux db_download`. Format: see README.md in this directory.
+id: db_download
+label: "Download a database"
+description: "UniProt (SwissProt, TrEMBL) as FASTA or GenBank, or NCBI genome assemblies as GenBank, optionally filtered by taxonomy. Large databases take a long time and a lot of disk space."
+fields:
+  - name: db
+    label: "Database"
+    gui_default: swissprot
+  - name: fasta_out
+    label: "Output (FASTA)"
+    output_name: "swissprot.fasta"
+    help: "For swissprot, trembl and uniprot. Clear it for the other databases, which are GenBank."
+  - name: genbank_out
+    label: "Output (GenBank)"
+    help: "For the _gb UniProt databases and the ncbi databases (clear the FASTA output)."
+  - name: max_records
+    label: "Max records"
+  - name: partial
+    label: "Fragments"
+  - name: include_taxids
+    label: "Include taxids"
+  - name: exclude_taxids
+    label: "Exclude taxids"
+  - name: taxonomy_expr
+    label: "Taxonomy expr"
+  - name: ncbi_taxonomy_path
+    label: "Taxonomy database"
+    file_type: taxonomy
+    sources: databases_first
+    select: "database:ncbi_taxonomy"
+  - name: taxonomy_update
+    label: "Update taxonomy"
+    # The Databases panel checks and refreshes the managed taxdump and records its
+    # version; a job refreshing it in place would bypass that. db_download's own
+    # default is on, so the dialog has to send it off.
+    gui_default: false
+  - name: gene_call
+    label: "Call genes"
+  - name: download_backend
+    label: "NCBI download backend"
+    gui_default: direct
+  - name: download_workers
+    label: "Simultaneous downloads"
+  - name: before
+    label: "Released before (YYYY-MM-DD)"
+  - name: after
+    label: "Released after (YYYY-MM-DD)"
+  - name: exclude_accessions
+    label: "Exclude accessions"
+  - name: exclude_accessions_file
+    label: "Exclude accessions file"
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: success_log_out
+    label: "Success log"
+  - name: append
+    label: "Append to the output"
+  - name: ncbi_summary
+    label: "NCBI assembly summary"
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: uniprot_dir
+    label: "UniProt mirror directory"
+  - name: datasets_workdir
+    label: "Datasets working directory"
+  - name: email
+    label: "Contact email"
+  - name: ncbi_api_key
+    show: false
+    label: "NCBI API key"
+  - name: datasets_include
+    show: false
+    label: "Datasets include"
+  - name: datasets_max_workers
+    show: false
+    label: "Datasets max workers"
+  - name: datasets_gzip
+    show: false
+    label: "Datasets gzip"
+  - name: datasets_path
+    show: false
+    label: "datasets path"
+  - name: cpu
+    show: false
+    label: "Cpu"

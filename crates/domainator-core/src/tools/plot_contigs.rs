@@ -342,6 +342,7 @@ mod tests {
             location: Location {
                 operator: (parts.len() > 1).then_some(CompoundOp::Join),
                 between: false,
+                reference: None,
                 parts: parts
                     .into_iter()
                     .map(|(s, e, st)| (s, e, st, false, false))
