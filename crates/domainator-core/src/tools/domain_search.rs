@@ -319,9 +319,13 @@ pub fn domain_search(
                             emitted.push(Region::whole(rec));
                         } else if opts.translate {
                             emitted.extend(
-                                crate::tools::neighborhood::translate_peptides(&rec, opts.strand)
-                                    .into_iter()
-                                    .map(Region::whole),
+                                crate::tools::neighborhood::translate_peptides(
+                                    &rec,
+                                    opts.strand,
+                                    opts.decoys.as_ref(),
+                                )
+                                .into_iter()
+                                .map(Region::whole),
                             );
                         } else {
                             emitted.extend(select_by_cds_hits(

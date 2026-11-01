@@ -22,13 +22,18 @@ with three placeholders substituted at replay time:
     @TMP@   a per-invocation scratch directory (`output_dir` and friends)
     @OUT@   the output path, given a distinct value per implementation
 
+A `@pytest.mark.parametrize`d test is harvested once per parameter set, keyed
+`<test_fn>[<pytest id>]#<n>`, so `pytest -k` finds the same case.
+
 An invocation is dropped when any argument fails to resolve to a literal (a
-loop variable, a helper call, a parametrized fixture). That is deliberate: a
-half-resolved command line is worse than a missing one. See `docs/parity.md`
-for how to widen the resolver when a newly interesting test is being skipped.
+loop variable, a helper call, a parameter that is not a literal). That is
+deliberate: a half-resolved command line is worse than a missing one. See
+`docs/parity.md` for how to widen the resolver when a newly interesting test is
+being skipped.
 """
 import argparse
 import ast
+import itertools
 import json
 import pathlib
 import subprocess
@@ -69,35 +74,151 @@ OUT_NAMES = {
 }
 
 
+# A name bound to Python's None (a parameter), which renders as no string but can be
+# tested with `is None`.
+NONE = object()
+
+
+def _literal(el):
+    """A parameter value: a string, a list of strings, NONE, or None if not a literal."""
+    if isinstance(el, ast.Constant):
+        if el.value is None:
+            return NONE
+        return str(el.value) if isinstance(el.value, (str, int, float, bool)) else None
+    if isinstance(el, (ast.List, ast.Tuple)):
+        items = [_literal(e) for e in el.elts]
+        return items if all(isinstance(i, str) for i in items) else None
+    return None
+
+
+def _pytest_id(el, value, name, index):
+    """The id pytest gives one parameter value: the value itself for a scalar, else
+    `<name><index>`."""
+    if isinstance(el, ast.Constant) and isinstance(el.value, (str, int, float, bool, type(None))):
+        return str(el.value)
+    return f"{name}{index}"
+
+
+def _parametrize(decorator):
+    """A `@pytest.mark.parametrize(names, values)` decorator's cases, each a
+    `(pytest id, {name: value})`, or None for any other decorator."""
+    if not (isinstance(decorator, ast.Call)
+            and ast.unparse(decorator.func) == "pytest.mark.parametrize"
+            and len(decorator.args) >= 2
+            and isinstance(decorator.args[0], ast.Constant)
+            and isinstance(decorator.args[1], (ast.List, ast.Tuple))):
+        return None
+    names = [n.strip() for n in decorator.args[0].value.split(",") if n.strip()]
+    cases = []
+    for index, case in enumerate(decorator.args[1].elts):
+        explicit_id = None
+        if isinstance(case, ast.Call) and ast.unparse(case.func) == "pytest.param":
+            explicit_id = next((k.value.value for k in case.keywords
+                                if k.arg == "id" and isinstance(k.value, ast.Constant)), None)
+            values = list(case.args) if len(names) > 1 else case.args[:1]
+        else:
+            values = list(case.elts) if len(names) > 1 and isinstance(case, (ast.List, ast.Tuple)) else [case]
+        if len(values) != len(names):
+            return None
+        bound = {}
+        for name, el in zip(names, values):
+            value = _literal(el)
+            if value is not None:
+                bound[name] = value
+        case_id = explicit_id or "-".join(
+            _pytest_id(el, bound.get(name), name, index) for name, el in zip(names, values))
+        cases.append((case_id, bound))
+    return cases
+
+
+def parameter_sets(fn):
+    """`(id suffix, bindings)` for each case of a test function: `("", {})` alone when it
+    is not parametrized. Stacked decorators multiply, the one nearest the function
+    first in the id, as pytest names them."""
+    decorators = [c for c in (_parametrize(d) for d in reversed(fn.decorator_list)) if c is not None]
+    if not decorators:
+        return [("", {})]
+    out = []
+    for combo in itertools.product(*decorators):
+        bound = {}
+        for _, values in combo:
+            bound.update(values)
+        out.append(("[" + "-".join(case_id for case_id, _ in combo) + "]", bound))
+    return out
+
+
 class Resolver:
     """Renders an AST expression to a literal string, or None if it cannot.
 
-    Scoped to a single test function: `bind` collects that function's simple
-    assignments first, so `gb = shared_datadir / "x.gb"` resolves when `gb` is
-    later handed to `main([...])`.
+    Scoped to a single test function (and parameter set): `bind` collects that
+    function's simple assignments first, so `gb = shared_datadir / "x.gb"` resolves when
+    `gb` is later handed to `main([...])`. Names may also hold lists of strings, so an
+    argument list built as `base + ["--hdf_out", out]` resolves too.
     """
 
-    def __init__(self):
+    def __init__(self, params=None):
         self.env = dict(RESERVED)
+        self.env.update(params or {})
 
     def bind(self, node):
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
             return
         target = node.targets[0]
-        if not isinstance(target, ast.Name) or target.id in RESERVED:
-            # `output_dir = "test_out"` must not shadow the scratch placeholder:
-            # the two implementations need separate directories to write into.
-            return
-        value = self.render(node.value)
-        if value is not None:
-            self.env[target.id] = value
+        if isinstance(target, ast.Tuple) and isinstance(node.value, ast.Tuple):
+            pairs = list(zip(target.elts, node.value.elts)) if len(target.elts) == len(node.value.elts) else []
+        else:
+            pairs = [(target, node.value)]
+        for name, value_node in pairs:
+            if not isinstance(name, ast.Name) or name.id in RESERVED:
+                # `output_dir = "test_out"` must not shadow the scratch placeholder:
+                # the two implementations need separate directories to write into.
+                continue
+            value = self.render(value_node)
+            if value is None:
+                value = self.render_list(value_node)
+            if value is not None:
+                self.env[name.id] = value
+
+    def render_list(self, el):
+        """A list-valued expression as a list of strings, or None."""
+        if isinstance(el, (ast.List, ast.Tuple)):
+            items = [self.render(e) for e in el.elts]
+            return None if None in items else items
+        if isinstance(el, ast.Name):
+            value = self.env.get(el.id)
+            return value if isinstance(value, list) else None
+        if isinstance(el, ast.BinOp) and isinstance(el.op, ast.Add):
+            left, right = self.render_list(el.left), self.render_list(el.right)
+            return None if left is None or right is None else left + right
+        if isinstance(el, ast.IfExp):
+            test = self.truth(el.test)
+            return None if test is None else self.render_list(el.body if test else el.orelse)
+        return None
+
+    def truth(self, el):
+        """A condition over parameters (`x is None`, `"--cpu" not in args`), or None."""
+        if not (isinstance(el, ast.Compare) and len(el.ops) == 1):
+            return None
+        op, right = el.ops[0], el.comparators[0]
+        if isinstance(op, (ast.Is, ast.IsNot)) and isinstance(right, ast.Constant) and right.value is None:
+            if not isinstance(el.left, ast.Name) or el.left.id not in self.env:
+                return None
+            is_none = self.env[el.left.id] is NONE
+            return is_none if isinstance(op, ast.Is) else not is_none
+        if isinstance(op, (ast.In, ast.NotIn)):
+            item, container = self.render(el.left), self.render_list(right)
+            if item is None or container is None:
+                return None
+            return (item in container) == isinstance(op, ast.In)
+        return None
 
     def render(self, el):
         if isinstance(el, ast.Constant):
             return str(el.value)
         if isinstance(el, ast.Name):
             if el.id in self.env:
-                return self.env[el.id]
+                value = self.env[el.id]
+                return value if isinstance(value, str) else None
             # An unresolvable output path still replays: the runner picks a name.
             return "@OUT@" if el.id in OUT_NAMES else None
         if isinstance(el, ast.Call) and isinstance(el.func, ast.Name) and el.func.id == "str":
@@ -151,24 +272,33 @@ def harvest(path, module, qualified_only=False):
     for fn in ast.walk(tree):
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        resolver = Resolver()
-        for node in ast.walk(fn):
-            resolver.bind(node)
-        for node in ast.walk(fn):
-            if not isinstance(node, ast.Call) or not _is_main_call(node, module, qualified_only):
+        cases = parameter_sets(fn)
+        by_call = {}  # lineno -> [(suffix, args)], one per case that resolved
+        for suffix, params in cases:
+            resolver = Resolver(params)
+            for node in ast.walk(fn):
+                resolver.bind(node)
+            for node in ast.walk(fn):
+                if not isinstance(node, ast.Call) or not _is_main_call(node, module, qualified_only):
+                    continue
+                # Only the single-list form; anything else is a helper, not an invocation.
+                if len(node.args) != 1:
+                    continue
+                args = resolver.render_list(node.args[0])
+                if args is not None:
+                    by_call.setdefault(node.lineno, []).append((suffix, args))
+        for lineno, resolved in by_call.items():
+            distinct = {tuple(args) for _, args in resolved}
+            if len(resolved) == len(cases) and len(distinct) == 1:
+                # The call does not depend on the parameters: one row, keyed by the
+                # bare test name.
+                found.append((fn.name, lineno, resolved[0][1]))
                 continue
-            # Only the single-list form; anything else is a helper, not an invocation.
-            if len(node.args) != 1 or not isinstance(node.args[0], ast.List):
-                continue
-            args = []
-            for el in node.args[0].elts:
-                rendered = resolver.render(el)
-                if rendered is None:
-                    args = None
-                    break
-                args.append(rendered)
-            if args is not None:
-                found.append((fn.name, node.lineno, args))
+            emitted = set()
+            for suffix, args in resolved:
+                if tuple(args) not in emitted:
+                    emitted.add(tuple(args))
+                    found.append((fn.name + suffix, lineno, args))
     # `ast.walk` is breadth-first, so sort to get source order -- the ordinal in
     # the stable key depends on it.
     found.sort(key=lambda f: (f[0], f[1]))

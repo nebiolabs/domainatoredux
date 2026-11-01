@@ -257,9 +257,14 @@ replay. Both are deliberate: a half-resolved command line is worse than a missin
 one.
 
 If a newly interesting test is being skipped, widen `Resolver.render` in
-`harvest_invocations.py` — it currently handles constants, local bindings,
-`str()`, `os.path.join()`, pathlib `/`, `+`, and f-strings over any of those, with
-`shared_datadir` as the fixtures and `output_dir`/`tmp_path` as the scratch directory.
+`harvest_invocations.py` — it currently handles constants, local bindings (tuple
+unpacking included), `str()`, `os.path.join()`, pathlib `/`, `+`, and f-strings over any
+of those, with `shared_datadir` as the fixtures and `output_dir`/`tmp_path` as the scratch
+directory. Argument lists may be built from lists (`base + ["--hdf_out", out]`), including
+a conditional one over a parameter (`[] if cap is None else [...]`). A
+`@pytest.mark.parametrize`d test is replayed once per case whose values are literals,
+keyed by pytest's own id (`test_x[None-sparsify_args0]#0`, so `pytest -k` finds it); a
+call that does not use the parameters is harvested once, under the bare test name.
 A tool's invocations are harvested from its own `test_<tool>.py` and, in the qualified
 `<tool>.main([...])` form, from every other test module (keyed `<module>.<test>#n`). Each addition is a few
 lines. Multi-step tests (build a file, then consume it) would need the harness to

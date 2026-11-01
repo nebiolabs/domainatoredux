@@ -17,3 +17,5 @@
 # Columns: <python module> <test_fn#n> <outcome> <class> <note>
 build_projection	test_build_projection_sparse_tsne#0	rust-failed	deferred:projection-umap-tsne	domainatoredux build_projection: error: --algorithm tsne is not supported by domainatoredux yet; use pca, or project with upstream domainato
 build_projection	test_build_projection_sparse_umap#0	rust-failed	deferred:projection-umap-tsne	domainatoredux build_projection: error: --algorithm umap is not supported by domainatoredux yet; use pca, or project with upstream domainato
+build_projection	test_build_projection_tsne[scorefull.tsv]#0	rust-failed	deferred:projection-umap-tsne	domainatoredux build_projection: error: --algorithm tsne is not supported by domainatoredux yet; use pca, or project with upstream domainato
+build_projection	test_build_projection_umap[scorefull.tsv]#0	rust-failed	deferred:projection-umap-tsne	domainatoredux build_projection: error: --algorithm umap is not supported by domainatoredux yet; use pca, or project with upstream domainato

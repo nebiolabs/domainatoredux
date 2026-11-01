@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `f346a05`.
+Parity: Python domainator 1.0.0rc1 @ `3b4d76e`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
@@ -72,6 +72,16 @@ Parity: Python domainator 1.0.0rc1 @ `f346a05`.
   GenBank, FASTA, `.hmm` or `.cm` input, with small clusters skipped or pooled and
   optionally each contig centered on its search hit. In the desktop app as "Split by
   cluster".
+- **`kmer_dist`**, a new tool: a similarity matrix from exact shared k-mers, with no
+  alignment and no external binary. Protein records, CDS translations (calling genes with
+  `--gene_call`) or strand-invariant nucleotide k-mers (`--nucleotide_kmers`), scored as
+  max containment, min containment or Jaccard, with `--max_hits_per_query`, `--mst` and
+  `--knn` as on `seq_dist`. In the desktop app as "K-mer distance".
+- **`domain_search --kb_up`/`--kb_down` on a circular contig smaller than the window**
+  keeps the window where its padding puts it, as upstream does: `--kb_down 100` around a
+  plasmid gene starts the region at that gene. It used to be centered opposite the gene.
+- **`domain_search --translate --decoys`** leaves out the CDSs whose best hit is a decoy,
+  as region extraction already did; it used to write them.
 - **The NCBI taxonomy is downloaded when it is missing**, as `domainator` does, and
   **`--taxonomy_update`** (`domain_search`, `enum_report`, `summary_report`,
   `select_by_cds`, `select_by_contig` and the three extract tools) checks a local

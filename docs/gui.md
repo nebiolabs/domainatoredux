@@ -160,7 +160,7 @@ starts an option at a different value from the command line, the dialog says so 
   from [Reference databases](#reference-databases) once you have installed it.
 
 The whole SSN pipeline runs from the menu: **domain_search → domainate → seq_dist (or
-compare_contigs) → transform_matrix → build_ssn / build_tree / build_projection**, including
+kmer_dist, or compare_contigs) → transform_matrix → build_ssn / build_tree / build_projection**, including
 neighborhood extraction, taxonomy filters and decoys.
 
 ## Jobs and provenance

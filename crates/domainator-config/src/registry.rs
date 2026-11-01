@@ -289,6 +289,16 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
+        stdin: false,
+        required_outputs: Some(&["hdf_out", "dense_text_out"]),
+        no_stdout: &["hdf_out"],
+        ..tool(
+            "kmer_dist",
+            "compare",
+            "Compute exact k-mer similarity scores between sequence records.",
+        )
+    },
+    ToolInfo {
         required_outputs: Some(&["hdf_out", "dense_text_out", "genbank_out"]),
         no_stdout: &["hdf_out"],
         ..tool(

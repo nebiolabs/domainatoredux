@@ -29,7 +29,7 @@ use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
 /// The longest protein upstream searches (`domainate.MAX_PROTEIN_SIZE`); a longer one
 /// is skipped with a warning.
-const MAX_PROTEIN_SIZE: usize = 100_000;
+pub(crate) const MAX_PROTEIN_SIZE: usize = 100_000;
 /// `cds_id` for a CDS feature: keep an existing one, else generate from the
 /// location parts using Biopython's strand-aware human-readable coordinates
 /// (`utils.get_cds_unique_name`; plan risk E6). Per part: `-1` strand ->

@@ -27,6 +27,7 @@ pub mod hmmer_report;
 pub mod hmmer_search;
 pub mod hmmer_select;
 pub mod infernal_build;
+pub mod kmer_dist;
 pub mod matrix_report;
 pub mod neighborhood;
 pub mod node_table;

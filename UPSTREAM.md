@@ -7,8 +7,13 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `f346a05` — *make test fixtures explicit*
+- **Caught up to:** `3b4d76e` — *bugfixes*
   (2026-11-01; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`3b4d76e`**, ported: a taxonomy directory holding a full set of extracted `.dmp`
+  files counts as a database and is no longer downloaded over (`taxonomy::has_extracted_dmps`;
+  upstream's own extracted-only test was fetching the real taxdump). Also drops a dead
+  `except ImportError` around TMbed: a missing TMbed was already an error with an install
+  hint, which `find_features --tmbed` here reports by refusing the option.
 - **`f346a05`**, ported: `split_by_cluster` splits a real Infernal `.cm` file, each CM
   block kept with the filter HMM that follows it under the same name (it used to report
   duplicate labels), and `find_features --gene_call all` drops the `Domainator`
@@ -338,10 +343,8 @@ Tracked so a later sync does not mistake them for oversights:
   CLI keeps them in its choices, so the manifest matches, and refuses them at run time
   (`deferred:projection-umap-tsne`). A Python projection reads back in with
   `--algorithm coords`.
-- **Unported tools:** `kmer_dist`,
-  `db_download` (the app's
-  managed downloads cover UniProt, Pfam and NCBI Taxonomy),
-  and the structure tools above. Their manifest entries are
+- **Unported tools:** `db_download` (the app's managed downloads cover UniProt, Pfam and
+  NCBI Taxonomy) and the structure tools above. Their manifest entries are
   `deferred:` rows of `scripts/parity/manifest_allowlist.tsv`.
 
 ## What the parity sweep still tracks

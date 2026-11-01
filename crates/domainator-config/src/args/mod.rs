@@ -33,6 +33,7 @@ mod hmmer_report;
 mod hmmer_search;
 mod hmmer_select;
 mod infernal_build;
+mod kmer_dist;
 mod matrix_report;
 mod plot_contigs;
 mod rotate_contigs;
@@ -74,6 +75,7 @@ pub use hmmer_report::HmmerReportArgs;
 pub use hmmer_search::HmmerSearchArgs;
 pub use hmmer_select::HmmerSelectArgs;
 pub use infernal_build::InfernalBuildArgs;
+pub use kmer_dist::KmerDistArgs;
 pub use matrix_report::MatrixReportArgs;
 pub use plot_contigs::PlotContigsArgs;
 pub use rotate_contigs::RotateContigsArgs;
@@ -116,6 +118,7 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "domainate" => DomainateArgs::augment_args(cmd),
         "domain_search" => DomainSearchArgs::augment_args(cmd),
         "seq_dist" => SeqDistArgs::augment_args(cmd),
+        "kmer_dist" => KmerDistArgs::augment_args(cmd),
         "compare_contigs" => CompareContigsArgs::augment_args(cmd),
         "transform_matrix" => TransformMatrixArgs::augment_args(cmd),
         "build_ssn" => BuildSsnArgs::augment_args(cmd),

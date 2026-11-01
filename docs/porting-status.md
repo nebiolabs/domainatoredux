@@ -15,9 +15,9 @@ Three counts appear in this project and they measure different things:
 
 | Count | What it is |
 | --- | --- |
-| **44** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 41 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
-| **39** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
-| **35** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator`, `summary_report` and `viewer`, which the app covers with panels and viewers |
+| **45** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 42 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
+| **40** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
+| **36** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator`, `summary_report` and `viewer`, which the app covers with panels and viewers |
 | **44 rows below** | upstream's tools (`domainator describe`), ported *and* deliberately unported |
 
 Related: [deliberate deferrals and the upstream pin](https://github.com/nebiolabs/domainatoredux/blob/main/UPSTREAM.md),
@@ -81,7 +81,7 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | hmmer_search | finished (gzip/BGZF `.hmm` read by magic bytes, `.gz` output as plain gzip, `.bgz` refused; filter query HMMs by best reference score; count+order parity verified across --score_cutoff/--max_hits; reuses the hmm_compare Viterbi engine + write_hmm) | Tools menu ("HMM search") — keeps query profiles scoring against a reference HMM set; output `.hmm` |
 | hmmer_select | finished (gzip/BGZF `.hmm` read by magic bytes, `.gz` output as plain gzip, `.bgz` refused; byte-identical output incl. `--alphabet`, which selects whole input files and rejects a mixed-alphabet set; the port has its own `p7_hmmfile_WriteASCII` writer (`search/hmm_write.rs`) because hmmer-pure-rs's stamps a `HMMER3/e` header and drops the `GA`/`TC`/`NC` Pfam cutoffs) | Tools menu ("HMM select") — pairs with the HMM Logo viewer to curate a reference `.hmm` subset (regex/exact/substring on name/desc/acc) |
 | infernal_build | finished: runs an external `cmbuild` (C Infernal, or infernox's `infernox-cmbuild`) as upstream does, then sets NAME/ACC/DESC; output equal to Python's apart from the DATE and COM lines | Tools menu ("CM build") — Stockholm input; output `.cm` feeds the reference dropdowns |
-| kmer_dist | deferred (heavy; low priority per plan) | — |
+| kmer_dist | finished: exact k-mer sets (protein, translated-CDS with `--gene_call`, and strand-invariant `--nucleotide_kmers`), all three metrics, `--max_hits_per_query`, `--mst`/`--knn` with the streaming accumulator's tie order; values equal to Python's on all 44 harvested invocations that replay (the other 6 are upstream's error cases, or build their input at run time) | Tools menu ("K-mer distance") |
 | matrix_report | finished (text, `--json_out` (upstream's agent contract) and `--html_out` (upstream's generated page) all match upstream, `--knn_projection` included; a separate GUI payload feeds the viewer tab) | **Matrix Report viewer** tab (histogram + suggested cutoffs) + Tools menu export ("Matrix report (export)", text) |
 | plot_contigs | finished (`--html_out` is upstream's generated page; its data match upstream's on every harvested invocation) | Tools menu ("Plot contigs (HTML)") writes the page; the **Contig viewer** — the GUI centerpiece (SVG, viewport virtualization + LOD, db/e-value filters, tooltips, editing) — is the on-screen equivalent |
 | rotate_contigs | finished (parity-verified, Infernal `.cm` references included) | Tools menu ("Rotate contigs") |

@@ -112,7 +112,7 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 | [Annotation and search](#annotation-and-search) | `domainate`, `domain_search`, `gene_call`, `filter_domains`, `find_features` |
 | [Selection and extraction](#selection-and-extraction) | `select_by_cds`, `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `rotate_contigs`, `sort_contigs`, `clean_sequences`, `deduplicate_genbank` |
 | [Color and plots](#color-and-plots) | `color_genbank`, `color_table_to_legend`, `plot_contigs` |
-| [Matrices and networks](#matrices-and-networks) | `seq_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`, `build_projection`, `viewer`, `split_by_cluster` |
+| [Matrices and networks](#matrices-and-networks) | `seq_dist`, `kmer_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`, `build_projection`, `viewer`, `split_by_cluster` |
 | [Reports](#reports) | `enum_report`, `summary_report`, `matrix_report`, `ssn_navigator` |
 | [HMM profiles](#hmm-profiles) | `hmmer_build`, `hmmer_select`, `hmmer_search`, `hmmer_compare`, `hmmer_report`, `infernal_build` |
 | [Database preparation](#database-preparation) | `format_db` |
@@ -550,6 +550,32 @@ names the binary; `--max_output_gb` (default 25) caps each output.
 ```bash
 domainatoredux seq_dist -i proteins.fasta -o dist.hdf5 --mode score
 domainatoredux seq_dist -i proteins.fasta -o dist.hdf5 --algorithm hmmer --cpu 8
+```
+
+### `kmer_dist`
+
+**Pairwise similarity by shared k-mers**: alignment-free, and exact (two sequences share a
+k-mer only if they share the word itself, with no hashing or sketching). Faster than
+`seq_dist` on large sets, and it needs no external binary. Omit `-r` for all-vs-all.
+Protein records are compared by protein k-mers (`--ksize`, default 5). Nucleotide records
+are compared by the k-mers of their CDS translations, with `--gene_call all|unannotated`
+to call genes first (required for nucleotide FASTA, whose records have no CDS
+annotations; `--alphabet nucleotide` says a FASTA file holds nucleotides), or with
+`--nucleotide_kmers` by their own k-mers (default 15), a k-mer and its reverse complement
+counting as one. Letters outside the alphabet (`X`, `N` in a protein) break a k-mer;
+`*` and `-` are skipped.
+
+`--metric` turns the shared count into a similarity between 0 and 1: `max_containment`
+(the default; shared over the smaller set, so a fragment of a longer sequence scores 1),
+`min_containment` (over the larger set) or `jaccard` (over the union). `--mode` is
+`score`, `bool` or `score_dist`; `--threshold` (0–1) drops similarities at or below it;
+`--max_hits_per_query` keeps each row's highest values, the diagonal included (0 keeps
+none); `--mst`/`--knn` prune as for `seq_dist` (all-vs-all only, `--mode score` or
+`bool`). The same `-o/--hdf_out`/`--dense_text_out` outputs and `--max_output_gb`.
+
+```bash
+domainatoredux kmer_dist -i proteins.fasta -o kmer.hdf5 --metric jaccard
+domainatoredux kmer_dist -i genomes.fna --alphabet nucleotide --nucleotide_kmers -o genomes.hdf5 --mst --knn 5
 ```
 
 ### `compare_contigs`

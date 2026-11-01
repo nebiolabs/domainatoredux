@@ -51,7 +51,8 @@ interesting genes; `filter_domains` strips weak annotations; `deduplicate_genban
 near-identical sequences. Most of a workflow is a chain of editors.
 
 **Comparison tools** turn a set of sequences into a pairwise score matrix.
-`seq_dist` scores by local alignment (DIAMOND or HMMER); `compare_contigs` scores by
+`seq_dist` scores by local alignment (DIAMOND or HMMER); `kmer_dist` by shared k-mers,
+which is faster and alignment-free; `compare_contigs` scores by
 shared domain content (Jaccard and adjacency indexes), which is what you want for
 comparing gene neighborhoods rather than single proteins. `hmmer_compare` compares HMM
 profiles to each other.

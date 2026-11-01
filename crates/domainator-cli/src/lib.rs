@@ -90,6 +90,8 @@ enum Command {
     ExtractUnannotated(config::args::ExtractUnannotatedArgs),
     /// Compute a similarity matrix between input and reference sequences/profiles.
     SeqDist(config::args::SeqDistArgs),
+    /// Similarity between sequences from their exact k-mer sets.
+    KmerDist(config::args::KmerDistArgs),
     /// Pairwise contig similarity (Jaccard + Adjacency) from annotated GenBank.
     CompareContigs(config::args::CompareContigsArgs),
     /// Normalize / convert / sparsify a score matrix (dense<->sparse, --mode, --mst_knn).
@@ -471,6 +473,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::ExtractPeptides(args) => commands::extract_peptides::run(&args)?,
         Command::ExtractUnannotated(args) => commands::extract_unannotated::run(&args)?,
         Command::SeqDist(args) => commands::seq_dist::run(&args)?,
+        Command::KmerDist(args) => commands::kmer_dist::run(&args)?,
         Command::CompareContigs(args) => commands::compare_contigs::run(&args)?,
         Command::TransformMatrix(args) => commands::transform_matrix::run(&args)?,
         Command::BuildSsn(args) => commands::build_ssn::run(&args)?,

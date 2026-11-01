@@ -573,12 +573,7 @@ pub(crate) fn cds_neighborhood(
     let (w_lo, w_hi) = match range {
         Range::None => (a, b),
         Range::Kb(u, d) => {
-            let (pu, pd) = ((u * 1000.0) as i64, (d * 1000.0) as i64);
-            if strand == -1 {
-                (a - pd, b + pu)
-            } else {
-                (a - pu, b + pd)
-            }
+            pad_circular_arc(a, b, l, strand, (u * 1000.0) as i64, (d * 1000.0) as i64)
         }
         Range::Cds(cu, cd) => {
             let (members, member_idx) = cds_range_members(cds_list, focus_idx);
@@ -605,9 +600,11 @@ pub(crate) fn cds_neighborhood(
         Range::Whole => (a, b), // replaced below
     };
 
-    // Whole contig (or any window covering the full circle): the whole circle,
-    // split at the midpoint of the gap opposite the focus (or its hit).
-    let is_whole = matches!(range, Range::Whole) || (w_hi - w_lo) >= l;
+    // Whole contig (or a CDS neighborhood covering the full circle): the whole circle,
+    // split at the midpoint of the gap opposite the focus (or its hit). A kb window has
+    // already been fitted to the circle by `pad_circular_arc`.
+    let is_whole =
+        matches!(range, Range::Whole) || (matches!(range, Range::Cds(..)) && (w_hi - w_lo) >= l);
     let mut slice = if is_whole {
         let (ca, cb) = match hit {
             Some(hit) if matches!(range, Range::Whole) => min_covering_arc(hit, l),
@@ -620,6 +617,68 @@ pub(crate) fn cds_neighborhood(
     };
     (slice.dist_to_start, slice.dist_to_end) = circular_focus_distances(&slice, (a, b), l);
     slice
+}
+
+/// Pad the focus arc `[a, b)` (`b` past `l` when it crosses the origin) by `pu` bases
+/// upstream and `pd` downstream on a circular contig of length `l`: upstream
+/// `pad_location`'s circular branch, as the window `[w_lo, w_hi)` it covers.
+///
+/// Padding never reads back into the focus. A pad that would is cut where it meets the
+/// focus, and when the two pads then overlap each other the overlap is split between
+/// them, so a window larger than the contig still starts and ends where its own pads
+/// put it: `--kb_down 100` on a small plasmid starts at the focus, it is not centered
+/// on it. The odd base of an uneven split comes off the high end for a focus that does
+/// not cross the origin and off the downstream pad for one that does, as upstream's two
+/// branches take it.
+fn pad_circular_arc(a: i64, b: i64, l: i64, strand: i32, pu: i64, pd: i64) -> (i64, i64) {
+    if pu == 0 && pd == 0 {
+        return (a, b);
+    }
+    if b > l {
+        // The focus crosses the origin, so the padding cannot.
+        if b - a >= l {
+            return (a, b);
+        }
+        let remaining = l - (b - a);
+        let (mut pu, mut pd) = (pu.min(remaining), pd.min(remaining));
+        let excess = pu + pd - remaining;
+        if excess > 0 {
+            pu -= excess / 2;
+            pd -= excess / 2;
+            if excess % 2 == 1 {
+                pd -= 1;
+            }
+        }
+        return if strand == -1 {
+            (a - pd, b + pu)
+        } else {
+            (a - pu, b + pd)
+        };
+    }
+    let (mut lo, mut hi) = if strand == -1 {
+        (a - pd, b + pu)
+    } else {
+        (a - pu, b + pd)
+    };
+    if lo >= 0 && hi <= l {
+        return (lo, hi);
+    }
+    // Neither side may run past the origin into the focus.
+    if lo < 0 && -lo > l - b {
+        lo = b - l;
+    }
+    if hi > l && hi - l > a {
+        hi = l + a;
+    }
+    let overlap = hi - lo - l;
+    if overlap > 0 {
+        lo += overlap / 2;
+        hi -= overlap / 2;
+        if overlap % 2 == 1 {
+            hi -= 1;
+        }
+    }
+    (lo, hi)
 }
 
 /// Upstream `circular_focus_distances`: the distances, in the slice's direction,
@@ -1104,7 +1163,11 @@ fn get_cds_name(f: &SeqFeature) -> String {
 /// `Domain_Search` feature, the CDS's `Domainator` features, and the CDS itself
 /// (with `/translation` dropped and a `source_contig` qualifier), remapped to
 /// peptide coordinates.
-pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<SeqRecord> {
+pub fn translate_peptides(
+    rec: &SeqRecord,
+    strand_filter: Option<i32>,
+    decoys: Option<&std::collections::HashSet<String>>,
+) -> Vec<SeqRecord> {
     use crate::seq::translate::translate_dna;
 
     let sources: Vec<&SeqFeature> = rec.features.iter().filter(|f| f.kind == "source").collect();
@@ -1131,6 +1194,10 @@ pub fn translate_peptides(rec: &SeqRecord, strand_filter: Option<i32>) -> Vec<Se
         let Some(search) = search_by.get(&cid) else {
             continue;
         };
+        // A CDS whose best hit is a decoy is not a hit.
+        if decoys.is_some_and(|d| search.get_first("name").is_some_and(|n| d.contains(n))) {
+            continue;
+        }
         let strand = f.location.strand();
         if let Some(sf) = strand_filter {
             if strand != sf {
@@ -1337,6 +1404,52 @@ mod tests {
         );
         assert_eq!(id_of(&window, 100), "c_6:25");
         assert_eq!((window.dist_to_start, window.dist_to_end), (5, 5));
+    }
+
+    /// A kb window larger than a circular contig keeps the side its pads put it on:
+    /// `--kb_down 100` around pDONR201's reverse-strand ccdB (`complement(959..1264)`)
+    /// starts at ccdB, as upstream's `pad_location` cuts the pad where it would run back
+    /// into the focus. It used to be centered opposite the gene.
+    #[test]
+    fn an_oversized_kb_window_is_cut_at_the_focus() {
+        let cds = one_cds(958, 1264, -1);
+        let slice = cds_neighborhood(4470, true, &cds, 0, Range::Kb(0.0, 100.0), None);
+        assert_eq!(id_of(&slice, 4470), "c_1264:1265rc");
+    }
+
+    /// `pad_circular_arc` against upstream `pad_location` on a circle: `(length, a, b,
+    /// strand, pad_up, pad_down)` -> the window's start (mod length) and size, from
+    /// Python. Covers both branches (a focus crossing the origin or not), both
+    /// strands, and pads that overlap by an odd and an even amount.
+    #[test]
+    fn circular_padding_matches_upstream() {
+        type Case = (i64, i64, i64, i32, i64, i64, i64, i64);
+        let cases: &[Case] = &[
+            (50, 38, 62, 1, 130, 0, 12, 50),
+            (80, 29, 100, -1, 200, 70, 25, 80),
+            (101, 81, 111, 1, 19, 104, 71, 101),
+            (119, 97, 118, 1, 75, 99, 59, 119),
+            (80, 50, 105, -1, 0, 0, 50, 55),
+            (37, 16, 30, -1, 27, 86, 4, 37),
+            (96, 52, 78, 1, 37, 0, 15, 63),
+            (58, 50, 51, -1, 26, 106, 6, 58),
+            (95, 81, 89, 1, 80, 45, 20, 95),
+            (52, 37, 57, -1, 0, 23, 14, 43),
+            (117, 76, 185, -1, 33, 0, 76, 117),
+            (92, 64, 104, 1, 28, 0, 36, 68),
+            (89, 8, 38, -1, 0, 0, 8, 30),
+            (35, 15, 26, 1, 0, 0, 15, 11),
+            (108, 54, 157, 1, 0, 3, 54, 106),
+            (105, 56, 71, -1, 0, 67, 94, 82),
+        ];
+        for &(l, a, b, strand, pu, pd, lo, n) in cases {
+            let (w0, w1) = pad_circular_arc(a, b, l, strand, pu, pd);
+            assert_eq!(
+                (w0.rem_euclid(l), w1 - w0),
+                (lo, n),
+                "{l} {a} {b} {strand} {pu} {pd}"
+            );
+        }
     }
 
     #[test]
@@ -1656,6 +1769,17 @@ mod tests {
         let out =
             select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, Some(&decoys), None).unwrap();
         assert_eq!(out.len(), 1);
+    }
+
+    /// `--translate` drops a CDS whose best hit is a decoy, as region extraction does.
+    #[test]
+    fn translate_peptides_drops_decoy_hits() {
+        let mut feats = hit_cds(0, 9, "1_1_9", "A");
+        feats.extend(hit_cds(30, 39, "31_1_39", "B"));
+        let rec = test_rec(&[b'A'; 60], feats);
+        assert_eq!(translate_peptides(&rec, None, None).len(), 2);
+        let decoys: std::collections::HashSet<String> = ["A".to_string()].into_iter().collect();
+        assert_eq!(translate_peptides(&rec, None, Some(&decoys)).len(), 1);
     }
 
     /// A whole-contig annotation as `domainate` writes one: `cds_id="."`.

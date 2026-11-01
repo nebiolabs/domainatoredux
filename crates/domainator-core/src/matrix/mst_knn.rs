@@ -31,6 +31,12 @@ pub enum TreeTies {
     /// Score descending, ties by (larger index, smaller index) ascending, which is
     /// what the streaming accumulator ends with.
     Streaming,
+    /// Score descending, ties by the stored cell's (row, column) ascending: the
+    /// streaming accumulator's own order over the cells it is fed, for a matrix that
+    /// holds exactly those cells. `kmer_dist` feeds the upper triangle of an uncapped
+    /// self-comparison and whole capped rows otherwise, and keeps its matrix that way
+    /// until the forest is built.
+    Entries,
 }
 
 /// `score > lower_bound` (the `include_equal=False` gate used everywhere here).
@@ -152,6 +158,21 @@ pub(crate) fn mst_knn_kept(
         for e in &super::ssn::MaxTree::from_matrix(m).edges {
             if passes_lb(e.weight, lower_bound) {
                 keep((e.i.min(e.j), e.i.max(e.j)));
+            }
+        }
+    }
+    if include_mst && ties == TreeTies::Entries {
+        let mut cells: Vec<(f64, usize, usize)> = Vec::new();
+        for_each_entry(m, |r, c, v| {
+            if v != 0.0 && r != c {
+                cells.push((v, r, c));
+            }
+        });
+        cells.sort_by(|x, y| y.0.total_cmp(&x.0).then(x.1.cmp(&y.1)).then(x.2.cmp(&y.2)));
+        let mut uf = UnionFind::new(n);
+        for &(score, r, c) in &cells {
+            if uf.union(r, c) && passes_lb(score, lower_bound) {
+                keep((r.min(c), r.max(c)));
             }
         }
     }
