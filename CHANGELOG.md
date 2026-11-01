@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `bc91aca`.
+Parity: Python domainator 1.0.0rc1 @ `cfa4193`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
@@ -56,6 +56,13 @@ Parity: Python domainator 1.0.0rc1 @ `bc91aca`.
   (Infernal's, or infernox's `infernox-cmbuild`) and sets its NAME, ACC and DESC.
 - **`plot_contigs`**, a new tool: upstream's contig plot, an offline page that draws each
   contig with its features stacked above it, colored by `--metadata` with `--color_by`.
+- **`domain_search` on nucleotide references writes what `domainator` writes**: where a
+  contig's search hit and one of its annotations share a start, the hit comes first.
+- **`--cds_range` counts protein-coding CDSs only** (`domain_search`, `select_by_cds`):
+  hits on a nucleotide reference are never neighbors, though one can be the focus. A
+  region used to stop at the next nucleotide hit instead of reaching the next gene.
+- **`hmmer_build --window_beta`** derives a nucleotide profile's MAXL from a tail mass
+  as hmmbuild does (`0` gives 4×M), where it used to be refused.
 - **GenBank COMMENT lines are read as Biopython reads them**: without trailing spaces,
   blank lines skipped, and the structured comment split out even when its lines are
   padded, as NCBI pads them. Such a record used to be written back with its structured

@@ -7,8 +7,11 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `bc91aca` — *remove superkingdom* (2026-11-01; upstream `__version__`
+- **Caught up to:** `cfa4193` — *test fix* (2026-11-01; upstream `__version__`
   1.0.0rc1, on the `version_one` branch).
+- **`cfa4193`**, nothing to port: a browser test finds the Bacteria node by label, and
+  the empty `test/data/taxdmp/taxdump.tar.gz.lock` (a lock file the taxonomy loader leaves
+  beside the tarball) is deleted.
 - **`bc91aca`**, ported: NCBI dropped `superkingdom`, so `summary_report`'s
   `TREE_KEPT_RANKS` keeps `cellular root` and `acellular root` instead
   (`tools/summary_report.rs`), and the `taxid:`/`taxname:` column help (`columns.rs`)
@@ -310,10 +313,9 @@ Tracked so a later sync does not mistake them for oversights:
   `foldseek`/`reseek`, no torch or ESM — but out of scope for this sync. It touches ported
   code only through `SearchResult`'s four optional structural metrics, which **are** carried
   (`tmscore`/`lddt`/`rmsd`/`prob`), so structure-written GenBank stays round-trippable.
-- **`merge_impact_axis_labels`** (`ssn_hierarchy.py`). Its only consumers are the
-  vendored viewer shell and matrix_report's page shell, which each carry their own copy.
-- **`hmmer_build --window_beta`.** Deriving MAXL from a tail mass needs builder calibration
-  `hmmer-pure-rs` does not expose; the flag is refused rather than silently ignored.
+- **`merge_impact_axis_labels`** (`ssn_hierarchy.py`). Its consumers are `viewer_html.py`
+  (the viewer config's `splitAxisLabels`) and matrix_report's page; both generated shells
+  carry its values pre-rendered, so a shell regeneration is all a change to it needs.
 - **`--progress`** draws no progress bar: `seq_dist` and `compare_contigs` accept and
   ignore it.
 - **`seq_dist`'s diamond diagnostics**: the explained failures (out of disk or memory, a
@@ -336,12 +338,8 @@ Tracked so a later sync does not mistake them for oversights:
 ## What the parity sweep still tracks
 
 `scripts/parity/known_gaps.tsv` holds every upstream invocation that does not reproduce,
-machine-checked on each sweep so none can be quietly forgotten. One open `gap:` row remains
-(six invocations of it); everything else is a deliberate deferral:
-
-| class | rows | |
-|---|---|---|
-| `gap:feature-order` | 6 | `domain_search` emits tied-coordinate features in the other order, below |
+machine-checked on each sweep so none can be quietly forgotten. No open `gap:` row remains;
+the two left are `deferred:projection-umap-tsne`, above.
 
 A `tolerated` row is one where the semantic comparator passed but the **bytes differ**, so
 the gap list structurally cannot hold it. Diffing those bytes is the single most productive
@@ -351,14 +349,19 @@ stamp, `/key` vs `/key=""`, the Pfam `GA`/`TC`/`NC` cutoffs, the `.hmm` model-ma
 f64-vs-f32 score rounding, and cluster-table ordering. Byte-identical invocations went from
 51 to 133 as a result (136 once the nucleotide single-sequence builder landed).
 
-`gap:feature-order` (6 rows; the sixth is the whole-contig `.cm` invocation, which ties the
-same way) is the residue of the nucleotide-FASTA gap described under
-"Pinned dependency" below. All the hits now match — every coordinate and every
-qualifier, `evalue` and `score` included, compare equal as a set — but where two features
-share a start coordinate, `domain_search` emits `Domainator` before `Domain_Search` and
-Python emits the reverse; one invocation also orders whole records differently. `domainate`
-itself is byte-identical, so the reorder is in the slice path, not the search. It survived
-this long because protein hits attach to distinct CDS coordinates and rarely tie.
+The last one, `gap:feature-order` (six `domain_search` invocations on nucleotide
+references), was in `select_by_cds_hits`: it put every `Domainator` feature ahead of the
+focus `Domain_Search` feature, where upstream lists features by its sorted pseudo-CDS
+list, in which each whole-contig annotation, `Domain_Search` and `Domainator` alike, is an
+entry of its own. Where two features shared a start, the writer's stable sort kept the
+wrong one first.
+
+The port and upstream also disagreed on which entries of that list `--cds_range` counts
+(the port counted the `Domain_Search` pseudo-CDSs, upstream every pseudo-CDS), which no
+upstream test exercised. Upstream now counts protein-coding CDSs only
+(`select_by_cds.cds_range_members`: the focus may be a nucleotide hit, but never a
+neighbor), and the port follows (`neighborhood::cds_range_members`);
+`extra:nucleotide_multi_hit_cds_range` covers it in the sweep.
 
 ## Pinned dependency: `hmmer-pure-rs`
 

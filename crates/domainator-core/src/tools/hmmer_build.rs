@@ -2,8 +2,8 @@
 //! user-specified NAME/ACC/DESC. Port of `domainator.hmmer_build`.
 //!
 //! Limitations vs. the Python tool (which wraps pyhmmer's `MSAFile` + `Builder`):
-//! - Input MSA must be **Stockholm** format (hmmer-pure-rs only parses Stockholm;
-//!   aligned-FASTA/Clustal are not yet supported upstream).
+//! - Input MSA must be **Stockholm** or **aligned FASTA**; hmmbuild's other formats
+//!   (Clustal, A2M, PHYLIP, ...) are not sniffed.
 //! - The profile is built by hmmer-pure-rs's `build_hmm_from_msa` (fast model
 //!   construction, symfrac 0.5) + its E-value calibration, so the emitted HMM is
 //!   a valid, re-readable HMMER3 profile but is **not byte-identical** to
@@ -165,16 +165,19 @@ pub fn hmmer_build_from_bytes(
         }
         hmm.max_length = window_length;
     }
-    if opts.window_beta.is_some() {
-        // Deriving MAXL from a tail mass needs the builder's length-model calibration,
-        // which hmmer-pure-rs does not expose. Refusing is better than silently
-        // ignoring it and writing a profile whose window is not what was asked for.
-        return Err(
-            "--window_beta is not supported by this port (deriving MAXL from a tail mass \
-             needs calibration hmmer-pure-rs does not expose); pass --window_length \
-             instead, or build the profile with hmmbuild"
-                .into(),
-        );
+    if let Some(window_beta) = opts.window_beta {
+        if !(0.0..=1.0).contains(&window_beta) {
+            return Err(format!(
+                "--window_beta must be between 0 and 1, got {window_beta}"
+            ));
+        }
+        // C's p7_Builder (p7_builder.c:512-516): a zero tail mass means 4*M, anything
+        // else is p7_Builder_MaxLength.
+        if window_beta == 0.0 {
+            hmm.max_length = i32::try_from(hmm.m * 4).unwrap_or(i32::MAX);
+        } else {
+            hmmer_pure_rs::builder::set_max_length_from_beta(&mut hmm, window_beta);
+        }
     }
 
     hmm.name = sanitize(&opts.name);
@@ -238,6 +241,35 @@ mod tests {
         assert_eq!(from_afa.m, from_stockholm.m);
         assert_eq!(from_afa.abc_type, from_stockholm.abc_type);
         assert_eq!(from_afa.mat, from_stockholm.mat);
+    }
+
+    /// MAXL from a tail mass, against pyhmmer 0.12's `Builder(window_beta=...)` on the
+    /// same alignment: 60 at 1e-3, 4*M at 0, and 101 (C's default beta) without one.
+    #[test]
+    fn window_beta_sets_maxl_as_pyhmmer_does() {
+        let afa = b">s1\nACGTACGTTAGCATCGATCGGATCCATGCA\n\
+                    >s2\nACGTACGATAGCATCGTTCGGATCCATGCA\n\
+                    >s3\nACGAACGTTAGCATCGATCGGATGCATGCA\n";
+        let maxl = |window_beta| {
+            let opts = HmmerBuildOptions {
+                alphabet: Some("dna".into()),
+                window_beta,
+                ..options()
+            };
+            hmmer_build_from_bytes(afa, "a", &opts).unwrap().max_length
+        };
+        assert_eq!(maxl(Some(1e-3)), 60);
+        assert_eq!(maxl(Some(0.0)), 120);
+        assert_eq!(maxl(None), 101);
+        for bad in [-1.0, 2.0] {
+            let opts = HmmerBuildOptions {
+                alphabet: Some("dna".into()),
+                window_beta: Some(bad),
+                ..options()
+            };
+            let err = hmmer_build_from_bytes(afa, "a", &opts).unwrap_err();
+            assert!(err.contains("between 0 and 1"), "{err}");
+        }
     }
 
     #[test]

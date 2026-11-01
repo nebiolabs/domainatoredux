@@ -12,6 +12,7 @@ use crate::seq::location::{merge_touching_parts, to_index, CompoundOp, Location}
 use crate::seq::partial::{codon_offset, location_partial_ends, on_contig_translation};
 use crate::seq::translate::revcomp;
 use crate::seq::{SeqFeature, SeqRecord, Topology};
+use crate::tools::select_common::{get_non_domainator_features, DomainatorCds};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
 /// Which neighborhood window to extract.
@@ -41,10 +42,9 @@ pub(crate) struct Env {
 pub(crate) struct Cds {
     pub(crate) intervals: Vec<(i64, i64)>,
     pub(crate) strand: i32,
-    /// `cds_id` (`get_cds_unique_name`), used to attach domain features.
-    pub(crate) cds_id: String,
-    /// True if this CDS carries a `Domain_Search` best-hit feature.
-    pub(crate) is_focus: bool,
+    /// A pseudo-CDS standing for a whole-contig nucleotide annotation: it can be the
+    /// focus, but `--cds_range` never counts it as a neighbor.
+    pub(crate) nucleic_acid: bool,
 }
 
 impl Cds {
@@ -490,6 +490,18 @@ impl SliceLoc {
     }
 }
 
+/// Upstream `cds_range_members`: the indices into `cds_list` that `--cds_range` counts,
+/// which are the protein-coding CDSs plus the focus itself, and the focus's position
+/// among them. A nucleotide annotation's pseudo-CDS is not a gene, so it is never a
+/// neighbor, though it can be the focus.
+fn cds_range_members(cds_list: &[Cds], focus_idx: usize) -> (Vec<usize>, i64) {
+    let members: Vec<usize> = (0..cds_list.len())
+        .filter(|&i| i == focus_idx || !cds_list[i].nucleic_acid)
+        .collect();
+    let member_idx = members.partition_point(|&i| i < focus_idx) as i64;
+    (members, member_idx)
+}
+
 /// Compute the slice location for the focus CDS at `focus_idx` in the
 /// stranded-start-sorted `cds_list`. Mirrors `get_cds_neighborhood`.
 ///
@@ -524,20 +536,15 @@ pub(crate) fn cds_neighborhood(
                 down = (d * 1000.0) as i64;
             }
             Range::Cds(cu, cd) => {
-                let n = cds_list.len() as i64;
+                let (members, member_idx) = cds_range_members(cds_list, focus_idx);
+                let n = members.len() as i64;
                 let (left_cds, right_cds) = if strand == -1 {
-                    (
-                        (focus_idx as i64 - cd).max(0),
-                        (focus_idx as i64 + cu).min(n - 1),
-                    )
+                    ((member_idx - cd).max(0), (member_idx + cu).min(n - 1))
                 } else {
-                    (
-                        (focus_idx as i64 - cu).max(0),
-                        (focus_idx as i64 + cd).min(n - 1),
-                    )
+                    ((member_idx - cu).max(0), (member_idx + cd).min(n - 1))
                 };
-                let left_coord = cds_list[to_index(left_cds)].start();
-                let right_coord = cds_list[to_index(right_cds)].end();
+                let left_coord = cds_list[members[to_index(left_cds)]].start();
+                let right_coord = cds_list[members[to_index(right_cds)]].end();
                 let left_pad = (focus.start() - left_coord).max(0);
                 let right_pad = (right_coord - focus.end()).max(0);
                 if strand == -1 {
@@ -574,12 +581,14 @@ pub(crate) fn cds_neighborhood(
             }
         }
         Range::Cds(cu, cd) => {
-            let n = cds_list.len() as i64;
+            let (members, member_idx) = cds_range_members(cds_list, focus_idx);
+            let n = members.len() as i64;
             let (li, ri) = if strand == -1 {
-                pad_circular_cds(focus_idx as i64, n, cd, cu)
+                pad_circular_cds(member_idx, n, cd, cu)
             } else {
-                pad_circular_cds(focus_idx as i64, n, cu, cd)
+                pad_circular_cds(member_idx, n, cu, cd)
             };
+            let (li, ri) = (members[to_index(li)], members[to_index(ri)]);
             // Window = directed circular envelope of the left neighbor, focus, and
             // right neighbor gene arcs, extended in that order (matching Python's
             // `left_env + focus_env + right_env` then `circular_envelope`).
@@ -588,9 +597,9 @@ pub(crate) fn cds_neighborhood(
                 arc_to_forward_parts(ca, cb, l)
             };
             let mut nbhd: Vec<(i64, i64)> = Vec::new();
-            nbhd.extend(arc(&cds_list[to_index(li)]));
+            nbhd.extend(arc(&cds_list[li]));
             nbhd.extend(arc_to_forward_parts(a, b, l));
-            nbhd.extend(arc(&cds_list[to_index(ri)]));
+            nbhd.extend(arc(&cds_list[ri]));
             ordered_circular_envelope(&nbhd, l)
         }
         Range::Whole => (a, b), // replaced below
@@ -954,150 +963,69 @@ pub fn select_by_cds_hits(
     let rec_len = rec.seq.len() as i64;
     let circular = rec.topology == Topology::Circular;
 
-    // cds_ids carrying a Domain_Search best-hit feature (the focus CDSs), plus
-    // the best-hit domain name per focus cds_id (for decoy filtering).
-    let mut focus_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut hit_name_by_cid: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
-    for f in &rec.features {
-        if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME {
-            if let Some(cid) = f.get_first("cds_id") {
-                focus_ids.insert(cid.to_string());
-                if let Some(name) = f.get_first("name") {
-                    hit_name_by_cid.insert(cid.to_string(), name.to_string());
-                }
-            }
-        }
-    }
+    // Upstream's `select_by_cds` as `domain_search` calls it: every CDS, plus a
+    // pseudo-CDS for each whole-contig (`cds_id="."`) annotation, `Domain_Search` and
+    // `Domainator` alike, sorted together by stranded start. That order is the order
+    // features are emitted in; `--cds_range` counts only the real CDSs among them
+    // (`cds_range_members`). A focus is an entry carrying a `Domain_Search` feature
+    // (upstream's `cds.index in hit_scores`).
+    let mut paired: Vec<(DomainatorCds, Cds)> =
+        DomainatorCds::list_from_contig(rec, None, f64::NEG_INFINITY, false, None, true)
+            .into_iter()
+            .map(|d| {
+                let nb = Cds {
+                    intervals: forward_intervals(&d.feature),
+                    strand: d.feature.location.strand(),
+                    nucleic_acid: d.is_nucleic_acid,
+                };
+                (d, nb)
+            })
+            .collect();
+    paired.sort_by_key(|(_, nb)| nb.sort_key(rec_len.max(1)));
+    let (dom_list, cds_list): (Vec<DomainatorCds>, Vec<Cds>) = paired.into_iter().unzip();
 
-    // Build the CDS list, keeping each CDS's forward intervals and cds_id.
-    let mut cds_list: Vec<Cds> = Vec::new();
-    for f in &rec.features {
-        if f.kind != "CDS" {
-            continue;
-        }
-        let cid = cds_unique_name(f);
-        let intervals = forward_intervals(f);
-        let is_focus = focus_ids.contains(&cid);
-        cds_list.push(Cds {
-            intervals,
-            strand: f.location.strand(),
-            cds_id: cid,
-            is_focus,
-        });
-    }
-
-    // Whole-contig (nhmmer) hits carry `cds_id="."`; each best-hit contig feature
-    // becomes its own focus pseudo-CDS (mirrors `list_from_contig`'s
-    // `include_nucleic_acid_annotations` path). Its cds_id is a synthetic `nuc_N`
-    // so it never collides with a real CDS, and the originating feature is kept
-    // verbatim when it is the focus.
-    let mut nuc_features: std::collections::HashMap<String, &SeqFeature> =
-        std::collections::HashMap::new();
-    let mut nuc_idx = 0usize;
-    for f in &rec.features {
-        if f.kind == DOMAIN_SEARCH_BEST_HIT_NAME && f.get_first("cds_id") == Some(".") {
-            let cid = format!("nuc_{nuc_idx}");
-            nuc_idx += 1;
-            let intervals = forward_intervals(f);
-            let strand = f.location.strand();
-            if let Some(name) = f.get_first("name") {
-                hit_name_by_cid.insert(cid.clone(), name.to_string());
-            }
-            nuc_features.insert(cid.clone(), f);
-            cds_list.push(Cds {
-                intervals,
-                strand,
-                cds_id: cid,
-                is_focus: true,
-            });
-        }
-    }
-
-    // Sort by stranded_start (matches Python's cds_list ordering).
-    cds_list.sort_by_key(|c| c.sort_key(rec_len));
-
-    // Non-Domainator features (CDS, gene, source, ...) — slice_record filters these
-    // by containment. Domainator features and the focus Domain_Search feature are
-    // attached per CDS below.
-    let non_dom: Vec<&SeqFeature> = rec
-        .features
-        .iter()
-        .filter(|f| f.kind != DOMAIN_FEATURE_NAME && f.kind != DOMAIN_SEARCH_BEST_HIT_NAME)
+    let non_dom: Vec<SeqFeature> = get_non_domainator_features(rec)
+        .into_iter()
+        .cloned()
         .collect();
-    let dom_by_cid: Vec<(&SeqFeature, String)> = rec
-        .features
-        .iter()
-        .filter(|f| f.kind == DOMAIN_FEATURE_NAME)
-        .filter_map(|f| f.get_first("cds_id").map(|c| (f, c.to_string())))
-        .collect();
-    let search_by_cid: Vec<(&SeqFeature, String)> = rec
-        .features
-        .iter()
-        .filter(|f| f.kind == DOMAIN_SEARCH_BEST_HIT_NAME)
-        .filter_map(|f| f.get_first("cds_id").map(|c| (f, c.to_string())))
-        .collect();
-
-    let cds_ids: std::collections::HashSet<&str> =
-        cds_list.iter().map(|c| c.cds_id.as_str()).collect();
 
     let mut out: Vec<Region> = Vec::new();
     let mut selected: Vec<SliceLoc> = Vec::new();
 
     for focus_idx in 0..cds_list.len() {
         let cds = &cds_list[focus_idx];
-        if !cds.is_focus {
+        let Some(search_hit) = dom_list[focus_idx].domain_search_feature.as_ref() else {
             continue;
-        }
+        };
         if let Some(sf) = strand_filter {
-            if cds.strand != sf {
+            if (sf == 1 && cds.strand == -1) || (sf == -1 && cds.strand != -1) {
                 continue;
             }
         }
-        let focus_cid = cds.cds_id.clone();
-
         // Decoy filter: skip focus CDSs whose best hit is a decoy domain.
         if let Some(decoys) = decoys {
-            if hit_name_by_cid
-                .get(&focus_cid)
+            if search_hit
+                .get_first("name")
                 .is_some_and(|n| decoys.contains(n))
             {
                 continue;
             }
         }
 
-        let hit = search_by_cid
-            .iter()
-            .find(|(_, cid)| *cid == focus_cid)
-            .map(|(f, _)| forward_intervals(f));
-        let slice = cds_neighborhood(
-            rec_len,
-            circular,
-            &cds_list,
-            focus_idx,
-            range,
-            hit.as_deref(),
-        );
+        let hit = forward_intervals(search_hit);
+        let slice = cds_neighborhood(rec_len, circular, &cds_list, focus_idx, range, Some(&hit));
 
-        // Collect features: non-Domainator features, the Domainator features of every
-        // CDS, the contig-level (whole-contig nhmmer, `cds_id="."`) Domainator
-        // features, and the focus CDS's Domain_Search feature. `slice_record` drops
-        // the hit features the region cuts, and those outside it (upstream `8bf3c42`
-        // removed `get_cds_neighborhood`'s containment pre-filter).
-        let mut keep: Vec<SeqFeature> = non_dom.iter().map(|f| (*f).clone()).collect();
-        for &(domf, ref cid) in &dom_by_cid {
-            if cds_ids.contains(cid.as_str()) || cid == "." {
-                keep.push(domf.clone());
-            }
-        }
-        if let Some(nucf) = nuc_features.get(focus_cid.as_str()) {
-            // Nucleic-acid (whole-contig nhmmer) focus: keep just this contig hit.
-            keep.push((*nucf).clone());
-        } else {
-            for &(sf, ref cid) in &search_by_cid {
-                if *cid == focus_cid {
-                    keep.push(sf.clone());
-                }
+        // Features in upstream's `neighborhood_feature_index` order: non-Domainator
+        // features, then each sorted entry's Domainator features followed by its
+        // Domain_Search feature, which only the focus keeps. The writer's sort by start
+        // is stable, so this order decides features that share a start. `slice_record`
+        // drops the hit features the region cuts, and those outside it (upstream
+        // `8bf3c42` removed `get_cds_neighborhood`'s containment pre-filter).
+        let mut keep: Vec<SeqFeature> = non_dom.clone();
+        for (i, entry) in dom_list.iter().enumerate() {
+            keep.extend(entry.domain_features.iter().cloned());
+            if i == focus_idx {
+                keep.push(search_hit.clone());
             }
         }
 
@@ -1368,8 +1296,7 @@ mod tests {
         vec![Cds {
             intervals: vec![(start, end)],
             strand,
-            cds_id: "c".into(),
-            is_focus: true,
+            nucleic_acid: false,
         }]
     }
 
@@ -1653,6 +1580,7 @@ mod tests {
         let mut ds = SeqFeature::new(DOMAIN_SEARCH_BEST_HIT_NAME, Location::range(start, end, 1));
         ds.set("cds_id", cds_id.to_string());
         ds.set("name", hit_name.to_string());
+        ds.set("score", "10.0");
         vec![cds, ds]
     }
 
@@ -1728,6 +1656,93 @@ mod tests {
         let out =
             select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, Some(&decoys), None).unwrap();
         assert_eq!(out.len(), 1);
+    }
+
+    /// A whole-contig annotation as `domainate` writes one: `cds_id="."`.
+    fn contig_hit(kind: &str, start: i64, end: i64, strand: i32, name: &str) -> SeqFeature {
+        let mut f = SeqFeature::new(kind, Location::range(start, end, strand));
+        f.set("cds_id", ".");
+        f.set("name", name.to_string());
+        f.set("score", "10.0");
+        f
+    }
+
+    /// `domainate` appends a contig's `Domain_Search` hits before its `Domainator`
+    /// hits, and upstream turns each into a pseudo-CDS in that order, so where the two
+    /// share a start the region lists the search hit first (upstream
+    /// `neighborhood_feature_index`). The port used to put every `Domainator` feature
+    /// ahead of the focus hit (`gap:feature-order`). Checked on both strands, since a
+    /// reverse hit's region is reverse-complemented.
+    #[test]
+    fn a_tied_contig_search_hit_precedes_its_domainator_twin() {
+        for strand in [1, -1] {
+            let rec = test_rec(
+                &[b'A'; 60],
+                vec![
+                    contig_hit(DOMAIN_SEARCH_BEST_HIT_NAME, 20, 40, strand, "q"),
+                    contig_hit(DOMAIN_FEATURE_NAME, 20, 40, strand, "q"),
+                ],
+            );
+            let out = select_by_cds_hits(&rec, Range::Whole, true, None, 1.0, None, None).unwrap();
+            assert_eq!(out.len(), 1, "strand {strand}");
+            let kinds: Vec<&str> = out[0]
+                .record
+                .features
+                .iter()
+                .map(|f| f.kind.as_str())
+                .collect();
+            assert_eq!(
+                kinds,
+                [DOMAIN_SEARCH_BEST_HIT_NAME, DOMAIN_FEATURE_NAME],
+                "strand {strand}"
+            );
+        }
+    }
+
+    /// The region lengths `select_by_cds_hits` cuts from `features` on a 100 bp
+    /// contig of either topology, with a CDS range of `range`.
+    fn cds_range_region_lengths(features: Vec<SeqFeature>, range: Range) -> Vec<Vec<usize>> {
+        [Topology::Linear, Topology::Circular]
+            .into_iter()
+            .map(|topology| {
+                let mut rec = test_rec(&[b'A'; 100], features.clone());
+                rec.topology = topology;
+                select_by_cds_hits(&rec, range, true, None, 1.0, None, None)
+                    .unwrap()
+                    .iter()
+                    .map(|r| r.record.seq.len())
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Upstream `test_cds_range_skips_nucleotide_annotations_around_a_nucleotide_hit`:
+    /// a whole-contig hit can be the focus, but only real CDSs are neighbors, so with
+    /// nothing protein-coding downstream the region ends at the hit, not at the
+    /// nucleotide annotation at 70..80.
+    #[test]
+    fn cds_range_skips_nucleotide_annotations_around_a_nucleotide_hit() {
+        let mut feats = hit_cds(0, 10, "a", "A");
+        feats.truncate(1); // the CDS alone, no hit on it
+        feats.push(contig_hit(DOMAIN_SEARCH_BEST_HIT_NAME, 40, 50, 1, "q"));
+        feats.push(contig_hit(DOMAIN_FEATURE_NAME, 70, 80, 1, "other"));
+        assert_eq!(
+            cds_range_region_lengths(feats, Range::Cds(1, 1)),
+            [vec![50], vec![50]]
+        );
+    }
+
+    /// Upstream `test_cds_range_skips_nucleotide_annotations_between_cdss`: the next
+    /// CDS downstream of `a` is `b`, not the nucleotide annotation between them.
+    #[test]
+    fn cds_range_skips_nucleotide_annotations_between_cdss() {
+        let mut feats = hit_cds(0, 10, "a", "A");
+        feats.push(contig_hit(DOMAIN_FEATURE_NAME, 20, 30, 1, "other"));
+        feats.push(SeqFeature::new("CDS", Location::range(40, 50, 1)));
+        assert_eq!(
+            cds_range_region_lengths(feats, Range::Cds(0, 1)),
+            [vec![50], vec![50]]
+        );
     }
 
     // --- partial (`<`/`>`) locations and cut features: upstream `test_utils.py` ---

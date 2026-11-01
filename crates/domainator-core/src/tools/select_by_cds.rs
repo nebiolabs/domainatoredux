@@ -113,12 +113,10 @@ fn select_one(
                 .map(|&(s, e, ..)| if s <= e { (s, e) } else { (e, s) })
                 .collect();
             let strand = d.feature.location.strand();
-            let cds_id = d.num.clone();
             let nb = Cds {
                 intervals,
                 strand,
-                cds_id,
-                is_focus: false,
+                nucleic_acid: d.is_nucleic_acid,
             };
             (d, nb)
         })

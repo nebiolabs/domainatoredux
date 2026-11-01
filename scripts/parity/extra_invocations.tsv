@@ -207,3 +207,10 @@ rotate_contigs	extra:test_annotation_selection_rotate_contigs#2	extra_invocation
 deduplicate_genbank	extra:test_deduplicate_genbank_hash#0	extra_invocations.tsv	-i	@DATA@/extract_peptides_test_2.gb	--identity	1	--algorithm	hash	-o	@TMP@/out.gb	--prefix_count	--log_out	@TMP@/out.log	--cluster_tsv_out	@TMP@/cluster_table.tsv
 deduplicate_genbank	extra:test_deduplicate_genbank_hash#1	extra_invocations.tsv	-i	@DATA@/extract_peptides_test_2.gb	--id	1	--algorithm	hash	-o	@TMP@/out.gb	--prefix_count	--log_out	@TMP@/out.log	--cluster_tsv_out	@TMP@/cluster_table.tsv
 deduplicate_genbank	extra:test_deduplicate_genbank_hash_both_strands#0	extra_invocations.tsv	-i	@GEN@/strands.fasta	--alphabet	nucleotide	--id	1	--algorithm	hash	--both_strands	--prefix_count	--fasta_out	@TMP@/out.fasta	--log_out	@TMP@/out.log	--cluster_tsv_out	@TMP@/clusters.tsv
+# Whole-contig nucleotide hits with a CDS range. Each hit is a pseudo-CDS that can be the
+# focus but is never a neighbor (upstream cds_range_members); this FASTA has no real CDSs,
+# so every region is its hit alone. No upstream test combines --cds_range with a
+# nucleotide reference, which is how the port and upstream came to count different
+# neighbors here unnoticed.
+domain_search	extra:nucleotide_multi_hit_cds_range#0	extra_invocations.tsv	--input	@DATA@/multi_hit_dna_target.fna	--alphabet	nucleotide	-r	@DATA@/multi_hit_dna_queries.fna	-o	@TMP@/out.gb	--add_annotations	--cds_range	1	--cpu	1	--evalue	0.1
+domain_search	extra:nucleotide_multi_hit_cds_range#1	extra_invocations.tsv	--input	@DATA@/multi_hit_dna_target.fna	--alphabet	nucleotide	-r	@DATA@/multi_hit_dna_queries.fna	-o	@TMP@/out.gb	--add_annotations	--cds_range	1	--cpu	1	--evalue	0.1	--keep_direction

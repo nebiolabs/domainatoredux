@@ -36,8 +36,7 @@ pub struct HmmerBuildArgs {
     #[arg(long, allow_negative_numbers = true)]
     pub window_length: Option<i32>,
     /// Tail mass from which to derive the window length. Nucleotide alphabets only.
-    /// Only one of --window_length and --window_beta may be given. Not supported by
-    /// domainatoredux: giving it is an error.
+    /// Only one of --window_length and --window_beta may be given.
     #[arg(long, allow_negative_numbers = true)]
     pub window_beta: Option<Finite>,
 }

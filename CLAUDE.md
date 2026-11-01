@@ -214,10 +214,8 @@ invisible to every other gate because both files read back equal; fixing them to
 byte-identical invocations from 51 to 133 (136 once the nucleotide builder landed,
 141 with the cd-hit backend -- but note those five only run when cd-hit is actually
 installed; see `docs/parity.md`, "External binaries").
-See the writer invariants below. Exactly **one open `gap:` row** remains —
-`gap:feature-order`, six `domain_search` invocations that emit tied-coordinate
-features in the other order from Python; everything else the sweep tracks is a
-deliberate deferral or a `hmmer-pure-rs` issue.
+See the writer invariants below. **No open `gap:` row** remains: everything the sweep
+tracks is a deliberate deferral (`deferred:projection-umap-tsne`).
 
 **Committed parity harness** (use it before writing an ad-hoc comparison):
 - `scripts/json_parity.py EXPECTED ACTUAL [--rtol] [--ignore PATH]` — recursive JSON compare that reports the first differing path. Ignores key *order* (required: `preserve_order` vs `sort_keys`) but not key *spelling*, so `{"1": n}` vs `{"1.0": n}` still fails. Accepts a `.dsnv` directly (gunzips it).
@@ -343,5 +341,5 @@ comparison alone would happily reproduce the same misunderstanding on both sides
 Deferred (per plan / no clean path, all tracked in `UPSTREAM.md`): ESM, the
 `structure_*` subsystem (portable — foldseek/reseek subprocess, no torch — but out of scope;
 `SearchResult` already carries its four optional metrics),
-`hmmer_build --window_beta`, and `build_projection --algorithm tsne|umap` (stochastic, so
+and `build_projection --algorithm tsne|umap` (stochastic, so
 no parity target; the CLI refuses them, `deferred:projection-umap-tsne`).

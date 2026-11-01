@@ -218,7 +218,8 @@ required.
 It also does **neighborhood extraction**: rather than the hit CDS alone, emit the
 surrounding region. `--whole_contig` for the entire contig (a circular contig stays circular, rotated so the
 hit is in the middle); `--cds_range`/`--cds_up`/
-`--cds_down` for a window measured in genes; `--kb_range`/`--kb_up`/`--kb_down` for a
+`--cds_down` for a window measured in genes (protein-coding CDSs only: hits on a nucleotide
+reference are never counted as neighbors); `--kb_range`/`--kb_up`/`--kb_down` for a
 window in kilobases. `--strand f|r` restricts by strand, `--keep_direction` preserves
 orientation, `--pad` pads with `N` so the focus CDSs line up at `--anchor start|end|center`
 (padded records are linear), `--translate` emits protein instead of nucleotide, and
@@ -781,15 +782,15 @@ plain gzip when `-o` ends in `.gz` and refuse `.bgz`, which HMMER cannot read â€
 Build a profile from a multiple sequence alignment, **Stockholm** or **aligned FASTA**
 (told apart by the first line; `-i -` reads standard input). `--name` is required.
 `--acc` and `--desc` set the accession and description, `--alphabet` overrides alphabet
-detection, and `--window_length` applies to nucleotide models. The profile goes to
+detection, and `--window_length` (or `--window_beta`, a tail mass to derive it from)
+applies to nucleotide models. The profile goes to
 `-o/--hmm_out` (`-` for stdout, `.gz` for gzip).
 
 ```bash
 domainatoredux hmmer_build -i alignment.sto -o profile.hmm --name MyDomain --desc "My domain"
 ```
 
-Upstream reads every format hmmbuild does; this port reads those two, and not
-`--window_beta`.
+Upstream reads every format hmmbuild does; this port reads those two.
 
 ### `infernal_build`
 

@@ -128,7 +128,8 @@ pub struct DomainSearchArgs {
     pub kb_down: Option<Finite>,
     /// How many CDSs upstream and downstream of the selected CDS to extract. Example,
     /// 1 would mean to return contigs including the selected CDSs and the immediate
-    /// upstream and downstream CDSs.
+    /// upstream and downstream CDSs. Only protein-coding CDSs are counted, never hits
+    /// on a nucleotide reference.
     #[arg(long, allow_negative_numbers = true)]
     pub cds_range: Option<i64>,
     /// How many CDSs upstream of the selected CDS to extract. Example, 1 would mean to
