@@ -1,0 +1,85 @@
+# GUI dialog for `domainatoredux structure_dist`. Format: see README.md in this directory.
+id: structure_dist
+label: "Structure distance"
+description: "All-vs-all similarity or distance between protein structures, from foldseek or reseek alignments."
+fields:
+  - name: input
+    label: "Structures"
+    file_type: structure
+    sources: workspace_first
+    select: first
+  - name: reference
+    label: "Reference structures (optional)"
+    file_type: structure
+    sources: workspace_first
+    select: none
+  - name: hdf_out
+    label: "Output (matrix)"
+    output_name: "{stem}.structure_dist.hdf5"
+  - name: mode
+    label: "Mode"
+  - name: evalue
+    label: "E-value"
+  - name: threshold
+    label: "Threshold"
+  - name: mst
+    label: "MST"
+  - name: knn
+    label: "kNN"
+  - name: symmetrize
+    show: false
+    label: "Symmetrize"
+  - name: max_hits_per_query
+    show: false
+    label: "Max hits per query"
+  - name: dense_text_out
+    show: false
+    label: "Output (dense text)"
+  - name: db_out
+    show: false
+    label: "Output (aligner database)"
+  - name: hits_tsv_out
+    show: false
+    label: "Output (raw hits)"
+  - name: progress
+    show: false
+    label: "Progress"
+  - name: metrics
+    show: false
+    label: "Metrics"
+  - name: alignment_type
+    label: "Alignment type"
+  - name: max_seqs
+    label: "Max hits per reference"
+  - name: device
+    show: false
+    label: "Device"
+  - name: algorithm
+    label: "Aligner"
+  - name: reseek_stats
+    show: false
+    label: "reseek statistics level"
+  - name: reseek_sensitivity
+    show: false
+    label: "reseek sensitivity"
+  - name: foldseek_args
+    show: false
+    label: "foldseek options"
+  - name: reseek_args
+    show: false
+    label: "reseek options"
+  - name: foldseek_path
+    show: false
+    label: "foldseek path"
+  - name: reseek_path
+    show: false
+    label: "reseek path"
+  - name: tmp_dir
+    show: false
+    label: "Scratch directory"
+  - name: cpu
+    show: false
+    label: "Cpu"
+  - name: max_output_gb
+    show: false
+    label: "Max output gb"

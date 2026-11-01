@@ -61,6 +61,17 @@ report 4 `tolerated`. Never identical, because a CM's COM line records the `cmbu
 command with its temporary paths; the comparator drops DATE and COM, as it does for
 `.hmm`.
 
+The structure tools need `foldseek` (and `reseek` for `--algorithm reseek`) on `PATH`
+for Python, which looks nowhere else; the Rust side finds the same binaries there, or
+through `$DOMAINATOREDUX_FOLDSEEK`/`$DOMAINATOREDUX_RESEEK`. Without them every structure
+invocation is `skipped`. With them, every GenBank output is byte-identical and every
+`structure_dist` matrix equal: both sides run the same binary with the same arguments,
+and hits sorted by target are sorted the same way (stably, on the target column's bytes).
+A `--hits_tsv_out` table is compared as a set of lines: foldseek writes it in the order
+its threads finish, which changes from run to run. The FeSOD database fixture is a foldseek prefix,
+`foldseek/FeSOD`; `sync_fixtures.py` copies the files beside it that make up the
+database (`FeSOD.index`, `FeSOD_ss`, ...).
+
 `--gene_call` is the reverse case. Python calls genes in-process with pyrodigal, so it
 never fails for want of a binary, while the Rust side needs Orphos. Without it, the 13
 `extra:` gene_call rows of `domainate` and `domain_search` fail on the Rust side, and the
@@ -265,6 +276,9 @@ a conditional one over a parameter (`[] if cap is None else [...]`). A
 `@pytest.mark.parametrize`d test is replayed once per case whose values are literals,
 keyed by pytest's own id (`test_x[None-sparsify_args0]#0`, so `pytest -k` finds it); a
 call that does not use the parameters is harvested once, under the bare test name.
+A test's parameter named after a module-level `@pytest.fixture` that returns a path
+(`def inputs(shared_datadir): return str(shared_datadir / "structures" / "inputs")`)
+resolves to that path; a fixture that runs a tool itself is harvested like a test.
 A tool's invocations are harvested from its own `test_<tool>.py` and, in the qualified
 `<tool>.main([...])` form, from every other test module (keyed `<module>.<test>#n`). Each addition is a few
 lines. Multi-step tests (build a file, then consume it) would need the harness to

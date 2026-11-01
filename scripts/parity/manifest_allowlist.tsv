@@ -13,7 +13,3 @@ domainate	foldseek	missing	null	{"default":null,"flags":["--foldseek"],"kind":"p
 domainate	foldseek_device	missing	null	{"default":"cpu","flags":["--foldseek_device"],"kind":"value","name":"foldseek_device","required":false,"type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs
 domainate	foldseek_path	missing	null	{"default":null,"flags":["--foldseek_path"],"kind":"path","name":"foldseek_path","required":false,"role":"program","type":"string"}	deferred:structure	foldseek references are not ported; accepted at the default in configs
 gene_call	-	tool	true	false	port-only:	
-structure_dist	-	tool	false	true	deferred:structure	
-structure_domainate	-	tool	false	true	deferred:structure	
-structure_search	-	tool	false	true	deferred:structure	
-structure_to_genbank	-	tool	false	true	deferred:structure	

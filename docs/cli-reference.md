@@ -110,6 +110,7 @@ slicing marks the features it cuts: [File formats](file-formats.md#partial-featu
 | --- | --- |
 | [I/O and diagnostics](#io-and-diagnostics) | `inspect`, `convert`, `genbank_to_fasta`, `describe`, `completion`, `doctor` |
 | [Annotation and search](#annotation-and-search) | `domainate`, `domain_search`, `gene_call`, `filter_domains`, `find_features` |
+| [Structures](#structures) | `structure_to_genbank`, `structure_domainate`, `structure_search`, `structure_dist` |
 | [Selection and extraction](#selection-and-extraction) | `select_by_cds`, `select_by_contig`, `select_by_coord`, `extract_domains`, `extract_peptides`, `extract_unannotated`, `trim_contigs`, `rotate_contigs`, `sort_contigs`, `clean_sequences`, `deduplicate_genbank` |
 | [Color and plots](#color-and-plots) | `color_genbank`, `color_table_to_legend`, `plot_contigs` |
 | [Matrices and networks](#matrices-and-networks) | `seq_dist`, `kmer_dist`, `compare_contigs`, `transform_matrix`, `build_ssn`, `build_tree`, `build_projection`, `viewer`, `split_by_cluster` |
@@ -169,7 +170,8 @@ domainatoredux completion bash > ~/.local/share/bash-completion/completions/doma
 
 ### `doctor`
 
-List the optional external programs (`diamond`, `cdhit`, `usearch`, `orphos`, `cmbuild`): for each,
+List the optional external programs (`diamond`, `cdhit`, `usearch`, `orphos`, `cmbuild`,
+`foldseek`, `reseek`): for each,
 whether a tool would find it and where (by the lookup order in
 [Installation](installation.md#optional-external-programs)), the commands that need it,
 and how to install it.
@@ -308,6 +310,91 @@ model) is not supported; it and its `--device`, `--model_dir`, `--tmbed_model_di
 
 ```bash
 domainatoredux find_features -i proteins.gb -o motifs.gb --motif "C-x(2)-C" "[DE](2)HS{P}"
+```
+
+---
+
+## Structures
+
+Four tools work on protein structures (PDB or mmCIF files, optionally gzipped) through an
+external structural aligner: [foldseek](https://github.com/steineggerlab/foldseek) (the
+default) or [reseek](https://github.com/rcedgar/reseek) with `--algorithm reseek`. See
+[Installation](installation.md#optional-external-programs) for how each is found.
+
+An `-i`/`-r` value can be structure files, a directory (searched recursively), a glob
+(expanded by the tool, so it works from a `--config` file too), or the prefix of a database
+the aligner built before (`--db_out` keeps one). Each chain of each structure becomes one
+protein record named `<file>_<chain>`, as foldseek names it (`1UBQ_A`). Record positions
+are indices into the residues the structure actually has, not PDB residue numbers.
+
+Options every structure tool shares: `--algorithm foldseek|reseek`, `--foldseek_path`/
+`--reseek_path`, `--foldseek_args`/`--reseek_args` (extra options for the search command,
+one quoted string; an option the tool sets itself is refused), `--cpu` (0 lets the aligner
+choose), `--tmp_dir` (scratch space, which a large search needs plenty of), and for reseek
+`--reseek_stats family|superfamily|fold` and `--reseek_sensitivity fast|sensitive`. The
+three that search also take `--alignment_type 0|1|2` (foldseek: 3Di, TM-align, or 3Di+AA,
+the default), `--metrics tmscore lddt rmsd prob` (written as qualifiers; foldseek only),
+`--max_seqs` (hits kept per reference: foldseek's own 1000 by default, none for reseek; a
+warning names any reference that reaches it), `--device cpu|cuda[:N]` (foldseek GPU
+search) and `--hits_tsv_out` (the aligner's raw hit table). TM-align and the
+`tmscore`/`lddt`/`rmsd` metrics need C-alpha coordinates, which a database built from
+structures has and one built from sequences does not.
+
+reseek reports p-values, not E-values. `-e` keeps its meaning by converting through the
+database size (E = p × N), and with no bit score, `/score` holds −log10(p). reseek also
+skips chains shorter than 32 residues, with a warning.
+
+### `structure_to_genbank`
+
+One protein record per structure chain, with `structure=<file>` as its definition, so the
+sequence tools work on structures. `--store_3di` adds each chain's 3Di string in a
+`/threedi` qualifier (foldseek only). `--db_out PREFIX` also keeps the foldseek database,
+which can be the `-i` or `-r` of the other structure tools without rebuilding.
+
+```bash
+domainatoredux structure_to_genbank -i structures/ -o chains.gb --db_out structures_db
+```
+
+### `structure_domainate`
+
+Annotate every chain of `-i` with the reference structures (`-r`) that hit it, as
+`Domainator` features; chains without hits are kept. The references are the query and the
+input the target, so `-e` (default 0.001) is computed against the database being
+annotated. Annotation positions are on the input chain, and the matching reference
+positions are in `/rstart`, `/rend` and `/rlen`. Also `--min_evalue`, `--max_hits_per_cds`,
+`--max_overlap`, `--overlap_by_db`, `--database_name` (default: the reference set's name)
+and `--db_out`.
+
+```bash
+domainatoredux structure_domainate -i structures/ -r refs/ -o annotated.gb --metrics tmscore lddt
+```
+
+### `structure_search`
+
+Select the chains of a structure database (`-i`) that a reference (`-r`) hits, each with
+its full sequence and a `Domain_Search` feature on the region its best reference
+matches; `--add_annotations` adds `Domainator` features for every retained hit.
+`--max_hits N` keeps the N best records, best first. Built for large databases (a foldseek
+database of AlphaFold models, say) and few references.
+
+```bash
+domainatoredux structure_search -i afdb_db -r query.pdb -o hits.gb --max_hits 100
+```
+
+### `structure_dist`
+
+The structure counterpart of `seq_dist`: a matrix with a row for every input chain, hit or
+not (labels as `structure_to_genbank` names records), against every reference chain, or
+all-vs-all without `-r`. Here the input is the query, so `-e` is computed against the
+references. `--mode` takes `seq_dist`'s score-based modes, computed from the alignment
+score, and the structural `tmscore`, `lddt` and `fident` (already between 0 and 1) with
+their `*_dist` forms, 1 − value (`tmscore` and `lddt` need foldseek and C-alpha
+coordinates). `--threshold`, `--symmetrize`, `--max_hits_per_query`, `--mst`/`--knn` and
+the outputs work as in `seq_dist`. With no `--max_seqs`, every pair is searched, so no row
+is cut short.
+
+```bash
+domainatoredux structure_dist -i structures/ -o structures.hdf5 --mode tmscore --alignment_type 1
 ```
 
 ---

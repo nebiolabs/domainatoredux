@@ -28,7 +28,8 @@ export type FileType =
   | "newick"
   | "table"
   | "text"
-  | "svg";
+  | "svg"
+  | "structure";
 
 /// `app_support::export`: how exported files are packaged.
 export type ExportPackaging = "plain" | "gzip" | "zip";

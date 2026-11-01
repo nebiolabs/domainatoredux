@@ -7,8 +7,14 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `3b4d76e` — *bugfixes*
+- **Caught up to:** `8c4821f` — *domain search more deterministic*
   (2026-11-01; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`8c4821f`**, nothing to port: `domain_search --cpu N` writes its records in input
+  order (`_mp.imap_bounded`, ordered, replaces `imap_unordered_bounded`; partitions go
+  through `pool.imap`), so which duplicate `--dedup` keeps no longer depends on timing.
+  The port was already deterministic. Also commits `kmer_dist`'s noncanonical-letter input
+  as `test/data/kmer_dist_noncanonical.faa`, so that invocation replays, and points a
+  stale `test_dedup` patch at `_domainate`.
 - **`3b4d76e`**, ported: a taxonomy directory holding a full set of extracted `.dmp`
   files counts as a database and is no longer downloaded over (`taxonomy::has_extracted_dmps`;
   upstream's own extracted-only test was fetching the real taxdump). Also drops a dead
@@ -256,7 +262,9 @@ Use this to triage which module a changed upstream file lands in:
 | `ssn_navigator.py` | `.../tools/ssn_navigator.rs` |
 | `summary_report.py` | `.../tools/summary_report.rs` (`length_counts`, `taxonomy_tree` feed the HTML page; `render_text` is `SummaryTextWriter`) |
 | `colors.py` | `.../palette.rs` |
-| `structure_*.py`, `structure_lib.py`, `foldseek.py` | **deferred** — see below |
+| `structure_lib.py` | `crates/domainator-core/src/tools/structure_lib.rs` (input resolution, the foldseek/reseek drivers, the by-target sort, hits → `SearchResult`) |
+| `structure_to_genbank.py`, `structure_domainate.py`, `structure_search.py`, `structure_dist.py` | `.../tools/structure_{to_genbank,domainate,search,dist}.rs` |
+| `foldseek.py` (`domainate --foldseek`) | **deferred** — see below |
 | `build_ssn.py` | `.../tools/build_ssn.rs` |
 | `ssn_edges.py`, `edge_types.py` | `.../matrix/ssn.rs` |
 | `sparsify.py` (`--mst`/`--knn`), `matrix_output.py`, `sparse_scores.py` | `.../matrix/mst_knn.rs`, `.../matrix/hdf5_io.rs`, and each matrix tool's output path |
@@ -323,11 +331,9 @@ equality is not part of any contract here.
 
 Tracked so a later sync does not mistake them for oversights:
 
-- **The structure subsystem** (`structure_to_genbank`, `structure_dist`, `structure_search`,
-  `structure_domainate`, `structure_lib`). Genuinely portable — pure subprocess wrapping of
-  `foldseek`/`reseek`, no torch or ESM — but out of scope for this sync. It touches ported
-  code only through `SearchResult`'s four optional structural metrics, which **are** carried
-  (`tmscore`/`lddt`/`rmsd`/`prob`), so structure-written GenBank stays round-trippable.
+- **`domainate --foldseek`** (`foldseek.py`, and `--esm2_3di_*`/`--foldseek_device`):
+  it turns sequences into 3Di with ESM-2 3B running in-process, which needs torch. The
+  structure tools, which align real structures, are ported.
 - **`merge_impact_axis_labels`** (`ssn_hierarchy.py`). Its consumers are `viewer_html.py`
   (the viewer config's `splitAxisLabels`) and matrix_report's page; both generated shells
   carry its values pre-rendered, so a shell regeneration is all a change to it needs.
@@ -344,8 +350,8 @@ Tracked so a later sync does not mistake them for oversights:
   (`deferred:projection-umap-tsne`). A Python projection reads back in with
   `--algorithm coords`.
 - **Unported tools:** `db_download` (the app's managed downloads cover UniProt, Pfam and
-  NCBI Taxonomy) and the structure tools above. Their manifest entries are
-  `deferred:` rows of `scripts/parity/manifest_allowlist.tsv`.
+  NCBI Taxonomy). Its manifest entry is a `deferred:` row of
+  `scripts/parity/manifest_allowlist.tsv`.
 
 ## What the parity sweep still tracks
 

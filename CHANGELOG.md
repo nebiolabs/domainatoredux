@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `3b4d76e`.
+Parity: Python domainator 1.0.0rc1 @ `8c4821f`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
@@ -77,6 +77,15 @@ Parity: Python domainator 1.0.0rc1 @ `3b4d76e`.
   `--gene_call`) or strand-invariant nucleotide k-mers (`--nucleotide_kmers`), scored as
   max containment, min containment or Jaccard, with `--max_hits_per_query`, `--mst` and
   `--knn` as on `seq_dist`. In the desktop app as "K-mer distance".
+- **The structure tools**, four new tools on PDB/mmCIF structures through an external
+  foldseek or reseek: **`structure_to_genbank`** (a protein record per chain, optionally
+  with its 3Di string), **`structure_domainate`** (annotate every chain with the reference
+  structures that hit it), **`structure_search`** (select the chains a reference hits)
+  and **`structure_dist`** (a similarity or distance matrix, with structural modes such as
+  `tmscore` and `lddt_dist` beside `seq_dist`'s). Inputs can be files, directories,
+  globs or a prebuilt database (`--db_out` keeps one). In the desktop app under the
+  same names, with `.pdb`/`.cif` files recognized in the workspace. A structure file given
+  to a sequence tool now says which structure tool to use.
 - **`domain_search --kb_up`/`--kb_down` on a circular contig smaller than the window**
   keeps the window where its padding puts it, as upstream does: `--kb_down 100` around a
   plasmid gene starts the region at that gene. It used to be centered opposite the gene.

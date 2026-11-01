@@ -92,6 +92,14 @@ enum Command {
     SeqDist(config::args::SeqDistArgs),
     /// Similarity between sequences from their exact k-mer sets.
     KmerDist(config::args::KmerDistArgs),
+    /// Similarity or distance matrices between protein structures (foldseek or reseek).
+    StructureDist(config::args::StructureDistArgs),
+    /// Annotate structure-derived protein records with hits to reference structures.
+    StructureDomainate(config::args::StructureDomainateArgs),
+    /// Select the structures a reference hits, marking their best-hit regions.
+    StructureSearch(config::args::StructureSearchArgs),
+    /// Convert protein structures into protein GenBank records.
+    StructureToGenbank(config::args::StructureToGenbankArgs),
     /// Pairwise contig similarity (Jaccard + Adjacency) from annotated GenBank.
     CompareContigs(config::args::CompareContigsArgs),
     /// Normalize / convert / sparsify a score matrix (dense<->sparse, --mode, --mst_knn).
@@ -157,10 +165,22 @@ fn load(input: &Path) -> Result<Vec<SeqRecord>> {
         Some(FileType::Fasta) => {
             fasta::read_fasta(path, Some("protein")).with_context(|| format!("reading {path}"))
         }
-        None => anyhow::bail!(
-            "could not detect file type from extension: {}",
-            input.display()
-        ),
+        None => Err(unknown_file_type(input)),
+    }
+}
+
+/// The error for a sequence input of no recognized type; a structure file says what to
+/// do with it instead (upstream `parse_seqfiles`).
+fn unknown_file_type(input: &Path) -> anyhow::Error {
+    let shown = input.display();
+    if tools::structure_lib::is_structure_path(&input.to_string_lossy()) {
+        anyhow::anyhow!(
+            "'{shown}' is a protein structure file, not a sequence file. Convert it with \
+             structure_to_genbank first, or use structure_domainate / structure_search to \
+             work with structures directly."
+        )
+    } else {
+        anyhow::anyhow!("could not detect file type from extension: {shown}")
     }
 }
 
@@ -206,10 +226,7 @@ pub(crate) fn load_typed(input: &Path, fasta_type: &str) -> Result<Vec<SeqRecord
     match detect_filetype(input) {
         Some(FileType::Genbank) => read_genbank(path).context("reading GenBank"),
         Some(FileType::Fasta) => fasta::read_fasta(path, Some(fasta_type)).context("reading FASTA"),
-        None => anyhow::bail!(
-            "could not detect file type from extension: {}",
-            input.display()
-        ),
+        None => Err(unknown_file_type(input)),
     }
 }
 
@@ -474,6 +491,10 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::ExtractUnannotated(args) => commands::extract_unannotated::run(&args)?,
         Command::SeqDist(args) => commands::seq_dist::run(&args)?,
         Command::KmerDist(args) => commands::kmer_dist::run(&args)?,
+        Command::StructureDist(args) => commands::structure_dist::run(&args)?,
+        Command::StructureDomainate(args) => commands::structure_domainate::run(&args)?,
+        Command::StructureSearch(args) => commands::structure_search::run(&args)?,
+        Command::StructureToGenbank(args) => commands::structure_to_genbank::run(&args)?,
         Command::CompareContigs(args) => commands::compare_contigs::run(&args)?,
         Command::TransformMatrix(args) => commands::transform_matrix::run(&args)?,
         Command::BuildSsn(args) => commands::build_ssn::run(&args)?,

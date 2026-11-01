@@ -54,7 +54,8 @@ near-identical sequences. Most of a workflow is a chain of editors.
 `seq_dist` scores by local alignment (DIAMOND or HMMER); `kmer_dist` by shared k-mers,
 which is faster and alignment-free; `compare_contigs` scores by
 shared domain content (Jaccard and adjacency indexes), which is what you want for
-comparing gene neighborhoods rather than single proteins. `hmmer_compare` compares HMM
+comparing gene neighborhoods rather than single proteins. `structure_dist` scores protein
+structures by structural alignment (foldseek or reseek). `hmmer_compare` compares HMM
 profiles to each other.
 
 **Record-wise reports** write one row per contig, CDS or domain — `enum_report`,

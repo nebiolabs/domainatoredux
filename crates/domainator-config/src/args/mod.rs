@@ -44,6 +44,11 @@ mod seq_dist;
 mod sort_contigs;
 mod split_by_cluster;
 mod ssn_navigator;
+mod structure_backend;
+mod structure_dist;
+mod structure_domainate;
+mod structure_search;
+mod structure_to_genbank;
 mod summary_report;
 mod transform_matrix;
 mod trim_contigs;
@@ -86,6 +91,11 @@ pub use seq_dist::SeqDistArgs;
 pub use sort_contigs::SortContigsArgs;
 pub use split_by_cluster::SplitByClusterArgs;
 pub use ssn_navigator::SsnNavigatorArgs;
+pub use structure_backend::{StructureAlignmentArgs, StructureBackendArgs};
+pub use structure_dist::StructureDistArgs;
+pub use structure_domainate::StructureDomainateArgs;
+pub use structure_search::StructureSearchArgs;
+pub use structure_to_genbank::StructureToGenbankArgs;
 pub use summary_report::SummaryReportArgs;
 pub use transform_matrix::TransformMatrixArgs;
 pub use trim_contigs::TrimContigsArgs;
@@ -119,6 +129,10 @@ pub fn tool_command(name: &str) -> Option<clap::Command> {
         "domain_search" => DomainSearchArgs::augment_args(cmd),
         "seq_dist" => SeqDistArgs::augment_args(cmd),
         "kmer_dist" => KmerDistArgs::augment_args(cmd),
+        "structure_dist" => StructureDistArgs::augment_args(cmd),
+        "structure_domainate" => StructureDomainateArgs::augment_args(cmd),
+        "structure_search" => StructureSearchArgs::augment_args(cmd),
+        "structure_to_genbank" => StructureToGenbankArgs::augment_args(cmd),
         "compare_contigs" => CompareContigsArgs::augment_args(cmd),
         "transform_matrix" => TransformMatrixArgs::augment_args(cmd),
         "build_ssn" => BuildSsnArgs::augment_args(cmd),

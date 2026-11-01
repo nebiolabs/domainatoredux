@@ -110,6 +110,26 @@ pub const TOOLS: &[ToolInfo] = &[
         )
     },
     ToolInfo {
+        stdin: false,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        no_stdout: &["db_out", "hits_tsv_out"],
+        ..tool(
+            "structure_domainate",
+            "annotate",
+            "Annotate structure-derived protein records, retaining records without hits.",
+        )
+    },
+    ToolInfo {
+        stdin: false,
+        required_outputs: Some(&["genbank_out", "fasta_out"]),
+        no_stdout: &["db_out", "hits_tsv_out"],
+        ..tool(
+            "structure_search",
+            "annotate",
+            "Select matching structure-derived protein records and mark their best-hit regions.",
+        )
+    },
+    ToolInfo {
         required_outputs: Some(&["genbank_out", "fasta_out"]),
         ..tool(
             "find_features",
@@ -236,6 +256,16 @@ pub const TOOLS: &[ToolInfo] = &[
             "Convert GenBank files to FASTA.",
         )
     },
+    ToolInfo {
+        stdin: false,
+        required_outputs: Some(&["genbank_out", "fasta_out", "db_out"]),
+        no_stdout: &["db_out"],
+        ..tool(
+            "structure_to_genbank",
+            "convert",
+            "Convert protein structures into protein GenBank records.",
+        )
+    },
     // profile
     ToolInfo {
         required_outputs: Some(&["hmm_out"]),
@@ -296,6 +326,16 @@ pub const TOOLS: &[ToolInfo] = &[
             "kmer_dist",
             "compare",
             "Compute exact k-mer similarity scores between sequence records.",
+        )
+    },
+    ToolInfo {
+        stdin: false,
+        required_outputs: Some(&["hdf_out", "dense_text_out"]),
+        no_stdout: &["hdf_out", "db_out", "hits_tsv_out"],
+        ..tool(
+            "structure_dist",
+            "compare",
+            "Compute similarity or distance matrices between protein structures.",
         )
     },
     ToolInfo {

@@ -135,6 +135,7 @@ or `.bgzf`:
 | `svg` | `.svg` | none |
 | `alignment` | `.afa` `.afasta` | none |
 | `newick` | `.nwk` `.newick` | none |
+| `structure` | `.pdb` `.pdb1` `.ent` `.cif` `.mmcif` `.bcif` | none |
 | `viewer_bundle` | `.dvb` `.dsnv` `.ssnv` `.ssnview` | none |
 | `taxonomy` | none | NCBI taxonomy (`taxdump*.tar.gz`, e.g. the managed NCBI Taxonomy download) |
 

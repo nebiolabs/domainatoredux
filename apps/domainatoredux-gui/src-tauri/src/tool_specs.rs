@@ -148,7 +148,7 @@ mod tests {
     /// Every `file_type` a spec may name: the types `workspace::classify_file`
     /// gives files, `taxonomy` (a registry format only: an NCBI taxdump), and the
     /// two groups `toolInputs.ts::typeMatches` expands.
-    const FILE_TYPES: [&str; 15] = [
+    const FILE_TYPES: [&str; 16] = [
         "genbank",
         "fasta",
         "hmm",
@@ -161,6 +161,7 @@ mod tests {
         "viewer_bundle",
         "alignment",
         "newick",
+        "structure",
         "taxonomy",
         "sequence",
         "reference",

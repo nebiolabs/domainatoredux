@@ -57,6 +57,10 @@ fn ref_file_type(file: &str) -> Result<RefFileType, String> {
         "hmm" | "hmmer" => Ok(RefFileType::Hmm),
         "fasta" | "fa" | "fna" | "pep" | "faa" => Ok(RefFileType::Fasta),
         "cm" => Ok(RefFileType::Cm),
+        _ if crate::tools::structure_lib::is_structure_path(file) => Err(format!(
+            "'{file}' is a protein structure file, which cannot be used as a domainate \
+             reference. Use structure_domainate to annotate with reference structures."
+        )),
         _ => Err(format!(
             "Reference files must be fasta, hmmer, or infernal cm (got {file:?})"
         )),

@@ -41,6 +41,9 @@ ureq = "2"
 md-5 = "0.10"
 # `--progress` bars (`domainator_core::progress`).
 indicatif = { version = "0.17", default-features = false }
+# Expanding `--input` globs for the structure tools (values from a `--config` file never
+# reach a shell).
+glob = "0.3"
 faer = { version = "0.24", default-features = false, features = ["std"] }
 
 # Lint policy lives here, not in CI flags, so a local `cargo clippy` enforces the same

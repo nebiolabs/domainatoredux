@@ -1024,6 +1024,7 @@ dependencies = [
  "faer",
  "flate2",
  "fs4",
+ "glob",
  "hdf5-pure",
  "hmmer-pure-rs",
  "indicatif",

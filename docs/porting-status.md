@@ -15,9 +15,9 @@ Three counts appear in this project and they measure different things:
 
 | Count | What it is |
 | --- | --- |
-| **45** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 42 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
-| **40** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
-| **36** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator`, `summary_report` and `viewer`, which the app covers with panels and viewers |
+| **49** | subcommands of the `domainatoredux` executable (`domainatoredux --help`): 46 tools, including the `inspect` and `convert` dev commands, plus the `describe`, `completion` and `doctor` builtins |
+| **44** | tools in the manifest (`domainatoredux describe`), each with a `--config` file: all but `inspect` and `convert` |
+| **40** | tools wired into the GUI's Tools menu: the manifest's, less `format_db`, `ssn_navigator`, `summary_report` and `viewer`, which the app covers with panels and viewers |
 | **44 rows below** | upstream's tools (`domainator describe`), ported *and* deliberately unported |
 
 Related: [deliberate deferrals and the upstream pin](https://github.com/nebiolabs/domainatoredux/blob/main/UPSTREAM.md),
@@ -92,10 +92,10 @@ file-type tab that renders/interacts with the data; **—** = not surfaced yet.
 | sort_contigs | finished (byte-identical parity; ties keep input order) | Tools menu ("Sort contigs") |
 | split_by_cluster | finished: GenBank, FASTA, `.hmm` (plain or gzip) and `.cm` inputs, `--pad_on_search_hits`; byte-identical on all 8 harvested invocations and 3 `extra:` ones (gzip HMM, BGZF GenBank, a two-model CM) | Tools menu ("Split by cluster"), writing a folder of files |
 | ssn_navigator | finished (all five `--query` modes verified against Python on both implementations' bundles, at three `--max_merge_events` caps, on `.dvb` and v5/v6 `.dsnv` files) | — (the SSN viewer tab covers interactive exploration; the navigator writes stdout JSON with no workspace artifact) |
-| structure_dist | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
-| structure_domainate | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
-| structure_search | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
-| structure_to_genbank | deferred (portable: foldseek/reseek subprocesses, no torch; `SearchResult` already carries the structure metrics, so their GenBank output round-trips) | — |
+| structure_dist | finished: every score-based and structural `--mode`, `--symmetrize`, `--max_hits_per_query`, and `--mst`/`--knn` with the streaming accumulator's tie order; matrices equal to Python's on all 37 harvested invocations that replay, and `--hits_tsv_out` the same rows (foldseek writes them in thread order) | Tools menu ("Structure distance") |
+| structure_domainate | finished: foldseek and reseek backends, `--metrics`, `--alignment_type`, `--max_seqs`, prebuilt and `--db_out` databases; byte-identical GenBank on every harvested invocation that replays, with foldseek and reseek; the rest are upstream's own error cases, which both refuse, or second steps that read an earlier step's database | Tools menu ("Structure domainate") |
+| structure_search | finished: hits grouped by target (sorted stably on the target's bytes, as upstream's `LC_ALL=C sort -s`), `--max_hits` best first, `--add_annotations`, reseek's sequences from its database; byte-identical GenBank on every harvested invocation that replays, with foldseek and reseek; the rest are upstream's own error cases, which both refuse, or second steps that read an earlier step's database | Tools menu ("Structure search") |
+| structure_to_genbank | finished: files, directories, globs and prebuilt databases, `--store_3di`, `--db_out`; byte-identical GenBank on every harvested invocation that replays, with foldseek and reseek; the rest are upstream's own error cases, which both refuse, or second steps that read an earlier step's database | Tools menu ("Structures to GenBank") |
 | summary_report | finished: `--json_out` (upstream's agent contract), `--html_out` (upstream's generated page) and the `-o` text report, all as upstream writes them | **Summary dashboard** tab (pure-data stats + length histogram + taxonomy icicle) — GUI-only, separate from the CLI tool's page |
 | transform_matrix | finished | Tools menu ("Transform matrix") |
 | trim_contigs | finished (parity-verified) | Tools menu ("Trim contigs") |

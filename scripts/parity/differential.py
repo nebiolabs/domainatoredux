@@ -297,6 +297,17 @@ def _compare_text(a, b, normalize=None):
     return "differs", f"line {first + 1}: {la[first][:40]!r} != {lb[first][:40]!r}"
 
 
+def _compare_lines_as_set(a, b):
+    """Two files holding the same lines, in any order."""
+    la = pathlib.Path(a).read_bytes().splitlines()
+    lb = pathlib.Path(b).read_bytes().splitlines()
+    if la == lb:
+        return "identical", ""
+    if sorted(la) == sorted(lb):
+        return "tolerated", "same lines in another order"
+    return "differs", f"{len(la)} vs {len(lb)} lines, not the same set"
+
+
 def compare(a, b, helpers, SeqIO):
     """Classify one pair of output files."""
     raw_a, raw_b = pathlib.Path(a).read_bytes(), pathlib.Path(b).read_bytes()
@@ -418,11 +429,21 @@ def run_one(row, cfg, helpers, SeqIO):
         if only_py or only_rs:
             return "differs", f"output files differ: -{only_py} +{only_rs}"[:110]
 
+        # A structure tool's --hits_tsv_out is the aligner's own table, in the order a
+        # multithreaded foldseek wrote it, which changes from run to run (its per-thread
+        # result files are concatenated as the threads finish). Its lines are compared
+        # as a set.
+        unordered = {os.path.relpath(substitute(v, py_dir), py_dir)
+                     for k, v in zip(argv, argv[1:]) if k == "--hits_tsv_out"}
         worst, note = "identical", ""
         rank = {"identical": 0, "tolerated": 1, "error": 2, "differs": 3}
         for rel in py_files:
-            outcome, why = compare(os.path.join(py_dir, rel), os.path.join(rs_dir, rel),
-                                   helpers, SeqIO)
+            if rel in unordered:
+                outcome, why = _compare_lines_as_set(os.path.join(py_dir, rel),
+                                                     os.path.join(rs_dir, rel))
+            else:
+                outcome, why = compare(os.path.join(py_dir, rel), os.path.join(rs_dir, rel),
+                                       helpers, SeqIO)
             if rank[outcome] > rank[worst]:
                 worst, note = outcome, (f"{rel}: {why}" if why else rel)
         return worst, note

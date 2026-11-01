@@ -266,16 +266,43 @@ def _is_main_call(node, module, qualified_only=False):
     return False
 
 
+def _is_fixture(fn):
+    return any(ast.unparse(d.func if isinstance(d, ast.Call) else d) == "pytest.fixture"
+               for d in fn.decorator_list)
+
+
+def module_fixtures(tree):
+    """`{name: value}` for the module's `@pytest.fixture` functions that return a literal
+    path, such as `return str(shared_datadir / "structures" / "inputs")`.
+
+    A test taking that fixture as a parameter then resolves it like a local. A fixture may
+    use an earlier one."""
+    fixtures = {}
+    for fn in tree.body:
+        if not (isinstance(fn, ast.FunctionDef) and _is_fixture(fn) and fn.body
+                and isinstance(fn.body[-1], ast.Return) and fn.body[-1].value is not None):
+            continue
+        resolver = Resolver({a.arg: fixtures[a.arg] for a in fn.args.args if a.arg in fixtures})
+        for node in fn.body[:-1]:
+            resolver.bind(node)
+        value = resolver.render(fn.body[-1].value)
+        if value is not None:
+            fixtures[fn.name] = value
+    return fixtures
+
+
 def harvest(path, module, qualified_only=False):
     tree = ast.parse(pathlib.Path(path).read_text())
+    fixtures = module_fixtures(tree)
     found = []
     for fn in ast.walk(tree):
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         cases = parameter_sets(fn)
+        used = {a.arg: fixtures[a.arg] for a in fn.args.args if a.arg in fixtures}
         by_call = {}  # lineno -> [(suffix, args)], one per case that resolved
         for suffix, params in cases:
-            resolver = Resolver(params)
+            resolver = Resolver({**used, **params})
             for node in ast.walk(fn):
                 resolver.bind(node)
             for node in ast.walk(fn):

@@ -48,6 +48,8 @@ aas = "aas"
 # Standard I/O usage ("cannot be seeked"), and "mis-parses".
 seeked = "seeked"
 mis = "mis"
+# reseek's output column for the high end of the alignment on the target.
+thi = "thi"
 # Infernal: cmbuild's `--informat` option, and the MATP_ND (pair-emitting) node type.
 informat = "informat"
 nd = "nd"

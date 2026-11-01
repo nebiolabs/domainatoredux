@@ -142,7 +142,7 @@ pub fn count_records(path: &Path) -> Option<u64> {
 pub fn accepted_types_hint() -> &'static str {
     "Accepted: .gb/.gbk/.genbank/.gbff, .fasta/.fa/.fna/.faa/.pep, .afa (aligned FASTA), \
      .hmm, .hdf5/.h5, .cm, .sto/.stockholm, .tsv/.csv/.tab, .txt, .svg, .nwk/.newick, \
-     .dvb/.dsnv (optionally with a .gz suffix)."
+     .dvb/.dsnv, .pdb/.cif (structures) (optionally with a .gz suffix)."
 }
 
 pub fn classify_file(path: &Path) -> Option<&'static str> {
@@ -165,6 +165,8 @@ pub fn classify_file(path: &Path) -> Option<&'static str> {
         "svg" => "svg",
         "afa" | "afasta" => "alignment",
         "nwk" | "newick" => "newick",
+        // Protein structures, for the structure_* tools (upstream's `structure` type).
+        "pdb" | "pdb1" | "ent" | "cif" | "mmcif" | "bcif" => "structure",
         // `.dsnv` is the older network bundle, and `.ssnv` its pre-0.11 spelling; both
         // are still read, never written.
         "dvb" | "dsnv" | "ssnv" | "ssnview" => "viewer_bundle",
@@ -516,6 +518,8 @@ mod tests {
         assert_eq!(classify_file(Path::new("net.ssnv")), Some("viewer_bundle"));
         assert_eq!(classify_file(Path::new("msa.afa")), Some("alignment"));
         assert_eq!(classify_file(Path::new("tree.nwk")), Some("newick"));
+        assert_eq!(classify_file(Path::new("1UBQ.pdb.gz")), Some("structure"));
+        assert_eq!(classify_file(Path::new("model.cif")), Some("structure"));
         assert_eq!(classify_file(Path::new("m.hdf5")), Some("hdf5"));
         assert_eq!(classify_file(Path::new("readme.txt")), Some("text"));
         assert_eq!(classify_file(Path::new("logo.svg")), Some("svg"));

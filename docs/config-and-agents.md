@@ -88,7 +88,7 @@ the two differ only where a difference is deliberate and listed. An agent writte
 upstream's manifest can expect the same tool names, parameter names, types, defaults and
 choices here, with these exceptions:
 
-- tools upstream has and this port does not (the structure tools and `db_download`;
+- tools upstream has and this port does not (`db_download`;
   see [Porting status](porting-status.md));
 - options of ported tools that are not ported, such as `domainate --foldseek`. They are
   absent from this manifest, but a config file may still name one at its upstream default;
@@ -96,7 +96,7 @@ choices here, with these exceptions:
   `convert` take no config and are not in the manifest).
 
 `domainatoredux doctor` reports which optional external programs (diamond, cd-hit,
-usearch, Orphos) this installation can find, and which tools need each one.
+usearch, Orphos, cmbuild, foldseek, reseek) this installation can find, and which tools need each one.
 
 ## JSON output
 

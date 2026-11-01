@@ -282,7 +282,7 @@ fn filter_by_overlap(
 
 /// Add `Domainator` (and optional best-hit) features to a protein contig (port of
 /// `add_protein_annotations`). `hits` is for the single protein (cds index 0).
-fn add_protein_annotations(
+pub(crate) fn add_protein_annotations(
     contig: &mut SeqRecord,
     mut hits: Vec<SearchResult>,
     max_hits: usize,

@@ -87,17 +87,21 @@ alignment or gene-calling program, and **only** if you ask for that algorithm:
 | `usearch` | `deduplicate_genbank --algorithm usearch` | as above |
 | `orphos` (0.4.0 or newer) | `gene_call`, and `domainate`/`domain_search --gene_call` | your contigs already have CDS annotations |
 | `cmbuild` | `infernal_build` | you only search with existing `.cm` models (that needs nothing) |
+| `foldseek` | the `structure_*` tools (the default `--algorithm`) | you do not work with structures, or use reseek |
+| `reseek` | the `structure_*` tools with `--algorithm reseek` | you use foldseek |
 
 Each is found by the first of these that works:
 
 1. the tool's own path option (`--diamond_path`, `--cdhit_path`, `--usearch_path`;
-   `gene_call --orphos_path`; `infernal_build --cmbuild_path`);
+   `gene_call --orphos_path`; `infernal_build --cmbuild_path`; `--foldseek_path`,
+   `--reseek_path`);
 2. the environment variable `$DOMAINATOREDUX_DIAMOND`, `$DOMAINATOREDUX_CDHIT`,
-   `$DOMAINATOREDUX_USEARCH`, `$DOMAINATOREDUX_ORPHOS` or `$DOMAINATOREDUX_CMBUILD`;
+   `$DOMAINATOREDUX_USEARCH`, `$DOMAINATOREDUX_ORPHOS`, `$DOMAINATOREDUX_CMBUILD`,
+   `$DOMAINATOREDUX_FOLDSEEK` or `$DOMAINATOREDUX_RESEEK`;
 3. a bundled copy at `external/<program>/` next to the executable;
 4. the bare program name on your `PATH`.
 
-**The desktop app can download all of them but `cmbuild` for you** — open the *External tools* panel in
+**The desktop app can download all of them but `cmbuild`, `foldseek` and `reseek` for you** — open the *External tools* panel in
 the left sidebar and click Download. It installs them into the app's data directory and
 sets the environment variables, so the command-line tool finds them too if you launch it
 from the same session. See [the desktop app](gui.md#external-tools).
@@ -107,6 +111,10 @@ downloads them at your request and runs them as separate processes.
 
 Orphos publishes no build for Intel Macs. There, install it with `cargo install
 orphos-cli` and point `$DOMAINATOREDUX_ORPHOS` at the result (usually `~/.cargo/bin/orphos`).
+
+foldseek installs with `conda install -c conda-forge -c bioconda foldseek` or from its
+releases. reseek is built from source (its v3.01 release binary needs AVX-512). Like the
+programs above, both run as separate processes and are never bundled.
 
 `cmbuild` is Infernal's (`conda install -c bioconda infernal`, Linux and macOS). On any
 platform, Windows included, `cargo install infernox` builds a Rust port whose

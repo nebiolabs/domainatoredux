@@ -1,0 +1,79 @@
+# GUI dialog for `domainatoredux structure_domainate`. Format: see README.md in this directory.
+id: structure_domainate
+label: "Structure domainate"
+description: "Annotate every chain of the input structures with the reference structures that hit it (foldseek or reseek)."
+fields:
+  - name: input
+    label: "Structures to annotate"
+    file_type: structure
+    sources: workspace_first
+    select: first
+  - name: reference
+    label: "Reference structures"
+    file_type: structure
+    sources: workspace_first
+    select: none
+  - name: genbank_out
+    label: "Output (GenBank)"
+    output_name: "{stem}.structure_domainate.gb"
+  - name: fasta_out
+    label: "Output (FASTA)"
+  - name: evalue
+    label: "E-value"
+  - name: min_evalue
+    show: false
+    label: "Min E-value"
+  - name: max_hits_per_cds
+    label: "Max hits per record"
+  - name: max_overlap
+    label: "Max overlap"
+  - name: overlap_by_db
+    show: false
+    label: "Overlap by database"
+  - name: database_name
+    show: false
+    label: "Database name"
+  - name: metrics
+    label: "Structural metrics"
+  - name: db_out
+    show: false
+    label: "Output (aligner database)"
+  - name: hits_tsv_out
+    show: false
+    label: "Output (raw hits)"
+  - name: alignment_type
+    label: "Alignment type"
+  - name: max_seqs
+    label: "Max hits per reference"
+  - name: device
+    show: false
+    label: "Device"
+  - name: algorithm
+    label: "Aligner"
+  - name: reseek_stats
+    show: false
+    label: "reseek statistics level"
+  - name: reseek_sensitivity
+    show: false
+    label: "reseek sensitivity"
+  - name: foldseek_args
+    show: false
+    label: "foldseek options"
+  - name: reseek_args
+    show: false
+    label: "reseek options"
+  - name: foldseek_path
+    show: false
+    label: "foldseek path"
+  - name: reseek_path
+    show: false
+    label: "reseek path"
+  - name: tmp_dir
+    show: false
+    label: "Scratch directory"
+  - name: cpu
+    show: false
+    label: "Cpu"
+  - name: max_output_gb
+    show: false
+    label: "Max output gb"

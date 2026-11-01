@@ -15,6 +15,7 @@ underfoot between runs. Upstream is MIT-licensed; see `test/data/README.md`.
 import argparse
 import filecmp
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -82,6 +83,15 @@ def main(argv=None):
             # the like) -- which is why this consults upstream's git index.
             needed |= {str(f.relative_to(src)) for f in (src / rel).rglob("*")
                        if f.is_file() and (tracked is None or str(f.relative_to(src)) in tracked)}
+        elif (src / f"{rel}.dbtype").is_file():
+            # A foldseek database is named by its prefix (`foldseek/FeSOD`); its data
+            # lives in the files beside it: `FeSOD.index`, the `_h`/`_ss`/`_ca`
+            # sub-databases, and so on.
+            prefix = src / rel
+            part = re.compile(re.escape(prefix.name) + r"(_(h|ss|ca))?(\.(dbtype|index|lookup|source))?")
+            needed |= {str(f.relative_to(src)) for f in prefix.parent.iterdir()
+                       if f.is_file() and part.fullmatch(f.name)
+                       and (tracked is None or str(f.relative_to(src)) in tracked)}
         else:
             needed.add(rel)
     # *.lock: the taxonomy loader's lock files, left beside a taxdump (gitignored).

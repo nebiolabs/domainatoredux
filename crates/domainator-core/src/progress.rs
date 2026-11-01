@@ -39,6 +39,29 @@ impl Progress {
         Progress(Some(bar))
     }
 
+    /// A count of items with no known total, as tqdm draws an iterable without a
+    /// length: `desc: 1234it [00:01, 30.00it/s]`.
+    pub fn counter(enabled: bool, desc: &str) -> Progress {
+        if !enabled
+            || !crate::log::enabled(crate::log::Level::Info)
+            || !std::io::stderr().is_terminal()
+        {
+            return Progress(None);
+        }
+        let bar = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr());
+        let style = ProgressStyle::with_template("{msg}: {pos}it [{elapsed_precise}, {rate}]")
+            .expect("a valid progress template")
+            .with_key(
+                "rate",
+                |state: &ProgressState, w: &mut dyn std::fmt::Write| {
+                    let _ = write!(w, "{:.2}it/s", state.per_sec());
+                },
+            );
+        bar.set_style(style);
+        bar.set_message(desc.to_string());
+        Progress(Some(bar))
+    }
+
     /// No bar.
     pub fn hidden() -> Progress {
         Progress(None)

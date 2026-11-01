@@ -39,6 +39,7 @@ function classifyPath(path: string): FileType | null {
   if (["tsv", "csv", "tab"].includes(ext)) return "table";
   if (["txt", "text", "list"].includes(ext)) return "text";
   if (ext === "svg") return "svg";
+  if (["pdb", "pdb1", "ent", "cif", "mmcif", "bcif"].includes(ext)) return "structure";
   return null;
 }
 

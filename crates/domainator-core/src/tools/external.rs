@@ -1,6 +1,6 @@
 //! Shared helpers for tools that shell out to external binaries (DIAMOND for
 //! `seq_dist`/`deduplicate_genbank`, USEARCH for `deduplicate_genbank`, cmbuild for
-//! `infernal_build`): a self-cleaning temp
+//! `infernal_build`, foldseek and reseek for the structure tools): a self-cleaning temp
 //! directory, a binary locator (env var → bundled → PATH), a FASTA writer for
 //! `(id, residues)` records, and a friendly "not found" error.
 
@@ -91,7 +91,12 @@ pub(crate) struct TempDir {
 
 impl TempDir {
     pub(crate) fn new(prefix: &str) -> std::io::Result<Self> {
-        let base = std::env::temp_dir();
+        Self::new_in(None, prefix)
+    }
+
+    /// A temp directory under `parent` (a `--tmp_dir`), or the system's when `None`.
+    pub(crate) fn new_in(parent: Option<&Path>, prefix: &str) -> std::io::Result<Self> {
+        let base = parent.map_or_else(std::env::temp_dir, Path::to_path_buf);
         let pid = std::process::id();
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -153,7 +158,8 @@ impl ExternalProgram {
 }
 
 /// Every external program, in the order `doctor` lists them.
-pub const EXTERNAL_PROGRAMS: &[ExternalProgram] = &[DIAMOND, CDHIT, USEARCH, ORPHOS, CMBUILD];
+pub const EXTERNAL_PROGRAMS: &[ExternalProgram] =
+    &[DIAMOND, CDHIT, USEARCH, ORPHOS, CMBUILD, FOLDSEEK, RESEEK];
 
 pub const DIAMOND: ExternalProgram = ExternalProgram {
     name: super::deduplicate_genbank::DIAMOND_BIN_NAME,
@@ -197,4 +203,22 @@ pub const CMBUILD: ExternalProgram = ExternalProgram {
     needed_by: "infernal_build",
     install: "conda install -c bioconda infernal, or cargo install infernox (then point \
               $DOMAINATOREDUX_CMBUILD at its infernox-cmbuild)",
+};
+
+pub const FOLDSEEK: ExternalProgram = ExternalProgram {
+    name: super::structure_lib::FOLDSEEK_BIN_NAME,
+    env_vars: &[super::structure_lib::FOLDSEEK_ENV_VAR, "FOLDSEEK"],
+    bundled_dir: "foldseek",
+    needed_by: "structure_to_genbank, structure_domainate, structure_search, structure_dist",
+    install: "conda install -c conda-forge -c bioconda foldseek, or \
+              https://github.com/steineggerlab/foldseek/releases",
+};
+
+pub const RESEEK: ExternalProgram = ExternalProgram {
+    name: super::structure_lib::RESEEK_BIN_NAME,
+    env_vars: &[super::structure_lib::RESEEK_ENV_VAR, "RESEEK"],
+    bundled_dir: "reseek",
+    needed_by: "structure_domainate, structure_search, structure_dist (--algorithm reseek)",
+    install: "build it from https://github.com/rcedgar/reseek (the v3.01 release binary \
+              requires AVX-512)",
 };
