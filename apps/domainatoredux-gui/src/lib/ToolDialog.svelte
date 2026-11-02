@@ -36,6 +36,13 @@
   const folderName = $derived(folder.split(/[\\/]/).pop() ?? folder);
 
   const DB_TYPE: Record<string, string> = { hmm: "hmm", genbank: "genbank", fasta: "fasta" };
+  /// What an empty dropdown says it lacks, for the registry-only types whose ids
+  /// read badly; the model downloads are in the Reference databases panel.
+  const EMPTY_LABEL: Record<string, string> = {
+    foldseek: "No foldseek databases (add one in the Databases panel)",
+    prostt5: "No ProstT5 model (download it in Reference databases)",
+    prott5: "No ProtT5 model (download it in Reference databases)",
+  };
   type Choice = { value: string; label: string };
   type ChoiceGroup = { label: string; items: Choice[] };
   // An input field's dropdown: registered databases of a matching format and
@@ -294,7 +301,7 @@
             {#if isInputRole(field.role)}
               {@const groups = fileGroups(field)}
               {#if groups.length === 0}
-                <span class="nofiles">No {field.file_types.join(" / ")} files/databases available</span>
+                <span class="nofiles">{EMPTY_LABEL[field.file_types[0]] ?? `No ${field.file_types.join(" / ")} files/databases available`}</span>
               {:else}
                 {#snippet options()}
                   {#if !field.required || field.role === "input_files"}<option value="">(none)</option>{/if}

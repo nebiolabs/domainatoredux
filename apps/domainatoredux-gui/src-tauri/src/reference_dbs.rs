@@ -1,5 +1,5 @@
 //! Registry + downloader for managed *reference databases* (UniProt, Pfam, NCBI
-//! Taxonomy).
+//! Taxonomy) and the models tools read (ProstT5, ProtT5).
 //!
 //! The sibling of `external_tools.rs`, and deliberately shaped like it: a static
 //! list of [`DbSpec`]s, a managed directory under the app data dir, and one
@@ -27,6 +27,12 @@
 //!   gzip tarball, which `NCBITaxonomy::load` reads directly (it takes the
 //!   archive's path as well as a directory). Its gunzip reads one member, so an
 //!   asset in any other shape is normalized to single-member gzip.
+//! * **Models** (ProstT5 for `domainate --foldseek`, ProtT5 for `find_features
+//!   --tmbed`) — a **folder**, laid out as the program reading it expects: what
+//!   `foldseek databases ProstT5` extracts (`prostt5-f16.gguf`), and what
+//!   `save_pretrained` writes (TMbed's `--model-dir`). Both are **pinned**: the
+//!   weights are checked against a SHA-256, because other weights would change
+//!   every prediction while looking installed.
 //!
 //! Versions are read from each source's own small release file rather than
 //! inferred from a URL, and recorded in `manifest.json` next to the databases.
@@ -40,6 +46,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use domainator_core::tools::format_db::{format_db, FormatDbOptions};
+use domainator_core::tools::tmbed_model;
 
 /// How an installed database is stored, which is decided by what can read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +57,10 @@ pub enum DbKind {
     Hmm,
     /// NCBI taxdump: a single-member gzip tarball.
     Taxonomy,
+    /// ProstT5 for foldseek: a folder holding `prostt5-f16.gguf`.
+    Prostt5,
+    /// ProtT5 for TMbed: a `save_pretrained` folder.
+    Prott5,
 }
 
 impl DbKind {
@@ -58,8 +69,29 @@ impl DbKind {
             DbKind::Fasta => "fasta",
             DbKind::Hmm => "hmm",
             DbKind::Taxonomy => "taxonomy",
+            DbKind::Prostt5 => "prostt5",
+            DbKind::Prott5 => "prott5",
         }
     }
+
+    /// Whether it is installed as a folder rather than one file.
+    pub fn is_folder(&self) -> bool {
+        matches!(self, DbKind::Prostt5 | DbKind::Prott5)
+    }
+}
+
+/// Where a database's version comes from.
+pub enum Release {
+    /// A small text file naming the publisher's current release.
+    Published {
+        url: &'static str,
+        /// Whether `url` is gzip-compressed (Pfam's is).
+        gzipped: bool,
+        /// Pulls the release string out of `url`'s contents.
+        parse: fn(&str) -> Option<String>,
+    },
+    /// One build, checked by hash, so it never has an update.
+    Pinned(&'static str),
 }
 
 /// One downloadable reference database.
@@ -67,16 +99,11 @@ pub struct DbSpec {
     pub id: &'static str,
     pub name: &'static str,
     pub description: &'static str,
-    /// The data file to download.
+    /// The data file to download (ProtT5's files come from `tmbed_model`).
     pub url: &'static str,
-    /// A small text file naming the current release.
-    pub version_url: &'static str,
-    /// Whether `version_url` is gzip-compressed (Pfam's is).
-    pub version_gzipped: bool,
-    /// Pulls the release string out of `version_url`'s contents.
-    pub parse_version: fn(&str) -> Option<String>,
+    pub release: Release,
     pub kind: DbKind,
-    /// Final file name under the managed directory.
+    /// Final file (or, for a model, folder) name under the managed directory.
     pub file_name: &'static str,
     /// Names earlier releases of this app installed the database under. An update
     /// removes them once the new file is in place, or the old copy would sit in the
@@ -161,6 +188,14 @@ fn ncbi_md5_version(text: &str) -> Option<String> {
 const UNIPROT_KB_RELDATE: &str = uniprot!("knowledgebase/complete/reldate.txt");
 const UNIPROT_RELNOTES: &str = uniprot!("relnotes.txt");
 
+/// The model in foldseek's ProstT5 archive: `(name, size, sha256)`. foldseek's
+/// mirror serves one build; a different one would change every 3Di prediction.
+const PROSTT5_GGUF: (&str, u64, &str) = (
+    "prostt5-f16.gguf",
+    2_417_458_816,
+    "b072042c7d5b2c7425ed6cfdbc85d2cbd62b42470d0fc1afc7c2524c1bb70207",
+);
+
 /// Every reference database the app can fetch.
 pub fn specs() -> Vec<DbSpec> {
     vec![
@@ -169,9 +204,11 @@ pub fn specs() -> Vec<DbSpec> {
             name: "UniProtKB/Swiss-Prot",
             description: "Manually reviewed, curated protein sequences. The small, high-quality UniProt set.",
             url: uniprot!("knowledgebase/complete/uniprot_sprot.fasta.gz"),
-            version_url: UNIPROT_KB_RELDATE,
-            version_gzipped: false,
-            parse_version: uniprot_release,
+            release: Release::Published {
+                url: UNIPROT_KB_RELDATE,
+                gzipped: false,
+                parse: uniprot_release,
+            },
             kind: DbKind::Fasta,
             file_name: "uniprot_sprot.fasta.bgz",
             superseded_file_names: &[],
@@ -183,9 +220,11 @@ pub fn specs() -> Vec<DbSpec> {
             name: "UniRef50",
             description: "UniProt clustered at 50% identity — whole-of-UniProt coverage at a workable size.",
             url: uniprot!("uniref/uniref50/uniref50.fasta.gz"),
-            version_url: UNIPROT_RELNOTES,
-            version_gzipped: false,
-            parse_version: uniprot_release,
+            release: Release::Published {
+                url: UNIPROT_RELNOTES,
+                gzipped: false,
+                parse: uniprot_release,
+            },
             kind: DbKind::Fasta,
             file_name: "uniref50.fasta.bgz",
             superseded_file_names: &[],
@@ -197,9 +236,11 @@ pub fn specs() -> Vec<DbSpec> {
             name: "UniRef90",
             description: "UniProt clustered at 90% identity — near-complete coverage, far smaller than TrEMBL.",
             url: uniprot!("uniref/uniref90/uniref90.fasta.gz"),
-            version_url: UNIPROT_RELNOTES,
-            version_gzipped: false,
-            parse_version: uniprot_release,
+            release: Release::Published {
+                url: UNIPROT_RELNOTES,
+                gzipped: false,
+                parse: uniprot_release,
+            },
             kind: DbKind::Fasta,
             file_name: "uniref90.fasta.bgz",
             superseded_file_names: &[],
@@ -211,9 +252,11 @@ pub fn specs() -> Vec<DbSpec> {
             name: "UniProtKB/TrEMBL",
             description: "The full unreviewed UniProt knowledgebase. Complete, and very large — expect hours.",
             url: uniprot!("knowledgebase/complete/uniprot_trembl.fasta.gz"),
-            version_url: UNIPROT_KB_RELDATE,
-            version_gzipped: false,
-            parse_version: uniprot_release,
+            release: Release::Published {
+                url: UNIPROT_KB_RELDATE,
+                gzipped: false,
+                parse: uniprot_release,
+            },
             kind: DbKind::Fasta,
             file_name: "uniprot_trembl.fasta.bgz",
             superseded_file_names: &[],
@@ -225,9 +268,11 @@ pub fn specs() -> Vec<DbSpec> {
             name: "Pfam-A",
             description: "The Pfam-A profile HMM library, for domainate / hmmer_search. Stored gzipped, as EBI serves it.",
             url: "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz",
-            version_url: "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam.version.gz",
-            version_gzipped: true,
-            parse_version: pfam_release,
+            release: Release::Published {
+                url: "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam.version.gz",
+                gzipped: true,
+                parse: pfam_release,
+            },
             kind: DbKind::Hmm,
             file_name: "Pfam-A.hmm.gz",
             superseded_file_names: &["Pfam-A.hmm"],
@@ -239,15 +284,44 @@ pub fn specs() -> Vec<DbSpec> {
             name: "NCBI Taxonomy",
             description: "The NCBI taxonomy tree (taxdump), for taxonomy filters and enum_report's taxid / taxon-name / lineage columns.",
             url: "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz",
-            version_url: "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz.md5",
-            version_gzipped: false,
-            parse_version: ncbi_md5_version,
+            release: Release::Published {
+                url: "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz.md5",
+                gzipped: false,
+                parse: ncbi_md5_version,
+            },
             kind: DbKind::Taxonomy,
             // `NCBITaxonomy::load` and the registry's classifier both know it by this name.
             file_name: "taxdump.tar.gz",
             superseded_file_names: &[],
             download_bytes: 90_000_000,
             disk_bytes: 90_000_000,
+        },
+        DbSpec {
+            id: "prostt5",
+            name: "ProstT5 model",
+            description: "ProstT5, which predicts 3Di structure states from sequence, for domainate's foldseek databases. The build `foldseek databases ProstT5` downloads.",
+            // What `foldseek databases ProstT5` fetches (foldseek's structdatabases.sh).
+            url: "https://foldseek.steineggerlab.workers.dev/prostt5-f16-gguf.tar.gz",
+            release: Release::Pinned("sha256 b072042c"),
+            kind: DbKind::Prostt5,
+            file_name: "prostt5",
+            superseded_file_names: &[],
+            download_bytes: 2_230_000_000,
+            disk_bytes: 2_420_000_000,
+        },
+        DbSpec {
+            id: "prott5",
+            name: "ProtT5 model (TMbed)",
+            description: "ProtT5-XL, the protein language model TMbed predicts transmembrane regions and signal peptides from, for find_features --tmbed.",
+            // The weights; `tmbed_model::download` fetches them with the small files
+            // beside them, at this revision.
+            url: "https://huggingface.co/Rostlab/prot_t5_xl_half_uniref50-enc/resolve/94a6abc029ae13029317b140b7424e012bf8dfbf/pytorch_model.bin",
+            release: Release::Pinned(&tmbed_model::PROT_T5_REVISION[..7]),
+            kind: DbKind::Prott5,
+            file_name: "prot_t5_xl_half_uniref50-enc",
+            superseded_file_names: &[],
+            download_bytes: tmbed_model::DOWNLOAD_BYTES,
+            disk_bytes: tmbed_model::DOWNLOAD_BYTES + 1_000_000,
         },
     ]
 }
@@ -326,24 +400,59 @@ pub fn now_ms() -> u128 {
         .unwrap_or(0)
 }
 
-/// Fetch and parse `spec`'s current release string.
+/// Fetch and parse `spec`'s current release string. A pinned one is its pin, with
+/// no network.
 pub fn remote_version(spec: &DbSpec) -> Result<String, String> {
-    let resp = ureq::get(spec.version_url)
+    let (url, gzipped, parse) = match spec.release {
+        Release::Published {
+            url,
+            gzipped,
+            parse,
+        } => (url, gzipped, parse),
+        Release::Pinned(version) => return Ok(version.to_string()),
+    };
+    let resp = ureq::get(url)
         .call()
-        .map_err(|e| format!("fetching {}: {e}", spec.version_url))?;
-    let text = if spec.version_gzipped {
+        .map_err(|e| format!("fetching {url}: {e}"))?;
+    let text = if gzipped {
         let mut s = String::new();
         flate2::read::GzDecoder::new(resp.into_reader())
             .take(1 << 20)
             .read_to_string(&mut s)
-            .map_err(|e| format!("reading {}: {e}", spec.version_url))?;
+            .map_err(|e| format!("reading {url}: {e}"))?;
         s
     } else {
         resp.into_string()
-            .map_err(|e| format!("reading {}: {e}", spec.version_url))?
+            .map_err(|e| format!("reading {url}: {e}"))?
     };
-    (spec.parse_version)(&text)
-        .ok_or_else(|| format!("could not find a release version in {}", spec.version_url))
+    parse(&text).ok_or_else(|| format!("could not find a release version in {url}"))
+}
+
+/// Whether `spec` is installed at `path`: its file, or a model folder the
+/// Databases panel's classifier accepts as that model.
+pub fn is_installed(spec: &DbSpec, path: &Path) -> bool {
+    if spec.kind.is_folder() {
+        domainator_core::app_support::registry::classify_database(&path.to_string_lossy())
+            .is_ok_and(|e| e.format == spec.kind.as_str() && Path::new(&e.path) == path)
+    } else {
+        path.is_file()
+    }
+}
+
+/// Bytes stored at `path`: a file's size, or the sum of a folder's files.
+fn stored_bytes(path: &Path) -> u64 {
+    if path.is_dir() {
+        std::fs::read_dir(path)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| e.metadata().ok())
+            .filter(|m| m.is_file())
+            .map(|m| m.len())
+            .sum()
+    } else {
+        std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
+    }
 }
 
 /// Record a user-requested version check (and return it).
@@ -443,9 +552,7 @@ pub fn free_space(dir: &Path) -> Option<u64> {
 /// peak both exist. Updating TrEMBL in place needs room for two TrEMBLs, and a check
 /// that ignored that would pass and then fill the disk four hours in.
 pub fn required_bytes(spec: &DbSpec, dir: &Path) -> u64 {
-    let existing = std::fs::metadata(dir.join(spec.file_name))
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let existing = stored_bytes(&dir.join(spec.file_name));
     let existing_index = std::fs::metadata(didx_path(&dir.join(spec.file_name)))
         .map(|m| m.len())
         .unwrap_or(0);
@@ -518,6 +625,42 @@ pub fn install(
     let version = remote_version(spec)?;
 
     let final_path = dir.join(spec.file_name);
+    if spec.kind.is_folder() {
+        install_model(spec, &final_path, cancel, report)?;
+    } else {
+        install_file(spec, &dir, &final_path, cancel, report)?;
+    }
+
+    let bytes = stored_bytes(&final_path);
+    let entry = InstalledDb {
+        id: spec.id.to_string(),
+        version: version.clone(),
+        path: final_path.to_string_lossy().into_owned(),
+        bytes,
+        installed_at_ms: now_ms().to_string(),
+    };
+
+    let mut m = load_manifest(app);
+    m.databases.retain(|d| d.id != entry.id);
+    m.databases.push(entry.clone());
+    m.checks.retain(|c| c.id != entry.id);
+    m.checks.push(VersionCheck {
+        id: entry.id.clone(),
+        version,
+        checked_at_ms: now_ms().to_string(),
+    });
+    save_manifest(app, &m)?;
+    Ok(entry)
+}
+
+/// Download one file into `final_path`, in its storage format, and index it.
+fn install_file(
+    spec: &DbSpec,
+    dir: &Path,
+    final_path: &Path,
+    cancel: &AtomicBool,
+    report: &dyn Fn(&str, u64, u64),
+) -> Result<(), String> {
     // A partial file must never be mistaken for an installed database, so the whole
     // download lands beside the real name and is renamed on success only.
     let part = dir.join(format!("{}.part", spec.file_name));
@@ -556,9 +699,9 @@ pub fn install(
         return Err("canceled".into());
     }
 
-    std::fs::rename(&part, &final_path)
+    std::fs::rename(&part, final_path)
         .map_err(|e| format!("installing {}: {e}", final_path.display()))?;
-    remove_superseded(spec, &dir);
+    remove_superseded(spec, dir);
 
     if spec.kind == DbKind::Fasta {
         report("indexing", 0, 0);
@@ -572,27 +715,131 @@ pub fn install(
         format_db(&[path], &opts, &mut std::io::sink())
             .map_err(|e| format!("indexing {}: {e}", final_path.display()))?;
     }
+    Ok(())
+}
 
-    let bytes = std::fs::metadata(&final_path).map(|m| m.len()).unwrap_or(0);
-    let entry = InstalledDb {
-        id: spec.id.to_string(),
-        version: version.clone(),
-        path: final_path.to_string_lossy().into_owned(),
-        bytes,
-        installed_at_ms: now_ms().to_string(),
+/// Download a model folder into `final_path`. The folder is filled beside its name
+/// and renamed into place, so a half-downloaded model is never offered to a tool.
+fn install_model(
+    spec: &DbSpec,
+    final_path: &Path,
+    cancel: &AtomicBool,
+    report: &dyn Fn(&str, u64, u64),
+) -> Result<(), String> {
+    let mut part = final_path.as_os_str().to_owned();
+    part.push(".part");
+    let part = PathBuf::from(part);
+    let _ = std::fs::remove_dir_all(&part);
+    std::fs::create_dir_all(&part).map_err(|e| format!("creating {}: {e}", part.display()))?;
+
+    let outcome = match spec.kind {
+        DbKind::Prostt5 => fetch_prostt5(spec, &part, cancel, report),
+        DbKind::Prott5 => {
+            // The weights are one 2.4 GB file read in 1 MB pieces; the panel does
+            // not need an event for each.
+            let last = std::cell::Cell::new(0u64);
+            let progress = |done: u64, total: u64| {
+                if done - last.get() >= PROGRESS_STEP || done == total {
+                    last.set(done);
+                    report("downloading", done, total);
+                }
+            };
+            report("downloading", 0, tmbed_model::DOWNLOAD_BYTES);
+            tmbed_model::download(&part, cancel, &progress).map_err(|e| e.to_string())
+        }
+        _ => Err(format!("{} is not a model", spec.id)),
     };
+    if let Err(e) = outcome {
+        let _ = std::fs::remove_dir_all(&part);
+        return Err(e);
+    }
+    if cancel.load(Ordering::Relaxed) {
+        let _ = std::fs::remove_dir_all(&part);
+        return Err("canceled".into());
+    }
+    if final_path.exists() {
+        std::fs::remove_dir_all(final_path)
+            .map_err(|e| format!("replacing {}: {e}", final_path.display()))?;
+    }
+    std::fs::rename(&part, final_path)
+        .map_err(|e| format!("installing {}: {e}", final_path.display()))
+}
 
-    let mut m = load_manifest(app);
-    m.databases.retain(|d| d.id != entry.id);
-    m.databases.push(entry.clone());
-    m.checks.retain(|c| c.id != entry.id);
-    m.checks.push(VersionCheck {
-        id: entry.id.clone(),
-        version,
-        checked_at_ms: now_ms().to_string(),
-    });
-    save_manifest(app, &m)?;
-    Ok(entry)
+/// Download foldseek's ProstT5 archive and extract its model into `dir`, checked
+/// against [`PROSTT5_GGUF`].
+fn fetch_prostt5(
+    spec: &DbSpec,
+    dir: &Path,
+    cancel: &AtomicBool,
+    report: &dyn Fn(&str, u64, u64),
+) -> Result<(), String> {
+    let resp = ureq::get(spec.url)
+        .call()
+        .map_err(|e| format!("downloading {}: {e}", spec.url))?;
+    let total = resp
+        .header("Content-Length")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+    report("downloading", 0, total);
+    let source = ProgressReader {
+        inner: resp.into_reader(),
+        done: 0,
+        total,
+        cancel,
+        report,
+        last_reported: 0,
+    };
+    extract_prostt5(source, dir, PROSTT5_GGUF).map_err(|e| format!("downloading {}: {e}", spec.url))
+}
+
+/// Extract the archive's file named `want.0` into `dir`, checking its size and
+/// SHA-256 as it is written. Nothing else in the archive is kept, and the member's
+/// name is never used as a path.
+fn extract_prostt5<R: Read>(stream: R, dir: &Path, want: (&str, u64, &str)) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+
+    let (name, want_size, want_sha) = want;
+    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(stream));
+    for entry in archive.entries().map_err(|e| e.to_string())? {
+        let mut entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path().map_err(|e| e.to_string())?;
+        if !entry.header().entry_type().is_file()
+            || path.file_name().and_then(|n| n.to_str()) != Some(name)
+        {
+            continue;
+        }
+        let dest = dir.join(name);
+        let mut out =
+            std::fs::File::create(&dest).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+        let mut hasher = Sha256::new();
+        let mut buf = vec![0u8; 1 << 20];
+        let mut size = 0u64;
+        loop {
+            let n = entry.read(&mut buf).map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            out.write_all(&buf[..n])
+                .map_err(|e| format!("writing {}: {e}", dest.display()))?;
+            size += n as u64;
+        }
+        out.sync_all()
+            .map_err(|e| format!("writing {}: {e}", dest.display()))?;
+        let got: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        if size != want_size || got != want_sha {
+            return Err(format!(
+                "{name} is {size} bytes with SHA-256 {got}, not the {want_size} bytes with \
+                 {want_sha} this version of the app expects"
+            ));
+        }
+        return Ok(());
+    }
+    Err(format!("the archive has no {name}"))
 }
 
 /// Stream `stream` into `dest` in the form this database is stored in.
@@ -651,6 +898,9 @@ fn write_payload<R: Read>(
             let mut inner = enc.finish().map_err(|e| format!("finishing gzip: {e}"))?;
             return inner.flush().map_err(|e| format!("writing: {e}"));
         }
+        DbKind::Prostt5 | DbKind::Prott5 => {
+            return Err(format!("{} is a model folder, not a file", spec.id))
+        }
     }
     out.flush().map_err(|e| format!("writing: {e}"))
 }
@@ -675,6 +925,16 @@ pub fn uninstall(app: &AppHandle, id: &str) -> Result<Option<String>, String> {
         return Ok(None);
     };
     let path = PathBuf::from(&entry.path);
+    // A model folder is ours whole, but only one inside the managed directory.
+    if path.is_dir() {
+        if path.parent() == Some(managed_dir(app)?.as_path()) {
+            std::fs::remove_dir_all(&path)
+                .map_err(|e| format!("removing {}: {e}", path.display()))?;
+        }
+        m.databases.retain(|d| d.id != id);
+        save_manifest(app, &m)?;
+        return Ok(Some(entry.path));
+    }
     // The `.didx` sidecar is ours too; leaving it behind would make a stale index
     // for whatever is written to that name next.
     for p in [didx_path(&path), path.clone()] {
@@ -817,11 +1077,13 @@ mod tests {
                 "{}: downloads must be https",
                 s.id
             );
-            assert!(
-                s.version_url.starts_with("https://"),
-                "{}: version URL must be https",
-                s.id
-            );
+            if let Release::Published { url, .. } = s.release {
+                assert!(
+                    url.starts_with("https://"),
+                    "{}: version URL must be https",
+                    s.id
+                );
+            }
             assert!(
                 s.disk_bytes > 0 && s.download_bytes > 0,
                 "{}: sizes are advisory but must be set",
@@ -860,6 +1122,12 @@ mod tests {
                 }
                 // `NCBITaxonomy::load` looks for exactly this name inside a directory.
                 DbKind::Taxonomy => assert_eq!(s.file_name, "taxdump.tar.gz", "{}", s.id),
+                // A folder is classified by what is in it, which the model tests
+                // below install for real.
+                DbKind::Prostt5 | DbKind::Prott5 => {
+                    assert!(matches!(s.release, Release::Pinned(_)), "{}", s.id);
+                    continue;
+                }
             }
             // Whatever the name, the app's own classifier has to agree it is a
             // database of that kind -- this is what the Databases panel will run.
@@ -978,9 +1246,11 @@ mod tests {
             name: "test",
             description: "",
             url: "https://example.invalid/x.fasta.gz",
-            version_url: "https://example.invalid/v",
-            version_gzipped: false,
-            parse_version: uniprot_release,
+            release: Release::Published {
+                url: "https://example.invalid/v",
+                gzipped: false,
+                parse: uniprot_release,
+            },
             kind: DbKind::Fasta,
             file_name,
             superseded_file_names: &[],
@@ -1299,5 +1569,84 @@ MSDKIIHLTD
         // And the error is what a copy of the whole stream surfaces.
         let mut sink = Vec::new();
         assert!(std::io::copy(&mut r, &mut sink).is_err());
+    }
+
+    /// A tar.gz shaped like foldseek's ProstT5 archive, holding `files`.
+    fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut tar = tar::Builder::new(Vec::new());
+        for (name, body) in files {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(body.len() as u64);
+            h.set_mode(0o644);
+            tar.append_data(&mut h, name, *body).unwrap();
+        }
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        gz.write_all(&tar.into_inner().unwrap()).unwrap();
+        gz.finish().unwrap()
+    }
+
+    fn sha256_hex(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    /// The ProstT5 folder is what `foldseek databases ProstT5` leaves, and the
+    /// Databases panel must take it for one: that is what puts it in domainate's
+    /// dropdown. Other weights would change every 3Di letter while looking
+    /// installed, so a model that fails its hash is refused, not kept.
+    #[test]
+    fn the_prostt5_model_is_extracted_checked_and_classified() {
+        let model = b"GGUF model bytes";
+        let archive = targz(&[("README", b"x"), ("prostt5-f16.gguf", model)]);
+        let want = ("prostt5-f16.gguf", model.len() as u64, sha256_hex(model));
+
+        let dir = scratch("prostt5").join("prostt5");
+        std::fs::create_dir_all(&dir).unwrap();
+        extract_prostt5(&archive[..], &dir, (want.0, want.1, &want.2)).unwrap();
+        assert_eq!(std::fs::read(dir.join("prostt5-f16.gguf")).unwrap(), model);
+        assert!(!dir.join("README").exists(), "only the model is kept");
+        let spec = spec("prostt5").unwrap();
+        assert!(is_installed(&spec, &dir));
+        assert_eq!(stored_bytes(&dir), model.len() as u64);
+
+        let other = scratch("prostt5-bad");
+        let err =
+            extract_prostt5(&archive[..], &other, (want.0, want.1, &"0".repeat(64))).unwrap_err();
+        assert!(err.contains("SHA-256"), "{err}");
+        let err = extract_prostt5(
+            &targz(&[("x", b"y")])[..],
+            &other,
+            (want.0, want.1, &want.2),
+        )
+        .unwrap_err();
+        assert!(err.contains("no prostt5-f16.gguf"), "{err}");
+    }
+
+    /// The panel quotes the URL; the download is `tmbed_model`'s, at its revision.
+    #[test]
+    fn the_prott5_url_is_the_pinned_revision() {
+        let url = spec("prott5").unwrap().url;
+        assert!(url.contains(tmbed_model::PROT_T5_REVISION), "{url}");
+        assert!(
+            url.contains(domainator_core::plm::tmbed::PROT_T5_MODEL),
+            "{url}"
+        );
+    }
+
+    /// A ProtT5 folder counts as installed only with its weights and config, the
+    /// files `find_features --tmbed_model_dir` reads.
+    #[test]
+    fn a_prott5_folder_is_installed_only_when_complete() {
+        let dir = scratch("prott5").join("prot_t5_xl_half_uniref50-enc");
+        std::fs::create_dir_all(&dir).unwrap();
+        let prott5 = spec("prott5").unwrap();
+        std::fs::write(dir.join("config.json"), "{}").unwrap();
+        assert!(!is_installed(&prott5, &dir));
+        std::fs::write(dir.join("pytorch_model.bin"), "w").unwrap();
+        assert!(is_installed(&prott5, &dir));
+        assert!(!is_installed(&spec("prostt5").unwrap(), &dir));
     }
 }

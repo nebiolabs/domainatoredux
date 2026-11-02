@@ -78,7 +78,7 @@
           {#if t.installed}
             <span class="ok" title={t.path ?? ""}>installed</span>
           {:else if !t.available}
-            <span class="na">n/a on {t.platform}</span>
+            <span class="na">{t.unavailable_reason ?? `n/a on ${t.platform}`}</span>
           {:else}
             <button class="dl" disabled={busy[t.id]} onclick={() => download(t.id)}>
               {busy[t.id] ? "downloading…" : "Download"}

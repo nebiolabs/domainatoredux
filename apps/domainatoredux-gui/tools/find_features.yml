@@ -18,7 +18,13 @@ fields:
     help: "One or more PROSITE patterns, comma-separated, e.g. C-x(2)-C, [DE](2)HS{P}. Each match is a Domainator feature named after its pattern."
   - name: tmbed
     label: "TMbed"
-    help: "Predict transmembrane beta strands and alpha helices, and signal peptides, with TMbed. The first run downloads its ProtT5 model (2.4 GB) to your cache folder. Expect a few seconds per protein on a CPU."
+    help: "Predict transmembrane beta strands and alpha helices, and signal peptides, with TMbed. Expect a few seconds per protein on a CPU."
+  - name: tmbed_model_dir
+    label: "TMbed model"
+    file_type: prott5
+    sources: databases_first
+    select: "database:prott5"
+    help: "The ProtT5 model TMbed reads. Download it in the Reference databases panel; with none chosen, the first run downloads it (2.4 GB) to your cache folder."
   - name: device
     label: "TMbed device"
     help: "cuda:0 (or another CUDA device, or metal) to run TMbed on a GPU, None for the CPU. A GPU this build or machine lacks falls back to the CPU."
@@ -40,6 +46,3 @@ fields:
   - name: model_dir
     show: false
     label: "Model folder"
-  - name: tmbed_model_dir
-    show: false
-    label: "TMbed model folder"

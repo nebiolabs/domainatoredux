@@ -13,9 +13,12 @@ pub struct ExternalToolStatus {
     pub description: String,
     pub installed: bool,
     pub path: Option<String>,
-    /// Whether a prebuilt binary exists for this platform.
+    /// Whether a prebuilt binary exists for this platform and can run here.
     pub available: bool,
     pub platform: String,
+    /// Why an unavailable tool is, when it is not the platform: what this machine
+    /// lacks.
+    pub unavailable_reason: Option<String>,
 }
 
 /// Status of every managed external tool (also wires up already-installed ones).
@@ -35,8 +38,9 @@ pub async fn list_external_tools(app: AppHandle) -> Vec<ExternalToolStatus> {
                 description: s.description.into(),
                 installed: path.is_some(),
                 path: path.map(|p| p.to_string_lossy().into_owned()),
-                available: s.asset.is_some(),
+                available: s.asset.is_some() && s.unsupported_here.is_none(),
                 platform: plat.clone(),
+                unavailable_reason: s.unsupported_here.map(str::to_string),
             }
         })
         .collect()

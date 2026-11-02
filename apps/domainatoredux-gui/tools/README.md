@@ -138,6 +138,9 @@ or `.bgzf`:
 | `structure` | `.pdb` `.pdb1` `.ent` `.cif` `.mmcif` `.bcif` | none |
 | `viewer_bundle` | `.dvb` `.dsnv` `.ssnv` `.ssnview` | none |
 | `taxonomy` | none | NCBI taxonomy (`taxdump*.tar.gz`, e.g. the managed NCBI Taxonomy download) |
+| `foldseek` | none | foldseek structure databases, registered by their prefix |
+| `prostt5` | none | ProstT5 model folders (a `.gguf`, e.g. the managed ProstT5 download) |
+| `prott5` | none | ProtT5 model folders (`save_pretrained`'s, e.g. the managed ProtT5 download) |
 
 `file_type` only filters what the dropdown offers. The tool receives the chosen path and
 reads it however it reads that input, so list only types the tool can actually take.
@@ -160,7 +163,7 @@ An input a selected file was placed in starts on that file (see
 
 | `select` | Starts on | When that isn't on offer |
 |---|---|---|
-| `database:<id>` | the managed reference download with that id: `pfam`, `swissprot`, `uniref50`, `uniref90`, `trembl` or `ncbi_taxonomy` (`reference_dbs::specs`) | the first entry |
+| `database:<id>` | the managed reference download with that id: `pfam`, `swissprot`, `uniref50`, `uniref90`, `trembl`, `ncbi_taxonomy`, `prostt5` or `prott5` (`reference_dbs::specs`) | the first entry |
 | `first` | the first entry, which `sources` decides | blank, when nothing is on offer |
 | `none` | blank ("(none)") | blank |
 

@@ -9,6 +9,7 @@
 //! against their SHA-256.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use domainator_plm::tmbed::{model_weights, PROT_T5_MODEL};
 
@@ -25,12 +26,14 @@ const SMALL_FILES: [&str; 4] = [
     "spiece.model",
     "tokenizer_config.json",
 ];
-#[cfg(feature = "network")]
 const WEIGHTS: (&str, u64, &str) = (
     "pytorch_model.bin",
     2_416_373_051,
     "7f51ba885541c7dc569d46b796af57cc7a2ba7945107dced4f19d1b5ec091157",
 );
+
+/// What a download fetches, in bytes: the weights (the other files are a few KB).
+pub const DOWNLOAD_BYTES: u64 = WEIGHTS.1;
 
 /// The model directory when neither `--model_dir` nor `--tmbed_model_dir` is given:
 /// `domainatoredux/tmbed` in the user's cache directory (`$XDG_CACHE_HOME` or
@@ -83,19 +86,27 @@ pub fn ensure_model(dir: &Path) -> std::io::Result<()> {
     if model_weights(dir).is_some() {
         return Ok(());
     }
-    download(dir)
-}
-
-#[cfg(feature = "network")]
-fn download(dir: &Path) -> std::io::Result<()> {
-    use sha2::{Digest, Sha256};
-    use std::io::{Read, Write};
-
-    std::fs::create_dir_all(dir)?;
     crate::log::info(format_args!(
         "Downloading TMbed's ProtT5 encoder ({PROT_T5_MODEL}, 2.4 GB) to {}",
         dir.display()
     ));
+    download(dir, &AtomicBool::new(false), &|_, _| {})
+}
+
+/// Download the model into `dir`, each file landing beside its name and renamed
+/// into place once complete. `progress(done, total)` follows the weights'
+/// bytes; setting `cancel` stops the transfer at its next read, with an error.
+#[cfg(feature = "network")]
+pub fn download(
+    dir: &Path,
+    cancel: &AtomicBool,
+    progress: &dyn Fn(u64, u64),
+) -> std::io::Result<()> {
+    use sha2::{Digest, Sha256};
+    use std::io::{Read, Write};
+    use std::sync::atomic::Ordering;
+
+    std::fs::create_dir_all(dir)?;
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(std::time::Duration::from_secs(60))
         .timeout_read(std::time::Duration::from_secs(300))
@@ -116,6 +127,9 @@ fn download(dir: &Path) -> std::io::Result<()> {
             let mut size = 0u64;
             let mut buf = vec![0u8; 1 << 20];
             loop {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(std::io::Error::other("canceled"));
+                }
                 let n = reader
                     .read(&mut buf)
                     .map_err(|e| std::io::Error::other(format!("downloading {url}: {e}")))?;
@@ -125,6 +139,9 @@ fn download(dir: &Path) -> std::io::Result<()> {
                 hasher.update(&buf[..n]);
                 out.write_all(&buf[..n])?;
                 size += n as u64;
+                if expected.is_some() {
+                    progress(size, DOWNLOAD_BYTES);
+                }
             }
             out.sync_all()?;
             if let Some((want_size, want_sha)) = expected {
@@ -155,7 +172,11 @@ fn download(dir: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(not(feature = "network"))]
-fn download(dir: &Path) -> std::io::Result<()> {
+pub fn download(
+    dir: &Path,
+    _cancel: &AtomicBool,
+    _progress: &dyn Fn(u64, u64),
+) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::NotFound,
         format!(

@@ -15,8 +15,14 @@
   let helpOpen = $state(false);
 
   const HINT =
-    "Databases are sequence or HMM sets used as tool inputs — usually large, kept " +
-    "outside the workspace folders, and shared by every workspace.";
+    "Databases are sequence, HMM and foldseek sets, and the models some tools read, used " +
+    "as tool inputs — usually large, kept outside the workspace folders, and shared by " +
+    "every workspace.";
+
+  /// Formats that are not one sequence or profile file: nothing opens them in a tab.
+  const NOT_A_FILE = new Set(["taxonomy", "foldseek", "prostt5", "prott5"]);
+  /// Formats `rename_database` refuses: a foldseek prefix and a model folder.
+  const NOT_RENAMED = new Set(["foldseek", "prostt5", "prott5"]);
 
   // Tools menu → expand, outline for a few seconds, and clear the request.
   let panelEl = $state<HTMLDivElement>();
@@ -35,6 +41,8 @@
 
   function typeLabel(d: DatabaseRow): string {
     if (d.format === "taxonomy") return "NCBI taxonomy";
+    if (d.format === "foldseek") return "foldseek structures";
+    if (d.format === "prostt5" || d.format === "prott5") return "model";
     const mol = d.molecule === "nucleic" ? "nucleic acid" : d.molecule;
     const fmt = d.format === "hmm" ? "hmmer" : d.format;
     return `${mol} ${fmt}`;
@@ -66,7 +74,7 @@
   /// open, so Open is disabled for them.
   function asFile(d: DatabaseRow): FileEntry {
     return {
-      // Never a taxonomy: `openable` keeps those rows from opening.
+      // Never a NOT_A_FILE format: `openable` keeps those rows from opening.
       path: d.path, name: baseName(d.path), file_type: d.format as FileType, description: "",
       size: 0, created_ms: null, modified_ms: null, created_by_job: null,
     };
@@ -88,8 +96,8 @@
   }
 
   function rowMenu(e: MouseEvent, d: DatabaseRow) {
-    // A taxdump is a tarball no viewer reads.
-    const openable = d.on_disk && d.shards <= 1 && d.format !== "taxonomy";
+    // A taxdump, a foldseek database and a model are nothing a viewer reads.
+    const openable = d.on_disk && d.shards <= 1 && !NOT_A_FILE.has(d.format);
     const items: CtxItem[] = [
       { label: "Open", disabled: !openable, action: () => ws.openFile(asFile(d)) },
       {
@@ -101,7 +109,7 @@
       {
         label: "Rename…",
         // The manifest owns a managed download's file name.
-        disabled: d.managed || !d.on_disk,
+        disabled: d.managed || !d.on_disk || NOT_RENAMED.has(d.format),
         action: () => {
           renameFor = d;
         },
@@ -171,7 +179,7 @@
     <ResizableBody key="databases" defaultMax={220}>
       {#if ws.dbError}<div class="err">{ws.dbError}</div>{/if}
       {#if ws.databases.length === 0}
-        <div class="empty">No databases. Add a formatted FASTA/GenBank/HMM set.</div>
+        <div class="empty">No databases. Add a formatted FASTA/GenBank/HMM set, or a foldseek database (any of its files).</div>
       {:else}
         {#each ws.databases as db (db.path)}
           <div class="db" title={db.path} role="presentation" oncontextmenu={(e) => rowMenu(e, db)}>

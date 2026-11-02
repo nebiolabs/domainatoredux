@@ -158,6 +158,10 @@ starts an option at a different value from the command line, the dialog says so 
 - **Taxonomy** (taxonomy filters, and enum_report's taxid / taxon-name / lineage columns)
   comes from the **Taxonomy database** field, which starts on the NCBI Taxonomy download
   from [Reference databases](#reference-databases) once you have installed it.
+- **Models** start on their downloads in [Reference databases](#reference-databases) the
+  same way: Domainate's **ProstT5 model**, for its **Foldseek databases**, and Find
+  features' **TMbed model**. A Find features run with no TMbed model chosen downloads one
+  to your cache folder first.
 
 The whole SSN pipeline runs from the menu: **domain_search → domainate → seq_dist (or
 kmer_dist, or compare_contigs) → transform_matrix → build_ssn / build_tree / build_projection**, including
@@ -209,7 +213,12 @@ in a workspace.
 Right-click a database for the same actions as a file: **Open**, **Open in New Window**,
 **Rename…**, **Copy Name**, **Copy Full Path**, **Show in File Manager** and **Delete…**.
 Rename and Delete act on every file the database is made of — each shard and its `.didx`
-index — and Delete lists those files before it removes anything. **Remove from List** (or
+index — and Delete lists those files before it removes anything.
+
+**Foldseek databases** (Domainate's **Foldseek databases** field) are added the same way:
+pick any of the database's files (`FeSOD`, `FeSOD.dbtype`, `FeSOD_ss`, ...) and the panel
+registers the database by its name. A foldseek database or a model folder cannot be
+opened in a tab or renamed here; Delete removes only the files that belong to it. **Remove from List** (or
 the ×) forgets a database without touching its files. A sharded database has no single file
 to open, and a managed download cannot be renamed.
 
@@ -231,9 +240,10 @@ format one for you, below.
 ## Reference databases
 
 The **Reference databases** panel downloads and formats the public databases most runs
-start from. Click **Download** and the app fetches the file, converts it to the form the
-tools need, and registers it in the Databases panel, ready for `domainate`,
-`domain_search` and `seq_dist`, or, for NCBI Taxonomy, for any tool's taxonomy options.
+start from, and the models two tools read. Click **Download** and the app fetches the file,
+converts it to the form the tools need, and registers it in the Databases panel, ready for
+`domainate`, `domain_search` and `seq_dist`, or, for NCBI Taxonomy, for any tool's
+taxonomy options.
 
 | Database | Download | On disk | What it is |
 | --- | --- | --- | --- |
@@ -243,6 +253,8 @@ tools need, and registers it in the Databases panel, ready for `domainate`,
 | UniProtKB/TrEMBL | ≈38 GB | ≈43 GB | The full unreviewed knowledgebase. Expect hours. |
 | Pfam-A | ≈400 MB | ≈400 MB | The Pfam-A profile HMM library, kept gzipped. |
 | NCBI Taxonomy | ≈80 MB | ≈80 MB | The NCBI taxonomy tree (`taxdump.tar.gz`), for taxonomy filters and enum_report's taxonomy columns. |
+| ProstT5 model | ≈2.1 GB | ≈2.3 GB | The model foldseek predicts 3Di structure states with, for Domainate's foldseek databases: what `foldseek databases ProstT5` downloads. |
+| ProtT5 model (TMbed) | ≈2.3 GB | ≈2.3 GB | The protein language model TMbed reads, for Find features' TMbed. |
 
 Everything but Swiss-Prot, Pfam-A and NCBI Taxonomy asks you to confirm the size first, and any download can be
 canceled while it runs; a canceled or failed download leaves nothing behind.
@@ -264,7 +276,9 @@ Pfam-A is kept as the **plain gzip** file EBI publishes (`Pfam-A.hmm.gz`): every
 a gzipped profile library directly, and nothing seeks in one, so there is nothing to gain
 from expanding it to 1.6 GB. (An install made by an earlier version, stored as `Pfam-A.hmm`,
 is replaced by the gzipped file on its next update.) NCBI Taxonomy is kept as the
-`taxdump.tar.gz` NCBI publishes, which the tools read without unpacking. The
+`taxdump.tar.gz` NCBI publishes, which the tools read without unpacking. Each model is a
+folder laid out as the program reading it expects, so foldseek and TMbed's own tools can
+use it too. The
 sequence-database index is built
 after the download, as a second pass over the file, and the panel shows it
 as a separate step.
@@ -272,7 +286,9 @@ as a separate step.
 **Versions.** Each database's release (`2026_03` for UniProt, `38.2` for Pfam) is read
 from the publisher's own release file at download time and shown next to it. NCBI does
 not number taxonomy releases, so NCBI Taxonomy shows the start of the file's MD5
-checksum (`md5 7b5d0589`), which changes whenever NCBI rebuilds the file. Nothing is
+checksum (`md5 7b5d0589`), which changes whenever NCBI rebuilds the file. The models are
+**pinned**: each is one build, checked against its SHA-256 as it downloads (other weights
+would change every prediction), so they have no **Check** button. Nothing else is
 checked automatically: press **Check** to ask whether a newer release exists, and if one
 has appeared the row offers **Update**, which re-downloads in place. The answer to the last
 check is remembered, so the panel still shows it after a restart.
@@ -284,7 +300,7 @@ shared list.
 
 ## External tools
 
-Four optional programs can be installed for you — click **Download** in the **External
+Six optional programs can be installed for you — click **Download** in the **External
 tools** panel and the app fetches the binary, installs it into its own data directory, and
 sets the environment variable the tools look for.
 
@@ -294,9 +310,13 @@ sets the environment variable the tools look for.
 | `cdhit` | 0.1.0 | `deduplicate_genbank --algorithm cd-hit` | Linux x64, macOS arm64, Windows x64 — shown as `n/a` on Intel macOS |
 | `usearch` | 12.0-beta1 | `deduplicate_genbank --algorithm usearch` | Linux x64, macOS (arm64 and Intel), Windows x64 |
 | `orphos` | 0.4.0 | **Gene call**, and **Gene calling** in Domainate and Domain search | Linux x64, macOS arm64, Windows x64 — shown as `n/a` on Intel macOS |
+| `foldseek` | 10-941cd33 | The **Structure** tools, and Domainate's **Foldseek databases** | Linux x64, macOS (arm64 and Intel); none for Windows |
+| `reseek` | 3.01 | The **Structure** tools' reseek aligner | Linux x64 and Windows x64, on a CPU with AVX-512 (the release binary needs it; elsewhere the panel says so) |
 
 Nothing else in Domainator needs an external program; the HMMER3 implementation is built
-in. cd-hit, usearch and Orphos are GPL-licensed and are downloaded at your request, never
+in. The foldseek download is its CPU build, so ProstT5 runs on the CPU; for a GPU, install
+foldseek's CUDA build (`foldseek-linux-gpu`) yourself and set `$DOMAINATOREDUX_FOLDSEEK`.
+cd-hit, usearch, Orphos and foldseek are GPL-licensed and are downloaded at your request, never
 bundled. A tool run without its program fails with a message saying which one to install.
 
 ## Preferences and diagnostics

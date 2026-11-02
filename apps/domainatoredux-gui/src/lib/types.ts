@@ -221,7 +221,7 @@ export interface SuggestedThreshold {
 export interface DatabaseEntry {
   path: string;
   name: string;
-  format: "fasta" | "genbank" | "hmm" | "taxonomy";
+  format: "fasta" | "genbank" | "hmm" | "taxonomy" | "foldseek" | "prostt5" | "prott5";
   molecule: "protein" | "nucleic" | "unknown";
   shards: number;
 }
@@ -249,6 +249,8 @@ export interface ExternalToolStatus {
   path: string | null;
   available: boolean;
   platform: string;
+  /// What this machine lacks, when the platform has a download it cannot run.
+  unavailable_reason: string | null;
 }
 
 // A managed reference database (UniProt / Pfam), mirroring `cmd_refdb.rs`.
@@ -266,7 +268,9 @@ export interface ReferenceDbStatus {
   id: string;
   name: string;
   description: string;
-  kind: "fasta" | "hmm" | "taxonomy";
+  kind: "fasta" | "hmm" | "taxonomy" | "prostt5" | "prott5";
+  /// A pinned build (the models): there is never an update to check for.
+  pinned: boolean;
   file_name: string;
   url: string;
   download_bytes: number;

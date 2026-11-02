@@ -1,4 +1,5 @@
-//! Commands for the managed reference-database registry (UniProt / Pfam).
+//! Commands for the managed reference-database registry (UniProt, Pfam, the NCBI
+//! taxonomy, and the ProstT5 and ProtT5 models).
 //!
 //! The counterpart of `cmd_external` for data rather than binaries. Two things it
 //! has to do that the tool downloader does not, both consequences of scale: report
@@ -36,8 +37,10 @@ pub struct ReferenceDbStatus {
     pub id: String,
     pub name: String,
     pub description: String,
-    /// `fasta` | `hmm`.
+    /// `fasta` | `hmm` | `taxonomy` | `prostt5` | `prott5`.
     pub kind: String,
+    /// A pinned build, which never has an update to check for.
+    pub pinned: bool,
     pub file_name: String,
     pub url: String,
     pub download_bytes: u64,
@@ -98,12 +101,12 @@ pub async fn list_reference_dbs(
         .map(|s| {
             // Straight from the manifest would show a database the user has since
             // deleted from disk, which every tool dropdown would then offer and no
-            // tool could open -- so the file has to still be there.
+            // tool could open -- so the file (or model folder) has to still be there.
             let installed = manifest
                 .databases
                 .iter()
                 .find(|d| d.id == s.id)
-                .filter(|d| std::path::Path::new(&d.path).is_file())
+                .filter(|d| reference_dbs::is_installed(&s, std::path::Path::new(&d.path)))
                 .cloned();
             let check = manifest.checks.iter().find(|c| c.id == s.id);
             let latest = check.map(|c| c.version.clone());
@@ -120,6 +123,7 @@ pub async fn list_reference_dbs(
                 name: s.name.into(),
                 description: s.description.into(),
                 kind: s.kind.as_str().into(),
+                pinned: matches!(s.release, reference_dbs::Release::Pinned(_)),
                 file_name: s.file_name.into(),
                 url: s.url.into(),
                 download_bytes: s.download_bytes,
@@ -279,7 +283,10 @@ pub async fn sync_reference_dbs(app: AppHandle) -> Result<usize, String> {
             .collect();
         let mut added = 0usize;
         for entry in reference_dbs::load_manifest(&app).databases {
-            if known.contains(&entry.path) || !std::path::Path::new(&entry.path).is_file() {
+            let on_disk = reference_dbs::spec(&entry.id).is_some_and(|s| {
+                reference_dbs::is_installed(&s, std::path::Path::new(&entry.path))
+            });
+            if known.contains(&entry.path) || !on_disk {
                 continue;
             }
             // A classification failure on one database must not block the others.

@@ -44,6 +44,8 @@ zip.workspace = true
 # `reference_dbs`: UniProt/UniRef ship plain gzip, which is not seekable, so a
 # downloaded sequence database is recompressed as BGZF on the way to disk.
 bgzf.workspace = true
+# `reference_dbs`: the ProstT5 model is checked against its SHA-256.
+sha2.workspace = true
 # `reference_dbs`: free-space preflight. `default-features = false` drops the file
 # locking half of the crate (and its async runtimes) -- all that is wanted here is
 # `available_space`, which is three platform statfs calls we would otherwise write

@@ -146,9 +146,10 @@ mod tests {
     }
 
     /// Every `file_type` a spec may name: the types `workspace::classify_file`
-    /// gives files, `taxonomy` (a registry format only: an NCBI taxdump), and the
-    /// two groups `toolInputs.ts::typeMatches` expands.
-    const FILE_TYPES: [&str; 16] = [
+    /// gives files, the registry-only formats (`taxonomy`, an NCBI taxdump;
+    /// `foldseek`, a structure database's prefix; `prostt5` and `prott5`, model
+    /// folders), and the two groups `toolInputs.ts::typeMatches` expands.
+    const FILE_TYPES: [&str; 19] = [
         "genbank",
         "fasta",
         "hmm",
@@ -163,6 +164,9 @@ mod tests {
         "newick",
         "structure",
         "taxonomy",
+        "foldseek",
+        "prostt5",
+        "prott5",
         "sequence",
         "reference",
     ];

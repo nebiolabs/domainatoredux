@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Managed reference databases (UniProt / Pfam), the data counterpart of the
-  // External tools panel.
+  // Managed reference databases (UniProt, Pfam, NCBI Taxonomy) and models (ProstT5,
+  // ProtT5), the data counterpart of the External tools panel.
   //
   // Two things here exist only because of the sizes involved: a confirmation step
   // in front of every download but Swiss-Prot, and a live progress row fed by the
@@ -213,7 +213,7 @@
           {#if !db.enough_space}
             <span class="nospace">{shortfall(db)}</span>
           {/if}
-          {#if !progress[db.id]}
+          {#if !progress[db.id] && !db.pinned}
             <button class="check" disabled={checking[db.id]} onclick={() => check(db)}>
               {checking[db.id] ? "checking…" : "Check"}
             </button>
@@ -279,7 +279,9 @@
 {#if pendingRemove}
   <ConfirmDialog
     title={`Remove ${pendingRemove.name}?`}
-    body={`Deletes ${pendingRemove.installed?.path ?? pendingRemove.file_name} and its index. Downloading it again means fetching about ${humanBytes(
+    body={`Deletes ${pendingRemove.installed?.path ?? pendingRemove.file_name}${
+      pendingRemove.kind === "fasta" ? " and its index" : ""
+    }. Downloading it again means fetching about ${humanBytes(
       pendingRemove.download_bytes,
     )} over the network.`}
     confirmLabel="Remove"

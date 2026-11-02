@@ -3,7 +3,7 @@
 //! Each [`ToolSpec`] describes a binary the app can fetch on demand for the
 //! current OS/arch, extract, store under the app data dir (`<app_data>/bin/`),
 //! and wire up by setting the env var the core locator (`tools::external::
-//! find_binary`) checks. Adding a future dependency (mmseqs2, foldseek, …) is just
+//! find_binary`) checks. Adding a future dependency (mmseqs2, …) is just
 //! another entry in [`specs`].
 
 use std::io::Read;
@@ -16,6 +16,9 @@ use domainator_core::tools::deduplicate_genbank::{
     USEARCH_ENV_VAR,
 };
 use domainator_core::tools::gene_call::{ORPHOS_BIN_NAME, ORPHOS_ENV_VAR};
+use domainator_core::tools::structure_lib::{
+    FOLDSEEK_BIN_NAME, FOLDSEEK_ENV_VAR, RESEEK_BIN_NAME, RESEEK_ENV_VAR,
+};
 
 /// How a downloaded asset is packaged.
 pub enum Archive {
@@ -46,6 +49,21 @@ pub struct ToolSpec {
     pub description: &'static str,
     /// The download for the current platform, or `None` if unavailable here.
     pub asset: Option<Asset>,
+    /// Why this machine cannot run the download although its platform has one
+    /// (a CPU feature it lacks), shown in place of the Download button.
+    pub unsupported_here: Option<&'static str>,
+}
+
+/// Whether the CPU has AVX-512 (its foundation instructions).
+fn has_avx512() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::arch::is_x86_feature_detected!("avx512f")
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
 }
 
 pub fn platform_key() -> &'static str {
@@ -155,6 +173,45 @@ pub fn specs() -> Vec<ToolSpec> {
         _ => None,
     };
 
+    // foldseek: the structure_* tools' aligner, and `domainate --foldseek`, which
+    // needs version 10 or later for ProstT5 (`createdb --prostt5-model`). GPL, so
+    // downloaded at runtime and never bundled. Its releases are tagged
+    // `<n>-<commit>`, without a `v`. There is no Windows build; the macOS one is
+    // universal. The Linux one is the AVX2 CPU build, so ProstT5 runs on the CPU
+    // (`foldseek-linux-gpu` is the CUDA build, installed by hand).
+    let foldseek_asset = match platform_key() {
+        "linux-x64" => Some(Asset {
+            url: "https://github.com/steineggerlab/foldseek/releases/download/10-941cd33/foldseek-linux-avx2.tar.gz",
+            archive: Archive::TarGz,
+            member: "foldseek",
+        }),
+        "macos-arm64" | "macos-x64" => Some(Asset {
+            url: "https://github.com/steineggerlab/foldseek/releases/download/10-941cd33/foldseek-osx-universal.tar.gz",
+            archive: Archive::TarGz,
+            member: "foldseek",
+        }),
+        _ => None,
+    };
+
+    // reseek: the structure_* tools' other aligner. Its releases are bare
+    // executables, like usearch's, for Linux and Windows on x86-64 only, and are
+    // built for AVX-512: on a CPU without it the binary dies with an illegal
+    // instruction, so it is offered only where it can run.
+    let reseek_asset = match platform_key() {
+        "linux-x64" => {
+            Some("https://github.com/rcedgar/reseek/releases/download/v3.01/reseek-v3.01-linux-x86")
+        }
+        "windows-x64" => {
+            Some("https://github.com/rcedgar/reseek/releases/download/v3.01/reseek-v3.01-win64.exe")
+        }
+        _ => None,
+    }
+    .map(|url| Asset {
+        url,
+        archive: Archive::Raw,
+        member: "",
+    });
+
     vec![
         ToolSpec {
             id: "diamond",
@@ -163,6 +220,7 @@ pub fn specs() -> Vec<ToolSpec> {
             version: "2.2.5",
             description: "DIAMOND — fast protein aligner, for seq_dist diamond_* algorithms.",
             asset: diamond_asset,
+            unsupported_here: None,
         },
         ToolSpec {
             id: "cdhit",
@@ -172,6 +230,7 @@ pub fn specs() -> Vec<ToolSpec> {
             description:
                 "cd-hit (Rust port) — sequence clustering, for deduplicate_genbank --algorithm cd-hit.",
             asset: cdhit_asset,
+            unsupported_here: None,
         },
         ToolSpec {
             id: "usearch",
@@ -180,6 +239,7 @@ pub fn specs() -> Vec<ToolSpec> {
             version: "12.0-beta1",
             description: "USEARCH v12 — sequence clustering, for deduplicate_genbank --algorithm usearch.",
             asset: usearch_asset,
+            unsupported_here: None,
         },
         ToolSpec {
             id: "orphos",
@@ -188,6 +248,25 @@ pub fn specs() -> Vec<ToolSpec> {
             version: "0.4.0",
             description: "Orphos (Rust Prodigal) — gene calling, for gene_call and --gene_call.",
             asset: orphos_asset,
+            unsupported_here: None,
+        },
+        ToolSpec {
+            id: "foldseek",
+            bin_name: exe(FOLDSEEK_BIN_NAME),
+            env_var: FOLDSEEK_ENV_VAR,
+            version: "10-941cd33",
+            description: "Foldseek — structure search, for the structure_* tools and domainate --foldseek (with ProstT5).",
+            asset: foldseek_asset,
+            unsupported_here: None,
+        },
+        ToolSpec {
+            id: "reseek",
+            bin_name: exe(RESEEK_BIN_NAME),
+            env_var: RESEEK_ENV_VAR,
+            version: "3.01",
+            description: "reseek — structure search, for the structure_* tools' --algorithm reseek.",
+            asset: reseek_asset,
+            unsupported_here: (!has_avx512()).then_some("needs a CPU with AVX-512"),
         },
     ]
 }
@@ -226,8 +305,19 @@ pub fn download(app: &AppHandle, spec: &ToolSpec) -> Result<PathBuf, String> {
         .asset
         .as_ref()
         .ok_or_else(|| format!("{} has no prebuilt binary for {}", spec.id, platform_key()))?;
+    if let Some(why) = spec.unsupported_here {
+        return Err(format!("{}'s prebuilt binary {why}", spec.id));
+    }
     let dest = managed_dir(app)?.join(&spec.bin_name);
+    fetch(asset, &dest)?;
 
+    // SAFETY: see ensure_env.
+    std::env::set_var(spec.env_var, &dest);
+    Ok(dest)
+}
+
+/// Download `asset` and install its executable at `dest`.
+fn fetch(asset: &Asset, dest: &Path) -> Result<(), String> {
     let resp = ureq::get(asset.url)
         .call()
         .map_err(|e| format!("downloading {}: {e}", asset.url))?;
@@ -235,43 +325,44 @@ pub fn download(app: &AppHandle, spec: &ToolSpec) -> Result<PathBuf, String> {
 
     match asset.archive {
         Archive::Raw => {
-            let mut out = std::fs::File::create(&dest).map_err(|e| format!("writing: {e}"))?;
+            let mut out = std::fs::File::create(dest).map_err(|e| format!("writing: {e}"))?;
             std::io::copy(&mut reader, &mut out).map_err(|e| format!("writing: {e}"))?;
         }
-        Archive::TarGz => extract_targz_member(reader, asset.member, &dest)?,
+        Archive::TarGz => extract_targz_member(reader, asset.member, dest)?,
         Archive::Zip => {
             // ZipArchive needs Read + Seek, so buffer the (small) archive first.
             let mut buf = Vec::new();
             reader
                 .read_to_end(&mut buf)
                 .map_err(|e| format!("downloading: {e}"))?;
-            extract_zip_member(&buf, asset.member, &dest)?;
+            extract_zip_member(&buf, asset.member, dest)?;
         }
     }
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&dest)
+        let mut perms = std::fs::metadata(dest)
             .map_err(|e| e.to_string())?
             .permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(&dest, perms).map_err(|e| format!("chmod: {e}"))?;
+        std::fs::set_permissions(dest, perms).map_err(|e| format!("chmod: {e}"))?;
     }
-
-    // SAFETY: see ensure_env.
-    std::env::set_var(spec.env_var, &dest);
-    Ok(dest)
+    Ok(())
 }
 
-/// Extract the single archive member whose file name is `member` to `dest`.
+/// Extract the single archive member whose file name is `member` to `dest`. Only a
+/// regular file matches: foldseek's archive opens with a `foldseek/` directory
+/// whose name is the binary's too.
 fn extract_targz_member(reader: impl Read, member: &str, dest: &Path) -> Result<(), String> {
     let gz = flate2::read::GzDecoder::new(reader);
     let mut ar = tar::Archive::new(gz);
     for entry in ar.entries().map_err(|e| format!("reading archive: {e}"))? {
         let mut entry = entry.map_err(|e| format!("reading archive: {e}"))?;
         let path = entry.path().map_err(|e| format!("archive entry: {e}"))?;
-        if path.file_name().and_then(|n| n.to_str()) == Some(member) {
+        if entry.header().entry_type().is_file()
+            && path.file_name().and_then(|n| n.to_str()) == Some(member)
+        {
             let mut out = std::fs::File::create(dest)
                 .map_err(|e| format!("writing {}: {e}", dest.display()))?;
             std::io::copy(&mut entry, &mut out).map_err(|e| format!("extracting: {e}"))?;
@@ -291,7 +382,8 @@ fn extract_zip_member(bytes: &[u8], member: &str, dest: &Path) -> Result<(), Str
             .name()
             .map_err(|e| format!("zip entry name: {e}"))?
             .into_owned();
-        if Path::new(&name).file_name().and_then(|n| n.to_str()) == Some(member) {
+        if entry.is_file() && Path::new(&name).file_name().and_then(|n| n.to_str()) == Some(member)
+        {
             let mut out = std::fs::File::create(dest)
                 .map_err(|e| format!("writing {}: {e}", dest.display()))?;
             std::io::copy(&mut entry, &mut out).map_err(|e| format!("extracting: {e}"))?;
@@ -348,6 +440,18 @@ mod tests {
         );
     }
 
+    /// `domainate --foldseek` has foldseek predict 3Di with ProstT5, which its
+    /// `createdb --prostt5-model` first offered in release 10.
+    #[test]
+    fn the_managed_foldseek_runs_prostt5() {
+        let spec = specs()
+            .into_iter()
+            .find(|s| s.id == "foldseek")
+            .expect("foldseek spec");
+        let major: u32 = spec.version.split('-').next().unwrap().parse().unwrap();
+        assert!(major >= 10, "foldseek {} has no ProstT5", spec.version);
+    }
+
     #[test]
     fn managed_tools_match_the_core_locator() {
         let exe = |n: &str| {
@@ -362,6 +466,8 @@ mod tests {
             ("cdhit", CDHIT_BIN_NAME, CDHIT_ENV_VAR),
             ("usearch", USEARCH_BIN_NAME, USEARCH_ENV_VAR),
             ("orphos", ORPHOS_BIN_NAME, ORPHOS_ENV_VAR),
+            ("foldseek", FOLDSEEK_BIN_NAME, FOLDSEEK_ENV_VAR),
+            ("reseek", RESEEK_BIN_NAME, RESEEK_ENV_VAR),
         ];
         let specs = specs();
         for (id, bin, env) in want {
@@ -380,8 +486,10 @@ mod tests {
     fn the_asset_url_matches_the_advertised_version() {
         for spec in specs() {
             let Some(asset) = &spec.asset else { continue };
+            // foldseek tags its releases without the `v`.
             assert!(
-                asset.url.contains(&format!("v{}", spec.version)),
+                asset.url.contains(&format!("/v{}/", spec.version))
+                    || asset.url.contains(&format!("/{}/", spec.version)),
                 "{}: url {:?} does not name version {}",
                 spec.id,
                 asset.url,
@@ -422,6 +530,52 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// foldseek's archive is `foldseek/`, `foldseek/bin/`, `foldseek/bin/foldseek`:
+    /// the first entry has the binary's name and is a directory.
+    #[test]
+    fn the_member_extracted_is_the_file_not_a_directory_of_its_name() {
+        let mut tar = tar::Builder::new(Vec::new());
+        for dir in ["foldseek/", "foldseek/bin/"] {
+            let mut h = tar::Header::new_gnu();
+            h.set_entry_type(tar::EntryType::Directory);
+            h.set_size(0);
+            h.set_mode(0o755);
+            tar.append_data(&mut h, dir, std::io::empty()).unwrap();
+        }
+        let mut h = tar::Header::new_gnu();
+        h.set_size(6);
+        h.set_mode(0o755);
+        tar.append_data(&mut h, "foldseek/bin/foldseek", &b"binary"[..])
+            .unwrap();
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut gz, &tar.into_inner().unwrap()).unwrap();
+        let archive = gz.finish().unwrap();
+
+        let dest = std::env::temp_dir().join(format!("extract-member-{}", std::process::id()));
+        extract_targz_member(&archive[..], "foldseek", &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"binary");
+        std::fs::remove_file(&dest).unwrap();
+    }
+
+    /// The only check that a release URL still serves an archive holding the
+    /// binary the spec names: each download offered here is installed into a
+    /// scratch directory and must be a non-empty executable.
+    #[test]
+    #[ignore = "downloads every tool offered on this platform"]
+    fn downloads_are_live() {
+        let dir = std::env::temp_dir().join(format!("external-tools-live-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for spec in specs() {
+            let Some(asset) = &spec.asset else { continue };
+            let dest = dir.join(&spec.bin_name);
+            fetch(asset, &dest).unwrap_or_else(|e| panic!("{}: {e}", spec.id));
+            let len = std::fs::metadata(&dest).unwrap().len();
+            assert!(len > 100_000, "{}: {len} bytes is not a binary", spec.id);
+            println!("{:<10} {:>10} bytes", spec.id, len);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

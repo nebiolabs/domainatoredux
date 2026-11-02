@@ -65,12 +65,17 @@ Parity: Python domainator 1.0.0rc1 @ `d3ef00e`.
   3Di sequences, which foldseek predicts with its built-in ProstT5 (`--prostt5_weights`,
   `--prostt5_device`, `--foldseek_device`, `--foldseek_path`); needs the foldseek binary
   and `foldseek databases ProstT5`, not PyTorch. Upstream's ESM-2 3B 3Di predictor
-  (`--esm2_3di_weights`) is refused.
+  (`--esm2_3di_weights`) is refused. In the desktop app, foldseek databases are added in
+  the Databases panel (from any of their files), and the ProstT5 model is a download in
+  Reference databases.
 - **`find_features`**, a new tool: PROSITE motif matches (`--motif`) on every protein and
   CDS translation as domain annotations, and TMbed's transmembrane regions and signal
   peptides (`--tmbed`, reimplemented on candle: no PyTorch, and Windows too), with
   `--gene_call` and `--partial`. In the desktop app as "Find features (motifs, TMbed)".
   The CLI and app can be built with `--features cuda` (or `metal`) to run TMbed on a GPU.
+  The app downloads TMbed's ProtT5 model in Reference databases.
+- **The desktop app's External tools** add foldseek (Linux, macOS) and reseek (Linux and
+  Windows, on a CPU with AVX-512, which its release binary needs).
 - **Building needs Rust 1.94** (was 1.89), for candle 0.11, which runs TMbed.
 - **An unclosed `[`, `{` or `(` in a PROSITE motif** makes `enum_report`'s
   `motif_count:` column count nothing, as upstream does, instead of the matches of the

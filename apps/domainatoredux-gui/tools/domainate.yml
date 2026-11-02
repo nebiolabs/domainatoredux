@@ -54,20 +54,21 @@ fields:
   - name: max_output_gb
     show: false
     label: "Max output (GB)"
-  # foldseek references (3Di predicted by ProstT5) have no dialog yet: a foldseek
-  # database is a prefix, not a file the workspace lists.
   - name: foldseek
-    show: false
     label: "Foldseek databases"
-    file_type: structure
-    sources: workspace_first
+    file_type: foldseek
+    sources: databases_first
     select: none
+    help: "Structure databases to search too, with each protein's 3Di structure states predicted by ProstT5. Add one in the Databases panel (any of its files); needs foldseek (Tools → External tools) and the ProstT5 model (Reference databases)."
   - name: prostt5_weights
-    show: false
-    label: "ProstT5 weights folder"
+    label: "ProstT5 model"
+    file_type: prostt5
+    sources: databases_first
+    select: "database:prostt5"
+    help: "The ProstT5 model foldseek predicts 3Di with, used only with foldseek databases. Download it in the Reference databases panel."
   - name: prostt5_device
-    show: false
     label: "ProstT5 device"
+    help: "cpu, or cuda:0 (another CUDA device) to run ProstT5 on a GPU. A GPU needs foldseek's CUDA build (foldseek-linux-gpu), not the one External tools installs."
   - name: foldseek_device
     show: false
     label: "Foldseek device"

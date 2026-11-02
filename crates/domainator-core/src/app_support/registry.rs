@@ -6,7 +6,11 @@
 //! / [`save_registry_file`] take its path), so a database added once is offered
 //! by every workspace's tool dialogs. Each entry records its `format`
 //! (fasta | genbank | hmm) and `molecule` (protein | nucleic), so the UI can show
-//! the six categories from the spec, plus the resolved shard count.
+//! the six categories from the spec, plus the resolved shard count. Four formats
+//! are registered the same way without being sequence sets: an NCBI taxdump, a
+//! foldseek structure database (by its prefix, for `domainate --foldseek`), and the
+//! two model folders tools read, ProstT5's (`domainate --prostt5_weights`) and
+//! ProtT5's (`find_features --tmbed_model_dir`).
 //!
 //! Workspaces used to keep their own list in `.domainatoredux/databases.json`;
 //! [`migrate_workspace_registry`] folds one of those into the central list the
@@ -27,7 +31,9 @@ pub struct DatabaseEntry {
     /// Logical database path (a single file or a shard base like `db.gb`).
     pub path: String,
     pub name: String,
-    /// `fasta` | `genbank` | `hmm` | `taxonomy` (an NCBI taxdump archive).
+    /// `fasta` | `genbank` | `hmm` | `taxonomy` (an NCBI taxdump archive) |
+    /// `foldseek` (a structure database's prefix) | `prostt5` | `prott5` (model
+    /// folders).
     pub format: String,
     /// `protein` | `nucleic` | `unknown`.
     pub molecule: String,
@@ -118,6 +124,12 @@ pub fn migrate_workspace_registry(central: &Path, root: &Path) -> std::io::Resul
 /// each resolved shard, followed by that file's `.didx` index when one exists.
 /// Empty when nothing is there.
 pub fn database_files(path: &Path) -> Vec<PathBuf> {
+    if path.is_dir() {
+        return model_files(path);
+    }
+    if is_foldseek_db(path) {
+        return foldseek_files(path);
+    }
     let shards = resolve_database_shards(path).unwrap_or_else(|_| vec![path.to_path_buf()]);
     let mut out = Vec::new();
     for shard in shards.into_iter().filter(|s| s.is_file()) {
@@ -139,6 +151,9 @@ pub fn database_files(path: &Path) -> Vec<PathBuf> {
 /// data file's size and mtime, which a rename keeps. Every target is checked
 /// before anything moves, and a failure part-way moves the finished ones back.
 pub fn rename_database(path: &Path, new_name: &str) -> Result<PathBuf, String> {
+    if path.is_dir() || is_foldseek_db(path) {
+        return Err("only sequence and HMM databases can be renamed here".into());
+    }
     let clean = new_name.trim();
     if clean.is_empty() || clean.contains(['/', '\\']) || clean == "." || clean == ".." {
         return Err("invalid file name".into());
@@ -390,10 +405,178 @@ pub fn is_taxdump_archive(path: &Path) -> bool {
     name.starts_with("taxdump") && (name.ends_with(".tar.gz") || name.ends_with(".tgz"))
 }
 
+/// The suffixes a foldseek database's files add to its prefix: the database
+/// itself, then its 3Di (`_ss`), header (`_h`) and C-alpha (`_ca`) databases, each
+/// a data file with `.dbtype` and `.index` beside it.
+const FOLDSEEK_PARTS: [&str; 4] = ["", "_ss", "_h", "_ca"];
+const FOLDSEEK_SIDECARS: [&str; 3] = ["", ".dbtype", ".index"];
+/// Files only the prefix itself has.
+const FOLDSEEK_EXTRAS: [&str; 4] = [".lookup", ".source", "_mapping", "_taxonomy"];
+
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(suffix);
+    PathBuf::from(s)
+}
+
+/// Whether `prefix` names a foldseek structure database: its data and `.dbtype`
+/// files, and the 3Di database (`_ss.dbtype`) that makes it one of structures
+/// rather than an MMseqs2 sequence database.
+pub fn is_foldseek_db(prefix: &Path) -> bool {
+    prefix.is_file()
+        && with_suffix(prefix, ".dbtype").is_file()
+        && with_suffix(prefix, "_ss.dbtype").is_file()
+}
+
+/// The foldseek database a file belongs to: `path` itself, or the prefix of one of
+/// its files (`db.dbtype`, `db_ss`, `db_h.index`, ...), so a file picker can
+/// register one by any of them.
+pub fn foldseek_prefix(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_str()?;
+    let mut stems = vec![name.to_string()];
+    for extra in FOLDSEEK_SIDECARS.iter().skip(1).chain(&FOLDSEEK_EXTRAS) {
+        if let Some(stem) = name.strip_suffix(extra) {
+            stems.push(stem.to_string());
+        }
+    }
+    for stem in stems.clone() {
+        for part in FOLDSEEK_PARTS.iter().skip(1) {
+            if let Some(base) = stem.strip_suffix(part) {
+                stems.push(base.to_string());
+            }
+        }
+    }
+    stems
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| path.with_file_name(s))
+        .find(|p| is_foldseek_db(p))
+}
+
+/// Every file of the foldseek database at `prefix`, numbered splits (`db.0`, ...)
+/// included.
+fn foldseek_files(prefix: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for part in FOLDSEEK_PARTS {
+        let base = with_suffix(prefix, part);
+        for sidecar in FOLDSEEK_SIDECARS {
+            out.push(with_suffix(&base, sidecar));
+        }
+        out.extend(
+            (0..)
+                .map(|i| with_suffix(&base, &format!(".{i}")))
+                .take_while(|p| p.is_file()),
+        );
+    }
+    out.extend(FOLDSEEK_EXTRAS.iter().map(|e| with_suffix(prefix, e)));
+    out.retain(|p| p.is_file());
+    out
+}
+
+/// What foldseek's `--prostt5-model` reads: a folder holding ProstT5 as a `.gguf`
+/// file (`foldseek databases ProstT5` writes `prostt5-f16.gguf`).
+fn prostt5_files(dir: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("gguf"))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// The files of a ProtT5 folder as `save_pretrained` writes one, TMbed's
+/// `--model-dir` layout; the weights are one of the last two.
+const PROT_T5_FILES: [&str; 7] = [
+    "config.json",
+    "special_tokens_map.json",
+    "spiece.model",
+    "tokenizer_config.json",
+    "added_tokens.json",
+    "model.safetensors",
+    "pytorch_model.bin",
+];
+
+fn prott5_files(dir: &Path) -> Vec<PathBuf> {
+    let has_weights = PROT_T5_FILES[5..].iter().any(|w| dir.join(w).is_file());
+    if !has_weights || !dir.join("config.json").is_file() {
+        return Vec::new();
+    }
+    PROT_T5_FILES
+        .iter()
+        .map(|f| dir.join(f))
+        .filter(|p| p.is_file())
+        .collect()
+}
+
+/// A model folder's files: ProtT5's, else ProstT5's. Only ever these, so deleting
+/// a folder registered as a model leaves anything else in it alone.
+fn model_files(dir: &Path) -> Vec<PathBuf> {
+    let prott5 = prott5_files(dir);
+    if prott5.is_empty() {
+        prostt5_files(dir)
+    } else {
+        prott5
+    }
+}
+
+/// The model folder a picked file or folder is: `(folder, format)`.
+fn model_dir(path: &Path) -> Option<(PathBuf, &'static str)> {
+    let dir = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()?.to_path_buf()
+    };
+    if !prott5_files(&dir).is_empty() {
+        Some((dir, "prott5"))
+    } else if !prostt5_files(&dir).is_empty() {
+        Some((dir, "prostt5"))
+    } else {
+        None
+    }
+}
+
 /// Classify a database path into a [`DatabaseEntry`] (reads the first shard's
-/// first record to determine molecule type).
+/// first record to determine molecule type). A file of a foldseek database or of
+/// a model folder registers the database or the folder.
 pub fn classify_database(path: &str) -> Result<DatabaseEntry, String> {
     let p = Path::new(path);
+    if let Some(prefix) = foldseek_prefix(p) {
+        return Ok(DatabaseEntry {
+            name: prefix
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            path: prefix.to_string_lossy().into_owned(),
+            format: "foldseek".into(),
+            molecule: "protein".into(),
+            shards: 1,
+        });
+    }
+    // A model file stands for its folder, but a FASTA beside a model is a FASTA.
+    let is_model_file = p.is_dir()
+        || p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+            PROT_T5_FILES.contains(&n) || n.to_ascii_lowercase().ends_with(".gguf")
+        });
+    if let Some((dir, format)) = model_dir(p).filter(|_| is_model_file) {
+        return Ok(DatabaseEntry {
+            name: match format {
+                "prott5" => "ProtT5 (TMbed)",
+                _ => "ProstT5",
+            }
+            .into(),
+            path: dir.to_string_lossy().into_owned(),
+            format: format.into(),
+            molecule: "unknown".into(),
+            shards: 1,
+        });
+    }
     // Not a sequence or profile database, but registered like one so tools can
     // take it as their `ncbi_taxonomy_path`; nothing in it has a molecule type.
     if is_taxdump_archive(p) {
@@ -831,5 +1014,95 @@ mod tests {
         assert_eq!(removed.len(), 2);
         assert!(!root.join("p.hmm.didx").exists());
         assert!(root.join("p2.hmm").exists());
+    }
+
+    /// A foldseek database is a prefix and a dozen files beside it; the file picker
+    /// hands over whichever one the user clicked. Its neighbors share the prefix
+    /// (upstream's fixture keeps `FeSOD_20.fasta` next to `FeSOD`), so the files a
+    /// delete removes are named, never matched by prefix.
+    #[test]
+    fn a_foldseek_database_is_registered_by_its_prefix_from_any_of_its_files() {
+        let root = workspace("foldseek");
+        let parts = [
+            "FeSOD",
+            "FeSOD.dbtype",
+            "FeSOD.index",
+            "FeSOD.lookup",
+            "FeSOD_h",
+            "FeSOD_h.dbtype",
+            "FeSOD_h.index",
+            "FeSOD_ss",
+            "FeSOD_ss.dbtype",
+            "FeSOD_ss.index",
+        ];
+        for n in parts {
+            fs::write(root.join(n), "x").unwrap();
+        }
+        let neighbor = write(&root, "FeSOD_20.fasta", ">a\nMKV\n");
+        let prefix = root.join("FeSOD");
+        for n in ["FeSOD", "FeSOD.dbtype", "FeSOD_ss", "FeSOD_h.index"] {
+            let entry = classify_database(root.join(n).to_str().unwrap()).unwrap();
+            assert_eq!(entry.format, "foldseek", "{n}");
+            assert_eq!(entry.name, "FeSOD", "{n}");
+            assert_eq!(Path::new(&entry.path), prefix, "{n}");
+        }
+        assert_eq!(classify_database(&neighbor).unwrap().format, "fasta");
+
+        let files = database_files(&prefix);
+        assert_eq!(files.len(), parts.len());
+        assert_eq!(
+            index_status(&prefix, "foldseek"),
+            IndexStatus::NotApplicable
+        );
+        assert!(rename_database(&prefix, "other").is_err());
+        delete_database_files(&prefix).unwrap();
+        assert!(Path::new(&neighbor).exists());
+        assert!(!root.join("FeSOD_ss.index").exists());
+
+        // Without its 3Di database it is a plain MMseqs2 database, not one of
+        // structures: an unknown type, not a foldseek database.
+        for n in ["seqs", "seqs.dbtype"] {
+            fs::write(root.join(n), "x").unwrap();
+        }
+        assert!(classify_database(root.join("seqs").to_str().unwrap()).is_err());
+    }
+
+    /// The model folders register as the folder, from the folder or any model file
+    /// in it, and only their model files count as theirs.
+    #[test]
+    fn model_folders_are_registered_by_the_folder() {
+        let root = workspace("models");
+        let prott5 = root.join("prot_t5");
+        let prostt5 = root.join("prostt5");
+        fs::create_dir_all(&prott5).unwrap();
+        fs::create_dir_all(&prostt5).unwrap();
+        for n in ["config.json", "spiece.model", "model.safetensors"] {
+            fs::write(prott5.join(n), "x").unwrap();
+        }
+        fs::write(prostt5.join("prostt5-f16.gguf"), "x").unwrap();
+        let notes = write(&prostt5, "notes.txt", "mine");
+
+        for (pick, dir, format) in [
+            (prott5.clone(), &prott5, "prott5"),
+            (prott5.join("model.safetensors"), &prott5, "prott5"),
+            (prostt5.clone(), &prostt5, "prostt5"),
+            (prostt5.join("prostt5-f16.gguf"), &prostt5, "prostt5"),
+        ] {
+            let entry = classify_database(pick.to_str().unwrap()).unwrap();
+            assert_eq!(entry.format, format, "{}", pick.display());
+            assert_eq!(Path::new(&entry.path), dir.as_path());
+        }
+        // A non-model file in a model folder is itself, not the folder.
+        assert!(classify_database(&notes)
+            .unwrap_err()
+            .contains("not databases"));
+        // ProtT5 without its config is not a model folder.
+        fs::remove_file(prott5.join("config.json")).unwrap();
+        assert!(classify_database(prott5.to_str().unwrap()).is_err());
+
+        assert_eq!(database_files(&prostt5), [prostt5.join("prostt5-f16.gguf")]);
+        delete_database_files(&prostt5).unwrap();
+        assert!(Path::new(&notes).exists());
+        assert!(rename_database(&prostt5, "x").is_err());
     }
 }
