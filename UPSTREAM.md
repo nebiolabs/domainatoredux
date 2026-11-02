@@ -7,8 +7,15 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `6c9945a` — *db download fixtures*
+- **Caught up to:** `fb840ec` — *hmmer_build bugfixes and fixtures*
   (2026-11-01; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`fb840ec`**, ported with `hmmer_build`'s MSA formats (`io/msa_formats.rs`):
+  `hmmer_build` opens its input MSA by path, and copies a stream (stdin) to a temporary
+  file with no suffix first. pyhmmer's `MSAFile` on a file object segfaulted on a blank or
+  unguessable file and failed on SELEX, and since a file object has no name the suffix
+  rules that select A2M (`.a2m`), sequential PHYLIP (`.phys`) and PSI-BLAST (`.pb`) never
+  applied. Adds one alignment in every format, plus hand-made PHYLIP, SELEX and Clustal
+  cases, under `test/data/msa_formats/`.
 - **`6c9945a`**, ported with `db_download`: `--uniprot_dir` reads UniProt from a local
   mirror and an `--ncbi_summary` whose `ftp_path` is a local directory reads genomes from
   disk, so the tests run offline on `test/data/db_download/` and the sweep replays them.

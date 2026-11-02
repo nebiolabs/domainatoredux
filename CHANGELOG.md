@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `6c9945a`.
+Parity: Python domainator 1.0.0rc1 @ `fb840ec`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
