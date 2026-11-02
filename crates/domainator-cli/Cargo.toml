@@ -18,7 +18,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-domainator-core = { path = "../domainator-core", features = ["network"] }
+domainator-core = { path = "../domainator-core", features = ["network", "plm"] }
 domainator-config = { path = "../domainator-config" }
 clap.workspace = true
 clap_complete.workspace = true
@@ -31,3 +31,9 @@ shlex.workspace = true
 
 [dev-dependencies]
 flate2.workspace = true
+
+[features]
+# GPU backends for the protein language models (`find_features --tmbed`). `cuda` needs
+# the CUDA toolkit (nvcc) at build time; release builds offer it as a separate artifact.
+cuda = ["domainator-core/cuda"]
+metal = ["domainator-core/metal"]

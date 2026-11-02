@@ -304,12 +304,20 @@ its pattern that `--domain_expr` can use (`C-x(2)-C` is `C_x__2____C`). `--gene_
 and `--partial` work as on `domainate`, and a run with no motif still adds a `cds_id`
 and an on-contig translation to every CDS.
 
-Upstream's `--tmbed` (transmembrane regions and signal peptides from a protein language
-model) is not supported; it and its `--device`, `--model_dir`, `--tmbed_model_dir` and
-`--batch_size` options are accepted, and `--tmbed` is refused.
+`--tmbed` runs [TMbed](https://github.com/BernhoferM/TMbed): transmembrane beta strands
+and alpha helices, and signal peptides, predicted from ProtT5 protein language model
+embeddings. Each region is a `Domainator` annotation with program and database `TMbed`,
+named `transmembrane_beta_strand`, `transmembrane_alpha_helix` or `signal_peptide`; its
+score and identity are the region's mean probability in percent, and its e-value
+`exp(-score)`. The first run downloads the ProtT5 model (2.4 GB) into
+`--tmbed_model_dir`, else `--model_dir`'s `tmbed` folder, else your cache folder
+(`~/.cache/domainatoredux/tmbed` on Linux). It runs on the CPU (a few seconds per protein)
+unless `--device` names a GPU the build supports (`cuda:0` in a CUDA build, `metal` on a
+Mac build); otherwise it warns and uses the CPU.
 
 ```bash
 domainatoredux find_features -i proteins.gb -o motifs.gb --motif "C-x(2)-C" "[DE](2)HS{P}"
+domainatoredux find_features -i proteins.gb -o membrane.gb --tmbed --device None
 ```
 
 ---

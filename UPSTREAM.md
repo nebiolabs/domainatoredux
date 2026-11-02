@@ -7,8 +7,13 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `fb840ec` — *hmmer_build bugfixes and fixtures*
-  (2026-11-01; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **Caught up to:** `d3ef00e` — *prostt5 support*
+  (2026-11-02; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **`d3ef00e`**, ported: `domainate --prostt5_weights`/`--prostt5_device`, foldseek's
+  built-in ProstT5 as the `--foldseek` 3Di predictor (`search/foldseek.rs`; ESM-2 3B 3Di
+  stays refused, see "Deliberately deferred"), and TMbed test fixtures
+  (`test/data/tmbed/`) with tests that pin TMbed's predictions, which the port's
+  reimplementation reproduces byte for byte (see "TMbed").
 - **`fb840ec`**, ported with `hmmer_build`'s MSA formats (`io/msa_formats.rs`):
   `hmmer_build` opens its input MSA by path, and copies a stream (stdin) to a temporary
   file with no suffix first. pyhmmer's `MSAFile` on a file object segfaulted on a blank or
@@ -39,7 +44,7 @@ file records how far the port is caught up and how to advance it.
   files counts as a database and is no longer downloaded over (`taxonomy::has_extracted_dmps`;
   upstream's own extracted-only test was fetching the real taxdump). Also drops a dead
   `except ImportError` around TMbed: a missing TMbed was already an error with an install
-  hint, which `find_features --tmbed` here reports by refusing the option.
+  hint, as a missing ProtT5 model is here (it is downloaded when `network` is built in).
 - **`f346a05`**, ported: `split_by_cluster` splits a real Infernal `.cm` file, each CM
   block kept with the filter HMM that follows it under the same name (it used to report
   duplicate labels), and `find_features --gene_call all` drops the `Domainator`
@@ -284,7 +289,7 @@ Use this to triage which module a changed upstream file lands in:
 | `colors.py` | `.../palette.rs` |
 | `structure_lib.py` | `crates/domainator-core/src/tools/structure_lib.rs` (input resolution, the foldseek/reseek drivers, the by-target sort, hits → `SearchResult`) |
 | `structure_to_genbank.py`, `structure_domainate.py`, `structure_search.py`, `structure_dist.py` | `.../tools/structure_{to_genbank,domainate,search,dist}.rs` |
-| `foldseek.py` (`domainate --foldseek`) | **deferred** — see below |
+| `foldseek.py` (`domainate --foldseek`) | `crates/domainator-core/src/search/foldseek.rs` (the ProstT5 route only: `createdb --prostt5-model`, `search`, `convertalis`; ESM-2 3B 3Di is refused, see below) |
 | `db_download.py` | `.../tools/db_download.rs` (the UniProt streams, the assembly summary and its filters, the `direct`/`datasets` backends); the SwissProt conversion is `.../io/swissprot.rs`, a port of Biopython's `Bio.SwissProt._read` and `SeqIO.SwissIO` (a Biopython upgrade that changes them needs the same change) |
 | `build_ssn.py` | `.../tools/build_ssn.rs` |
 | `ssn_edges.py`, `edge_types.py` | `.../matrix/ssn.rs` |
@@ -352,17 +357,16 @@ equality is not part of any contract here.
 
 Tracked so a later sync does not mistake them for oversights:
 
-- **`domainate --foldseek`** (`foldseek.py`, and `--esm2_3di_*`/`--foldseek_device`):
-  it turns sequences into 3Di with ESM-2 3B running in-process, which needs torch. The
-  structure tools, which align real structures, are ported.
+- **`domainate --esm2_3di_weights`** (`foldseekBuilder` in `foldseek.py`): ESM-2 3B 3Di
+  predicts 3Di in PyTorch. `--foldseek` itself is ported through upstream's other
+  predictor, `--prostt5_weights`, where foldseek runs ProstT5 itself, so both sides call
+  the same binary and the output is byte-identical (per device: CPU and GPU ProstT5 differ
+  slightly from each other). `--esm2_3di_weights`/`--esm2_3di_device` are accepted, so
+  upstream configs load, and `--esm2_3di_weights` is refused with a pointer to
+  `--prostt5_weights`.
 - **`merge_impact_axis_labels`** (`ssn_hierarchy.py`). Its consumers are `viewer_html.py`
   (the viewer config's `splitAxisLabels`) and matrix_report's page; both generated shells
   carry its values pre-rendered, so a shell regeneration is all a change to it needs.
-- **`find_features --tmbed`**: TMbed runs ProtT5 (a protein language model) and a CNN
-  through torch. The option and its `--device`/`--model_dir`/`--tmbed_model_dir`/
-  `--batch_size` are accepted, so the manifest matches, and `--tmbed` is refused. Upstream
-  raises too when TMbed is not installed, as in the parity env, so its two TMbed
-  invocations sweep as `skipped`. `--motif`, `--gene_call` and `--partial` are ported.
 - **`build_projection --algorithm tsne|umap`** (scikit-learn's `TSNE`, umap-learn): both
   are stochastic, so there is nothing to hold a port to beyond the shape of the output. The
   CLI keeps them in its choices, so the manifest matches, and refuses them at run time
@@ -447,6 +451,23 @@ hmmer-pure-rs`):
    (the real gate: no new rows in `known_gaps.tsv`), and the aarch64 check
    (`domainate` under QEMU must match x86 byte for byte).
 4. Delete this section.
+
+## TMbed (`find_features --tmbed`): reimplemented, at upstream's pin
+
+Upstream runs TMbed (`tmbed @ 8cee893523eb655bc9485c00c65336d27a236191`) through PyTorch;
+`crates/domainator-plm` reimplements it on candle: the ProtT5 encoder (`t5.rs`, from HF
+`modeling_t5.py`, transformers 4.x, including its f16 rules: `wo` kept in f32, the
+residual stream promoted), the CNN ensemble (`tmbed/cnn.rs`, from `tmbed/model.py`) and
+the Viterbi decoder (`tmbed/viterbi.rs`). The five CNN models are TMbed's own
+(Apache-2.0), converted to `assets/tmbed/cnn.safetensors` by
+`scripts/tmbed/make_assets.py`, which checks their SHA-256 against that commit and also
+writes the goldens `cargo test -p domainator-plm` compares the CNN and decoder with.
+
+A TMbed bump means: update the commit in `make_assets.py` (and the hashes), rerun it in an
+env with the new TMbed, diff `model.py`/`viterbi.py`/`tmbed.py`/`embed.py` against the Rust,
+and rerun the find_features sweep with that env (`docs/parity.md`, "External binaries").
+The ProtT5 weights are downloaded at a pinned Hugging Face revision
+(`tools/tmbed_model.rs`, `PROT_T5_REVISION`) and checked against their SHA-256.
 
 ## Pinned dependency: `infernox`
 

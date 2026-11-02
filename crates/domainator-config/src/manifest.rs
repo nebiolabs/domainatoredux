@@ -39,6 +39,7 @@ const DIRECTORIES: &[&str] = &[
     "tmp_dir",
     "model_dir",
     "tmbed_model_dir",
+    "prostt5_weights",
     "datasets_workdir",
     "ncbi_taxonomy_path",
 ];

@@ -66,3 +66,8 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_JobObjects",
     "Win32_System_Threading",
 ] }
+
+[features]
+# GPU backends for `find_features --tmbed`, run by the worker through domainator-cli.
+cuda = ["domainator-cli/cuda"]
+metal = ["domainator-cli/metal"]

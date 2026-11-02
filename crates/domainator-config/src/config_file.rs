@@ -98,6 +98,19 @@ fn value_tokens(arg: &Arg, value: &str) -> Vec<String> {
     }
 }
 
+/// An upstream option the tool lacks (a registry `unsupported` entry, with upstream's
+/// `default` as JSON) loads only when it is null or that default, and is then dropped.
+fn unsupported_option(tool: &str, key: &str, default: &str, value: &ConfigValue) -> Result<()> {
+    let default: Value = serde_json::from_str(default).context("registry default")?;
+    if *value == ConfigValue::Null || *value == ConfigValue::from(&default) {
+        return Ok(());
+    }
+    bail!(
+        "`{key}` is an option of upstream domainator's {tool} that domainatoredux does not \
+         support; remove it, or set it to {default}"
+    );
+}
+
 fn scalar(key: &str, v: &ConfigValue) -> Result<String> {
     match v {
         ConfigValue::Text(s) => Ok(s.clone()),
@@ -111,15 +124,8 @@ fn arguments(cmd: &Command, key: &str, value: &ConfigValue) -> Result<Vec<String
     let unsupported = crate::registry::tool_info(cmd.get_name())
         .and_then(|t| t.unsupported.iter().find(|(name, _)| *name == key));
     if let Some((_, default)) = unsupported {
-        let default: Value = serde_json::from_str(default).context("registry default")?;
-        if *value == ConfigValue::Null || *value == ConfigValue::from(&default) {
-            return Ok(Vec::new());
-        }
-        bail!(
-            "`{key}` is an option of upstream domainator's {} that domainatoredux does not \
-             support; remove it, or set it to {default}",
-            cmd.get_name()
-        );
+        unsupported_option(cmd.get_name(), key, default, value)?;
+        return Ok(Vec::new());
     }
     let arg = parameters(cmd)
         .find(|a| a.get_id().as_str() == key)
@@ -348,13 +354,14 @@ mod tests {
 
     #[test]
     fn an_unsupported_upstream_option_is_accepted_only_at_its_default() {
-        let cmd = crate::args::tool_command("domainate").unwrap();
-        let ok = scratch("unsupported-ok.yml", "foldseek_device: cpu\n");
-        assert!(expand(&cmd, &os(&["--config", &ok])).unwrap().is_empty());
-        let bad = scratch("unsupported-bad.yml", "foldseek_device: cuda:1\n");
-        let e = format!("{:#}", expand(&cmd, &os(&["--config", &bad])).unwrap_err());
+        // No tool lacks an upstream option today, so the rule is checked directly.
+        let text = |s: &str| ConfigValue::Text(s.to_string());
+        let check = |v: &ConfigValue| unsupported_option("domainate", "device", "\"cpu\"", v);
+        assert!(check(&text("cpu")).is_ok());
+        assert!(check(&ConfigValue::Null).is_ok());
+        let e = format!("{:#}", check(&text("cuda:1")).unwrap_err());
         assert!(
-            e.contains("`foldseek_device`") && e.contains("does not support"),
+            e.contains("`device`") && e.contains("does not support") && e.contains("\"cpu\""),
             "{e}"
         );
     }

@@ -1,0 +1,8 @@
+cnn.safetensors holds the five CNN models of TMbed
+(https://github.com/BernhoferM/TMbed, tmbed/models/cnn/cv_0.pt ... cv_4.pt at commit
+8cee893523eb655bc9485c00c65336d27a236191), converted to safetensors without change by
+scripts/tmbed/make_assets.py.
+
+TMbed is Copyright 2022 Rostlab and licensed under the Apache License, Version 2.0
+(http://www.apache.org/licenses/LICENSE-2.0). Its source is not included here; the
+Rust code that runs these models is a reimplementation.

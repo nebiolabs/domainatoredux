@@ -210,7 +210,8 @@ pub const FOLDSEEK: ExternalProgram = ExternalProgram {
     name: super::structure_lib::FOLDSEEK_BIN_NAME,
     env_vars: &[super::structure_lib::FOLDSEEK_ENV_VAR, "FOLDSEEK"],
     bundled_dir: "foldseek",
-    needed_by: "structure_to_genbank, structure_domainate, structure_search, structure_dist",
+    needed_by: "structure_to_genbank, structure_domainate, structure_search, structure_dist, \
+                domainate --foldseek",
     install: "conda install -c conda-forge -c bioconda foldseek, or \
               https://github.com/steineggerlab/foldseek/releases",
 };

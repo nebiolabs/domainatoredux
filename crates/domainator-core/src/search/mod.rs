@@ -1,6 +1,7 @@
 //! Sequence search: hmmer-pure-rs and infernox wrappers and the [`SearchResult`] model that
 //! domainate/domain_search turn into `Domainator` GenBank features.
 
+pub mod foldseek;
 pub mod hmm_compare;
 pub mod hmm_read;
 pub mod hmm_write;

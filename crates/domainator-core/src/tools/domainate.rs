@@ -5,12 +5,14 @@
 //! references (nucleotide FASTA/`.hmm` -> nhmmer) search whole nucleotide contigs
 //! on both strands, as do Infernal covariance models (`.cm` -> cmsearch); both
 //! annotate contig-level hits (`cds_id="."`, circular origin-wrap handled as a
-//! `join`). foldseek remains deferred.
+//! `join`). foldseek databases (`--foldseek`) are searched by the proteins' 3Di
+//! sequences, which foldseek predicts with ProstT5 ([`crate::search::foldseek`]).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use super::gene_call::{call_genes, clear_cds_annotations, GeneCall, GeneCallScope};
+use crate::search::foldseek::FoldseekSearch;
 use crate::search::hmmer::hmmsearch_db;
 use crate::search::infernal::{cmsearch_db, CmDb};
 use crate::search::nhmmer::nhmmer_db;
@@ -552,6 +554,9 @@ pub struct DomainateOptions {
     /// `--gene_call`: call genes (with Orphos) on nucleotide contigs before
     /// searching. `None` keeps the existing CDS annotations as they are.
     pub gene_call: Option<GeneCall>,
+    /// `--foldseek`: also search the proteins against foldseek databases by their
+    /// ProstT5-predicted 3Di sequences.
+    pub foldseek: Option<FoldseekSearch>,
 }
 
 impl Default for DomainateOptions {
@@ -573,6 +578,7 @@ impl Default for DomainateOptions {
             max_hits_per_contig: None,
             partial: Partial::Include,
             gene_call: None,
+            foldseek: None,
         }
     }
 }
@@ -703,6 +709,32 @@ pub fn domainate(
                         .entry(fi)
                         .or_default()
                         .push(nh.result);
+                }
+            }
+        }
+    }
+
+    // foldseek searches follow the hmmer ones, so a CDS's hits are in upstream's
+    // reference-group order.
+    if let Some(search) = &opts.foldseek {
+        if !peptides.is_empty() {
+            let cpu = crate::parallel::resolve_cpu(opts.cpu);
+            for (name, path) in &search.databases {
+                let found = crate::search::foldseek::search(
+                    search,
+                    name,
+                    path,
+                    &peptides,
+                    cpu,
+                    opts.evalue,
+                    opts.min_evalue,
+                )?;
+                for (ci, fi, result) in found {
+                    hits.entry(ci)
+                        .or_default()
+                        .entry(fi)
+                        .or_default()
+                        .push(result);
                 }
             }
         }

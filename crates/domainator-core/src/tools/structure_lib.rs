@@ -535,7 +535,7 @@ fn neg_log10(value: f64) -> f64 {
 /// failure when `expect` names a file that was produced: foldseek's workflows exit
 /// nonzero during cleanup even when the run succeeded. On failure, the error carries the
 /// last 25 lines of the program's error output.
-fn run_command(
+pub(crate) fn run_command(
     argv: &[String],
     description: &str,
     expect: Option<&str>,

@@ -38,8 +38,8 @@ xattr -dr com.apple.quarantine /Applications/Domainatoredux.app
 
 ## Build the command-line tool from source
 
-You need [Rust](https://rustup.rs/) **1.89 or newer** (the workspace sets
-`rust-version = "1.89"`). Nothing else.
+You need [Rust](https://rustup.rs/) **1.94 or newer** (the workspace sets
+`rust-version = "1.94"`). Nothing else.
 
 ```bash
 git clone https://github.com/nebiolabs/domainatoredux.git

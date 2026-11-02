@@ -4,6 +4,8 @@ name: Build Release
 # platforms to build; everything is ticked by default, which is a release. From the
 # command line, untick with `-f`, e.g.
 #   gh workflow run build-release.yml --ref main -f linux=false -f cli=false
+# `cuda` (off by default) adds CUDA builds of the CLI and GUI for Linux and Windows, which
+# run `find_features --tmbed` on an NVIDIA GPU; see docs/development.md, "GPU builds".
 # Releases are tagged `vX.Y.Z`; dispatch on the tag (`--ref vX.Y.Z`) so the version
 # check compares it. See docs/development.md, "Versioning and releases". The
 # standalone genbank-summary app is build-genbank-summary.yml.
@@ -30,6 +32,10 @@ on:
         description: Linux (x64)
         type: boolean
         default: true
+      cuda:
+        description: also CUDA builds (Linux, Windows; TMbed on NVIDIA GPUs)
+        type: boolean
+        default: false
 
 jobs:
   # A release tag must name the version the binaries report. It comes from
@@ -75,6 +81,7 @@ jobs:
           MACOS: ${{ inputs.macos }}
           WINDOWS: ${{ inputs.windows }}
           LINUX: ${{ inputs.linux }}
+          CUDA: ${{ inputs.cuda }}
         run: |
           families=$(jq -cn --arg m "$MACOS" --arg w "$WINDOWS" --arg l "$LINUX" \
             '[if $m == "true" then "macos" else empty end,
@@ -82,16 +89,20 @@ jobs:
               if $l == "true" then "linux" else empty end]')
           pick() {
             grep -v '^[[:space:]]*\(#\|$\)' |
-              jq -cs --argjson f "$families" \
-                'map(select(.family as $x | $f | index($x))) | if length == 0 then empty else {include: .} end'
+              jq -cs --argjson f "$families" --arg cuda "$CUDA" \
+                'map(select(.family as $x | $f | index($x)))
+                 | map(select((.cuda // false) == false or $cuda == "true"))
+                 | if length == 0 then empty else {include: .} end'
           }
 
           gui=""
           if [ "$BUILD_GUI" = true ]; then
             gui=$(pick <<'EOF'
-          {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "target": "aarch64-apple-darwin", "bundle_args": "--bundles dmg", "artifact": "domainatoredux-gui-macos-arm64", "artifact_globs": "target/aarch64-apple-darwin/release/bundle/dmg/*.dmg"}
+          {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "target": "aarch64-apple-darwin", "bundle_args": "--bundles dmg --features metal", "artifact": "domainatoredux-gui-macos-arm64", "artifact_globs": "target/aarch64-apple-darwin/release/bundle/dmg/*.dmg"}
           {"family": "windows", "platform": "windows-msvc-x64", "os": "windows-latest", "target": "x86_64-pc-windows-msvc", "bundle_args": "--bundles nsis", "artifact": "domainatoredux-gui-windows-msvc-x64-setup", "artifact_globs": "target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe"}
           {"family": "linux", "platform": "linux-x64", "os": "ubuntu-24.04", "target": "x86_64-unknown-linux-gnu", "bundle_args": "--bundles deb,appimage", "artifact": "domainatoredux-gui-linux-x64", "artifact_globs": "target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb\ntarget/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage"}
+          {"family": "windows", "cuda": true, "platform": "windows-msvc-x64-cuda", "os": "windows-latest", "target": "x86_64-pc-windows-msvc", "bundle_args": "--bundles nsis --features cuda", "artifact": "domainatoredux-gui-windows-msvc-x64-cuda-setup", "artifact_globs": "target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe"}
+          {"family": "linux", "cuda": true, "platform": "linux-x64-cuda", "os": "ubuntu-24.04", "target": "x86_64-unknown-linux-gnu", "bundle_args": "--bundles deb --features cuda", "artifact": "domainatoredux-gui-linux-x64-cuda", "artifact_globs": "target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb"}
           # Linux -> Windows GNU cross-build (experimental, unsigned; verified to build +
           # bundle an NSIS installer from Ubuntu). Cheaper than a Windows runner, but ship
           # signed MSVC builds. Uncomment to enable.
@@ -104,8 +115,10 @@ jobs:
           if [ "$BUILD_CLI" = true ]; then
             cli=$(pick <<'EOF'
           {"family": "linux", "platform": "linux-x64", "os": "ubuntu-latest", "bin": "target/release/domainatoredux"}
-          {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "bin": "target/release/domainatoredux"}
+          {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "bin": "target/release/domainatoredux", "features": "metal"}
           {"family": "windows", "platform": "windows-x64", "os": "windows-latest", "bin": "target/release/domainatoredux.exe"}
+          {"family": "linux", "cuda": true, "platform": "linux-x64-cuda", "os": "ubuntu-22.04", "bin": "target/release/domainatoredux", "features": "cuda"}
+          {"family": "windows", "cuda": true, "platform": "windows-x64-cuda", "os": "windows-latest", "bin": "target/release/domainatoredux.exe", "features": "cuda"}
           EOF
             )
           fi
@@ -186,12 +199,24 @@ jobs:
             . -> target
           key: domainatoredux-gui-${{ matrix.target }}
 
+      # See the CLI job's step of the same name.
+      - name: Install the CUDA toolkit
+        if: matrix.cuda
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: '12.4.1'
+          method: network
+          sub-packages: '["nvcc", "cudart", "nvrtc", "cccl"]'
+          non-cuda-sub-packages: '["libcublas", "libcurand"]'
+
       - name: Install frontend dependencies
         working-directory: apps/domainatoredux-gui
         run: npm ci
 
       - name: Build app
         working-directory: apps/domainatoredux-gui
+        env:
+          CUDA_COMPUTE_CAP: ${{ matrix.cuda && '75' || '' }}
         run: npm run tauri build -- --target ${{ matrix.target }} ${{ matrix.bundle_args }}
 
       - name: Upload app artifacts
@@ -234,8 +259,24 @@ jobs:
             . -> target
           key: cli-${{ matrix.platform }}
 
+      # The CUDA rows. 12.4 rather than the newest toolkit: candle compiles its kernels
+      # to PTX, which a driver older than the toolkit cannot load, so this sets the oldest
+      # driver the build runs on (550). The runners have no GPU, so the kernels are built
+      # for compute capability 7.5 (Turing), which newer GPUs JIT from the same PTX.
+      - name: Install the CUDA toolkit
+        if: matrix.cuda
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: '12.4.1'
+          method: network
+          sub-packages: '["nvcc", "cudart", "nvrtc", "cccl"]'
+          non-cuda-sub-packages: '["libcublas", "libcurand"]'
+
       - name: Build CLI
-        run: cargo build --release -p domainator-cli
+        shell: bash
+        env:
+          CUDA_COMPUTE_CAP: ${{ matrix.cuda && '75' || '' }}
+        run: cargo build --release -p domainator-cli ${{ matrix.features && format('--features {0}', matrix.features) || '' }}
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v7

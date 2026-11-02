@@ -6,7 +6,7 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ## Unreleased — 1.0.0
 
-Parity: Python domainator 1.0.0rc1 @ `fb840ec`.
+Parity: Python domainator 1.0.0rc1 @ `d3ef00e`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
@@ -61,10 +61,17 @@ Parity: Python domainator 1.0.0rc1 @ `fb840ec`.
 - **`--cds_range` counts protein-coding CDSs only** (`domain_search`, `select_by_cds`):
   hits on a nucleotide reference are never neighbors, though one can be the focus. A
   region used to stop at the next nucleotide hit instead of reaching the next gene.
+- **`domainate --foldseek`**: foldseek databases as references, searched by the proteins'
+  3Di sequences, which foldseek predicts with its built-in ProstT5 (`--prostt5_weights`,
+  `--prostt5_device`, `--foldseek_device`, `--foldseek_path`); needs the foldseek binary
+  and `foldseek databases ProstT5`, not PyTorch. Upstream's ESM-2 3B 3Di predictor
+  (`--esm2_3di_weights`) is refused.
 - **`find_features`**, a new tool: PROSITE motif matches (`--motif`) on every protein and
-  CDS translation as domain annotations, with `--gene_call` and `--partial`. Upstream's
-  TMbed prediction (`--tmbed`) needs torch and is not supported. In the desktop app as
-  "Find features (motifs)".
+  CDS translation as domain annotations, and TMbed's transmembrane regions and signal
+  peptides (`--tmbed`, reimplemented on candle: no PyTorch, and Windows too), with
+  `--gene_call` and `--partial`. In the desktop app as "Find features (motifs, TMbed)".
+  The CLI and app can be built with `--features cuda` (or `metal`) to run TMbed on a GPU.
+- **Building needs Rust 1.94** (was 1.89), for candle 0.11, which runs TMbed.
 - **An unclosed `[`, `{` or `(` in a PROSITE motif** makes `enum_report`'s
   `motif_count:` column count nothing, as upstream does, instead of the matches of the
   motif with that character dropped.

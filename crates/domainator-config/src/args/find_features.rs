@@ -32,8 +32,9 @@ pub struct FindFeaturesArgs {
     /// also specify --alphabet nucleotide.
     #[arg(long, value_parser = ["all", "unannotated"])]
     pub gene_call: Option<String>,
-    /// Run TMbed transmembrane and signal peptide prediction. Not supported by
-    /// domainatoredux: giving it is an error.
+    /// Run TMbed transmembrane and signal peptide prediction. Its ProtT5 encoder
+    /// (2.4 GB) is downloaded on first use into --tmbed_model_dir, --model_dir/tmbed, or
+    /// the user's cache directory.
     #[arg(long)]
     pub tmbed: bool,
     /// PROSITE motifs to search for, in the syntax of EMBOSS fuzzpro
@@ -44,20 +45,21 @@ pub struct FindFeaturesArgs {
     /// underscores).
     #[arg(long, num_args = 1..)]
     pub motif: Option<Vec<String>>,
-    /// Batch size for sequence processing. Accepted for compatibility with upstream,
-    /// where only TMbed uses it.
+    /// Batch size for sequence processing: TMbed predicts groups of at least this many
+    /// proteins, embedding them in batches of about this many residues.
     #[arg(long, default_value_t = 4000, allow_negative_numbers = true)]
     pub batch_size: i64,
-    /// For models that can use GPU acceleration, the device to run on. Accepted for
-    /// compatibility with upstream, where only TMbed uses it.
+    /// For models that can use GPU acceleration, the device to run on: 'cuda:0' (or
+    /// another CUDA device, or 'metal') or 'None' for the CPU. A GPU this build or
+    /// machine lacks falls back to the CPU with a warning.
     #[arg(long, default_value = "cuda:0")]
     pub device: String,
-    /// Base directory for algorithm model weights. Accepted for compatibility with
-    /// upstream, where only TMbed uses it.
+    /// Base directory for algorithm model weights: TMbed's go in its tmbed
+    /// subdirectory. Must exist.
     #[arg(long)]
     pub model_dir: Option<String>,
-    /// Directory for TMbed's ProtT5 encoder model. Accepted for compatibility with
-    /// upstream, where only TMbed uses it.
+    /// Directory for TMbed's ProtT5 encoder model (overrides --model_dir), laid out as
+    /// TMbed's own --model-dir.
     #[arg(long)]
     pub tmbed_model_dir: Option<String>,
     /// Which CDSs/proteins to annotate, by fragment status (partial proteins). include:

@@ -84,6 +84,33 @@ newer) when you run those modules:
 DOMAINATOREDUX_ORPHOS=/path/to/orphos scripts/parity/differential.py --only domainate --only domain_search
 ```
 
+`domainate --foldseek` needs foldseek on `PATH` and foldseek's ProstT5 weights
+(`foldseek databases ProstT5 prostt5_weights tmp`, 2.2 GB). Its three `extra:` rows name
+the weights `@PROSTT5@`, substituted from `$DOMAINATOREDUX_PROSTT5`; with the variable
+unset they are harness errors, not `skipped`, since both sides would reject a missing
+directory and sweep green. ProstT5 output is the same at any thread count, so the rows are
+byte-identical. They run ProstT5 on the CPU: a GPU run is repeatable and identical between
+the two sides, but scores a few bits differently from a CPU run.
+
+`find_features --tmbed` needs an env with TMbed, which the parity env does not carry, so
+there Python rejects those invocations and they sweep as `skipped` (the Rust side is not
+started for an invocation Python rejected, so it never downloads the model). To compare
+them, build an env with CPU PyTorch, `transformers<5` and TMbed at upstream's pin, point
+`$DOMAINATOREDUX_TMBED_MODEL_DIR` at a ProtT5 directory (`python -m tmbed download
+--model-dir DIR` fills one; the `extra:` rows name it `@TMBED@`), and give the harvested
+rows, which name no model directory, one in the default place: TMbed's package directory
+for Python, `$XDG_CACHE_HOME/domainatoredux/tmbed` for Rust. Use a release build, since
+debug candle is very slow:
+
+```bash
+mkdir -p /tmp/xdg/domainatoredux && ln -sfn "$DIR" /tmp/xdg/domainatoredux/tmbed
+XDG_CACHE_HOME=/tmp/xdg DOMAINATOREDUX_TMBED_MODEL_DIR="$DIR" scripts/parity/differential.py \
+  --python /path/to/tmbed-env/bin/python --rust target/release/domainatoredux --only find_features
+```
+
+All 15 find_features invocations are byte-identical on the CPU: the reimplementation's
+class probabilities are within 1e-6 of TMbed's, and the scores are written to one decimal.
+
 ## The pieces
 
 | path | role |

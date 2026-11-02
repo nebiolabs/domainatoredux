@@ -387,8 +387,19 @@ def run_one(row, cfg, helpers, SeqIO):
         os.makedirs(py_dir)
         os.makedirs(rs_dir)
 
+        for token, var, what in (("@PROSTT5@", "DOMAINATOREDUX_PROSTT5",
+                                  "foldseek's ProstT5 weights directory"),
+                                 ("@TMBED@", "DOMAINATOREDUX_TMBED_MODEL_DIR",
+                                  "TMbed's ProtT5 model directory")):
+            if any(token in a for a in argv) and not os.environ.get(var):
+                # Both sides would reject a missing directory, which would sweep as
+                # `skipped`; an unset variable must fail instead.
+                return "error", f"set ${var} to {what}"
+
         def substitute(arg, out_dir):
             return (arg.replace("@DATA@", cfg.data_dir)
+                       .replace("@PROSTT5@", os.environ.get("DOMAINATOREDUX_PROSTT5", ""))
+                       .replace("@TMBED@", os.environ.get("DOMAINATOREDUX_TMBED_MODEL_DIR", ""))
                        .replace("@GEN@", cfg.gen_dir or "@GEN@")
                        .replace("@TMP@", out_dir)
                        .replace("@OUT@", os.path.join(out_dir, "out")))
@@ -405,6 +416,13 @@ def run_one(row, cfg, helpers, SeqIO):
             py = subprocess.run([cfg.python, "-m", "domainator", module] + py_argv,
                                 capture_output=True, timeout=cfg.timeout, cwd=py_dir,
                                 stdin=subprocess.DEVNULL, env={**cfg.py_env, "TZ": "UTC"})
+            if py.returncode != 0:
+                # Upstream rejected its own invocation -- it depends on state an
+                # earlier step in the same test function set up, on a fixture the
+                # harvester could not resolve, or on an optional package (TMbed) the
+                # env lacks. Nothing to compare, so the Rust side is not run either: it
+                # might do real work, such as downloading TMbed's model.
+                return "skipped", "python rejected the invocation"
             rs = subprocess.run([cfg.rust, module] + rs_argv,
                                 capture_output=True, timeout=cfg.timeout, cwd=rs_dir,
                                 stdin=subprocess.DEVNULL)
@@ -413,11 +431,6 @@ def run_one(row, cfg, helpers, SeqIO):
         except Exception as exc:
             return "error", f"{type(exc).__name__}: {exc}"[:110]
 
-        if py.returncode != 0:
-            # Upstream rejected its own invocation -- it depends on state an
-            # earlier step in the same test function set up, or on a fixture the
-            # harvester could not resolve. Nothing to compare.
-            return "skipped", "python rejected the invocation"
         if rs.returncode != 0:
             return "rust-failed", _rust_error(rs)
 

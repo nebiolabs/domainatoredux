@@ -38,6 +38,8 @@ domainate = "domainate"
 # `p7_tophits_ComputeNhmmerEvalues`.
 alph = "alph"
 lod = "lod"
+# candle's `VarBuilder::from_mmaped_safetensors`.
+mmaped = "mmaped"
 evalues = "evalues"
 # The BLOSUM substitution matrices.
 blosum = "blosum"

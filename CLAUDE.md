@@ -234,11 +234,20 @@ Search numerics need **not** match pyhmmer exactly — `hmmer-pure-rs` is a diff
 
 ## Architecture
 
-Virtual Cargo workspace: three library/binary crates plus two Tauri apps and one
+Virtual Cargo workspace: four library/binary crates plus two Tauri apps and one
 WASM app.
 
 - **`crates/domainator-core/`** — the data model, all I/O, and all tool logic as library functions (GUI-reusable; mirrors the Python convention that every tool is also a library function). Also holds `app_support/` — the GUI-facing seam (workspace file classification, provenance/job DAG, contig view + edit, HMM logo, summary stats).
 - **`crates/domainator-config/`** — the interface: the 1.0 layer (`args/`, `registry.rs`, `manifest.rs`, `config_file.rs`, `columns.rs`, `tool_manifest`).
+- **`crates/domainator-plm/`** — protein language model inference on candle (pure Rust
+  on the CPU; `cuda`/`metal` features, forwarded by core, the CLI and the GUI): the T5
+  encoder and TMbed (`find_features --tmbed`; see `UPSTREAM.md`, "TMbed"). Core pulls it
+  in with its `plm` feature, re-exported as `domainator_core::plm`; model download is
+  core's (`tools/tmbed_model.rs`, behind `network`). Its parity guard without the 2.4 GB
+  model is `tests/tmbed_goldens.rs`: TMbed's own CNN and decoder outputs, written by
+  `scripts/tmbed/make_assets.py`; the encoder is checked end to end by the find_features
+  sweep run with a TMbed env, and by `scripts/tmbed/tmbed_probe.py` vs
+  `examples/tmbed_probe.rs` (`compare_probes.py`).
 - **`crates/domainator-cli/`** — thin clap front-end; arg parsing + I/O wiring only, calls into core. Binary name `domainatoredux` (upstream's is `domainator`; the subcommand names are identical).
 - **`apps/domainatoredux-gui/`** — the Tauri v2 + Svelte 5 desktop app: manifest-driven tool dialogs, a workspace/job model, and a dozen viewers (contig, SSN, matrix report, enum report, HMM logo, summary dashboard, …). Its Rust side is a thin `#[tauri::command]` layer over `app_support`.
 - **`apps/genbank-summary/`** and **`wasm_apps/genbank-summary/`** — a small standalone Tauri app and its browser/WASM twin.
@@ -340,7 +349,8 @@ edge count *and* component count, sampled across the table, **on a matrix with d
 groups**. Ties are exactly where the old per-MST-edge keying was wrong, and a probe-vs-probe
 comparison alone would happily reproduce the same misunderstanding on both sides.
 
-Deferred (per plan / no clean path, all tracked in `UPSTREAM.md`): ESM and
-`find_features --tmbed` (torch), `domainate --foldseek` (ESM-2 in-process),
+Deferred (per plan / no clean path, all tracked in `UPSTREAM.md`): ESM
+(`domainate --esm2_3di_weights`, ESM-2 3B in PyTorch; `--foldseek` itself runs through
+foldseek's ProstT5, `search/foldseek.rs`),
 and `build_projection --algorithm tsne|umap` (stochastic, so
 no parity target; the CLI refuses them, `deferred:projection-umap-tsne`).

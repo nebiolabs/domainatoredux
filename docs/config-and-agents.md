@@ -90,8 +90,9 @@ choices here, with these exceptions:
 
 - tools upstream has and this port does not (`db_download`;
   see [Porting status](porting-status.md));
-- options of ported tools that are not ported, such as `domainate --foldseek`. They are
-  absent from this manifest, but a config file may still name one at its upstream default;
+- options of ported tools that are not ported. None remain: `domainate
+  --esm2_3di_weights`, which needs PyTorch, is in the manifest, and domainate refuses it
+  when it is used;
 - `gene_call`, `inspect` and `convert`, which upstream does not have (`inspect` and
   `convert` take no config and are not in the manifest).
 

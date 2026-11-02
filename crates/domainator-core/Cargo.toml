@@ -33,8 +33,15 @@ glob.workspace = true
 # `network`: fetching NCBI's taxdump (`seq::taxonomy_download`).
 ureq = { workspace = true, optional = true }
 md-5 = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+# `plm`: protein language models (`find_features --tmbed`).
+domainator-plm = { path = "../domainator-plm", optional = true }
 
 [features]
 # Downloads over HTTPS (the NCBI taxdump). Off by default so the library carries no
 # HTTP/TLS client unless a front end asks for one; the CLI turns it on.
-network = ["dep:ureq", "dep:md-5"]
+network = ["dep:ureq", "dep:md-5", "dep:sha2"]
+# Protein language models on candle (TMbed), CPU by default; `cuda`/`metal` add GPUs.
+plm = ["dep:domainator-plm"]
+cuda = ["plm", "domainator-plm/cuda"]
+metal = ["plm", "domainator-plm/metal"]

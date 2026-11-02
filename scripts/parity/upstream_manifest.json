@@ -155,6 +155,27 @@
      "type": "string"
     },
     {
+     "default": null,
+     "flags": [
+      "--prostt5_weights"
+     ],
+     "kind": "path",
+     "name": "prostt5_weights",
+     "required": false,
+     "role": "directory",
+     "type": "string"
+    },
+    {
+     "default": "cpu",
+     "flags": [
+      "--prostt5_device"
+     ],
+     "kind": "value",
+     "name": "prostt5_device",
+     "required": false,
+     "type": "string"
+    },
+    {
      "default": "cpu",
      "flags": [
       "--foldseek_device"

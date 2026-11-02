@@ -1,7 +1,7 @@
 # GUI dialog for `domainatoredux find_features`. Format: see README.md in this directory.
 id: find_features
-label: "Find features (motifs)"
-description: "Annotate each protein and CDS with matches to PROSITE motifs."
+label: "Find features (motifs, TMbed)"
+description: "Annotate each protein and CDS with PROSITE motif matches, and transmembrane regions and signal peptides (TMbed)."
 fields:
   - name: input
     label: "Input sequences"
@@ -16,6 +16,12 @@ fields:
   - name: motif
     label: "PROSITE motifs"
     help: "One or more PROSITE patterns, comma-separated, e.g. C-x(2)-C, [DE](2)HS{P}. Each match is a Domainator feature named after its pattern."
+  - name: tmbed
+    label: "TMbed"
+    help: "Predict transmembrane beta strands and alpha helices, and signal peptides, with TMbed. The first run downloads its ProtT5 model (2.4 GB) to your cache folder. Expect a few seconds per protein on a CPU."
+  - name: device
+    label: "TMbed device"
+    help: "cuda:0 (or another CUDA device, or metal) to run TMbed on a GPU, None for the CPU. A GPU this build or machine lacks falls back to the CPU."
   - name: gene_call
     label: "Gene calling"
     help: "Call genes with Orphos (Tools → External tools) before searching: all re-calls every nucleotide contig, unannotated only those with no CDS."
@@ -28,15 +34,9 @@ fields:
   - name: cpu
     show: false
     label: "Cpu"
-  - name: tmbed
-    show: false
-    label: "TMbed"
   - name: batch_size
     show: false
     label: "Batch size"
-  - name: device
-    show: false
-    label: "Device"
   - name: model_dir
     show: false
     label: "Model folder"

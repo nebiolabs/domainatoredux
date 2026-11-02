@@ -1,12 +1,14 @@
 //! `find_features`: annotate each CDS or protein with features found by an algorithm
-//! rather than a reference search. Port of upstream `find_features.py`, less TMbed.
+//! rather than a reference search. Port of upstream `find_features.py`.
 //!
-//! The algorithm ported is `--motif`: PROSITE patterns, each match a `Domainator`
-//! feature with program and database `MOTIF`, score and identity 100 and e-value 0.
-//! Records are cleaned as `domainate` cleans them (a `cds_id` and an on-contig
-//! translation on every CDS) and, with `--gene_call`, get genes called first, so a run
-//! with no motif still normalizes the translations. TMbed (`--tmbed`) runs a protein
-//! language model upstream and is refused here (see [`TMBED_UNSUPPORTED`]).
+//! Two algorithms: `--motif`, PROSITE patterns, each match a `Domainator` feature with
+//! program and database `MOTIF`, score and identity 100 and e-value 0; and `--tmbed`,
+//! TMbed's transmembrane strands and helices and signal peptides (`domainator-plm`,
+//! with the `plm` feature), each region a `Domainator` feature with program and database
+//! `TMbed`, its score and identity the region's mean probability in percent, and a
+//! pseudo e-value `exp(-score)`. Records are cleaned as `domainate` cleans them (a
+//! `cds_id` and an on-contig translation on every CDS) and, with `--gene_call`, get
+//! genes called first, so a run with neither still normalizes the translations.
 
 use regex::Regex;
 
@@ -19,12 +21,6 @@ use crate::tools::gene_call::{call_genes, clear_cds_annotations, GeneCall, GeneC
 use crate::tools::select_common::BooleanEvaluator;
 use crate::DOMAIN_FEATURE_NAME;
 
-/// Why `--tmbed` is refused: upstream runs TMbed (ProtT5 embeddings and a CNN) in
-/// process through torch, which this port does not carry.
-pub const TMBED_UNSUPPORTED: &str = "--tmbed is not supported by domainatoredux: TMbed runs \
-    a protein language model through torch. Run upstream's `domainator find_features \
-    --tmbed` with its optional TMbed package installed, then use the annotated file here.";
-
 #[derive(Default)]
 pub struct FindFeaturesOptions {
     /// PROSITE patterns to search every protein and CDS translation for.
@@ -34,6 +30,17 @@ pub struct FindFeaturesOptions {
     pub partial: Partial,
     /// Call genes before searching (upstream `prodigal_CDS_annotate`).
     pub gene_call: Option<GeneCall>,
+    /// Run TMbed (`--tmbed`).
+    #[cfg(feature = "plm")]
+    pub tmbed: Option<TmbedRun>,
+}
+
+/// A loaded TMbed and its `--batch_size`: upstream's sequences per group of records,
+/// and TMbed's residue budget per encoder batch.
+#[cfg(feature = "plm")]
+pub struct TmbedRun {
+    pub model: domainator_plm::tmbed::Tmbed,
+    pub batch_size: i64,
 }
 
 /// A compiled motif: the pattern (the features' description), its feature name, and
@@ -87,7 +94,190 @@ pub fn find_features(
             annotate_motifs(rec, &motifs, opts.partial);
         }
     }
+    #[cfg(feature = "plm")]
+    if let Some(run) = &opts.tmbed {
+        annotate_tmbed(&mut records, run, opts.partial)?;
+    }
     Ok(records)
+}
+
+/// The proteins `find_features` annotates in `rec`, as `(CDS feature index, sequence)`:
+/// the record's own sequence (`None`) for a protein record, else each CDS translation,
+/// in feature order; fragments as `partial` allows.
+fn annotated_proteins(rec: &SeqRecord, partial: Partial) -> Vec<(Option<usize>, String)> {
+    if rec.is_protein() {
+        if partial.allows(record_fragment_status(rec)) {
+            return vec![(None, String::from_utf8_lossy(&rec.seq).into_owned())];
+        }
+        return Vec::new();
+    }
+    rec.features
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.kind == "CDS" && partial.allows(feature_fragment_status(f)))
+        .filter_map(|(i, f)| f.get_first("translation").map(|t| (Some(i), t.to_string())))
+        .collect()
+}
+
+/// A feature for `start..end` of the protein: on a protein record, that range; on a
+/// nucleotide record, mapped through CDS `cds_index`'s location, or `None` (with a
+/// warning) where it cannot be (upstream `add_feature_annotations`).
+fn place_feature(
+    rec: &SeqRecord,
+    cds_index: Option<usize>,
+    mut feature: SeqFeature,
+    start: i64,
+    end: i64,
+) -> Option<SeqFeature> {
+    match cds_index {
+        None => {
+            feature.location = crate::seq::location::Location::range(start, end, 1);
+            Some(feature)
+        }
+        Some(i) => {
+            let cds = &rec.features[i];
+            let offset = codon_offset(cds) + start * 3;
+            let Some(location) = overlay(&cds.location, offset, (end - start) * 3) else {
+                crate::log::warn(format_args!(
+                    "Could not overlay location for {} on {}. Skipping annotation.",
+                    feature.get_first("name").unwrap_or_default(),
+                    rec.id
+                ));
+                return None;
+            };
+            feature.location = location;
+            Some(feature)
+        }
+    }
+}
+
+/// TMbed's regions on every protein and CDS translation (upstream `_process_batch`):
+/// records are taken in groups holding at least `batch_size` proteins, as upstream
+/// groups them, and each group's distinct sequences predicted together.
+#[cfg(feature = "plm")]
+fn annotate_tmbed(
+    records: &mut [SeqRecord],
+    run: &TmbedRun,
+    partial: Partial,
+) -> std::io::Result<()> {
+    use std::collections::HashMap;
+
+    let threshold = usize::try_from(run.batch_size).unwrap_or(0);
+    let mut start = 0;
+    while start < records.len() {
+        let mut end = start;
+        let mut proteins: Vec<Vec<(Option<usize>, String)>> = Vec::new();
+        let mut count = 0;
+        while end < records.len() {
+            let found = annotated_proteins(&records[end], partial);
+            count += found.len();
+            proteins.push(found);
+            end += 1;
+            if count >= threshold {
+                break;
+            }
+        }
+        let mut distinct: Vec<&str> = Vec::new();
+        let mut index: HashMap<&str, usize> = HashMap::new();
+        for (_, seq) in proteins.iter().flatten() {
+            index.entry(seq.as_str()).or_insert_with(|| {
+                distinct.push(seq.as_str());
+                distinct.len() - 1
+            });
+        }
+        let predictions = if distinct.is_empty() {
+            Vec::new()
+        } else {
+            run.model
+                .predict(&distinct, run.batch_size)
+                .map_err(|e| std::io::Error::other(format!("TMbed failed: {e}")))?
+        };
+        for (rec, found) in records[start..end].iter_mut().zip(&proteins) {
+            let mut added = Vec::new();
+            for (cds_index, seq) in found {
+                let prediction = &predictions[index[seq.as_str()]];
+                let cds_id = cds_id(rec, *cds_index);
+                for region in tmbed_regions(&prediction.labels, &prediction.probabilities) {
+                    let feature = region_feature(&region, &cds_id);
+                    added.extend(place_feature(
+                        rec,
+                        *cds_index,
+                        feature,
+                        region.start,
+                        region.end,
+                    ));
+                }
+            }
+            rec.features.extend(added);
+        }
+        start = end;
+    }
+    Ok(())
+}
+
+/// A TMbed region: a run of one transmembrane or signal peptide label.
+#[cfg(feature = "plm")]
+#[derive(Debug, PartialEq)]
+struct TmbedRegion {
+    name: &'static str,
+    desc: &'static str,
+    /// The region's mean probability of its class, in percent.
+    score: f64,
+    start: i64,
+    end: i64,
+}
+
+/// Upstream `parse_tmbed_predictions`: runs of the same label among B, b, H, h and S
+/// (inside and outside are not reported), each scored by its class's mean probability
+/// (beta strands B, helices H, signal peptides S; `_create_feature_result`).
+#[cfg(feature = "plm")]
+fn tmbed_regions(labels: &[u8], probabilities: &[[f32; 5]]) -> Vec<TmbedRegion> {
+    let mut regions = Vec::new();
+    let mut start = 0;
+    while start < labels.len() {
+        let label = labels[start];
+        let mut end = start + 1;
+        while end < labels.len() && labels[end] == label {
+            end += 1;
+        }
+        let kind = match label {
+            0 | 1 => Some(("transmembrane_beta_strand", "transmembrane beta strand", 0)),
+            2 | 3 => Some(("transmembrane_alpha_helix", "transmembrane alpha helix", 1)),
+            4 => Some(("signal_peptide", "signal peptide", 2)),
+            _ => None,
+        };
+        if let Some((name, desc, class)) = kind {
+            let sum: f64 = probabilities[start..end]
+                .iter()
+                .map(|p| f64::from(p[class]))
+                .sum();
+            regions.push(TmbedRegion {
+                name,
+                desc,
+                score: sum / (end - start) as f64 * 100.0,
+                start: start as i64,
+                end: end as i64,
+            });
+        }
+        start = end;
+    }
+    regions
+}
+
+/// The feature for a TMbed region, before it is placed: score and identity the
+/// region's probability score, e-value `exp(-score)` (upstream `score_to_pseudo_evalue`).
+#[cfg(feature = "plm")]
+fn region_feature(region: &TmbedRegion, cds_id: &str) -> SeqFeature {
+    exact_feature(
+        region.name,
+        region.desc,
+        "TMbed",
+        region.score,
+        (-region.score).exp(),
+        region.start,
+        region.end,
+        cds_id,
+    )
 }
 
 /// Add a `Domainator` feature for every motif match in `rec`'s protein, or in each of
@@ -95,41 +285,25 @@ pub fn find_features(
 /// `_process_batch` and `add_feature_annotations`).
 fn annotate_motifs(rec: &mut SeqRecord, motifs: &[Motif], partial: Partial) {
     let mut added: Vec<SeqFeature> = Vec::new();
-    if rec.is_protein() {
-        if partial.allows(record_fragment_status(rec)) {
-            let seq = String::from_utf8_lossy(&rec.seq).into_owned();
-            let cds_id = format!("0_1_{}", rec.seq.len());
-            for (motif, start, end) in matches(motifs, &seq) {
-                let mut f = motif_feature(motif, start, end, &cds_id);
-                f.location = crate::seq::location::Location::range(start, end, 1);
-                added.push(f);
-            }
-        }
-    } else {
-        for cds in &rec.features {
-            let Some(translation) = cds.get_first("translation") else {
-                continue;
-            };
-            if cds.kind != "CDS" || !partial.allows(feature_fragment_status(cds)) {
-                continue;
-            }
-            let cds_id = cds.get_first("cds_id").unwrap_or(".");
-            for (motif, start, end) in matches(motifs, translation) {
-                let offset = codon_offset(cds) + start * 3;
-                let Some(location) = overlay(&cds.location, offset, (end - start) * 3) else {
-                    crate::log::warn(format_args!(
-                        "Could not overlay location for {} on {}. Skipping annotation.",
-                        motif.name, rec.id
-                    ));
-                    continue;
-                };
-                let mut f = motif_feature(motif, start, end, cds_id);
-                f.location = location;
-                added.push(f);
-            }
+    for (cds_index, seq) in annotated_proteins(rec, partial) {
+        let cds_id = cds_id(rec, cds_index);
+        for (motif, start, end) in matches(motifs, &seq) {
+            let feature = motif_feature(motif, start, end, &cds_id);
+            added.extend(place_feature(rec, cds_index, feature, start, end));
         }
     }
     rec.features.extend(added);
+}
+
+/// The `cds_id` of a feature on CDS `cds_index`, or on the whole protein record.
+fn cds_id(rec: &SeqRecord, cds_index: Option<usize>) -> String {
+    match cds_index {
+        None => format!("0_1_{}", rec.seq.len()),
+        Some(i) => rec.features[i]
+            .get_first("cds_id")
+            .unwrap_or(".")
+            .to_string(),
+    }
 }
 
 /// Every match of every motif in `seq`, motif by motif, as `(motif, start, end)`.
@@ -145,22 +319,48 @@ fn matches<'a>(motifs: &'a [Motif], seq: &str) -> Vec<(&'a Motif, i64, i64)> {
 }
 
 /// The feature for one motif match: an exact match, so score and identity 100 and
-/// e-value 0, with no reference profile, so `rstart`/`rend`/`rlen` are `.`.
+/// e-value 0.
 fn motif_feature(motif: &Motif, start: i64, end: i64, cds_id: &str) -> SeqFeature {
-    let hit = SearchResult {
-        name: motif.name.clone(),
-        desc: motif.pattern.clone(),
-        acc: String::new(),
-        evalue: 0.0,
-        score: 100.0,
+    exact_feature(
+        &motif.name,
+        &motif.pattern,
+        "MOTIF",
+        100.0,
+        0.0,
         start,
         end,
-        database: "MOTIF".into(),
-        identity: 100.0,
+        cds_id,
+    )
+}
+
+/// A `Domainator` feature from an algorithm rather than a reference: `program` is
+/// also its database, its identity is its score, and with no reference profile
+/// `rstart`/`rend`/`rlen` are `.`.
+#[allow(clippy::too_many_arguments)] // upstream's FeatureResult fields, one per argument
+fn exact_feature(
+    name: &str,
+    desc: &str,
+    program: &str,
+    score: f64,
+    evalue: f64,
+    start: i64,
+    end: i64,
+    cds_id: &str,
+) -> SeqFeature {
+    let hit = SearchResult {
+        name: name.to_string(),
+        desc: desc.to_string(),
+        acc: String::new(),
+        evalue,
+        score,
+        start,
+        end,
+        database: program.to_string(),
+        identity: score,
         rstart: 0,
         rend: 0,
         rlen: 0,
-        program: "MOTIF".into(),
+        program: program.to_string(),
         strand: 1,
         tmscore: None,
         lddt: None,
@@ -179,6 +379,58 @@ mod tests {
     use super::*;
     use crate::seq::location::Location;
     use crate::seq::{Annotations, Topology};
+
+    /// Upstream `parse_tmbed_predictions`: one region per run of B/b, H/h or S (b and B
+    /// are separate runs), inside and outside skipped, scored by the class's mean.
+    #[cfg(feature = "plm")]
+    #[test]
+    fn tmbed_regions_are_runs_scored_by_their_class() {
+        let p = |b: f32, h: f32, s: f32| [b, h, s, 0.0, 0.0];
+        let labels = [4, 4, 5, 2, 2, 3, 6, 0];
+        let probabilities = [
+            p(0.0, 0.0, 0.9),
+            p(0.0, 0.0, 0.7),
+            p(0.0, 0.0, 0.0),
+            p(0.0, 0.5, 0.0),
+            p(0.0, 1.0, 0.0),
+            p(0.0, 0.25, 0.0),
+            p(0.0, 0.0, 0.0),
+            p(0.5, 0.0, 0.0),
+        ];
+        let regions = tmbed_regions(&labels, &probabilities);
+        let summary: Vec<(&str, i64, i64, f64)> = regions
+            .iter()
+            .map(|r| (r.name, r.start, r.end, r.score))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                (
+                    "signal_peptide",
+                    0,
+                    2,
+                    (0.9f32 as f64 + 0.7f32 as f64) / 2.0 * 100.0
+                ),
+                ("transmembrane_alpha_helix", 3, 5, 75.0),
+                ("transmembrane_alpha_helix", 5, 6, 25.0),
+                ("transmembrane_beta_strand", 7, 8, 50.0),
+            ]
+        );
+        let f = region_feature(&regions[1], "0_1_8");
+        let q = |k| f.get_first(k).unwrap().to_string();
+        assert_eq!(
+            [
+                q("program"),
+                q("database"),
+                q("score"),
+                q("identity"),
+                q("evalue")
+            ],
+            ["TMbed", "TMbed", "75.0", "75.0", "2.7e-33"]
+        );
+        assert_eq!(q("description"), "transmembrane alpha helix");
+        assert_eq!([q("rstart"), q("rlen")], [".", "."]);
+    }
 
     /// Upstream `sanitize_motif_name` on the patterns its help and tests use.
     #[test]

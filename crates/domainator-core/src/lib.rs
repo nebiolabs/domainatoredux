@@ -18,6 +18,10 @@ pub mod text_plot;
 pub mod tools;
 pub mod version;
 
+/// Protein language models (`find_features --tmbed`), with the `plm` feature.
+#[cfg(feature = "plm")]
+pub use domainator_plm as plm;
+
 /// Feature type for domain annotations added by domainate/domain_search
 /// (`DOMAIN_FEATURE_NAME` in the Python `domainator/__init__.py`).
 pub const DOMAIN_FEATURE_NAME: &str = "Domainator";

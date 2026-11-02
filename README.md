@@ -25,7 +25,7 @@ Download from the [Releases page](https://github.com/nebiolabs/domainatoredux/re
 | Windows (x64) | NSIS installer | `domainatoredux.exe` |
 | Linux (x64) | `.deb`, `.AppImage` | `domainatoredux` |
 
-Or build it — you need [Rust](https://rustup.rs/) 1.89+ and nothing else:
+Or build it — you need [Rust](https://rustup.rs/) 1.94+ and nothing else:
 
 ```bash
 cargo build --release -p domainator-cli
@@ -141,7 +141,9 @@ upstream's test suite through both implementations and diffs the results — see
 [the parity harness](docs/parity.md) — and per-tool coverage, including what is
 deliberately not ported, is tracked in [Porting status](docs/porting-status.md).
 
-Not ported: anything depending on torch. Gene calling runs Prodigal's
+Upstream's PyTorch models run without PyTorch: TMbed (`find_features --tmbed`) is
+reimplemented in Rust, and `domainate --foldseek` predicts 3Di with foldseek's built-in
+ProstT5 instead of ESM-2 3B 3Di. Gene calling runs Prodigal's
 algorithm through the external [Orphos](https://github.com/FullHuman/orphos) binary, and
 the structure tools run [foldseek](https://github.com/steineggerlab/foldseek) or
 [reseek](https://github.com/rcedgar/reseek).

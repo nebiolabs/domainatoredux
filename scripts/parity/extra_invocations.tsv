@@ -4,7 +4,11 @@
 # their inputs at test time, or loop over --partial values, so their `main([...])`
 # calls either name files that never exist or do not resolve. `@GEN@` is the
 # directory `generated_fixtures.py` fills once per sweep (upstream's own helpers);
-# `@DATA@` and `@TMP@` are as in the harvest. Keys are `extra:<upstream test>#<n>`, and
+# `@DATA@` and `@TMP@` are as in the harvest. `@PROSTT5@` is `$DOMAINATOREDUX_PROSTT5`,
+# foldseek's ProstT5 weights directory (`foldseek databases ProstT5`); upstream's own
+# test reads it from `$DOMAINATOR_PROSTT5_WEIGHTS`, so the harvester cannot see it.
+# `@TMBED@` is `$DOMAINATOREDUX_TMBED_MODEL_DIR`, TMbed's ProtT5 model directory (upstream:
+# `$DOMAINATOR_TMBED_MODEL_DIR`); its rows need `--python` to be an env with TMbed. Keys are `extra:<upstream test>#<n>`, and
 # `known_gaps.tsv` tracks them like any other invocation.
 domainate	extra:test_domainate_partial_cds_codon_start#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb
 domainate	extra:test_domainate_partial_filter#0	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-r	@GEN@/partial_cds.hmm	-o	@TMP@/out.gb	--partial	include
@@ -233,3 +237,10 @@ find_features	extra:find_features_motifs#1	extra_invocations.tsv	-i	@DATA@/FeSOD
 find_features	extra:find_features_motifs#2	extra_invocations.tsv	-i	@DATA@/bacillus_phage_SPR_with_annotations.gb	--motif	K-K	L-x-L	<M	W>	-o	@TMP@/out.gb
 find_features	extra:find_features_motifs#3	extra_invocations.tsv	-i	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb
 find_features	extra:find_features_gene_call#0	extra_invocations.tsv	-i	@DATA@/pDONR201_multi_genemark_domainator.gb	--gene_call	all	--motif	C-x(2)-C	-o	@TMP@/out.gb
+domainate	extra:test_domainate_foldseek_prostt5#0	extra_invocations.tsv	-i	@DATA@/foldseek/FeSOD_20.fasta	--foldseek	@DATA@/foldseek/FeSOD	--prostt5_weights	@PROSTT5@	--cpu	2	-o	@TMP@/out.gb
+domainate	extra:test_domainate_foldseek_prostt5#1	extra_invocations.tsv	-i	@DATA@/foldseek/FeSOD_20.fasta	--foldseek	@DATA@/foldseek/FeSOD	--prostt5_weights	@PROSTT5@	--cpu	2	-o	@TMP@/out.gb	-e	1e-25	--min_evalue	1e-60	--max_hits_per_cds	5	--fasta_out	@TMP@/out.fasta
+domainate	extra:test_domainate_foldseek_prostt5#2	extra_invocations.tsv	-i	@DATA@/FeSOD_20.gb	--foldseek	@DATA@/foldseek/FeSOD	--prostt5_weights	@PROSTT5@	-r	@DATA@/FeSOD_pfam.hmm	--cpu	2	-o	@TMP@/out.gb
+find_features	extra:test_find_features_tmbed_membrane_proteins#0	extra_invocations.tsv	-i	@DATA@/tmbed/tm_proteins.fasta	-o	@TMP@/out.gb	--tmbed	--device	None	--tmbed_model_dir	@TMBED@
+find_features	extra:test_find_features_tmbed_cds_regions_lie_in_their_cds#0	extra_invocations.tsv	-i	@DATA@/tmbed/tm_contigs.gb	-o	@TMP@/out.gb	--tmbed	--device	None	--tmbed_model_dir	@TMBED@
+find_features	extra:find_features_tmbed#0	extra_invocations.tsv	-i	@DATA@/tmbed/tm_proteins.fasta	@DATA@/FeSOD_20.fasta	-o	@TMP@/out.gb	--fasta_out	@TMP@/out.fasta	--tmbed	--motif	N-{P}-[ST]-{P}	--device	None	--tmbed_model_dir	@TMBED@	--batch_size	3
+find_features	extra:find_features_tmbed#1	extra_invocations.tsv	-i	@DATA@/tmbed/tm_contigs.gb	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb	--tmbed	--partial	exclude	--device	None	--tmbed_model_dir	@TMBED@

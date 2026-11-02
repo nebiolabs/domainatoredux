@@ -175,6 +175,33 @@ not start them):
 
 Releases are cut by hand from the artifacts.
 
+### GPU builds
+
+`find_features --tmbed` runs its protein language model with candle
+(`crates/domainator-plm`): on the CPU in every build, and on a GPU in a build with the
+`cuda` or `metal` feature (forwarded by core, the CLI and the GUI crate). macOS release
+builds have `metal`. CUDA builds are separate artifacts, `*-cuda`, made when the release
+workflow's `cuda` box is ticked; they need an NVIDIA driver for CUDA 12.4 or newer (550+)
+and run anywhere else on the CPU, as every build does.
+
+A local CUDA build needs, besides the NVIDIA driver:
+
+- an `nvcc` **no newer than the driver's CUDA version** (`nvidia-smi` shows it): candle
+  compiles its kernels to PTX, and a driver older than the toolkit refuses to load it
+  (`CUDA_ERROR_UNSUPPORTED_PTX_VERSION`). candle-kernels' build script does not notice a
+  different `nvcc`, so delete `target/*/build/candle-kernels-*` after switching;
+- a host C++ compiler the toolkit supports (gcc 13 for CUDA 12.4, via `NVCC_CCBIN`), whose
+  headers it can parse: CUDA before 12.9 fails on glibc 2.41's `sinpi`/`cospi`
+  declarations, so on a newer distribution use a conda-forge `gxx` (an older sysroot);
+- `CUDA_COMPUTE_CAP` (75 is Turing; newer GPUs JIT its PTX) when building on a machine
+  without the GPU, and cuBLAS, cuRAND and NVRTC (12.x) on the library path, for linking
+  and at run time.
+
+```bash
+CUDA_COMPUTE_CAP=75 NVCC_CCBIN=/path/to/x86_64-conda-linux-gnu-g++ \
+  cargo build --release -p domainator-cli --features cuda
+```
+
 ## Versioning and releases
 
 The port has **its own SemVer line**, independent of the Python package's numbers. The

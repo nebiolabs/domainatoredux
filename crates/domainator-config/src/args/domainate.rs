@@ -22,6 +22,36 @@ pub struct DomainateArgs {
     /// protein FASTA, nucleotide FASTA and nucleotide HMMs (not Infernal CM files).
     #[arg(short, long, num_args = 1..)]
     pub reference: Option<Vec<String>>,
+    /// Foldseek database files.
+    #[arg(long, num_args = 1..)]
+    pub foldseek: Option<Vec<String>>,
+    /// Checkpoint file for esm2_3Di model. Not supported by domainatoredux, which
+    /// predicts 3Di with ProstT5 (--prostt5_weights); accepted so upstream configs
+    /// load.
+    #[arg(long)]
+    pub esm2_3di_weights: Option<String>,
+    /// Device to use for esm2_3Di model. Accepted for compatibility with upstream,
+    /// where only the esm2_3Di model uses it.
+    #[arg(long, default_value = "cuda:0")]
+    pub esm2_3di_device: String,
+    /// foldseek's ProstT5 weights directory (from 'foldseek databases ProstT5 weights
+    /// tmp'). foldseek then predicts the 3Di sequences with ProstT5, instead of the
+    /// esm2_3Di model.
+    #[arg(long)]
+    pub prostt5_weights: Option<String>,
+    /// Device to run ProstT5 on: 'cpu', or a CUDA device string ('cuda', 'cuda:0',
+    /// ...), which requires a GPU build of foldseek.
+    #[arg(long, default_value = "cpu")]
+    pub prostt5_device: String,
+    /// Device to use for the foldseek search. 'cpu' for a CPU-only search, or a CUDA
+    /// device string ('cuda', 'cuda:0', 'cuda:1', ...) to enable GPU-accelerated
+    /// search. GPU search requires a recent foldseek and a GPU-compatible (padded)
+    /// target database (see 'foldseek makepaddedseqdb').
+    #[arg(long, default_value = "cpu")]
+    pub foldseek_device: String,
+    /// Path to the foldseek executable, if it is not on the PATH.
+    #[arg(long)]
+    pub foldseek_path: Option<String>,
     /// Write the records to this GenBank file. Use - for standard output.
     #[arg(short = 'o', long)]
     pub genbank_out: Option<String>,

@@ -54,3 +54,32 @@ fields:
   - name: max_output_gb
     show: false
     label: "Max output (GB)"
+  # foldseek references (3Di predicted by ProstT5) have no dialog yet: a foldseek
+  # database is a prefix, not a file the workspace lists.
+  - name: foldseek
+    show: false
+    label: "Foldseek databases"
+    file_type: structure
+    sources: workspace_first
+    select: none
+  - name: prostt5_weights
+    show: false
+    label: "ProstT5 weights folder"
+  - name: prostt5_device
+    show: false
+    label: "ProstT5 device"
+  - name: foldseek_device
+    show: false
+    label: "Foldseek device"
+  - name: foldseek_path
+    show: false
+    label: "Foldseek program"
+  - name: esm2_3di_weights
+    show: false
+    label: "ESM-2 3Di weights"
+    file_type: text
+    sources: workspace_first
+    select: none
+  - name: esm2_3di_device
+    show: false
+    label: "ESM-2 3Di device"

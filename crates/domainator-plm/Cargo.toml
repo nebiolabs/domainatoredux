@@ -1,0 +1,23 @@
+[package]
+name = "domainator-plm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Protein language model inference (TMbed) for domainatoredux, on candle."
+
+[lints]
+workspace = true
+
+[dependencies]
+candle-core = "0.11.1"
+candle-nn = "0.11.1"
+
+[features]
+# GPU backends. `cuda` needs the CUDA toolkit (nvcc) at build time and is opt-in;
+# `metal` uses the macOS system frameworks. Without either, models run on the CPU.
+cuda = ["candle-core/cuda", "candle-nn/cuda"]
+metal = ["candle-core/metal", "candle-nn/metal"]
+
+[dev-dependencies]
+serde_json.workspace = true

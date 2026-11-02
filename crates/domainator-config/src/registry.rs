@@ -86,13 +86,6 @@ pub const TOOLS: &[ToolInfo] = &[
     ToolInfo {
         stdin: false,
         required_outputs: Some(&["genbank_out", "fasta_out"]),
-        unsupported: &[
-            ("foldseek", "null"),
-            ("esm2_3di_weights", "null"),
-            ("esm2_3di_device", "\"cuda:0\""),
-            ("foldseek_device", "\"cpu\""),
-            ("foldseek_path", "null"),
-        ],
         ..tool(
             "domainate",
             "annotate",
