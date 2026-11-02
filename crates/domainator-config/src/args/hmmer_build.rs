@@ -8,8 +8,9 @@ use crate::types::Finite;
 pub struct HmmerBuildArgs {
     #[command(flatten)]
     pub common: CommonArgs,
-    /// Path of input msa. Acceptable formats are the same as for hmmbuild. Use - to
-    /// read standard input.
+    /// Path of input msa. Acceptable formats are the same as for hmmbuild. The format
+    /// is guessed from the content, and from the file suffix where the content is
+    /// ambiguous (.a2m, .phys, .pb, .slx). Use - to read standard input.
     #[arg(short, long, required = true)]
     pub input: String,
     /// Write the profile to this hmm file. Writes gzip-compressed output if the path

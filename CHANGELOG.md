@@ -132,6 +132,14 @@ Parity: Python domainator 1.0.0rc1 @ `6c9945a`.
   directory's free space.
 - **`hmmer_build --window_beta`** derives a nucleotide profile's MAXL from a tail mass
   as hmmbuild does (`0` gives 4×M), where it used to be refused.
+- **`hmmer_build` reads every alignment format hmmbuild does**: Clustal (and MUSCLE-style
+  headers), interleaved and sequential PHYLIP, SELEX, A2M and PSI-BLAST, besides Stockholm
+  and aligned FASTA, guessed as Easel guesses them (the first line, then the file's suffix
+  where the content is ambiguous: `.a2m`, `.phys`, `.pb`). PHYLIP names may hold spaces or
+  run into the sequence, and a wider name field is worked out from the data; a space in a
+  SELEX sequence is a gap. A compressed alignment is read decompressed. Each format is read
+  exactly as `domainator` reads it, so an alignment builds the same profile whatever its
+  format.
 - **GenBank COMMENT lines are read as Biopython reads them**: without trailing spaces,
   blank lines skipped, and the structured comment split out even when its lines are
   padded, as NCBI pads them. Such a record used to be written back with its structured

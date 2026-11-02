@@ -931,8 +931,11 @@ plain gzip when `-o` ends in `.gz` and refuse `.bgz`, which HMMER cannot read â€
 
 ### `hmmer_build`
 
-Build a profile from a multiple sequence alignment, **Stockholm** or **aligned FASTA**
-(told apart by the first line; `-i -` reads standard input). `--name` is required.
+Build a profile from a multiple sequence alignment in any format hmmbuild reads:
+Stockholm, aligned FASTA, Clustal, PHYLIP, SELEX, A2M or PSI-BLAST. The format is guessed
+from the first line, and from the file's suffix where the content is ambiguous (`.a2m`
+for A2M, `.phys` for sequential PHYLIP, `.pb` for PSI-BLAST); `-i -` reads standard
+input, whose format comes from the content alone. `--name` is required.
 `--acc` and `--desc` set the accession and description, `--alphabet` overrides alphabet
 detection, and `--window_length` (or `--window_beta`, a tail mass to derive it from)
 applies to nucleotide models. The profile goes to
@@ -941,8 +944,6 @@ applies to nucleotide models. The profile goes to
 ```bash
 domainatoredux hmmer_build -i alignment.sto -o profile.hmm --name MyDomain --desc "My domain"
 ```
-
-Upstream reads every format hmmbuild does; this port reads those two.
 
 ### `infernal_build`
 

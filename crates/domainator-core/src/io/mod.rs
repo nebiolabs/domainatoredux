@@ -6,6 +6,7 @@ pub mod bgzf;
 pub mod didx;
 pub mod fasta;
 pub mod genbank;
+pub mod msa_formats;
 pub mod newick;
 pub mod partition;
 pub mod python_json;

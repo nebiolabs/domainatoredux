@@ -274,12 +274,17 @@ counts the profile bytes *before* compression. This is the opposite of the advic
 `.hmm` only by file name, so a profile file edited after pressing would silently yield the
 old profiles. Leftover sidecars are harmless and safe to delete.
 
-Build profiles with [`hmmer_build`](cli-reference.md#hmmer_build) from a **Stockholm**
-alignment (`.sto` `.stockholm` `.sth`), the only alignment format currently read.
+Build profiles with [`hmmer_build`](cli-reference.md#hmmer_build) from an alignment in
+any format hmmbuild reads: Stockholm, aligned FASTA, Clustal, PHYLIP (interleaved or
+sequential), SELEX, A2M or PSI-BLAST. Formats are told apart as Easel tells them apart: by
+the first line, then by the suffix where the content cannot decide. An aligned FASTA file
+is A2M only when named `.a2m`, a PHYLIP file is sequential when named `.phys` (otherwise
+the layout decides), and a SELEX-like file is PSI-BLAST only when named `.pb`. A2M and
+PSI-BLAST mark consensus columns by case, which the profile keeps as its RF annotation.
 
-Profiles built here are re-readable by pyhmmer and carry the same NAME, LENG and DESC, but
-their emission probabilities are not byte-identical to `hmmbuild`'s — a different builder
-and calibration. For identical profiles, build with HMMER and use them here.
+A profile built here equals `domainator hmmer_build`'s apart from its DATE and COM lines,
+and now and then the last printed digit of one COMPO or STATS value, where the builder's
+arithmetic rounds a near-tie the other way.
 
 ## Formatted databases
 

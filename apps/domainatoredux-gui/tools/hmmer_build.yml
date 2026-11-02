@@ -1,11 +1,11 @@
 # GUI dialog for `domainatoredux hmmer_build`. Format: see README.md in this directory.
 id: hmmer_build
 label: "HMM build"
-description: "Build an HMM profile from a Stockholm multiple-sequence alignment."
+description: "Build an HMM profile from a multiple-sequence alignment."
 fields:
   - name: input
-    label: "Input MSA (Stockholm)"
-    file_type: stockholm
+    label: "Input MSA"
+    file_type: [stockholm, alignment]
     sources: workspace_first
     select: first
   - name: hmm_out
