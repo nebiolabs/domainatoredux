@@ -284,8 +284,10 @@ jobs:
           sub-packages: ${{ runner.os == 'Windows' && '["nvcc", "cudart", "nvrtc", "nvrtc_dev", "thrust", "cublas", "cublas_dev", "curand", "curand_dev"]' || '["nvcc", "cudart", "cudart-dev", "nvrtc", "nvrtc-dev", "cccl", "driver-dev"]' }}
           non-cuda-sub-packages: '["libcublas", "libcublas-dev", "libcurand", "libcurand-dev"]'
 
+      # The default shell (PowerShell on Windows), not bash: once the MSVC step has set up
+      # the environment, rustc runs the first `link.exe` on PATH, and Git Bash puts its
+      # coreutils `link` ahead of MSVC's.
       - name: Build CLI
-        shell: bash
         env:
           CUDA_COMPUTE_CAP: ${{ matrix.cuda && '75' || '' }}
         run: cargo build --release -p domainator-cli ${{ matrix.features && format('--features {0}', matrix.features) || '' }}
