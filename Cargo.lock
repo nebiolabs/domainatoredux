@@ -1225,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-cli"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
  "bgzf",
@@ -1242,7 +1242,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-config"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1254,7 +1254,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-core"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "bgzf",
  "domainator-plm",
@@ -1284,7 +1284,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-genbank-summary"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "domainator-core",
  "rfd",
@@ -1295,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-plm"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -1304,7 +1304,7 @@ dependencies = [
 
 [[package]]
 name = "domainatoredux-gui"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

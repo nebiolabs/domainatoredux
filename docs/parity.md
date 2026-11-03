@@ -92,21 +92,33 @@ directory and sweep green. ProstT5 output is the same at any thread count, so th
 byte-identical. They run ProstT5 on the CPU: a GPU run is repeatable and identical between
 the two sides, but scores a few bits differently from a CPU run.
 
-`find_features --tmbed` needs an env with TMbed, which the parity env does not carry, so
-there Python rejects those invocations and they sweep as `skipped` (the Rust side is not
-started for an invocation Python rejected, so it never downloads the model). To compare
-them, build an env with CPU PyTorch, `transformers<5` and TMbed at upstream's pin, point
-`$DOMAINATOREDUX_TMBED_MODEL_DIR` at a ProtT5 directory (`python -m tmbed download
---model-dir DIR` fills one; the `extra:` rows name it `@TMBED@`), and give the harvested
-rows, which name no model directory, one in the default place: TMbed's package directory
-for Python, `$XDG_CACHE_HOME/domainatoredux/tmbed` for Rust. Use a release build, since
-debug candle is very slow:
+`find_features --tmbed` needs TMbed on the Python side. The parity env carries it (CPU
+PyTorch, `transformers<5` and TMbed at upstream's pin), so every find_features invocation
+runs the model on both sides. The harvested rows name no model directory and use each
+side's default: TMbed's package directory for Python, and
+`$XDG_CACHE_HOME/domainatoredux/tmbed` (`~/.cache/domainatoredux/tmbed`) for Rust, which
+the first such run fills with a 2.4 GB download. The `extra:` rows name the directory
+`@TMBED@`, substituted from `$DOMAINATOREDUX_TMBED_MODEL_DIR`. Any ProtT5 directory will
+do, the filled cache included (`python -m tmbed download --model-dir DIR` makes one).
+Without the variable they are harness errors, as the ProstT5 rows are. Sweep with a
+**release build**. Debug candle is so slow that two harvested find_features rows pass the
+900-second per-invocation timeout and show up as new gaps. In an env without TMbed,
+Python rejects these invocations and they sweep as `skipped`. The Rust side is never
+started for an invocation Python rejected, so it never downloads the model.
+
+A full sweep that covers every model and gene-caller row is therefore:
 
 ```bash
-mkdir -p /tmp/xdg/domainatoredux && ln -sfn "$DIR" /tmp/xdg/domainatoredux/tmbed
-XDG_CACHE_HOME=/tmp/xdg DOMAINATOREDUX_TMBED_MODEL_DIR="$DIR" scripts/parity/differential.py \
-  --python /path/to/tmbed-env/bin/python --rust target/release/domainatoredux --only find_features
+cargo build --release -p domainator-cli
+DOMAINATOREDUX_ORPHOS=/path/to/orphos \
+DOMAINATOREDUX_PROSTT5=/path/to/prostt5_weights \
+DOMAINATOREDUX_TMBED_MODEL_DIR=~/.cache/domainatoredux/tmbed \
+  scripts/parity/differential.py --rust target/release/domainatoredux
 ```
+
+`scripts/sync_upstream.sh` sweeps with the debug build and sets none of these variables.
+Unless they are already in your environment, its sweep reports those rows (and the two
+timeouts) as new gaps. Rerun the command above to get the verdict.
 
 All 15 find_features invocations are byte-identical on the CPU: the reimplementation's
 class probabilities are within 1e-6 of TMbed's, and the scores are written to one decimal.

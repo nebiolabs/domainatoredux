@@ -7,8 +7,17 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `d3ef00e` — *prostt5 support*
-  (2026-11-02; upstream `__version__` 1.0.0rc1, on the `version_one` branch).
+- **Caught up to:** `67bad08` — *typos*
+  (2026-11-02; upstream `__version__` 1.0.0-rc.2, tag `v1.0.0-rc.2`, on `main`, which
+  `version_one` was merged into).
+- **`d3ef00e..67bad08`** (release candidates 1 and 2), ported: `doctor`'s GPU section
+  (`c6f1b54`). It lists the GPUs `nvidia-smi` finds and the CUDA version their driver
+  supports, then says what this build can use. Upstream's PyTorch line is the build's
+  candle backend here: CPU only, CUDA with the number of devices it can open, or Metal.
+  The `--esm2_3di_device` user is left out because that model is refused here. The
+  rest needs nothing ported: the version bump (`UPSTREAM_VERSION`, and so the
+  regenerated viewer shell's `domainatorVersion`), docs, packaging metadata,
+  `scripts/release_check.sh`, and a test that now detects a GPU without PyTorch.
 - **`d3ef00e`**, ported: `domainate --prostt5_weights`/`--prostt5_device`, foldseek's
   built-in ProstT5 as the `--foldseek` 3Di predictor (`search/foldseek.rs`; ESM-2 3B 3Di
   stays refused, see "Deliberately deferred"), and TMbed test fixtures

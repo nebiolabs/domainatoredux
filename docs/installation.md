@@ -18,7 +18,7 @@ Grab them from the
 Releases are cut manually, so the newest commits may be ahead of the newest release.
 Release numbers are this project's own and do not follow the Python package's. Each
 release says which Python `domainator` version it matches, and so does `domainatoredux
---version`, e.g. `domainatoredux 1.0.0 (parity with Python domainator 1.0.0rc1 @ 44acbce)`.
+--version`, e.g. `domainatoredux 1.0.0-rc.1 (parity with Python domainator 1.0.0-rc.2 @ 67bad08)`.
 Intel macOS is not built; build from source there.
 
 The command-line download is a single self-contained binary. Put it somewhere on your

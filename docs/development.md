@@ -227,7 +227,11 @@ Python release it reproduces is recorded separately and reported next to it.
     `__version__`.
 - **Tags** are `vX.Y.Z`, one per release, covering the CLI and both apps. The release packaging
   workflow refuses a tag that differs from `v` + `workspace.package.version`. (The
-  `v0.11.0` tag predates this scheme; the first release under it is `v1.0.0`.)
+  `v0.11.0` tag predates this scheme; the first release under it is `v1.0.0-rc.1`.)
+- **Release candidates** are SemVer prereleases, `X.Y.Z-rc.N`, tagged `vX.Y.Z-rc.N`. A
+  candidate ranks below the release it leads up to. Publish it on GitHub as a
+  *prerelease*: the GUI's update check skips prereleases, so users of the last full
+  release are not offered it.
 
 To cut a release:
 
@@ -236,8 +240,9 @@ To cut a release:
    parity with.
 3. Commit, tag `vX.Y.Z` and push the tag, then dispatch the packaging workflow on it
    with every box ticked (the default): `gh workflow run build-release.yml --ref vX.Y.Z`.
-4. Create the GitHub release from those artifacts, with the changelog entry as its notes.
-   The GUI's update check reads the latest non-prerelease release's tag.
+4. Create the GitHub release from those artifacts, with the changelog entry as its notes
+   (`--prerelease` for an `-rc.N`). The GUI's update check reads the latest
+   non-prerelease release's tag.
 
 ## Staying in sync with the Python package
 

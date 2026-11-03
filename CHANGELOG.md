@@ -4,9 +4,9 @@ This project uses its own [SemVer](https://semver.org/) numbering, independent o
 Python `domainator` package. Each entry says which upstream release (and commit) it is at
 parity with. How versions are assigned: `docs/development.md`, "Versioning and releases".
 
-## Unreleased — 1.0.0
+## [1.0.0-rc.1] - 2026-11-02
 
-Parity: Python domainator 1.0.0rc1 @ `d3ef00e`.
+Parity: Python domainator 1.0.0-rc.2 @ `67bad08`.
 
 - First release under this versioning scheme. The earlier `v0.11.0` tag predates it.
 - **The Domainator Viewer** replaces the SSN viewer: one offline page, generated from
@@ -210,7 +210,9 @@ Parity: Python domainator 1.0.0rc1 @ `d3ef00e`.
   and option; it replaces `schema`. A test compares it with upstream's own `describe`, so
   any difference is either deliberate and listed, or a failing test. Also new:
   **`completion`** (shell completion scripts) and **`doctor`** (which external programs
-  are installed, and which tools need them).
+  are installed and which tools need them, plus whether this build can use a GPU: the
+  NVIDIA GPUs `nvidia-smi` lists, the CUDA version their driver supports, and whether
+  this is a CPU, CUDA or Metal build and can open a device).
 - **Errors and messages** go to stderr: errors as one line,
   `domainatoredux <tool>: error: …`, progress at upstream's levels (`-q` for errors only,
   `-v` for detail).

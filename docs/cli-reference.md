@@ -174,7 +174,12 @@ List the optional external programs (`diamond`, `cdhit`, `usearch`, `orphos`, `c
 `foldseek`, `reseek`, `datasets`): for each,
 whether a tool would find it and where (by the lookup order in
 [Installation](installation.md#optional-external-programs)), the commands that need it,
-and how to install it.
+and how to install it. Then whether a GPU can be used. This covers the NVIDIA GPUs
+`nvidia-smi` lists and the newest CUDA version their driver supports. It also covers
+whether this build runs TMbed on the CPU only, or is a CUDA or Metal build that can open
+a device. A CUDA build that cannot open one usually needs a newer NVIDIA driver: the
+release CUDA builds need a driver for CUDA 12.4 or newer. foldseek's GPU options
+(`--prostt5_device`, `--foldseek_device`) depend on a GPU build of foldseek instead.
 
 ```bash
 domainatoredux doctor
