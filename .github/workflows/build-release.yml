@@ -230,7 +230,7 @@ jobs:
         if: matrix.target == 'x86_64-pc-windows-msvc'
         uses: actions/upload-artifact@v7
         with:
-          name: domainatoredux-gui-windows-msvc-x64-portable
+          name: domainatoredux-gui-${{ matrix.platform }}-portable
           if-no-files-found: error
           path: target/x86_64-pc-windows-msvc/release/domainatoredux-gui.exe
 
