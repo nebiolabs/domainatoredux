@@ -74,19 +74,18 @@ fn read_hmm_file_chunked(
     };
     let mut batch = chunks(&mut reader).map_err(HmmerError::Io)?;
     while !batch.is_empty() {
-        let (parsed, next) = std::thread::scope(|s| {
-            let parser = s.spawn(|| {
+        // Parse in the caller's pool (the global one outside any) while this thread
+        // decompresses the next batch; a plain thread would always use the global pool.
+        let mut parsed = Vec::new();
+        let next = rayon::in_place_scope(|s| {
+            s.spawn(|_| {
                 use rayon::prelude::*;
-                batch
+                parsed = batch
                     .par_iter()
                     .map(|chunk| parse_chunk(chunk))
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
             });
-            let next = chunks(&mut reader);
-            let parsed = parser
-                .join()
-                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
-            (parsed, next)
+            chunks(&mut reader)
         });
         for chunk in parsed {
             match chunk {

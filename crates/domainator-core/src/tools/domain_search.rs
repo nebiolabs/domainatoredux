@@ -274,6 +274,8 @@ pub fn domain_search(
         max_mode: opts.max_mode,
         taxonomy: opts.taxonomy.clone(),
         max_hits_per_contig: opts.max_hits_per_contig,
+        // `cpu` is left at 0: domainate runs inside the partition pool below, where its
+        // `with_threads` calls run in that pool instead of building their own.
         parallel_profiles: false,
         partial: opts.partial,
         // Partitions already run in parallel, so each Orphos run gets one thread unless

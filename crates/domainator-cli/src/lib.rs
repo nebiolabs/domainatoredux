@@ -331,6 +331,14 @@ where
             sub_m.get_flag("quiet"),
         ));
         check_io(sub, sub_m, info)?;
+        // A negative `--cpu` is refused by the tool itself (`cpu_threads`).
+        let cpu = sub_m
+            .try_get_one::<i64>("cpu")
+            .ok()
+            .flatten()
+            .and_then(|&cpu| usize::try_from(cpu).ok())
+            .unwrap_or(0);
+        domainator_core::parallel::init_global_pool(cpu);
     }
     dispatch(Cli::from_arg_matches(&matches)?)
 }
