@@ -177,6 +177,30 @@ in `.domainatoredux/jobs/<job>/worker.log` inside the workspace, beside the
 `worker-config.json` it ran with. You can rerun that exact job from a terminal with
 `domainatoredux <tool> --config .domainatoredux/jobs/<job>/worker-config.json`.
 
+## "GPU device cuda:0 requested but ... Using CPU."
+
+`find_features --tmbed` (and the other `--device` options) asked for an NVIDIA GPU that
+this run cannot use, so it ran on the CPU. The output is the same, only slower. The
+message says why:
+
+- **"this build has no CUDA support"**: this is a plain download. Install the `-cuda`
+  download instead.
+- **"a CUDA library is missing: ..."**: a `-cuda` build needs the NVIDIA driver
+  and the CUDA 12 cuBLAS and cuRAND libraries. Install the
+  [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 12.x, or point
+  `LD_LIBRARY_PATH` (Linux) or `PATH` (Windows) at a directory that holds them. On a
+  cluster, that usually means `module load cuda/12`.
+- **`CUDA_ERROR_UNSUPPORTED_PTX_VERSION`**: the driver is too old for the build. The
+  release `-cuda` builds need driver 550 or newer.
+
+`domainatoredux doctor` lists each CUDA library and whether it was found.
+
+## "version `GLIBC_2.xx' not found"
+
+The Linux command-line download needs glibc 2.28 or newer (RHEL/Rocky/Alma 8, Ubuntu 20.04
+and later). On an older system,
+[build it from source](installation.md#build-the-command-line-tool-from-source).
+
 ## Still stuck
 
 Open an issue at

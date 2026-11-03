@@ -108,7 +108,7 @@ labels and status strings alike (`color`, `behavior`, `neighbor`, `center`, `lab
 now reads as a typo; match the existing words when you add code or docs. Four places are
 exempt because they are not ours to edit: the generated
 `crates/domainator-core/assets/viewer_shell.html` and `assets/report_shells/`, the synced fixtures under
-`test/data/`, and `vendor/hdf5-pure/`. Upstream Python names (`--color_by`, `color_genbank`)
+`test/data/`, and the vendored crates under `vendor/`. Upstream Python names (`--color_by`, `color_genbank`)
 were already American and are unaffected.
 
 Dev/diagnostic examples live in `crates/domainator-core/examples/` (`offsets`, `didx_tool`, `shards_tool`, `matrix_probe`, ...): `cargo run -p domainator-core --example matrix_probe`.
@@ -314,6 +314,16 @@ dependency" section has the re-pin and migration-back steps.
 takes the same `cfg(target_arch)` paths as macOS). The SSE kernels are meant to give
 byte-identical output on both architectures, so compare ARM against x86, not just against
 tolerance.
+
+### Vendored `candle-core` (CUDA loaded at run time)
+
+`vendor/candle-core/` is the published `candle-core` 0.11.1 with one line changed (a
+`[patch.crates-io]` path entry): cudarc's `dynamic-linking` becomes `dynamic-loading`, so a
+`cuda` build starts without the CUDA libraries and runs on the CPU. cudarc then **panics**
+on a library it cannot open, so every way into a CUDA device goes through
+`domainator_plm::cuda_libraries()`/`missing_libraries()` first (`select_device`, `doctor`).
+Never call `Device::new_cuda` without that check. See `vendor/candle-core/PATCHES.md` and
+`UPSTREAM.md`, "Patched dependency: `candle-core`".
 
 ## Staying in sync with the Python package
 

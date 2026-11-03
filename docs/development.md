@@ -181,10 +181,15 @@ Releases are cut by hand from the artifacts.
 (`crates/domainator-plm`): on the CPU in every build, and on a GPU in a build with the
 `cuda` or `metal` feature (forwarded by core, the CLI and the GUI crate). macOS release
 builds have `metal`. CUDA builds are separate artifacts, `*-cuda`, made when the release
-workflow's `cuda` box is ticked; they need an NVIDIA driver for CUDA 12.4 or newer (550+)
-and the CUDA 12 cuBLAS, cuRAND and NVRTC libraries. candle links those (and the driver's
-`libcuda`) at build time (cudarc's `dynamic-linking`), so without them a CUDA build does not
-start at all, even to run on the CPU; the plain builds are for those machines.
+workflow's `cuda` box is ticked. To use the GPU they need an NVIDIA driver for CUDA 12.4
+or newer (550+) and the CUDA 12 cuBLAS and cuRAND libraries, but they start without them.
+The vendored candle-core (`vendor/candle-core/PATCHES.md`) has cudarc load the driver's
+`libcuda`, cuBLAS, cuBLASLt and cuRAND on first use (`dynamic-loading`) instead of linking
+them. cudarc panics on a library it cannot open, so `domainator-plm`'s
+`cuda_libraries()` checks each one before any device is opened: `select_device` falls back
+to the CPU naming the missing ones, and `doctor` lists them. NVRTC is not needed: candle
+runs precompiled PTX. The release workflow fails a CUDA build that still has a CUDA
+library among its load-time dependencies.
 
 A local CUDA build needs, besides the NVIDIA driver:
 
@@ -196,8 +201,13 @@ A local CUDA build needs, besides the NVIDIA driver:
   headers it can parse: CUDA before 12.9 fails on glibc 2.41's `sinpi`/`cospi`
   declarations, so on a newer distribution use a conda-forge `gxx` (an older sysroot);
 - `CUDA_COMPUTE_CAP` (75 is Turing; newer GPUs JIT its PTX) when building on a machine
-  without the GPU, and cuBLAS, cuRAND and NVRTC (12.x) on the library path, for linking
-  and at run time.
+  without the GPU, and cuBLAS and cuRAND (12.x) on the library path at run time;
+- a linkable `libcudart.so` (`cudart.lib` on Windows) under `$CUDA_HOME` (or `CUDA_PATH`,
+  `CUDA_ROOT`, `CUDA_TOOLKIT_ROOT_DIR`; else `/usr/local/cuda`), in `lib64`, `lib`, `lib/x64`
+  or `targets/x86_64-linux/lib`. candle-kernels asks for `-lcudart` without saying where,
+  so `crates/domainator-plm/build.rs` adds those directories. The finished binary does not
+  depend on it. A conda CUDA env can carry a dangling `libcudart.so` symlink when its
+  packages' versions are mixed, which gives "unable to find library -lcudart".
 
 ```bash
 CUDA_COMPUTE_CAP=75 NVCC_CCBIN=/path/to/x86_64-conda-linux-gnu-g++ \

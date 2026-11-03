@@ -468,6 +468,46 @@ hmmer-pure-rs`):
    (`domainate` under QEMU must match x86 byte for byte).
 4. Delete this section.
 
+## Patched dependency: `candle-core`
+
+**`vendor/candle-core/` is the published `candle-core` 0.11.1 with one line changed**, wired
+in by `[patch.crates-io]` in `Cargo.toml`. The `cudarc` dependency's `"dynamic-linking"`
+feature becomes `"dynamic-loading"` (`vendor/candle-core/PATCHES.md`).
+
+Why: with `dynamic-linking`, cudarc's build script links the driver's `libcuda`, cuBLAS,
+cuBLASLt, cuRAND and NVRTC, so a `cuda` build would not start on a machine without them,
+not even to run on the CPU (issue #20). With `dynamic-loading` they are opened on first use.
+cudarc's build script panics if both features are on, and Cargo features are additive, so
+this cannot be done from our side with a feature flag. Under `dynamic-loading` cudarc
+**panics** on a library it cannot open, so `domainator_plm::cuda_libraries()` checks each
+one (`is_culib_present`) before any device is opened. That function lists the libraries
+candle reaches inside `Device::new_cuda` (driver, cuBLAS, cuBLASLt, cuRAND). Re-check that
+list on a candle bump: a new library reached before or during device creation needs a line
+there too.
+
+**Known trade-off: which version gets loaded.** cudarc tries file names in its
+`get_lib_name_candidates` order, which puts the unversioned `libcublas.so` **before**
+`libcublas.so.12`. On a machine where an older toolkit's dev symlink is the first
+`libcublas.so` the loader finds, a CUDA 12 build loads cuBLAS 11. The linked build used to
+refuse to start there instead, since it bound the `libcublas.so.12` soname. Checked
+2026-11-03 on a machine with CUDA 11's `libcublas.so` in the ld cache: TMbed ran on the GPU
+with cuBLAS 11 and with cuBLAS 12, and the two outputs differed only in last-digit scores,
+as GPU and CPU runs do. A cuBLAS old enough to lack a symbol cudarc wants would panic at
+first use. The fix belongs in cudarc (try `lib{name}.so.{major}` first) and has not been
+sent.
+
+The release workflow's "No CUDA library is linked" step is the guard: it fails a CUDA build
+whose binary still names a CUDA library as a load-time dependency.
+
+**Updating candle:** copy the new release from `~/.cargo/registry/src/*/candle-core-X.Y.Z`
+over `vendor/candle-core/` (keep `PATCHES.md`), reapply the one-line change, and confirm with
+`diff -r` that it is the only difference. **Dropping the patch,** once candle makes the
+linking mode a feature (or switches to `dynamic-loading`): delete the `[patch.crates-io]`
+entry and `vendor/candle-core/`, enable that feature in `crates/domainator-plm/Cargo.toml`
+if there is one, `cargo update -p candle-core`, and do a CUDA build to check that the
+workflow guard still passes. Keep `crates/domainator-plm/build.rs` (the CUDA library search path) for as long
+as candle-kernels asks for `-lcudart` without supplying one.
+
 ## TMbed (`find_features --tmbed`): reimplemented, at upstream's pin
 
 Upstream runs TMbed (`tmbed @ 8cee893523eb655bc9485c00c65336d27a236191`) through PyTorch;

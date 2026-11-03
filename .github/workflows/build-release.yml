@@ -5,7 +5,8 @@ name: Build Release
 # command line, untick with `-f`, e.g.
 #   gh workflow run build-release.yml --ref main -f linux=false -f cli=false
 # `cuda` (off by default) adds CUDA builds of the CLI and GUI for Linux and Windows, which
-# run `find_features --tmbed` on an NVIDIA GPU; see docs/development.md, "GPU builds".
+# run `find_features --tmbed` on an NVIDIA GPU when the CUDA libraries are installed and on
+# the CPU otherwise; see docs/development.md, "GPU builds".
 # Releases are tagged `vX.Y.Z`; dispatch on the tag (`--ref vX.Y.Z`) so the version
 # check compares it. See docs/development.md, "Versioning and releases". The
 # standalone genbank-summary app is build-genbank-summary.yml.
@@ -114,7 +115,7 @@ jobs:
           cli=""
           if [ "$BUILD_CLI" = true ]; then
             cli=$(pick <<'EOF'
-          {"family": "linux", "platform": "linux-x64", "os": "ubuntu-latest", "bin": "target/release/domainatoredux"}
+          {"family": "linux", "platform": "linux-x64", "os": "ubuntu-latest", "container": "quay.io/pypa/manylinux_2_28_x86_64", "glibc_max": "2.28", "bin": "target/release/domainatoredux"}
           {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "bin": "target/release/domainatoredux", "features": "metal"}
           {"family": "windows", "platform": "windows-x64", "os": "windows-latest", "bin": "target/release/domainatoredux.exe"}
           {"family": "linux", "cuda": true, "platform": "linux-x64-cuda", "os": "ubuntu-22.04", "bin": "target/release/domainatoredux", "features": "cuda"}
@@ -219,6 +220,24 @@ jobs:
           CUDA_COMPUTE_CAP: ${{ matrix.cuda && '75' || '' }}
         run: npm run tauri build -- --target ${{ matrix.target }} ${{ matrix.bundle_args }}
 
+      # See the CLI job's step of the same name.
+      - name: No CUDA library is linked
+        if: matrix.cuda
+        shell: bash
+        env:
+          BIN: target/${{ matrix.target }}/release/domainatoredux-gui${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            deps=$(MSYS_NO_PATHCONV=1 dumpbin -nologo -dependents "$BIN")
+          else
+            deps=$(readelf -d "$BIN" | grep NEEDED)
+          fi
+          echo "$deps"
+          if echo "$deps" | grep -Eiq 'nvcuda|libcuda|cublas|curand|nvrtc|cudart'; then
+            echo "::error::$BIN links a CUDA library at load time; see vendor/candle-core/PATCHES.md"
+            exit 1
+          fi
+
       - name: Upload app artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -242,6 +261,12 @@ jobs:
     needs: [version, setup]
     if: needs.setup.outputs.cli != ''
     runs-on: ${{ matrix.os }}
+    # The plain Linux row builds in manylinux_2_28 (AlmaLinux 8, glibc 2.28), as Python
+    # wheels do, so the binary runs on EL8+ and other older HPC systems: a binary needs
+    # the glibc it was linked against or newer. ubuntu-latest's 2.39 left weak references
+    # to `pidfd_spawnp` (from std's `Command`) that EL9's loader warns about. An empty
+    # `container` (every other row) runs on the runner itself.
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.cli) }}
@@ -265,10 +290,12 @@ jobs:
       # for compute capability 7.5 (Turing), which newer GPUs JIT from the same PTX.
       # 12.4 also pins the runners: NVIDIA has no 12.4 packages for Ubuntu 24.04, and its
       # nvcc rejects Visual Studio 2026 (windows-latest), so the CUDA rows run on
-      # ubuntu-22.04 and windows-2022. candle links cuBLAS, cuRAND, NVRTC and the driver
-      # library at build time, hence the -dev packages (and the libcuda stub in
-      # driver-dev). The Windows installer names its subpackages differently: `_dev`,
-      # and `thrust` for cccl.
+      # ubuntu-22.04 and windows-2022. The CUDA libraries themselves are not linked: the
+      # vendored candle-core has cudarc load them at run time (vendor/candle-core/
+      # PATCHES.md), and the "No CUDA library is linked" step below holds it to that.
+      # nvcc still runs at build time (candle's kernels, and cudarc reads the CUDA
+      # version from it). The Windows installer names its subpackages differently:
+      # `_dev`, and `thrust` for cccl.
       - name: Set up MSVC command prompt
         if: matrix.cuda && runner.os == 'Windows'
         uses: TheMrMilchmann/setup-msvc-dev@v4
@@ -291,6 +318,42 @@ jobs:
         env:
           CUDA_COMPUTE_CAP: ${{ matrix.cuda && '75' || '' }}
         run: cargo build --release -p domainator-cli ${{ matrix.features && format('--features {0}', matrix.features) || '' }}
+
+      # A CUDA build must start on machines without CUDA and fall back to the CPU, so no
+      # CUDA library may be a load-time dependency (issue #20). MSYS_NO_PATHCONV keeps
+      # Git Bash from rewriting dumpbin's option as a path.
+      - name: No CUDA library is linked
+        if: matrix.cuda
+        shell: bash
+        env:
+          BIN: ${{ matrix.bin }}
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            deps=$(MSYS_NO_PATHCONV=1 dumpbin -nologo -dependents "$BIN")
+          else
+            deps=$(readelf -d "$BIN" | grep NEEDED)
+          fi
+          echo "$deps"
+          if echo "$deps" | grep -Eiq 'nvcuda|libcuda|cublas|curand|nvrtc|cudart'; then
+            echo "::error::$BIN links a CUDA library at load time; see vendor/candle-core/PATCHES.md"
+            exit 1
+          fi
+
+      # The newest glibc symbol version the binary asks for, which is the oldest glibc it
+      # runs on. A row with `glibc_max` fails above it; the others just report it.
+      - name: glibc floor
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          BIN: ${{ matrix.bin }}
+          GLIBC_MAX: ${{ matrix.glibc_max }}
+        run: |
+          need=$(objdump -T "$BIN" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/^GLIBC_//' | sort -Vu | tail -1)
+          echo "needs glibc ${need}"
+          if [ -n "$GLIBC_MAX" ] && [ "$(printf '%s\n%s\n' "$need" "$GLIBC_MAX" | sort -V | tail -1)" != "$GLIBC_MAX" ]; then
+            echo "::error::$BIN needs glibc ${need}, above this row's ${GLIBC_MAX}"
+            exit 1
+          fi
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v7

@@ -19,6 +19,14 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 ### Changed
 
+- **The `-cuda` builds start on any machine** (#20). They load the CUDA libraries when the
+  GPU is first used instead of linking them, so without the driver, cuBLAS or cuRAND they
+  run on the CPU and print a warning that names what is missing, instead of failing to
+  start. NVRTC is no longer needed. `doctor` lists each CUDA library and whether it was
+  found. This uses a vendored candle-core with one line changed (`vendor/candle-core/`).
+- **The Linux command-line download runs on glibc 2.28 and newer** (RHEL 8, Ubuntu 20.04
+  and later). It is now built in manylinux_2_28. The previous build needed glibc 2.34, and
+  on EL9 the loader warned about weak symbols from glibc 2.39.
 - **`domainate --foldseek` with several databases runs ProstT5 once**, not once per
   database: the queries' 3Di sequences depend only on the queries, so only `foldseek search`
   repeats per database. Output is unchanged.

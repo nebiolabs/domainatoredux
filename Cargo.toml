@@ -77,6 +77,14 @@ codegen-units = 1
 [patch.crates-io]
 hdf5-pure = { path = "vendor/hdf5-pure" }
 
+# Vendored candle-core 0.11.1 with one line changed: cudarc's `dynamic-linking` becomes
+# `dynamic-loading`, so a `cuda` build opens libcuda, cuBLAS and cuRAND on first use
+# instead of linking them, and starts (on the CPU) on machines without them. Cargo
+# features are additive and cudarc refuses both modes at once, so no feature flag on our
+# side can do this. See vendor/candle-core/PATCHES.md and UPSTREAM.md, "Patched
+# dependency: `candle-core`".
+candle-core = { path = "vendor/candle-core" }
+
 # TEMPORARY: hmmer-pure-rs pinned to a commit on our fork, pending an upstream
 # merge and a crates.io release.
 #

@@ -21,8 +21,10 @@ release says which Python `domainator` version it matches, and so does `domainat
 --version`, e.g. `domainatoredux 1.0.0-rc.1 (parity with Python domainator 1.0.0-rc.2 @ 67bad08)`.
 Intel macOS is not built; build from source there.
 
-The command-line download is a single self-contained binary. Put it somewhere on your
-`PATH` and, on macOS or Linux, mark it executable:
+The command-line download is a single self-contained binary. The Linux one runs on any
+x86-64 distribution with glibc 2.28 or newer (RHEL/Rocky/Alma 8, Ubuntu 20.04, Debian 10
+and later); on anything older, build it from source. Put it somewhere on your `PATH` and,
+on macOS or Linux, mark it executable:
 
 ```bash
 chmod +x domainatoredux
@@ -44,14 +46,15 @@ downloads of both the app and the command-line tool. They need:
 
 - an NVIDIA driver for CUDA 12.4 or newer (driver 550 or later; `nvidia-smi` shows the
   CUDA version your driver supports), and
-- the CUDA 12 libraries cuBLAS, cuRAND and NVRTC, most easily by installing the
+- the CUDA 12 libraries cuBLAS and cuRAND, most easily by installing the
   [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 12.x. On Windows its
-  installer puts them on `PATH`.
+  installer puts them on `PATH`. On Linux they must be on the library path
+  (`LD_LIBRARY_PATH`, or `module load cuda/12` on a cluster).
 
-Without those libraries a `-cuda` download does not start at all (on Linux, "error while
-loading shared libraries"; on Windows, a missing-DLL message), so use the plain download
-on machines that lack them. `domainatoredux doctor` reports whether the build you have can
-use the GPU.
+A `-cuda` download loads these libraries when it first needs the GPU, so it starts and
+runs on any machine. Without them it runs on the CPU and prints a warning that names the
+missing library. `domainatoredux doctor` lists the CUDA libraries it found and reports
+whether the build you have can use the GPU.
 
 ## Build the command-line tool from source
 

@@ -35,7 +35,7 @@ jobs:
           workspaces: . -> target
 
       # Whole workspace: rustfmt needs no system libraries, so the Tauri crates are
-      # covered here too. `vendor/hdf5-pure` is not a member and is left alone.
+      # covered here too. The crates under `vendor/` are not members and are left alone.
       - name: Format
         run: cargo fmt --all --check
 

@@ -7,7 +7,7 @@ use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use domainator_core::plm::Device;
+use domainator_core::plm::{cuda_libraries, missing_libraries, CudaLibrary, Device};
 use domainator_core::tools::external::EXTERNAL_PROGRAMS;
 use domainator_core::version::LONG_VERSION;
 
@@ -24,8 +24,12 @@ struct NvidiaGpus {
 /// The GPU backend this build was compiled with, and whether it can open a device.
 enum Backend {
     Cpu,
-    /// How many CUDA devices it can open, or why it can open none.
-    Cuda(Result<usize, String>),
+    /// The CUDA libraries it looked for, and how many devices it can open (or why it
+    /// can open none).
+    Cuda {
+        libraries: Vec<CudaLibrary>,
+        devices: Result<usize, String>,
+    },
     Metal(Result<(), String>),
 }
 
@@ -72,15 +76,14 @@ fn parse_nvidia_smi(listing: &str, summary: &str) -> NvidiaGpus {
 
 fn backend() -> Backend {
     if cfg!(feature = "cuda") {
-        let mut usable = 0;
-        while usable < 64 {
-            match Device::new_cuda(usable) {
-                Ok(_) => usable += 1,
-                Err(e) if usable == 0 => return Backend::Cuda(Err(e.to_string())),
-                Err(_) => break,
-            }
-        }
-        Backend::Cuda(Ok(usable))
+        let libraries = cuda_libraries();
+        // cudarc panics on first use of a library it cannot open, so no device is
+        // tried until every library is there.
+        let devices = match missing_libraries(&libraries) {
+            Some(why) => Err(why),
+            None => count_cuda_devices(),
+        };
+        Backend::Cuda { libraries, devices }
     } else if cfg!(feature = "metal") {
         Backend::Metal(Device::new_metal(0).map(drop).map_err(|e| e.to_string()))
     } else {
@@ -88,23 +91,49 @@ fn backend() -> Backend {
     }
 }
 
+/// How many CUDA devices open, or why the first one does not.
+fn count_cuda_devices() -> Result<usize, String> {
+    let mut usable = 0;
+    while usable < 64 {
+        match Device::new_cuda(usable) {
+            Ok(_) => usable += 1,
+            Err(e) if usable == 0 => return Err(e.to_string()),
+            Err(_) => break,
+        }
+    }
+    Ok(usable)
+}
+
 fn backend_status(backend: &Backend) -> String {
     match backend {
         Backend::Cpu if cfg!(target_os = "macos") => {
             "CPU only; the macOS release builds use the Apple GPU (Metal)".to_string()
         }
-        // A CUDA build links these at load time, so without them it does not start at all.
         Backend::Cpu => "CPU only; for an NVIDIA GPU, install a CUDA build (the -cuda \
-                         release downloads, for Linux and Windows), which also needs the \
-                         CUDA 12 libraries cuBLAS, cuRAND and NVRTC (the CUDA Toolkit 12.x)"
+                         release downloads, for Linux and Windows), which uses the GPU when \
+                         the CUDA 12 libraries cuBLAS and cuRAND (the CUDA Toolkit 12.x) \
+                         are installed"
             .to_string(),
-        Backend::Cuda(Ok(0)) => "a CUDA build, cannot use a GPU".to_string(),
-        Backend::Cuda(Ok(usable)) => format!(
+        Backend::Cuda { devices: Ok(0), .. } => "a CUDA build, cannot use a GPU".to_string(),
+        Backend::Cuda {
+            devices: Ok(usable),
+            ..
+        } => format!(
             "a CUDA build, can use {usable} GPU{}",
             if *usable == 1 { "" } else { "s" }
         ),
+        // A CUDA build loads its libraries at run time, so it starts without them.
+        Backend::Cuda {
+            libraries,
+            devices: Err(e),
+        } if missing_libraries(libraries).is_some() => format!(
+            "a CUDA build, cannot use a GPU because {e}, so it runs on the CPU; install \
+             the NVIDIA driver and the CUDA Toolkit 12.x"
+        ),
         // The release CUDA builds are compiled against CUDA 12.4 (build-release.yml).
-        Backend::Cuda(Err(e)) => format!(
+        Backend::Cuda {
+            devices: Err(e), ..
+        } => format!(
             "a CUDA build, cannot use a GPU ({e}), so it runs on the CPU; the release CUDA \
              builds need an NVIDIA driver for CUDA 12.4 or newer"
         ),
@@ -129,13 +158,24 @@ fn gpu_report(gpus: Option<NvidiaGpus>, backend: &Backend) -> Vec<String> {
             found
         }
     };
-    vec![
+    let mut lines = vec![
         String::new(),
         "GPU:".to_string(),
         format!("  NVIDIA GPU: {found}"),
         format!("  this build: {}", backend_status(backend)),
-        format!("  needed by:  {GPU_NEEDED_BY}"),
-    ]
+    ];
+    if let Backend::Cuda { libraries, .. } = backend {
+        let found: Vec<String> = libraries
+            .iter()
+            .map(|library| {
+                let status = if library.present { "found" } else { "missing" };
+                format!("{library} {status}")
+            })
+            .collect();
+        lines.push(format!("  CUDA libs:  {}", found.join("; ")));
+    }
+    lines.push(format!("  needed by:  {GPU_NEEDED_BY}"));
+    lines
 }
 
 /// The report, one line per entry: each program, whether a tool would find it (and
@@ -219,9 +259,33 @@ mod tests {
         assert!(none.names.is_empty() && none.driver_cuda.is_none());
     }
 
+    fn library(name: &'static str, file: &'static str, present: bool) -> CudaLibrary {
+        CudaLibrary {
+            name,
+            file,
+            present,
+        }
+    }
+
+    /// A CUDA build on a machine with every library.
+    fn cuda(devices: Result<usize, String>) -> Backend {
+        Backend::Cuda {
+            libraries: vec![
+                library("NVIDIA driver", "libcuda.so.1", true),
+                library("cuBLAS", "libcublas.so.12", true),
+            ],
+            devices,
+        }
+    }
+
     #[test]
     fn the_gpu_section_says_what_was_found_and_what_this_build_can_use() {
-        let cases: [(Option<NvidiaGpus>, Backend, &[&str]); 6] = [
+        let libraries = vec![
+            library("NVIDIA driver", "libcuda.so.1", true),
+            library("cuBLAS", "libcublas.so.12", false),
+        ];
+        let missing = missing_libraries(&libraries).unwrap();
+        let cases: [(Option<NvidiaGpus>, Backend, &[&str]); 7] = [
             (
                 None,
                 Backend::Cpu,
@@ -232,20 +296,36 @@ mod tests {
             ),
             (
                 quadro(),
-                Backend::Cuda(Ok(1)),
+                cuda(Ok(1)),
                 &[
                     "NVIDIA GPU: GPU 0: Quadro RTX 6000; the driver supports CUDA 12.4 and older",
                     "this build: a CUDA build, can use 1 GPU\n",
+                    "CUDA libs:  NVIDIA driver (libcuda.so.1) found; cuBLAS (libcublas.so.12) \
+                     found\n",
                 ],
             ),
             (
                 quadro(),
-                Backend::Cuda(Ok(2)),
+                Backend::Cuda {
+                    libraries,
+                    devices: Err(missing),
+                },
+                &[
+                    "this build: a CUDA build, cannot use a GPU because a CUDA library is \
+                     missing: cuBLAS (libcublas.so.12), so it runs on the CPU; \
+                     install the NVIDIA driver and the CUDA Toolkit 12.x",
+                    "CUDA libs:  NVIDIA driver (libcuda.so.1) found; cuBLAS (libcublas.so.12) \
+                     missing\n",
+                ],
+            ),
+            (
+                quadro(),
+                cuda(Ok(2)),
                 &["this build: a CUDA build, can use 2 GPUs"],
             ),
             (
                 quadro(),
-                Backend::Cuda(Err("DriverError(CUDA_ERROR_UNSUPPORTED_PTX_VERSION)".into())),
+                cuda(Err("DriverError(CUDA_ERROR_UNSUPPORTED_PTX_VERSION)".into())),
                 &[
                     "cannot use a GPU (DriverError(CUDA_ERROR_UNSUPPORTED_PTX_VERSION)), so it \
                    runs on the CPU; the release CUDA builds need an NVIDIA driver for CUDA \
