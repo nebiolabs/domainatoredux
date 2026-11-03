@@ -718,23 +718,27 @@ pub fn domainate(
     // reference-group order.
     if let Some(search) = &opts.foldseek {
         if !peptides.is_empty() {
+            use crate::search::foldseek::{build_query_db, search_db};
             let cpu = crate::parallel::resolve_cpu(opts.cpu);
-            for (name, path) in &search.databases {
-                let found = crate::search::foldseek::search(
-                    search,
-                    name,
-                    path,
-                    &peptides,
-                    cpu,
-                    opts.evalue,
-                    opts.min_evalue,
-                )?;
-                for (ci, fi, result) in found {
-                    hits.entry(ci)
-                        .or_default()
-                        .entry(fi)
-                        .or_default()
-                        .push(result);
+            // ProstT5 predicts the queries' 3Di once; only the search is per database.
+            if let Some(query) = build_query_db(search, &peptides, cpu)? {
+                for (name, path) in &search.databases {
+                    let found = search_db(
+                        search,
+                        &query,
+                        name,
+                        path,
+                        cpu,
+                        opts.evalue,
+                        opts.min_evalue,
+                    )?;
+                    for (ci, fi, result) in found {
+                        hits.entry(ci)
+                            .or_default()
+                            .entry(fi)
+                            .or_default()
+                            .push(result);
+                    }
                 }
             }
         }

@@ -19,21 +19,20 @@ pub struct CompareContigsArgs {
     /// sorted to restore the sorted order.
     #[arg(long)]
     pub name_by_order: bool,
-    /// Hierarchical clustering linkage method used to sort contigs for the genbank
-    /// output (-o). Distances are 1 - score/max(score); pairs with no score have
-    /// distance 1.
+    /// Hierarchical clustering linkage method used to sort contigs for --genbank_out.
+    /// Distances are 1 - score/max(score); pairs with no score have distance 1.
     #[arg(long, default_value = "average",
           value_parser = ["average", "ward", "complete", "single", "weighted"])]
     pub linkage: String,
-    /// How to order the leaves of the clustering tree for the genbank output (-o).
+    /// How to order the leaves of the clustering tree for --genbank_out.
     /// greedy: flip subtrees so that the most similar contigs meet at each junction;
     /// fast and usually about as good as optimal. optimal: scipy's optimal leaf
     /// ordering; very slow (minutes to hours) beyond a few thousand contigs. none: plain
     /// dendrogram order.
     #[arg(long, default_value = "greedy", value_parser = ["greedy", "optimal", "none"])]
     pub leaf_ordering: String,
-    /// Don't fail early when sorting the contigs for the genbank output (-o) is
-    /// estimated to need more memory than is available.
+    /// Don't fail early when sorting the contigs for --genbank_out is estimated to need
+    /// more memory than is available.
     #[arg(long)]
     pub skip_sort_memory_check: bool,
     /// Only annotate contigs with ids in this list. Additive with --contigs_file.

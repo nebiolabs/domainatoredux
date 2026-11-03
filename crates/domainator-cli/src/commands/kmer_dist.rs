@@ -7,7 +7,7 @@ use super::cpu_threads;
 use crate::output::{check_hdf_out, write_matrix_outputs};
 
 pub fn run(args: &KmerDistArgs) -> Result<()> {
-    check_hdf_out(args.hdf_out.as_deref())?;
+    check_hdf_out(args.hdf_out.as_deref(), None)?;
     if !(0.0..=1.0).contains(&args.threshold.0) {
         bail!("--threshold must be between 0 and 1 for k-mer similarities.");
     }

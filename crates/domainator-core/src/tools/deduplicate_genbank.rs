@@ -182,7 +182,9 @@ pub const DIAMOND_ENV_VAR: &str = "DOMAINATOREDUX_DIAMOND";
 pub const USEARCH_BIN_NAME: &str = "usearch";
 pub const USEARCH_ENV_VAR: &str = "DOMAINATOREDUX_USEARCH";
 /// cd-hit is driven through the `cdhit` Rust port, a single multiplexer binary
-/// whose first argument is the program name (`cd-hit`, `cd-hit-est`, ...).
+/// whose first argument is the program name (`cd-hit`, `cd-hit-est`, ...). When no
+/// `cdhit` is found, C cd-hit's `cd-hit`/`cd-hit-est` on `PATH` stand in
+/// ([`ExternalProgram::alt_names`](super::external::ExternalProgram::alt_names)).
 pub const CDHIT_BIN_NAME: &str = "cdhit";
 pub const CDHIT_ENV_VAR: &str = "DOMAINATOREDUX_CDHIT";
 
@@ -505,13 +507,11 @@ fn run_cdhit(
     cmd.args(extra);
 
     let out = cmd.output().map_err(|e| {
-        spawn_error(
-            e,
-            &exe,
-            "Install cdhit (https://github.com/seanrjohnson-neb/cdhit-rust/releases) \
-             or set $DOMAINATOREDUX_CDHIT.",
-        )
-        .to_string()
+        let hint = format!(
+            "Install cdhit: {}; or set ${CDHIT_ENV_VAR} to its path.",
+            super::external::CDHIT.install
+        );
+        spawn_error(e, &exe, &hint).to_string()
     })?;
     if !out.status.success() {
         return Err(format!(

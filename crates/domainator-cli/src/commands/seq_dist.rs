@@ -10,7 +10,7 @@ use super::cpu_threads;
 use crate::output::{check_hdf_out, write_matrix_outputs};
 
 pub fn run(args: &SeqDistArgs) -> Result<()> {
-    check_hdf_out(args.hdf_out.as_deref())?;
+    check_hdf_out(args.hdf_out.as_deref(), None)?;
     let max_bytes = crate::max_output_gb_to_bytes(args.max_output_gb.0)?;
     let tokens = match &args.diamond_args {
         Some(s) => shlex::split(s)

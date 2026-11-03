@@ -226,20 +226,26 @@ pub fn write_seq_outputs_capped(
     Ok(())
 }
 
-/// `--hdf_out` must name an hdf5 file (upstream `resolve_matrix_outputs`).
-pub fn check_hdf_out(hdf: Option<&str>) -> Result<()> {
-    let is_hdf5 = hdf.is_none_or(|p| {
-        Path::new(p)
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| ["hdf5", "hdf", "h5"].contains(&e.to_ascii_lowercase().as_str()))
-    });
-    anyhow::ensure!(
-        is_hdf5,
-        "Please use an hdf5 related extension for the --hdf_out output, such as .h5, .hdf5, or \
-         .hdf."
+/// `--hdf_out` must name an hdf5 file (upstream `resolve_matrix_outputs`); `hint` is
+/// appended to the error, as upstream's `extension_hint`.
+pub fn check_hdf_out(hdf: Option<&str>, hint: Option<&str>) -> Result<()> {
+    let Some(path) = hdf else { return Ok(()) };
+    let is_hdf5 = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| ["hdf5", "hdf", "h5"].contains(&e.to_ascii_lowercase().as_str()));
+    if is_hdf5 {
+        return Ok(());
+    }
+    let mut message = format!(
+        "-o/--hdf_out writes an hdf5 matrix, so its file name must end in .h5, .hdf5, or \
+         .hdf, not '{path}'."
     );
-    Ok(())
+    if let Some(hint) = hint {
+        message.push(' ');
+        message.push_str(hint);
+    }
+    Err(anyhow::anyhow!(message))
 }
 
 /// Write a matrix to `--hdf_out` and/or `--dense_text_out` (upstream
@@ -291,6 +297,30 @@ pub fn write_matrix_outputs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Upstream `resolve_matrix_outputs` (`c807588`): the error names the bad path, and
+    /// `compare_contigs` adds that its 0.x `-o` (the sorted GenBank) is `--genbank_out` now.
+    #[test]
+    fn hdf_out_needs_an_hdf5_extension() {
+        for ok in [None, Some("m.h5"), Some("m.HDF5"), Some("dir/m.hdf")] {
+            assert!(check_hdf_out(ok, None).is_ok(), "{ok:?}");
+        }
+        let err = check_hdf_out(Some("sorted.gb"), None)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            "-o/--hdf_out writes an hdf5 matrix, so its file name must end in .h5, .hdf5, or \
+             .hdf, not 'sorted.gb'."
+        );
+        let err = check_hdf_out(Some("sorted.gb"), Some("Use --genbank_out."))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.ends_with("not 'sorted.gb'. Use --genbank_out."),
+            "{err}"
+        );
+    }
 
     #[test]
     fn a_file_appears_only_when_finished() {

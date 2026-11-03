@@ -4,6 +4,29 @@ This project uses its own [SemVer](https://semver.org/) numbering, independent o
 Python `domainator` package. Each entry says which upstream release (and commit) it is at
 parity with. How versions are assigned: `docs/development.md`, "Versioning and releases".
 
+## [Unreleased]
+
+### Fixed
+
+- **`genbank_to_fasta` reads its input as GenBank whatever the file is called**, as upstream
+  does, so an input staged under a fixed name such as `input_seqs` converts instead of
+  failing with "could not detect file type". A `.fasta`/`.fa`/... input is still copied as
+  FASTA.
+- **`deduplicate_genbank --algorithm cd-hit` finds C cd-hit.** When no `cdhit` (the Rust
+  port) is found, `cd-hit` and `cd-hit-est` on `PATH` are used, as upstream uses them, so a
+  bioconda environment set up for the Python `domainator` works unchanged. `doctor` shows
+  which one was found.
+
+### Changed
+
+- **`domainate --foldseek` with several databases runs ProstT5 once**, not once per
+  database: the queries' 3Di sequences depend only on the queries, so only `foldseek search`
+  repeats per database. Output is unchanged.
+- `compare_contigs`' help and its sort-memory error name `--genbank_out` instead of 0.x's
+  `-o`, and a non-hdf5 `-o/--hdf_out` now fails with an error that names the path. For
+  `compare_contigs`, the error adds that 0.x's `-o` (the sorted GenBank) is `--genbank_out`
+  now. This follows upstream `c807588`.
+
 ## [1.0.0-rc.1] - 2026-11-02
 
 Parity: Python domainator 1.0.0-rc.2 @ `67bad08`.

@@ -84,32 +84,33 @@ fn gpu_options(device: &str) -> (Vec<String>, Vec<(&'static str, String)>) {
     (vec!["--gpu".to_string(), "1".to_string()], env)
 }
 
-/// Search `peptides` (named `"{contig},{cds}"`) against one database; the hits as
-/// `(contig, cds, result)`, in the order foldseek reports them, within
-/// `[min_evalue, evalue]` (upstream `search` + `foldseek_hits_to_search_results`).
-/// `cpu` is the resolved thread count.
-pub fn search(
+/// The queries as a foldseek database, its 3Di sequences predicted by ProstT5. The
+/// prediction depends only on the queries, and it is by far the costliest step, so one
+/// is built per run and searched against every `--foldseek` database ([`search_db`]).
+pub struct QueryDb {
+    /// Holds the database's files; removed on drop.
+    _dir: TempDir,
+    /// The database's path prefix, as foldseek names it.
+    base: String,
+}
+
+/// Build the query database for `peptides` (named `"{contig},{cds}"`): the
+/// [`predictable`] ones, through `foldseek createdb --prostt5-model` (upstream
+/// `build_query_db`). `None` when no peptide is predictable. `cpu` is the resolved thread
+/// count.
+pub fn build_query_db(
     search: &FoldseekSearch,
-    db_name: &str,
-    db_path: &str,
     peptides: &[(String, Vec<u8>)],
     cpu: usize,
-    evalue: f64,
-    min_evalue: f64,
-) -> io::Result<Vec<(usize, usize, SearchResult)>> {
+) -> io::Result<Option<QueryDb>> {
     let selected: Vec<&(String, Vec<u8>)> =
         peptides.iter().filter(|(_, p)| predictable(p)).collect();
     if selected.is_empty() {
-        return Ok(Vec::new());
+        return Ok(None);
     }
-    let tmp = TempDir::new("domainatoredux_foldseek")?;
-    let dir = tmp.path();
-    let path = |name: &str| dir.join(name).to_string_lossy().into_owned();
-    let protein_fasta = path("protein.fasta");
-    let out_base = path("output");
-    let aln = path("aln");
-    let tmp_folder = path("foldseek_tmpfolder");
-    let results = format!("{tmp_folder}/results.tsv");
+    let dir = TempDir::new("domainatoredux_foldseek")?;
+    let protein_fasta = dir.path().join("protein.fasta");
+    let base = dir.path().join("output").to_string_lossy().into_owned();
     {
         let mut out = BufWriter::new(File::create(&protein_fasta)?);
         for (name, prot) in &selected {
@@ -121,37 +122,63 @@ pub fn search(
         out.flush()?;
     }
 
-    let binary = search.binary.to_string_lossy().into_owned();
-    let threads = if cpu > 0 {
-        vec!["--threads".to_string(), cpu.to_string()]
-    } else {
-        Vec::new()
-    };
     let (prostt5_gpu, prostt5_env) = gpu_options(&search.prostt5_device);
     let mut createdb = vec![
-        binary.clone(),
+        search.binary.to_string_lossy().into_owned(),
         "createdb".into(),
-        protein_fasta,
-        out_base.clone(),
+        protein_fasta.to_string_lossy().into_owned(),
+        base.clone(),
         "--prostt5-model".into(),
         search.prostt5_weights.clone(),
     ];
-    createdb.extend(threads.iter().cloned());
+    createdb.extend(threads(cpu));
     createdb.extend(prostt5_gpu);
     run_command(&createdb, "foldseek createdb", None, &prostt5_env)?;
+    Ok(Some(QueryDb { _dir: dir, base }))
+}
+
+/// foldseek's `--threads` option for `cpu` threads (none for `0`).
+fn threads(cpu: usize) -> Vec<String> {
+    if cpu > 0 {
+        vec!["--threads".to_string(), cpu.to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+/// Search `query` against one database; the hits as `(contig, cds, result)`, in the order
+/// foldseek reports them, within `[min_evalue, evalue]` (upstream `search_query_db` +
+/// `foldseek_hits_to_search_results`). `cpu` is the resolved thread count.
+pub fn search_db(
+    search: &FoldseekSearch,
+    query: &QueryDb,
+    db_name: &str,
+    db_path: &str,
+    cpu: usize,
+    evalue: f64,
+    min_evalue: f64,
+) -> io::Result<Vec<(usize, usize, SearchResult)>> {
+    // The alignment and foldseek's scratch space last only as long as this database's
+    // search, so a run over many databases holds one at a time.
+    let tmp = TempDir::new("domainatoredux_foldseek_search")?;
+    let path = |name: &str| tmp.path().join(name).to_string_lossy().into_owned();
+    let aln = path("aln");
+    let tmp_folder = path("foldseek_tmpfolder");
+    let results = format!("{tmp_folder}/results.tsv");
+    let binary = search.binary.to_string_lossy().into_owned();
 
     let (search_gpu, search_env) = gpu_options(&search.device);
     let mut argv = vec![
         binary.clone(),
         "search".into(),
-        out_base.clone(),
+        query.base.clone(),
         db_path.to_string(),
         aln.clone(),
         tmp_folder.clone(),
         "-e".into(),
         crate::matrix::text::py_float_str(evalue),
     ];
-    argv.extend(threads);
+    argv.extend(threads(cpu));
     argv.extend(search_gpu);
     run_command(&argv, "foldseek search", None, &search_env)?;
 
@@ -160,7 +187,7 @@ pub fn search(
         "convertalis".into(),
         "--format-output".into(),
         FORMAT_OUTPUT.into(),
-        out_base,
+        query.base.clone(),
         db_path.to_string(),
         aln,
         results.clone(),
@@ -229,6 +256,82 @@ fn parse_hit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ProstT5 is the expensive step and depends only on the queries, so a search over
+    /// several databases runs `createdb` once and only `search`/`convertalis` per
+    /// database. A stand-in foldseek logs each call and reports one hit per search.
+    #[cfg(unix)]
+    #[test]
+    fn prostt5_runs_once_for_many_databases() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir =
+            std::env::temp_dir().join(format!("domainator_fake_foldseek_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("calls.log");
+        let script = dir.join("foldseek");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\n\
+                 echo \"$*\" >> '{}'\n\
+                 for a; do last=$a; done\n\
+                 case \"$1\" in\n\
+                 createdb) : > \"$3\" ;;\n\
+                 convertalis) mkdir -p \"$(dirname \"$last\")\"; \
+                 printf '0,1\\tT\\t0,1 \\tT desc\\t50.0\\t10\\t5\\t0\\t1\\t10\\t1\\t10\\t1.0E-5\\t40\\t10\\t10\\n' \
+                 > \"$last\" ;;\n\
+                 esac\n",
+                log.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let search = FoldseekSearch::new(
+            &["/dbs/A".to_string(), "/dbs/B".to_string()],
+            script,
+            "weights".to_string(),
+            "cpu".to_string(),
+            "cpu".to_string(),
+        );
+        let peptides = vec![
+            ("0,1".to_string(), b"MKVLA".to_vec()),
+            ("0,2".to_string(), b"MKVXA".to_vec()), // not predictable: never sent
+        ];
+        let query = build_query_db(&search, &peptides, 2).unwrap().unwrap();
+        let fasta = std::fs::read_to_string(query._dir.path().join("protein.fasta")).unwrap();
+        assert_eq!(fasta, ">0,1 \nMKVLA\n");
+        let mut found = Vec::new();
+        for (name, path) in &search.databases {
+            for (contig, cds, hit) in search_db(&search, &query, name, path, 2, 1e-3, 0.0).unwrap()
+            {
+                found.push((contig, cds, hit.database));
+            }
+        }
+        assert_eq!(found, [(0, 1, "A".to_string()), (0, 1, "B".to_string())]);
+
+        let calls = std::fs::read_to_string(&log).unwrap();
+        let programs: Vec<&str> = calls
+            .lines()
+            .map(|l| l.split(' ').next().unwrap())
+            .collect();
+        assert_eq!(
+            programs,
+            ["createdb", "search", "convertalis", "search", "convertalis"]
+        );
+        assert!(calls
+            .lines()
+            .next()
+            .unwrap()
+            .contains("--prostt5-model weights"));
+        assert!(calls.lines().nth(1).unwrap().contains(" /dbs/A "));
+        assert!(calls.lines().nth(3).unwrap().contains(" /dbs/B "));
+
+        let none = build_query_db(&search, &peptides[1..], 2).unwrap();
+        assert!(none.is_none(), "nothing predictable: no createdb");
+        drop(query);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn predictable_matches_upstream_selection() {

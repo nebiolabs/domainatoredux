@@ -6,7 +6,7 @@ use domainator_core::tools::transform_matrix::{transform_matrix, TransformMatrix
 use crate::output::{check_hdf_out, write_matrix_outputs};
 
 pub fn run(args: &TransformMatrixArgs) -> Result<()> {
-    check_hdf_out(args.hdf_out.as_deref())?;
+    check_hdf_out(args.hdf_out.as_deref(), None)?;
     let max_bytes = crate::max_output_gb_to_bytes(args.max_output_gb.0)?;
     let matrix =
         read_matrix(&args.input).with_context(|| format!("reading matrix {}", args.input))?;

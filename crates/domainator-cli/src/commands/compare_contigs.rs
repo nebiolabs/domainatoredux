@@ -11,7 +11,13 @@ use crate::output::{check_hdf_out, write_matrix_outputs, write_seq_outputs};
 
 pub fn run(args: &CompareContigsArgs) -> Result<()> {
     let max_bytes = crate::max_output_gb_to_bytes(args.max_output_gb.0)?;
-    check_hdf_out(args.hdf_out.as_deref())?;
+    check_hdf_out(
+        args.hdf_out.as_deref(),
+        Some(
+            "In Domainator 0.x, compare_contigs -o wrote the sorted GenBank file; that is now \
+             --genbank_out.",
+        ),
+    )?;
     let opts = CompareContigsOptions {
         ji_weight: args.ji.0,
         ai_weight: args.ai.0,

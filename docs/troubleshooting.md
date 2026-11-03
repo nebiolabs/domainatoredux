@@ -26,6 +26,8 @@ export DOMAINATOREDUX_DIAMOND=/opt/diamond/diamond               # for the sessi
 
 The search order is the tool's `--diamond_path`/`--cdhit_path`/`--usearch_path` → `$DOMAINATOREDUX_DIAMOND` / `$DOMAINATOREDUX_CDHIT` /
 `$DOMAINATOREDUX_USEARCH` → a bundled copy under `external/` → the bare name on `PATH`.
+When no `cdhit` turns up, C cd-hit's `cd-hit`/`cd-hit-est` on `PATH` are used instead, so an
+environment set up for the Python `domainator` works as it is.
 
 **On Windows you need a Windows binary.** A `diamond` built for Linux under WSL2 will not
 run from a native Windows build.

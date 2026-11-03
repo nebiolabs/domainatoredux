@@ -85,11 +85,13 @@ DOMAINATOREDUX_ORPHOS=/path/to/orphos scripts/parity/differential.py --only doma
 ```
 
 `domainate --foldseek` needs foldseek on `PATH` and foldseek's ProstT5 weights
-(`foldseek databases ProstT5 prostt5_weights tmp`, 2.2 GB). Its three `extra:` rows name
+(`foldseek databases ProstT5 prostt5_weights tmp`, 2.2 GB). Its four `extra:` rows name
 the weights `@PROSTT5@`, substituted from `$DOMAINATOREDUX_PROSTT5`; with the variable
 unset they are harness errors, not `skipped`, since both sides would reject a missing
 directory and sweep green. ProstT5 output is the same at any thread count, so the rows are
-byte-identical. They run ProstT5 on the CPU: a GPU run is repeatable and identical between
+byte-identical. One of them passes two databases (the FeSOD database and a copy
+`generated_fixtures.py` makes under another name), the case where ProstT5 runs once for
+both. They run ProstT5 on the CPU: a GPU run is repeatable and identical between
 the two sides, but scores a few bits differently from a CPU run.
 
 `find_features --tmbed` needs TMbed on the Python side. The parity env carries it (CPU

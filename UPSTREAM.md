@@ -7,9 +7,16 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `67bad08` — *typos*
-  (2026-11-02; upstream `__version__` 1.0.0-rc.2, tag `v1.0.0-rc.2`, on `main`, which
-  `version_one` was merged into).
+- **Caught up to:** `0aa79fe` — *foldseek pLM annotation better parallelism*
+  (2026-11-03; upstream `__version__` still 1.0.0-rc.2, two commits past tag
+  `v1.0.0-rc.2`, on `main`).
+- **`67bad08..0aa79fe`**, ported. `c807588` rewords `compare_contigs`' help and its sort
+  memory error to name `--genbank_out` instead of the 0.x `-o`. It also changes the
+  `-o/--hdf_out` extension error, which now names the path and, for `compare_contigs`,
+  says that 0.x's `-o` is now `--genbank_out` (`output::check_hdf_out`). `0aa79fe` builds
+  `domainate --foldseek`'s query database, and so runs ProstT5, once per batch instead of
+  once per database (`foldseek::build_query_db`/`search_db`). It was made in both at once,
+  and output is unchanged.
 - **`d3ef00e..67bad08`** (release candidates 1 and 2), ported: `doctor`'s GPU section
   (`c6f1b54`). It lists the GPUs `nvidia-smi` finds and the CUDA version their driver
   supports, then says what this build can use. Upstream's PyTorch line is the build's

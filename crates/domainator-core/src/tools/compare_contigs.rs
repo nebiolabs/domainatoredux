@@ -374,9 +374,9 @@ pub fn check_sort_feasible(
         let available = system.available_memory();
         if needed > available {
             return Err(format!(
-                "Sorting {n} contigs for genbank output (-o) needs about {} of memory, but \
-                 only {} is available. To avoid this, drop -o and write a matrix with \
-                 --hdf_out instead, sort a subset of contigs with --contigs or \
+                "Sorting {n} contigs for --genbank_out needs about {} of memory, but only \
+                 {} is available. To avoid this, drop --genbank_out and write only a matrix \
+                 with -o/--hdf_out, sort a subset of contigs with --contigs or \
                  --contigs_file, or deduplicate the input first. Use \
                  --skip_sort_memory_check to try anyway.",
                 format_bytes(needed),

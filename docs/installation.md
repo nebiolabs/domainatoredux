@@ -100,7 +100,7 @@ alignment or gene-calling program, and **only** if you ask for that algorithm:
 | Program | Needed by | Not needed if |
 | --- | --- | --- |
 | `diamond` | `seq_dist --algorithm diamond_*` (the default), `deduplicate_genbank --algorithm diamond` | you use `seq_dist --algorithm hmmer` |
-| `cdhit` | `deduplicate_genbank --algorithm cd-hit` (the default) | you use `deduplicate_genbank --algorithm hash` |
+| `cdhit`, or C cd-hit's `cd-hit`/`cd-hit-est` | `deduplicate_genbank --algorithm cd-hit` (the default) | you use `deduplicate_genbank --algorithm hash` |
 | `usearch` | `deduplicate_genbank --algorithm usearch` | as above |
 | `orphos` (0.4.0 or newer) | `gene_call`, and `domainate`/`domain_search --gene_call` | your contigs already have CDS annotations |
 | `cmbuild` | `infernal_build` | you only search with existing `.cm` models (that needs nothing) |
@@ -117,7 +117,9 @@ Each is found by the first of these that works:
    `$DOMAINATOREDUX_USEARCH`, `$DOMAINATOREDUX_ORPHOS`, `$DOMAINATOREDUX_CMBUILD`,
    `$DOMAINATOREDUX_FOLDSEEK`, `$DOMAINATOREDUX_RESEEK` or `$DOMAINATOREDUX_DATASETS`;
 3. a bundled copy at `external/<program>/` next to the executable;
-4. the bare program name on your `PATH`.
+4. the bare program name on your `PATH`. For cd-hit that is the Rust port's `cdhit`, then
+   C cd-hit's `cd-hit` (bioconda's `cd-hit` package), which runs `cd-hit-est` from the
+   same directory for nucleotide input.
 
 **The desktop app can download all of them but `cmbuild` and `datasets` for you**, where a
 build exists for your platform — open the *External tools* panel in

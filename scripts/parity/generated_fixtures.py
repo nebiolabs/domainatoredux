@@ -79,10 +79,26 @@ def generate(data_dir, test_dir, out_dir):
     _infernal_fixtures(data, out)
     _selection_fixtures(data, out)
     _split_by_cluster_fixtures(data, out)
+    _foldseek_fixtures(data, out)
 
     # test_find_features.py's test_motif_integration writes this protein to a
     # temporary file.
     (out / "motif_test.fasta").write_text(">test\nMKFLDDHSAXXPXXXXCILLFNILCLFPVLA\n")
+
+
+def _foldseek_fixtures(data, out):
+    """A second foldseek database for test_domainate_foldseek_prostt5_two_databases: the
+    FeSOD database copied under the prefix FeSOD_copy (what that test's _copy_foldseek_db
+    does; foldseek has no copy command, and its files do not record their own name).
+    Copied here rather than imported so the sweep does not need a newer pin to run."""
+    import re
+    import shutil
+
+    src = data / "foldseek"
+    own = re.compile(r"FeSOD(_h|_ss|_ca)?(\.[a-z]+)?$")
+    for path in src.iterdir():
+        if own.fullmatch(path.name):
+            shutil.copy(path, out / ("FeSOD_copy" + path.name[len("FeSOD"):]))
 
 
 def _compare_contigs_fixtures(out):

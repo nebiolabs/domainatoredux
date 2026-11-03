@@ -22,7 +22,7 @@ pub fn run(args: &StructureDistArgs) -> Result<()> {
             usize::try_from(k).map_err(|_| anyhow::anyhow!("--max_hits_per_query must be >= 0"))
         })
         .transpose()?;
-    check_hdf_out(args.hdf_out.as_deref())?;
+    check_hdf_out(args.hdf_out.as_deref(), None)?;
     let mode = args.mode.as_str();
     if is_structural_mode(mode) && !(0.0..=1.0).contains(&args.threshold.0) {
         bail!("--threshold must be between 0 and 1 for --mode {mode}.");
