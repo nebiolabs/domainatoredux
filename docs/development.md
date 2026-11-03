@@ -182,7 +182,9 @@ Releases are cut by hand from the artifacts.
 `cuda` or `metal` feature (forwarded by core, the CLI and the GUI crate). macOS release
 builds have `metal`. CUDA builds are separate artifacts, `*-cuda`, made when the release
 workflow's `cuda` box is ticked; they need an NVIDIA driver for CUDA 12.4 or newer (550+)
-and run anywhere else on the CPU, as every build does.
+and the CUDA 12 cuBLAS, cuRAND and NVRTC libraries. candle links those (and the driver's
+`libcuda`) at build time (cudarc's `dynamic-linking`), so without them a CUDA build does not
+start at all, even to run on the CPU; the plain builds are for those machines.
 
 A local CUDA build needs, besides the NVIDIA driver:
 

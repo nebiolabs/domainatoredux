@@ -101,8 +101,8 @@ jobs:
           {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "target": "aarch64-apple-darwin", "bundle_args": "--bundles dmg --features metal", "artifact": "domainatoredux-gui-macos-arm64", "artifact_globs": "target/aarch64-apple-darwin/release/bundle/dmg/*.dmg"}
           {"family": "windows", "platform": "windows-msvc-x64", "os": "windows-latest", "target": "x86_64-pc-windows-msvc", "bundle_args": "--bundles nsis", "artifact": "domainatoredux-gui-windows-msvc-x64-setup", "artifact_globs": "target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe"}
           {"family": "linux", "platform": "linux-x64", "os": "ubuntu-24.04", "target": "x86_64-unknown-linux-gnu", "bundle_args": "--bundles deb,appimage", "artifact": "domainatoredux-gui-linux-x64", "artifact_globs": "target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb\ntarget/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage"}
-          {"family": "windows", "cuda": true, "platform": "windows-msvc-x64-cuda", "os": "windows-latest", "target": "x86_64-pc-windows-msvc", "bundle_args": "--bundles nsis --features cuda", "artifact": "domainatoredux-gui-windows-msvc-x64-cuda-setup", "artifact_globs": "target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe"}
-          {"family": "linux", "cuda": true, "platform": "linux-x64-cuda", "os": "ubuntu-24.04", "target": "x86_64-unknown-linux-gnu", "bundle_args": "--bundles deb --features cuda", "artifact": "domainatoredux-gui-linux-x64-cuda", "artifact_globs": "target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb"}
+          {"family": "windows", "cuda": true, "platform": "windows-msvc-x64-cuda", "os": "windows-2022", "target": "x86_64-pc-windows-msvc", "bundle_args": "--bundles nsis --features cuda", "artifact": "domainatoredux-gui-windows-msvc-x64-cuda-setup", "artifact_globs": "target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe"}
+          {"family": "linux", "cuda": true, "platform": "linux-x64-cuda", "os": "ubuntu-22.04", "target": "x86_64-unknown-linux-gnu", "bundle_args": "--bundles deb --features cuda", "artifact": "domainatoredux-gui-linux-x64-cuda", "artifact_globs": "target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb"}
           # Linux -> Windows GNU cross-build (experimental, unsigned; verified to build +
           # bundle an NSIS installer from Ubuntu). Cheaper than a Windows runner, but ship
           # signed MSVC builds. Uncomment to enable.
@@ -118,7 +118,7 @@ jobs:
           {"family": "macos", "platform": "macos-arm64", "os": "macos-14", "bin": "target/release/domainatoredux", "features": "metal"}
           {"family": "windows", "platform": "windows-x64", "os": "windows-latest", "bin": "target/release/domainatoredux.exe"}
           {"family": "linux", "cuda": true, "platform": "linux-x64-cuda", "os": "ubuntu-22.04", "bin": "target/release/domainatoredux", "features": "cuda"}
-          {"family": "windows", "cuda": true, "platform": "windows-x64-cuda", "os": "windows-latest", "bin": "target/release/domainatoredux.exe", "features": "cuda"}
+          {"family": "windows", "cuda": true, "platform": "windows-x64-cuda", "os": "windows-2022", "bin": "target/release/domainatoredux.exe", "features": "cuda"}
           EOF
             )
           fi
@@ -206,8 +206,8 @@ jobs:
         with:
           cuda: '12.4.1'
           method: network
-          sub-packages: '["nvcc", "cudart", "nvrtc", "cccl"]'
-          non-cuda-sub-packages: '["libcublas", "libcurand"]'
+          sub-packages: ${{ runner.os == 'Windows' && '["nvcc", "cudart", "nvrtc", "nvrtc_dev", "thrust", "cublas", "cublas_dev", "curand", "curand_dev"]' || '["nvcc", "cudart", "cudart-dev", "nvrtc", "nvrtc-dev", "cccl", "driver-dev"]' }}
+          non-cuda-sub-packages: '["libcublas", "libcublas-dev", "libcurand", "libcurand-dev"]'
 
       - name: Install frontend dependencies
         working-directory: apps/domainatoredux-gui
@@ -263,14 +263,26 @@ jobs:
       # to PTX, which a driver older than the toolkit cannot load, so this sets the oldest
       # driver the build runs on (550). The runners have no GPU, so the kernels are built
       # for compute capability 7.5 (Turing), which newer GPUs JIT from the same PTX.
+      # 12.4 also pins the runners: NVIDIA has no 12.4 packages for Ubuntu 24.04, and its
+      # nvcc rejects Visual Studio 2026 (windows-latest), so the CUDA rows run on
+      # ubuntu-22.04 and windows-2022. candle links cuBLAS, cuRAND, NVRTC and the driver
+      # library at build time, hence the -dev packages (and the libcuda stub in
+      # driver-dev). The Windows installer names its subpackages differently: `_dev`,
+      # and `thrust` for cccl.
+      - name: Set up MSVC command prompt
+        if: matrix.cuda && runner.os == 'Windows'
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+
       - name: Install the CUDA toolkit
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
           cuda: '12.4.1'
           method: network
-          sub-packages: '["nvcc", "cudart", "nvrtc", "cccl"]'
-          non-cuda-sub-packages: '["libcublas", "libcurand"]'
+          sub-packages: ${{ runner.os == 'Windows' && '["nvcc", "cudart", "nvrtc", "nvrtc_dev", "thrust", "cublas", "cublas_dev", "curand", "curand_dev"]' || '["nvcc", "cudart", "cudart-dev", "nvrtc", "nvrtc-dev", "cccl", "driver-dev"]' }}
+          non-cuda-sub-packages: '["libcublas", "libcublas-dev", "libcurand", "libcurand-dev"]'
 
       - name: Build CLI
         shell: bash

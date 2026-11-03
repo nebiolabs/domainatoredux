@@ -178,7 +178,8 @@ and how to install it. Then whether a GPU can be used. This covers the NVIDIA GP
 `nvidia-smi` lists and the newest CUDA version their driver supports. It also covers
 whether this build runs TMbed on the CPU only, or is a CUDA or Metal build that can open
 a device. A CUDA build that cannot open one usually needs a newer NVIDIA driver: the
-release CUDA builds need a driver for CUDA 12.4 or newer. foldseek's GPU options
+release CUDA builds need a driver for CUDA 12.4 or newer, and the CUDA 12 libraries
+(see [Installation](installation.md#gpu-builds)). foldseek's GPU options
 (`--prostt5_device`, `--foldseek_device`) depend on a GPU build of foldseek instead.
 
 ```bash

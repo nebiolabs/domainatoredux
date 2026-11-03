@@ -36,6 +36,23 @@ launch — open it once via right-click → Open, or clear the quarantine flag:
 xattr -dr com.apple.quarantine /Applications/Domainatoredux.app
 ```
 
+### GPU builds
+
+`find_features --tmbed` can run its protein language model on a GPU. The macOS downloads
+use the Apple GPU. For an NVIDIA GPU on Linux or Windows, a release may also offer `-cuda`
+downloads of both the app and the command-line tool. They need:
+
+- an NVIDIA driver for CUDA 12.4 or newer (driver 550 or later; `nvidia-smi` shows the
+  CUDA version your driver supports), and
+- the CUDA 12 libraries cuBLAS, cuRAND and NVRTC, most easily by installing the
+  [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 12.x. On Windows its
+  installer puts them on `PATH`.
+
+Without those libraries a `-cuda` download does not start at all (on Linux, "error while
+loading shared libraries"; on Windows, a missing-DLL message), so use the plain download
+on machines that lack them. `domainatoredux doctor` reports whether the build you have can
+use the GPU.
+
 ## Build the command-line tool from source
 
 You need [Rust](https://rustup.rs/) **1.94 or newer** (the workspace sets

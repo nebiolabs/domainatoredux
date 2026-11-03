@@ -93,8 +93,10 @@ fn backend_status(backend: &Backend) -> String {
         Backend::Cpu if cfg!(target_os = "macos") => {
             "CPU only; the macOS release builds use the Apple GPU (Metal)".to_string()
         }
+        // A CUDA build links these at load time, so without them it does not start at all.
         Backend::Cpu => "CPU only; for an NVIDIA GPU, install a CUDA build (the -cuda \
-                         release downloads, for Linux and Windows)"
+                         release downloads, for Linux and Windows), which also needs the \
+                         CUDA 12 libraries cuBLAS, cuRAND and NVRTC (the CUDA Toolkit 12.x)"
             .to_string(),
         Backend::Cuda(Ok(0)) => "a CUDA build, cannot use a GPU".to_string(),
         Backend::Cuda(Ok(usable)) => format!(
