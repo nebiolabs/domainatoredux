@@ -4,7 +4,9 @@ This project uses its own [SemVer](https://semver.org/) numbering, independent o
 Python `domainator` package. Each entry says which upstream release (and commit) it is at
 parity with. How versions are assigned: `docs/development.md`, "Versioning and releases".
 
-## [Unreleased]
+## [1.0.0-rc.2] - 2026-11-03
+
+Parity: Python domainator 1.0.0-rc.2 @ `0aa79fe`.
 
 ### Fixed
 

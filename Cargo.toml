@@ -4,7 +4,7 @@ members = ["crates/*", "apps/genbank-summary/src-tauri", "apps/domainatoredux-gu
 exclude = ["wasm_apps/genbank-summary/wasm"]
 
 [workspace.package]
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 edition = "2021"
 license = "MIT"
 rust-version = "1.94"
