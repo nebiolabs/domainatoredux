@@ -1964,7 +1964,11 @@ pub fn f3_filter_sequence(
                 let wsc_mb = (mfsc as f64 - filtersc as f64) / ln2;
                 let p_mb = esl_gumbel_surv(wsc_mb, mb.lmmu, mb.lmlambda);
                 if p_mb > mb.f1b {
+                    // C sets survAA[stage][i] only when a window reaches that stage, so
+                    // a window dropped here counts toward no later stage either.
                     surv_f1b[i] = false;
+                    surv_f2[i] = false;
+                    surv_f2b[i] = false;
                     continue;
                 }
             }

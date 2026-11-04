@@ -862,6 +862,10 @@ struct Thresh {
     /// C `pli->do_null2_hmmonly` (cleared by `--hmmnonull2`): null2 dombias in the
     /// hmmonly final stage.
     hmm_do_null2: bool,
+    /// C `pli->do_bias_hmmonly` (cm_pipeline.c:619-632; cleared by `--hmmmax` and
+    /// `--hmmnobias`): run the F1b MSV composition-bias window filter in the HMM-only
+    /// pass, thresholded at F1 (cm_pipeline.c:2515, 2521).
+    hmm_do_bias: bool,
     /// C `pli->do_null3` (cm_pipeline.c:640, and CM_SEARCH_NULL3 in fcyk/final
     /// cm_search_opts): apply the NULL3 biased-composition score correction in the
     /// F6 CYK filter and F7 final CM search. TRUE by default; `--nonull3` sets FALSE.
@@ -1085,8 +1089,6 @@ impl FaithfulSearcher {
 
     /// Build the "Internal HMM-only pipeline statistics summary" data (C
     /// `pli_hmmonly_pass_statistics`), or `None` if this model does not run HMM-only.
-    /// The F2 (Viterbi) filter is not yet wired: the Viterbi window count reuses the
-    /// MSV-bias survivors as a placeholder (a known 1-line gap until F2 lands).
     pub fn hmmonly_pass_stats(
         &self,
         seqs: &[&str],
@@ -1133,8 +1135,8 @@ impl FaithfulSearcher {
             f3: fcfg.f3,
             n_past_msv: a.n_past_msv as i64,
             pos_past_msv: a.pos_past_msv as i64,
-            n_past_msvbias: a.n_past_msv as i64,
-            pos_past_msvbias: a.pos_past_msv as i64,
+            n_past_msvbias: a.n_past_msvbias as i64,
+            pos_past_msvbias: a.pos_past_msvbias as i64,
             n_past_vit: a.n_past_vit as i64,
             pos_past_vit: a.pos_past_vit as i64,
             n_past_fwd: a.n_past_fwd as i64,
@@ -1773,6 +1775,7 @@ impl FaithfulSearcher {
             hmm_f3: hmm_fcfg.f3 as f64,
             hmm_do_max: hmm_fcfg.do_max,
             hmm_do_null2: hmm_fcfg.do_null2,
+            hmm_do_bias: hmm_fcfg.do_bias,
             // C cm_pipeline.c:640: pli->do_null3 = --nonull3 ? FALSE : TRUE.
             do_null3: !cfg.nonull3,
         }
@@ -3028,9 +3031,6 @@ impl FaithfulSearcher {
     /// HMM-only pipeline on one chunk × strand (C `pli_final_stage_hmmonly`,
     /// cm_pipeline.c:3844). The CM is never used: the p7 filter cascade produces
     /// windows and `run_hmmonly_stage` runs LOCAL p7 domain-def + scoring per window.
-    /// F2 (Viterbi) is not yet wired — running F1+F3 passes a SUPERSET of windows;
-    /// extra windows yield no above-`T` domain (→ no hit), so the reported hit SET is
-    /// unaffected (only window-count statistics differ; deferred with the F2 owner).
     /// Returns chunk-local hits `(start, stop, dom_score, dom_bias, cfrom_emit,
     /// cto_emit, Some(ad))`; `run_window_task` remaps coords and the LFTAU/LFLAMBDA
     /// exp-tail + nhmmer eZ in `th` give the pvalue/evalue.
@@ -3070,10 +3070,13 @@ impl FaithfulSearcher {
         let (merged, acct) = crate::cm_pipeline::f3_filter_sequence(
             &self.mf, &self.ff, &self.bf, wdsq, win_len,
             th.hmm_f1, th.hmm_f3, 1.0, self.cm.w as i64,
-            // HMM-only MSV-bias (cur_do_msvbias = do_bias_hmmonly) is applied via the
-            // p7 domain-def null2/bias in the hmmonly final stage, not this window
-            // filter (verified byte-identical without an F1b window gate). `None`.
-            None, vit,
+            // F1b, MSV composition bias. C cm_pipeline.c:2515, 2521 for the HMM-only pass:
+            //   cur_do_msvbias = pli->do_bias_hmmonly;  (TRUE unless --hmmmax/--hmmnobias)
+            //   cur_F1b        = pli->F1_hmmonly;
+            // This is a window filter, separate from the null2 correction in domain
+            // definition; without it most SSV windows reach Viterbi and Forward, and
+            // low-complexity windows yield hits C never reports.
+            self.std_msvbias_params(th.hmm_do_bias, th.hmm_f1), vit,
             /* do_fwd */ !th.hmm_do_max, /* do_fwdbias */ false,
             // C cm_pipeline.c:2514: cur_do_msv = TRUE for the HMM-only pass regardless
             // of pli->do_msv, so this pass always uses MSV window detection.

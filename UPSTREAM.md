@@ -533,9 +533,11 @@ pinned exactly (`infernox = "=0.2.0"`), because a release that changed one hit w
 annotations, so a bump is a re-verification: the sweep's infernal rows (the upstream ones
 plus the `extra:infernal_*` set, which cuts the CopA site so the truncated passes run) and
 the aarch64 check. It is also **vendored** (`vendor/infernox/`, a `[patch.crates-io]` path
-entry) for one addition, `FaithfulConfig::whole_sequence` (`vendor/infernox/PATCHES.md`). A
-bump means re-applying that to the new release, or dropping the vendored copy if the option
-lands upstream (a PR to necoli1822/infernox is drafted, not sent).
+entry) for two patches (`vendor/infernox/PATCHES.md`): the option
+`FaithfulConfig::whole_sequence`, and a fix to the HMM-only pipeline (below). A bump means
+re-applying whichever of them the new release lacks, or dropping the vendored copy once
+both are upstream. Both are drafted for necoli1822/infernox in
+`vendor/infernox/UPSTREAM_PR.md`, not yet sent.
 `search/infernal.rs` reproduces what `pyinfernal.cmsearch(cms, block)` does, which differs
 from the `cmsearch` command line and from infernox's library defaults:
 
@@ -564,13 +566,29 @@ from the `cmsearch` command line and from infernox's library defaults:
   multiply-adds where the CPU has FMA, which moves scores in the last bits and makes x86 and
   ARM disagree. Strict costs about 15%.
 
-**Open: infernox's HMM-only pipeline reports extra hits.** On the same phage and Rfam,
-infernox (either window mode) reported 165 hits that neither C `cmsearch` nor pyinfernal
-reports, and missed 4, in 48 families; C and pyinfernal agreed exactly on all 48. 42 of the
-families have no base pairs, so Infernal searches them with the HMM-only pipeline (the F2
-Viterbi filter is wired there, so that is not the cause). Most extra hits score E > 0.01,
-but rbgportal's replay saw one (TtnuCD7, score 19.4) pass `-e 0.001`. Not yet diagnosed;
-the sweep's fixtures have no base-pair-free model, so it is not tracked there.
+**Fixed in the vendored copy: the HMM-only pipeline skipped the MSV bias filter.** On the
+same phage and Rfam, infernox 0.2.0 (either window mode) reported 165 hits that neither C
+`cmsearch` nor pyinfernal reports, and missed 4, in 48 families. C and pyinfernal agreed
+exactly on all 48. 42 of those families have no base pairs, so Infernal searches them with
+the HMM-only pipeline. That pass runs the MSV composition-bias window filter (F1b) at the F1
+threshold (`cm_pipeline.c:2515,2521`), and infernox passed no bias filter at all.
+- DLEU2_1: 474 SSV windows went on to Viterbi instead of C's 16, giving 23 hits instead of 2.
+- C's `--hmmnobias` reproduces those 23 exactly.
+
+With the filter on, all 42 families match C hit for hit. This was also the likely source
+of rbgportal's extra TtnuCD7 hit (score 19.4, past `-e 0.001`).
+- Sweep row: `extra:infernal_hmmonly` (`rfam_hmmonly.cm`: DLEU2_1 and TtnuCD7). It is
+  `tolerated`, because one TtnuCD7 E-value differs in its second digit at the same score
+  (C prints the same difference).
+- Also pinned by `crates/domainator-cli/tests/infernal_hmmonly.rs` and upstream's
+  `test_domainator_infernal_searches_models_without_basepairs`.
+
+**Open: base-paired models still differ from C in 6 of those 48 families.** The families
+are IRES_Tobamo, S16-Flavobacteria, mir-7616, plasmodium_snoR26, psm_mec_RNA and
+snoPyro_CD, all searched by the CM pipeline. They already differ at the first stage, the
+SSV window count. S16-Flavobacteria with `--toponly --notrunc` gives 1456 windows in C and
+1469 in infernox, so the cause is in window definition (`f1_msv_windows`), not the
+truncated passes. Not yet diagnosed. `vendor/infernox/PATCHES.md` has the numbers.
 
 Hits Infernal marks as overlapping duplicates are dropped, as `cmsearch` drops them.
 pyinfernal keeps them in `TopHits` (flagged `duplicate`), and upstream's

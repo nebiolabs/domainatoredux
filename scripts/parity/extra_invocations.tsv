@@ -132,6 +132,7 @@ domainate	extra:infernal_truncated_hits#1	extra_invocations.tsv	--input	@GEN@/co
 domainate	extra:infernal_truncated_hits#2	extra_invocations.tsv	--input	@GEN@/copa_fragments.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--evalue	10	--max_overlap	0
 domainate	extra:infernal_circular_origin#0	extra_invocations.tsv	--input	@GEN@/copa_circular.gb	-r	@DATA@/RF00042.cm	--genbank_out	@TMP@/out.gb	--evalue	10
 domainate	extra:infernal_long_contig#0	extra_invocations.tsv	-i	@DATA@/206.gb	-r	@DATA@/rfam_window_boundary.cm	--genbank_out	@TMP@/out.gb	--evalue	10
+domainate	extra:infernal_hmmonly#0	extra_invocations.tsv	-i	@DATA@/206.gb	-r	@DATA@/rfam_hmmonly.cm	--genbank_out	@TMP@/out.gb	--evalue	10
 domainate	extra:infernal_duplicate_model_names#0	extra_invocations.tsv	--input	@DATA@/pANT_R100.fa	--alphabet	nucleotide	-r	@GEN@/copa_twice.cm	--genbank_out	@TMP@/out.gb
 domain_search	extra:infernal_truncated_hits#0	extra_invocations.tsv	-i	@GEN@/copa_fragments.fa	--alphabet	nucleotide	-r	@DATA@/RF00042.cm	-o	@TMP@/out.gb	--whole_contig	--evalue	10
 rotate_contigs	extra:infernal_circular_origin#0	extra_invocations.tsv	-i	@GEN@/copa_circular.gb	-r	@DATA@/RF00042.cm	--cpu	1	--keep_annotation	-o	@TMP@/out.gb

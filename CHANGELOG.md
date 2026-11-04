@@ -30,6 +30,11 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
   one window, as pyinfernal does, rather than in `cmsearch`'s 100 kb windows, which kept or
   dropped different near-threshold hits. This uses a vendored infernox with one option
   added (`vendor/infernox/`).
+- **`.cm` models with no base pairs no longer report extra weak hits.** Infernal searches
+  them with its HMM-only pipeline, and that pipeline's composition-bias filter was being
+  skipped. On low-complexity sequence this gave many hits that Infernal and upstream don't
+  report, for example 23 instead of 2 for Rfam's DLEU2_1 on a 142 kb phage. The fix is in
+  the vendored infernox.
 
 ## [1.0.0-rc.2] - 2026-11-03
 
