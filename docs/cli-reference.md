@@ -25,7 +25,8 @@ output its own `--<content>_out` option; every tool here follows it. In particul
 - outputs are `-o/--genbank_out`, `--fasta_out`, `--tsv_out`, ... and at least one is
   required. Nothing goes to stdout unless you ask for it with `-`, and at most one output
   can be `-`. A path ending in `.gz` or `.bgz` is written compressed (BGZF), and a file
-  appears only once the run has succeeded.
+  appears only once the run has succeeded. A device or pipe is written directly, so
+  `--fasta_out /dev/null` discards an output and `-o >(gzip > out.gb.gz)` works.
 - `-i -` reads GenBank from stdin, except on the tools that read their input more than
   once, which say so. Leaving out `-i` is an error.
 - Progress messages and warnings go to stderr. `-q/--quiet` shows errors only, and

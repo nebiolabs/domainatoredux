@@ -39,8 +39,13 @@ pub struct HmmDb {
 pub fn load_hmm_dbs(files: &[String]) -> std::io::Result<Vec<HmmDb>> {
     let mut out = Vec::new();
     for f in files {
-        let hmms = crate::search::hmm_read::read_hmm_file(Path::new(f))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
+        let path = Path::new(f);
+        let hmms = crate::search::hmm_read::read_hmm_file(path).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                crate::search::hmm_read::error_message(path, &e),
+            )
+        })?;
         let name = file_stem(f);
         out.push(HmmDb {
             name,

@@ -149,9 +149,66 @@ pub fn detect_filetype(path: &Path) -> Option<FileType> {
     }
 }
 
+/// Whether `path` is an existing file that is neither a regular file nor a directory:
+/// a character device (`/dev/null`, `/dev/stderr`), a FIFO (a shell's `>(...)`), or a
+/// socket, and `NUL` on Windows. Such an output must be written directly: it cannot be
+/// replaced by renaming a temporary file over it, and its directory (`/dev`) usually
+/// cannot hold one.
+pub fn is_special_file(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        if path.extension().is_none() && stem.eq_ignore_ascii_case("nul") {
+            return true;
+        }
+    }
+    std::fs::metadata(path).is_ok_and(|m| {
+        let kind = m.file_type();
+        !kind.is_file() && !kind.is_dir()
+    })
+}
+
+/// A unique temporary name beside `target` for writing it before a rename into place:
+/// `.{name}.{pid}.tmp` in the same directory, so the rename never crosses filesystems,
+/// and hidden behind a leading `.` that no shard or output pattern matches.
+pub fn temp_path_beside(target: &Path) -> std::path::PathBuf {
+    let name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    target.with_file_name(format!(".{name}.{}.tmp", std::process::id()))
+}
+
+/// Remove the partial output a failed run left at `path`, but only a regular file:
+/// a run that wrote to `/dev/null` or a FIFO must never delete it.
+pub fn remove_partial_output(path: &Path) {
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn devices_are_special_files_and_never_removed() {
+        assert!(is_special_file(Path::new("/dev/null")));
+        let dir =
+            std::env::temp_dir().join(format!("domainator_io_special_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let regular = dir.join("out.txt");
+        std::fs::write(&regular, b"x").unwrap();
+        assert!(!is_special_file(&regular));
+        assert!(!is_special_file(&dir));
+        assert!(!is_special_file(&dir.join("missing.txt")));
+        remove_partial_output(Path::new("/dev/null"));
+        assert!(Path::new("/dev/null").exists());
+        remove_partial_output(&regular);
+        assert!(!regular.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn db_name_strips_one_compression_then_one_format_suffix() {

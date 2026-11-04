@@ -4,6 +4,33 @@ This project uses its own [SemVer](https://semver.org/) numbering, independent o
 Python `domainator` package. Each entry says which upstream release (and commit) it is at
 parity with. How versions are assigned: `docs/development.md`, "Versioning and releases".
 
+## [Unreleased]
+
+### Fixed
+
+- **Outputs can be `/dev/null`, `/dev/stderr` or a pipe** (`-o >(gzip > out.gb.gz)`). They
+  are written directly; only regular files go through a temporary name and a rename. A
+  failed run never removes such an output.
+- **`format_db` replaces shards atomically.** Each shard and its `.didx` are written under
+  a hidden temporary name and renamed into place, index first, as upstream does. A rebuild
+  with `--force` no longer truncates a shard that a running `domain_search` has open, and
+  a half-written shard is never picked up by a search.
+- **`db_download` succeeds when the filters select no NCBI assemblies**, for example an
+  incremental update whose selection is all in `--exclude_accessions_file`. It leaves empty
+  outputs and logs "0 assemblies to download" instead of failing after retrying
+  `datasets` (fixed upstream too).
+- **HMM files with a non-numeric MAP value load, as in HMMER.** The value is read as
+  HMMER's `atoi` reads it, with a warning naming the file, line and model. Other HMM parse
+  errors now give the file, line and model name, and are no longer printed in debug form.
+- **Locations with a `<` on the end or a `>` on the start** (`<744..<911`, written by
+  upstream 1.0 release candidates for domains on a partial CDS) are read, with the marker
+  dropped. They used to become an empty location. Upstream now writes such domains with
+  exact ends, as this port always has.
+- **`.cm` searches of contigs over 100 kb match upstream.** Each sequence is searched as
+  one window, as pyinfernal does, rather than in `cmsearch`'s 100 kb windows, which kept or
+  dropped different near-threshold hits. This uses a vendored infernox with one option
+  added (`vendor/infernox/`).
+
 ## [1.0.0-rc.2] - 2026-11-03
 
 Parity: Python domainator 1.0.0-rc.2 @ `0aa79fe`.

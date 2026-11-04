@@ -323,7 +323,7 @@ pub fn read_hmm_byte_ranges(path: &str, ranges: &[(u64, u64)]) -> Result<Vec<Vec
 pub fn logo_from_hmm_bytes(bytes: &[u8]) -> Result<HmmLogo, String> {
     let reader = std::io::BufReader::new(bytes);
     let hmms =
-        hmmer_pure_rs::hmmfile::read_hmms(reader).map_err(|e| format!("reading HMM: {e:?}"))?;
+        hmmer_pure_rs::hmmfile::read_hmms(reader).map_err(|e| format!("reading HMM: {e}"))?;
     let hmm = hmms.first().ok_or("no HMM in profile block")?;
     Ok(build_logo(hmm))
 }
@@ -332,8 +332,13 @@ pub fn logo_from_hmm_bytes(bytes: &[u8]) -> Result<HmmLogo, String> {
 /// new `.hmm` file at `out_path` (plain gzip when it ends in `.gz`). Keeps the
 /// `hmmer_pure_rs` dependency inside core.
 pub fn extract_hmms_to_file(source: &str, indices: &[usize], out_path: &str) -> Result<(), String> {
-    let hmms = crate::search::hmm_read::read_hmm_file(std::path::Path::new(source))
-        .map_err(|e| format!("reading HMM: {e:?}"))?;
+    let path = std::path::Path::new(source);
+    let hmms = crate::search::hmm_read::read_hmm_file(path).map_err(|e| {
+        format!(
+            "reading HMM: {}",
+            crate::search::hmm_read::error_message(path, &e)
+        )
+    })?;
     let mut w = crate::search::hmm_write::HmmOutput::create(out_path)?;
     let mut n = 0usize;
     for &i in indices {
@@ -354,8 +359,13 @@ pub fn extract_hmms_to_file(source: &str, indices: &[usize], out_path: &str) -> 
 /// Read an `.hmm` file and build the logo for profile `index` (0-based). Keeps the
 /// `hmmer_pure_rs` dependency inside core so callers (the GUI) don't take it on.
 pub fn load_logo_from_file(path: &str, index: usize) -> Result<HmmLogo, String> {
-    let hmms = crate::search::hmm_read::read_hmm_file(std::path::Path::new(path))
-        .map_err(|e| format!("reading HMM: {e:?}"))?;
+    let file = std::path::Path::new(path);
+    let hmms = crate::search::hmm_read::read_hmm_file(file).map_err(|e| {
+        format!(
+            "reading HMM: {}",
+            crate::search::hmm_read::error_message(file, &e)
+        )
+    })?;
     let hmm = hmms
         .get(index)
         .ok_or_else(|| format!("no HMM at index {index} (file has {})", hmms.len()))?;

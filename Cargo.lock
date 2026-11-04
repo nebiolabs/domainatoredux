@@ -1223,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-cli"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "anyhow",
  "bgzf",
@@ -1240,7 +1240,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-config"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -1252,7 +1252,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-core"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "bgzf",
  "domainator-plm",
@@ -1282,7 +1282,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-genbank-summary"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "domainator-core",
  "rfd",
@@ -1293,7 +1293,7 @@ dependencies = [
 
 [[package]]
 name = "domainator-plm"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -1302,7 +1302,7 @@ dependencies = [
 
 [[package]]
 name = "domainatoredux-gui"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2617,8 +2617,6 @@ dependencies = [
 [[package]]
 name = "infernox"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63592fba936cf6917cc09240964929d7884e71ef52e4e759f0fa152262066930"
 dependencies = [
  "flate2",
  "rayon",

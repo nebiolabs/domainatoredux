@@ -29,6 +29,17 @@ pub fn get_offsets(
     if let Some((offsets, cds)) = didx::read_index(Path::new(path), filetype, compression)? {
         return Ok((offsets, cds));
     }
+    scan_offsets_uncached(path, filetype, compression)
+}
+
+/// [`get_offsets`] without consulting a `.didx`: always scan the file itself. For
+/// writing an index, where a sidecar about to be replaced must not be trusted (nor
+/// deleted first, which would leave a running search without one meanwhile).
+pub fn scan_offsets_uncached(
+    path: &str,
+    filetype: FileType,
+    compression: Compression,
+) -> io::Result<(Vec<u64>, Vec<u64>)> {
     let pairs = match (filetype, compression) {
         (FileType::Genbank, Compression::None) => genbank_offsets(path)?,
         (FileType::Fasta, Compression::None) => fasta_offsets(path)?,

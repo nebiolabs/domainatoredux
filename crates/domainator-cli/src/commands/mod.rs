@@ -137,8 +137,12 @@ pub fn read_hmm_inputs(paths: &[String]) -> Result<Vec<(String, Vec<Hmm>)>> {
         } else {
             read_hmm_file(std::path::Path::new(path))
         };
-        let profiles =
-            profiles.map_err(|e| anyhow::anyhow!("reading HMM profiles from {path}: {e:?}"))?;
+        let profiles = profiles.map_err(|e| {
+            anyhow::anyhow!(
+                "reading HMM profiles: {}",
+                domainator_core::search::hmm_read::error_message(std::path::Path::new(path), &e)
+            )
+        })?;
         out.push((path.clone(), profiles));
     }
     Ok(out)

@@ -204,6 +204,10 @@ pub fn cmsearch_db(
         e_report: PIPELINE_E,
         // The library default is off; cmsearch's (and pyinfernal's) is on.
         notrunc: false,
+        // pyinfernal runs the pipeline over each whole sequence; C cmsearch (and
+        // infernox's default) over 100 kb windows, which scores long contigs
+        // differently near the threshold. A vendored-infernox addition.
+        whole_sequence: true,
         z_mb_override: Some(z_megabases(residues)),
         ..FaithfulConfig::default()
     };

@@ -223,7 +223,7 @@ pub fn read_hmms_to_iterators(hmm_files: &[String]) -> Result<Vec<(String, Vec<H
     for f in hmm_files {
         let name = crate::io::db_name_from_path(f);
         let hmms = crate::search::hmm_read::read_hmm_file(Path::new(f))
-            .map_err(|e| format!("reading {f}: {e:?}"))?;
+            .map_err(|e| crate::search::hmm_read::error_message(Path::new(f), &e))?;
         out.push((name, hmms));
     }
     Ok(out)

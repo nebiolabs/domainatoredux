@@ -137,16 +137,22 @@ fn split_top_commas(s: &str) -> Vec<&str> {
 
 /// Parse a single GenBank span like `<123..>456`, `123`, or `123^124` into a
 /// `Part` (0-based half-open), with the given `strand`.
+///
+/// Either end may carry either marker: Biopython writes `<744..<911` for a domain on
+/// a 5'-partial CDS (a `BeforePosition` plus an offset stays one). The model keeps `<`
+/// on the low end and `>` on the high end; the other two have no place in it and are
+/// dropped, as upstream's lean reader drops them, rather than failing the whole
+/// location (which fell back to an empty one).
 fn parse_span(s: &str, strand: i32) -> Option<Part> {
     let s = s.trim();
     if let Some((a, b)) = s.split_once("..") {
-        let (before, a) = match a.strip_prefix('<') {
+        let (before, a) = match a.trim().strip_prefix('<') {
             Some(rest) => (true, rest),
-            None => (false, a),
+            None => (false, a.trim().strip_prefix('>').unwrap_or(a)),
         };
-        let (after, b) = match b.strip_prefix('>') {
+        let (after, b) = match b.trim().strip_prefix('>') {
             Some(rest) => (true, rest),
-            None => (false, b),
+            None => (false, b.trim().strip_prefix('<').unwrap_or(b)),
         };
         let start: i64 = a.trim().parse().ok()?;
         let end: i64 = b.trim().parse().ok()?;
@@ -282,6 +288,28 @@ mod tests {
         // Untouched parts keep theirs.
         let fuzzy = [(0, 5, 1, true, false), (7, 10, 1, false, true)];
         assert_eq!(m(&fuzzy), fuzzy.to_vec());
+    }
+
+    /// Upstream 1.0 writes `<744..<911` for a domain on a `<1..917` CDS. It used to
+    /// fail to parse and silently become the empty fallback location.
+    #[test]
+    fn a_marker_on_the_other_end_is_dropped_not_fatal() {
+        assert_eq!(
+            parse_location("<744..<911").parts,
+            vec![(743, 911, 1, true, false)]
+        );
+        assert_eq!(
+            parse_location(">744..>911").parts,
+            vec![(743, 911, 1, false, true)]
+        );
+        assert_eq!(
+            parse_location("complement(<744..<911)").parts,
+            vec![(743, 911, -1, true, false)]
+        );
+        assert_eq!(
+            parse_location("join(<10..<20,30..>40)").parts,
+            vec![(9, 20, 1, true, false), (29, 40, 1, false, true)]
+        );
     }
 
     #[test]

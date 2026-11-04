@@ -148,6 +148,31 @@ algorithm through the external [Orphos](https://github.com/FullHuman/orphos) bin
 the structure tools run [foldseek](https://github.com/steineggerlab/foldseek) or
 [reseek](https://github.com/rcedgar/reseek).
 
+## Vendored libraries
+
+Three dependencies are built from patched copies in [`vendor/`](vendor/) instead of the
+published crates. Each change is small and listed in that directory's `PATCHES.md` or
+`CHANGELOG.md`.
+
+- **[hdf5-pure](https://github.com/stephenberry/hdf5-pure)** 0.20.0 (MIT): writes the
+  matrix attributes as variable-length UTF-8 strings, which h5py reads back as `str` rather
+  than `bytes`, and reads enum attributes such as h5py's boolean `SYMMETRIC_LABELS`, which
+  the release silently drops. Both are needed for HDF5 matrices that the Python suite can
+  read and write.
+- **[candle-core](https://github.com/huggingface/candle)** 0.11.1 (MIT or Apache-2.0):
+  loads the CUDA libraries when they are first used instead of linking them. A GPU build
+  then still starts on a machine without CUDA, and runs on the CPU.
+- **[infernox](https://github.com/necoli1822/infernox)** 0.2.0 (BSD-3-Clause): adds an
+  option to search each sequence as one window, as pyinfernal (and so the Python suite)
+  does, instead of `cmsearch`'s 100 kb windows. Without it, `.cm` searches of contigs over
+  100 kb can report different near-threshold hits.
+
+Not vendored but also patched: [hmmer-pure-rs](https://github.com/henriksson-lab/hmmer-pure-rs)
+is pinned to a commit on [our fork](https://github.com/seanrjohnson-neb/hmmer-pure-rs). The
+commit runs its SIMD search kernels on ARM (Apple Silicon), where the release falls back to
+much slower code that places some domains differently. Each patch is meant to go upstream,
+after which the published crate replaces it; [Upstream sync](UPSTREAM.md) has the details.
+
 ## Credits
 
 A Rust port of [Domainator](https://github.com/nebiolabs/domainator) by New England

@@ -532,12 +532,30 @@ a BSD-licensed Rust port of Infernal 1.1.5 whose `cmsearch` is byte-identical to
 pinned exactly (`infernox = "=0.2.0"`), because a release that changed one hit would change
 annotations, so a bump is a re-verification: the sweep's infernal rows (the upstream ones
 plus the `extra:infernal_*` set, which cuts the CopA site so the truncated passes run) and
-the aarch64 check. `search/infernal.rs` reproduces what `pyinfernal.cmsearch(cms, block)`
-does, which differs from the `cmsearch` command line and from infernox's library defaults:
+the aarch64 check. It is also **vendored** (`vendor/infernox/`, a `[patch.crates-io]` path
+entry) for one addition, `FaithfulConfig::whole_sequence` (`vendor/infernox/PATCHES.md`). A
+bump means re-applying that to the new release, or dropping the vendored copy if the option
+lands upstream (a PR to necoli1822/infernox is drafted, not sent).
+`search/infernal.rs` reproduces what `pyinfernal.cmsearch(cms, block)` does, which differs
+from the `cmsearch` command line and from infernox's library defaults:
+
+- **Each sequence is searched whole** (`whole_sequence: true`). pyinfernal runs the
+  pipeline once per in-memory sequence and strand; `cmsearch`, and infernox by default, in
+  100 kb windows with a maxW overlap (`esl_sqio_ReadWindow`). The filters score whole
+  windows, so a contig longer than 100 kb otherwise keeps or drops different
+  near-threshold hits. Measured on `test/data/206.gb` (142 kb) with Rfam 15.1: windowed
+  infernox matched C `cmsearch` and disagreed with pyinfernal in 20 families, all with hits
+  near the 100 kb boundary; whole-sequence infernox matched pyinfernal in all 20. The
+  `extra:infernal_long_contig` sweep row (`rfam_window_boundary.cm`: MicF and idnO) and
+  upstream's `test_domainator_infernal_searches_long_contigs_whole` pin it.
 
 - **`Z` is the block's residue count, not doubled** for two strands (pyinfernal sets
   `Z = targets.total_length()`; cmsearch's default is twice that). infernox takes `Z` in
   megabases and truncates, so `z_megabases` steps the float until it lands exactly.
+  domainate's `-Z` applies to HMM searches only, upstream and here. One known difference:
+  upstream calls its search once per `--batch_size` proteins when protein references are
+  in the run, so its CM `Z` is each batch's residue count, while ours is the whole input's.
+  The two agree for CM-only runs and for inputs under one batch.
 - **Truncated hits are on** (`notrunc: false`); infernox's `FaithfulConfig::default()` has
   them off, and that alone drops every hit cut by a contig end.
 - **`E = 10`**, pyinfernal's pipeline default, is the scan cutoff; `--evalue` (capped at 10
@@ -545,6 +563,14 @@ does, which differs from the `cmsearch` command line and from infernox's library
 - **Strict Forward arithmetic** (`set_forward_strict(true)`): infernox otherwise fuses
   multiply-adds where the CPU has FMA, which moves scores in the last bits and makes x86 and
   ARM disagree. Strict costs about 15%.
+
+**Open: infernox's HMM-only pipeline reports extra hits.** On the same phage and Rfam,
+infernox (either window mode) reported 165 hits that neither C `cmsearch` nor pyinfernal
+reports, and missed 4, in 48 families; C and pyinfernal agreed exactly on all 48. 42 of the
+families have no base pairs, so Infernal searches them with the HMM-only pipeline (the F2
+Viterbi filter is wired there, so that is not the cause). Most extra hits score E > 0.01,
+but rbgportal's replay saw one (TtnuCD7, score 19.4) pass `-e 0.001`. Not yet diagnosed;
+the sweep's fixtures have no base-pair-free model, so it is not tracked there.
 
 Hits Infernal marks as overlapping duplicates are dropped, as `cmsearch` drops them.
 pyinfernal keeps them in `TopHits` (flagged `duplicate`), and upstream's

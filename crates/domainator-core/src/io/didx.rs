@@ -92,8 +92,17 @@ pub fn write_index(
         buf.extend_from_slice(&cds.to_le_bytes());
     }
 
+    // Written beside the index and renamed into place, so a reader never sees a
+    // half-written one (the rename keeps the source fingerprint it holds valid).
     let path = index_path_for(source);
-    File::create(&path)?.write_all(&buf)?;
+    let temp = super::temp_path_beside(&path);
+    let written = File::create(&temp)
+        .and_then(|mut f| f.write_all(&buf))
+        .and_then(|()| std::fs::rename(&temp, &path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    written?;
     Ok(path)
 }
 

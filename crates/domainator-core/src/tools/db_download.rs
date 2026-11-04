@@ -1070,8 +1070,6 @@ pub fn process_datasets(
     sink: &mut GenomeSink<'_>,
     options: &DatasetsOptions,
 ) -> io::Result<DownloadSummary> {
-    let workdir = &options.workdir;
-    std::fs::create_dir_all(workdir)?;
     let mut accessions: Vec<String> = assemblies
         .iter()
         .map(|a| a.field("assembly_accession").map(str::to_string))
@@ -1080,6 +1078,14 @@ pub fn process_datasets(
         // Cap the download, not just the appending, so --max_records is a cheap test.
         accessions.truncate(max);
     }
+    if accessions.is_empty() {
+        // `datasets` rejects an empty accession file (and would be retried for a
+        // minute first); nothing to fetch is a successful, empty download.
+        crate::log::info("0 assemblies to download");
+        return Ok(DownloadSummary::default());
+    }
+    let workdir = &options.workdir;
+    std::fs::create_dir_all(workdir)?;
     let accession_file = workdir.join("accessions.txt");
     std::fs::write(
         &accession_file,
@@ -1346,6 +1352,12 @@ pub fn db_download<'a>(
             no_na: selection.no_na,
         },
     )?;
+    if assemblies.is_empty() {
+        // An incremental update with nothing new: leave the outputs empty and succeed,
+        // rather than ask a backend for nothing (`datasets` refuses an empty list).
+        crate::log::info("0 assemblies to download");
+        return Ok(());
+    }
     let mut sink = GenomeSink { out, success_log };
     let (name, summary) = match backend {
         Some(Backend::Direct(direct)) => {
@@ -1525,6 +1537,37 @@ GCA_3.1\trepresentative genome\t9\tComplete Genome\t2019/03/10\tna\n";
             .map(|f| rehydrated_accession(f))
             .collect();
         assert_eq!(accessions, ["GCA_2", "GCA_3", "GCA_1"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Nothing selected (an incremental update with nothing new, or `--max_records 0`):
+    /// `datasets` is never run, since it rejects an empty accession list, and the
+    /// download succeeds with nothing appended.
+    #[test]
+    fn an_empty_selection_never_runs_datasets() {
+        let dir = scratch("datasets_empty");
+        let summary = "#\n#assembly_accession\tftp_path\nGCA_1.1\tx\n";
+        let one = read_assembly_summary(summary.as_bytes(), None).unwrap();
+        for (assemblies, max_records) in [(&one[..0], None), (&one[..], Some(0))] {
+            let options = DatasetsOptions {
+                max_records,
+                datasets: dir.join("no-such-datasets"),
+                workdir: dir.join("work"),
+                ..DatasetsOptions::default()
+            };
+            let (mut out, mut log) = (Vec::new(), Vec::new());
+            let result = process_datasets(
+                assemblies,
+                &mut GenomeSink {
+                    out: &mut out,
+                    success_log: Some(&mut log),
+                },
+                &options,
+            )
+            .unwrap();
+            assert_eq!(result, DownloadSummary::default());
+            assert!(out.is_empty() && log.is_empty());
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -298,7 +298,7 @@ pub fn write_hmm_output<T>(
             .map_err(|e| format!("writing {path}: {e}"))
     });
     if result.is_err() {
-        let _ = std::fs::remove_file(path);
+        crate::io::remove_partial_output(std::path::Path::new(path));
     }
     result
 }

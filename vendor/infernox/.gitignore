@@ -1,0 +1,6 @@
+target/
+
+# Tooling / editor / OS junk
+.DS_Store
+*.swp
+perf.data

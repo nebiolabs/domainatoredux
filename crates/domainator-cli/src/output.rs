@@ -2,16 +2,17 @@
 //!
 //! `-` and `/dev/stdout` are standard output. A file is written under a temporary name
 //! in its directory and renamed into place only when the run succeeds, so a failed run
-//! leaves nothing that looks like a result. A path ending in `.gz` or `.bgz` is
-//! compressed as BGZF, which gzip reads.
+//! leaves nothing that looks like a result. A device or FIFO (`/dev/null`, a shell's
+//! `>(...)`) is written directly, since nothing can be renamed over it. A path ending in
+//! `.gz` or `.bgz` is compressed as BGZF, which gzip reads.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use domainator_core::io::fasta;
 use domainator_core::io::genbank::writer::write_record;
+use domainator_core::io::{fasta, is_special_file, temp_path_beside};
 use domainator_core::matrix::estimate::estimate_write_size;
 use domainator_core::matrix::{hdf5_io, text, DataMatrix};
 use domainator_core::seq::SeqRecord;
@@ -44,14 +45,6 @@ pub struct Output {
     target: PathBuf,
 }
 
-fn temp_path(target: &Path) -> PathBuf {
-    let name = target
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    target.with_file_name(format!(".{name}.{}.tmp", std::process::id()))
-}
-
 impl Output {
     pub fn create(path: &str) -> Result<Output> {
         if is_stdout(path) {
@@ -62,9 +55,18 @@ impl Output {
             });
         }
         let target = PathBuf::from(path);
-        let temp = temp_path(&target);
-        let file =
-            BufWriter::new(File::create(&temp).with_context(|| format!("creating output {path}"))?);
+        let (file, temp) = if is_special_file(&target) {
+            let file = std::fs::OpenOptions::new()
+                .write(true)
+                .open(&target)
+                .with_context(|| format!("opening output {path}"))?;
+            (file, None)
+        } else {
+            let temp = temp_path_beside(&target);
+            let file = File::create(&temp).with_context(|| format!("creating output {path}"))?;
+            (file, Some(temp))
+        };
+        let file = BufWriter::new(file);
         let compressed = path.ends_with(".gz") || path.ends_with(".bgz");
         let sink = if compressed {
             let level = bgzf::CompressionLevel::new(6)
@@ -75,7 +77,7 @@ impl Output {
         };
         Ok(Output {
             sink: Some(sink),
-            temp: Some(temp),
+            temp,
             target,
         })
     }
@@ -230,6 +232,9 @@ pub fn write_seq_outputs_capped(
 /// appended to the error, as upstream's `extension_hint`.
 pub fn check_hdf_out(hdf: Option<&str>, hint: Option<&str>) -> Result<()> {
     let Some(path) = hdf else { return Ok(()) };
+    if is_special_file(Path::new(path)) {
+        return Ok(());
+    }
     let is_hdf5 = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -250,7 +255,8 @@ pub fn check_hdf_out(hdf: Option<&str>, hint: Option<&str>) -> Result<()> {
 
 /// Write a matrix to `--hdf_out` and/or `--dense_text_out` (upstream
 /// `write_matrix_outputs`), each checked against `max_bytes` (`--max_output_gb`)
-/// before it is written. The hdf5 file is renamed into place once complete.
+/// before it is written. The hdf5 file is renamed into place once complete (a device
+/// such as `/dev/null` is written directly; the writer never seeks).
 pub fn write_matrix_outputs(
     matrix: &DataMatrix,
     hdf: Option<&str>,
@@ -274,13 +280,17 @@ pub fn write_matrix_outputs(
     if let Some(path) = hdf {
         check("hdf", "sparse", path, mitigation)?;
         let target = PathBuf::from(path);
-        let temp = temp_path(&target);
-        let written = hdf5_io::write(&temp.to_string_lossy(), matrix)
-            .and_then(|()| std::fs::rename(&temp, &target));
-        if written.is_err() {
-            let _ = std::fs::remove_file(&temp);
+        if is_special_file(&target) {
+            hdf5_io::write(path, matrix).with_context(|| format!("writing {path}"))?;
+        } else {
+            let temp = temp_path_beside(&target);
+            let written = hdf5_io::write(&temp.to_string_lossy(), matrix)
+                .and_then(|()| std::fs::rename(&temp, &target));
+            if written.is_err() {
+                let _ = std::fs::remove_file(&temp);
+            }
+            written.with_context(|| format!("writing {path}"))?;
         }
-        written.with_context(|| format!("writing {path}"))?;
     }
     if let Some(path) = dense_text {
         let mitigation: Vec<&str> = std::iter::once("--hdf_out")
@@ -366,5 +376,47 @@ mod tests {
         )
         .unwrap();
         assert_eq!(text, "LOCUS\n");
+    }
+    #[cfg(unix)]
+    #[test]
+    fn a_device_is_written_directly() {
+        let mut out = Output::create("/dev/null").unwrap();
+        out.write_all(b"discarded").unwrap();
+        out.finish().unwrap();
+        // The hdf5 writer only streams, so the device needs no extension and no seek.
+        check_hdf_out(Some("/dev/null"), None).unwrap();
+        let matrix = DataMatrix {
+            rows: vec!["a".into(), "b".into()],
+            cols: vec!["a".into(), "b".into()],
+            row_lengths: None,
+            col_lengths: None,
+            data_type: "score".into(),
+            storage: domainator_core::matrix::build_sparse_max(vec![0], vec![1], vec![3.0], 2, 2),
+        };
+        write_matrix_outputs(&matrix, Some("/dev/null"), Some("/dev/null"), None, &[]).unwrap();
+        assert!(Path::new("/dev/null").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_is_written_directly() {
+        let dir =
+            std::env::temp_dir().join(format!("domainatoredux-output-fifo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fifo = dir.join("pipe.gb");
+        let _ = std::fs::remove_file(&fifo);
+        let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+        if !made.is_ok_and(|s| s.success()) {
+            return; // no mkfifo on this system
+        }
+        let reader = {
+            let fifo = fifo.clone();
+            std::thread::spawn(move || std::fs::read(fifo).unwrap())
+        };
+        let mut out = Output::create(fifo.to_str().unwrap()).unwrap();
+        out.write_all(b"through the pipe").unwrap();
+        out.finish().unwrap();
+        assert_eq!(reader.join().unwrap(), b"through the pipe");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -85,6 +85,13 @@ hdf5-pure = { path = "vendor/hdf5-pure" }
 # dependency: `candle-core`".
 candle-core = { path = "vendor/candle-core" }
 
+# Vendored infernox 0.2.0 with one addition: `FaithfulConfig::whole_sequence`, which
+# searches each sequence as one window, the way pyinfernal (and so upstream's domainate)
+# does, instead of C cmsearch's 100 kb windows. Contigs longer than that otherwise keep
+# or lose near-threshold hits differently from upstream. See vendor/infernox/PATCHES.md
+# and UPSTREAM.md, "Pinned dependency: `infernox`".
+infernox = { path = "vendor/infernox" }
+
 # TEMPORARY: hmmer-pure-rs pinned to a commit on our fork, pending an upstream
 # merge and a crates.io release.
 #

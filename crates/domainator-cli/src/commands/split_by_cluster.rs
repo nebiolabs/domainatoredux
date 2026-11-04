@@ -181,7 +181,7 @@ fn write_hmms(
     })();
     if result.is_err() {
         for path in plan.paths() {
-            let _ = std::fs::remove_file(path);
+            domainator_core::io::remove_partial_output(path);
         }
     }
     result

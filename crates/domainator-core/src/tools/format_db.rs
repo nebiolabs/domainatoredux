@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use crate::io::bgzf as io_bgzf;
 use crate::io::didx;
-use crate::io::partition::get_offsets;
+use crate::io::partition::scan_offsets_uncached;
 use crate::io::shards::shard_path;
 use crate::io::{detect_compression, detect_filetype, Compression, FileType};
 
@@ -182,33 +182,30 @@ fn record_boundaries(num_records: usize, n_shards: usize) -> Vec<(usize, usize)>
     out
 }
 
-/// Write a `.didx` for `final_path` by scanning (or reusing) its offsets.
-fn write_index_for(final_path: &Path, filetype: FileType, out_bgzf: bool) -> Result<(), String> {
+/// Write a `.didx` for `path` from a fresh scan of it (any existing index is ignored,
+/// and replaced atomically).
+fn write_index_for(path: &Path, filetype: FileType, out_bgzf: bool) -> Result<PathBuf, String> {
     let compression = if out_bgzf {
         Compression::Bgzf
     } else {
         Compression::None
     };
-    let path = final_path.to_str().ok_or("non-UTF8 output path")?;
-    // Scan fresh offsets (bypass any pre-existing .didx by scanning directly is
-    // unnecessary here: get_offsets returns a valid index if fresh, else scans).
-    let (offsets, cds_counts) = scan_offsets(path, filetype, compression)?;
-    didx::write_index(final_path, &offsets, &cds_counts, filetype, compression)
-        .map_err(|e| format!("writing index for {}: {e}", final_path.display()))?;
-    Ok(())
+    let name = path.to_str().ok_or("non-UTF8 output path")?;
+    let (offsets, cds_counts) = scan_offsets_uncached(name, filetype, compression)
+        .map_err(|e| format!("scanning offsets of {name}: {e}"))?;
+    didx::write_index(path, &offsets, &cds_counts, filetype, compression)
+        .map_err(|e| format!("writing index for {}: {e}", path.display()))
 }
 
-/// Offsets for `path`, always freshly scanned (never trusting a stale sidecar,
-/// which we may be about to overwrite anyway).
-fn scan_offsets(
-    path: &str,
-    filetype: FileType,
-    compression: Compression,
-) -> Result<(Vec<u64>, Vec<u64>), String> {
-    // Remove any existing index so get_offsets falls through to a real scan.
-    let idx = didx::index_path_for(Path::new(path));
-    let _ = std::fs::remove_file(&idx);
-    get_offsets(path, filetype, compression).map_err(|e| format!("scanning offsets of {path}: {e}"))
+/// Temporary files beside an output, removed on drop unless they were renamed away.
+struct Staged(Vec<PathBuf>);
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 /// One planned output file.
@@ -344,7 +341,8 @@ fn plan_input(
                 return Err("--shards must be >= 1".into());
             }
             let working_str = working.to_str().ok_or("non-UTF8 working path")?;
-            let (offsets, _cds) = scan_offsets(working_str, filetype, Compression::None)?;
+            let (offsets, _cds) = scan_offsets_uncached(working_str, filetype, Compression::None)
+                .map_err(|e| format!("scanning offsets of {working_str}: {e}"))?;
             let num_records = offsets.len();
             if num_records == 0 {
                 return Err(format!(
@@ -415,26 +413,38 @@ fn run_task(task: &Task, opts: &FormatDbOptions, log: &mut dyn Write) -> Result<
     }
 
     if task.needs_write {
+        // Write the shard (and its index) under hidden temporary names in the output
+        // directory, which no shard pattern matches, and rename them into place: the
+        // index first, so a new shard never appears without it, then the shard. A shard
+        // therefore only appears complete, and a replaced one gets a new inode, so a
+        // search already reading the old one finishes normally (upstream's mkstemp +
+        // os.replace). The rename keeps the size and mtime the index fingerprints.
+        let tmp = crate::io::temp_path_beside(&task.final_path);
+        let mut staged = Staged(vec![tmp.clone()]);
         if task.out_bgzf {
             // Copy the byte range to a plain temp beside the output, then BGZF it.
-            let plain_tmp = task.final_path.with_extension("plain.tmp");
+            let plain_tmp = tmp.with_extension("plain.tmp");
+            staged.0.push(plain_tmp.clone());
             copy_byte_range(&task.working, &plain_tmp, task.byte_start, task.byte_end)
                 .map_err(|e| format!("copying range: {e}"))?;
-            let r = compress_to_bgzf(&plain_tmp, &task.final_path, opts.level);
+            compress_to_bgzf(&plain_tmp, &tmp, opts.level)
+                .map_err(|e| format!("compressing {}: {e}", task.final_path.display()))?;
             let _ = std::fs::remove_file(&plain_tmp);
-            r.map_err(|e| format!("compressing {}: {e}", task.final_path.display()))?;
         } else {
-            copy_byte_range(
-                &task.working,
-                &task.final_path,
-                task.byte_start,
-                task.byte_end,
-            )
-            .map_err(|e| format!("copying range: {e}"))?;
+            copy_byte_range(&task.working, &tmp, task.byte_start, task.byte_end)
+                .map_err(|e| format!("copying range: {e}"))?;
         }
-    }
-
-    if task.do_index {
+        let rename = |from: &Path, to: &Path| {
+            std::fs::rename(from, to)
+                .map_err(|e| format!("moving {} into place: {e}", to.display()))
+        };
+        if task.do_index {
+            let tmp_index = write_index_for(&tmp, task.filetype, task.out_bgzf)?;
+            staged.0.push(tmp_index.clone());
+            rename(&tmp_index, &index_path)?;
+        }
+        rename(&tmp, &task.final_path)?;
+    } else if task.do_index {
         write_index_for(&task.final_path, task.filetype, task.out_bgzf)?;
     }
     let status = if task.needs_write {
@@ -531,5 +541,82 @@ mod tests {
         assert_eq!(stem, "mydb");
         assert_eq!(fmt, "gb");
         assert_eq!(comp, "");
+    }
+    /// A rebuild replaces each shard by rename, never by truncating it in place: a
+    /// search holding the old shard open keeps reading the old bytes in full, the new
+    /// shard and its index agree, and no temporary file is left for the shard glob.
+    #[test]
+    fn a_forced_rebuild_replaces_shards_without_touching_open_ones() {
+        use crate::io::shards::resolve_database_shards;
+        let dir = std::env::temp_dir().join(format!("domainator_format_db_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test/data/FeSOD_20.gb");
+        let input = dir.join("db.gb");
+        std::fs::copy(&fixture, &input).unwrap();
+        let out = dir.join("out");
+        let opts = FormatDbOptions {
+            shards: Some(2),
+            compress: true,
+            index: true,
+            output_dir: Some(out.to_string_lossy().into_owned()),
+            ..FormatDbOptions::default()
+        };
+        let input_arg = [input.to_string_lossy().into_owned()];
+        let first = format_db(&input_arg, &opts, &mut io::sink()).unwrap();
+        assert_eq!(first.len(), 2);
+        let old_bytes = std::fs::read(&first[0]).unwrap();
+        let mut held = File::open(&first[0]).unwrap();
+
+        // Rebuild from a smaller input, with --force.
+        let text = std::fs::read_to_string(&fixture).unwrap();
+        let half: String = text.split_inclusive("//\n").take(6).collect();
+        std::fs::write(&input, half).unwrap();
+        let opts = FormatDbOptions {
+            force: true,
+            ..opts
+        };
+        let second = format_db(&input_arg, &opts, &mut io::sink()).unwrap();
+        assert_eq!(second, first);
+
+        let mut still = Vec::new();
+        held.read_to_end(&mut still).unwrap();
+        assert_eq!(
+            still, old_bytes,
+            "an open shard must not be truncated by a rebuild"
+        );
+        assert_ne!(std::fs::read(&first[0]).unwrap(), old_bytes);
+
+        let names: Vec<String> = std::fs::read_dir(&out)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.iter().all(|n| !n.contains("tmp")), "{names:?}");
+        let db = out.join("db.gb.bgz");
+        let shards = resolve_database_shards(&db).unwrap();
+        assert_eq!(shards, second);
+        let mut records = 0;
+        for shard in &shards {
+            let (offsets, _) = didx::read_index(shard, FileType::Genbank, Compression::Bgzf)
+                .unwrap()
+                .unwrap();
+            records += offsets.len();
+        }
+        assert_eq!(records, 6);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A temporary file being written beside the shards is not one of them.
+    #[test]
+    fn hidden_temporaries_are_not_shards() {
+        use crate::io::shards::resolve_database_shards;
+        let dir =
+            std::env::temp_dir().join(format!("domainator_format_db_tmp_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("x.0.gb.bgz"), b"").unwrap();
+        std::fs::write(crate::io::temp_path_beside(&dir.join("x.1.gb.bgz")), b"").unwrap();
+        let shards = resolve_database_shards(&dir.join("x.gb.bgz")).unwrap();
+        assert_eq!(shards, vec![dir.join("x.0.gb.bgz")]);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

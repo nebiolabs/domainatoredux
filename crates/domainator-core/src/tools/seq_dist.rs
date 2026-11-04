@@ -164,8 +164,12 @@ fn load_seqs(path: &str, kind: InputKind) -> std::io::Result<Seqs> {
 }
 
 fn load_hmms(path: &str) -> std::io::Result<(Vec<hmmer_pure_rs::Hmm>, NameIndex)> {
-    let hmms = crate::search::hmm_read::read_hmm_file(Path::new(path))
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
+    let hmms = crate::search::hmm_read::read_hmm_file(Path::new(path)).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            crate::search::hmm_read::error_message(Path::new(path), &e),
+        )
+    })?;
     let mut index = NameIndex::new();
     for h in &hmms {
         index.push(h.name.clone(), h.m as i64);
