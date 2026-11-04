@@ -1,12 +1,12 @@
 # domainatoredux local patches (not upstream)
 
 This directory is the published `infernox` 0.2.0 crate (crates.io), wired in through
-`[patch.crates-io]` in the workspace `Cargo.toml`. It carries two patches. The text meant
-for the infernox maintainers (one PR, one bug report) is in `UPSTREAM_PR.md`.
+`[patch.crates-io]` in the workspace `Cargo.toml`. It carries three patches. The text
+meant for the infernox maintainers (three PRs) is in `UPSTREAM_PR.md`.
 
 Check the result with `diff -r ~/.cargo/registry/src/*/infernox-0.2.0 vendor/infernox`
-(`PATCHES.md` and `UPSTREAM_PR.md` are ours). To drop the patches, see UPSTREAM.md,
-"Pinned dependency: `infernox`".
+(`PATCHES.md`, `UPSTREAM_PR.md` and `ISSUE_hmmonly_score_precision.md` are ours). To drop
+the patches, see UPSTREAM.md, "Pinned dependency: `infernox`".
 
 `cargo test --lib` on this crate (run from a copy outside the workspace) has 5 failures
 in `cm_dpsearch_trunc::tests`, with or without the patches: they read a CM from the
@@ -70,20 +70,53 @@ Measured on a 142 kb phage (NC_023573.1) with Rfam 15.1 at `-Z 0.142094`:
 - `--hmmnobias`, `--hmmmax` and `--hmmonly` (on base-paired models) also match C in hits
   and statistics.
 
-## Known, not patched: CM-pipeline SSV window definition
+## 3. SSV filter: break ties between model positions in striped order (a bug fix)
 
-Six base-paired families (CM pipeline, not HMM-only) still differ from C on the same input:
-IRES_Tobamo, S16-Flavobacteria, mir-7616, plasmodium_snoR26, psm_mec_RNA and snoPyro_CD.
-The first divergent stage is the SSV window count:
+This one changes default behavior too, for the binaries as well, and brings them in line
+with C. When a row of the SSV longtarget DP reaches the F1 threshold, the diagonal is
+traced back from the model position with the row's best score. C finds that position by
+scanning the row in its striped SIMD layout, vector `q` outer and lane `z` inner, keeping
+the first strict maximum. hmmer 3.4 `msvfilter.c:373-381`:
 
-| Family | Options | C | infernox |
-|---|---|---|---|
-| S16-Flavobacteria | default | 2820 | 2830 |
-| S16-Flavobacteria | `--toponly --notrunc` | 1456 | 1469 |
-| snoPyro_CD | default | 877 | 875 |
+```c
+for (q = 0; q < Q; q++) {
+  u.v = dp[q];
+  for (k = 0; k < 16; k++) {
+    if (u.b[k] >= sc_thresh && u.b[k] > rem_sc && (q+Q*k+1) <= om->M) {
+      end = (q+Q*k+1);
+      rem_sc = u.b[k];
+    } } ... }
+```
 
-So the cause is in window definition (`f1_msv_windows`: SSV longtarget, ExtendAndMerge,
-split > 2*cmW). It is not in the truncated passes or the bottom strand. The HMM-only pass
-uses the same code and matches C, probably because its F1 is 0.02 rather than 0.35, so far
-fewer windows reach the merge and split edge cases. Not yet diagnosed. The next step is to
-diff the `(ws, we)` lists on `S16-Flavobacteria --toponly --notrunc`.
+Lane `z` of vector `q` is model position `q + Q*z + 1`, so on a tie C keeps the position
+with the smallest `(q, z)`, which is not in general the lowest position. `ssv_diagonals`
+rescanned the row in natural order and kept the lowest. A different end position traces a
+different diagonal, which extends to a different window. Uint8 scores saturate, so ties
+are common.
+
+- `src/cm_pipeline.rs`, `ssv_diagonals`:
+  - The argmax scans in C's order (`Q = p7O_NQB(M) = max(2, (M-1)/16 + 1)`).
+  - `p1`, `nullsc` and `invP` are rounded to `float` as in C (`p7_bg.c:191`,
+    `p7_bg_NullOne`, `msvfilter.c:312`) before `sc_thresh`'s `ceil()`.
+  - `build_msv_filter` rounds the MSV `mu`/`lambda` to `float`, as `om->evparam` is.
+  - The precision changes alter nothing on the input below. hmmer-pure-rs found the same
+    `double` vs `float` difference moving `ceil()` on other inputs.
+
+Measured on the 142 kb phage NC_023573.1 with Rfam 15.1 at `-Z 0.142094`:
+
+| Family | Options | C SSV windows | infernox 0.2.0 | patched |
+|---|---|---|---|---|
+| S16-Flavobacteria | default | 2820 | 2830 | 2820 |
+| S16-Flavobacteria | `--toponly --notrunc` | 1456 | 1469 | 1456 |
+| snoPyro_CD | default | 877 | 875 | 877 |
+
+- The 6 base-paired families that differed from C (IRES_Tobamo, S16-Flavobacteria,
+  mir-7616, plasmodium_snoR26, psm_mec_RNA, snoPyro_CD) now match C in hits, scores and
+  the whole statistics block, with default options and with `--toponly --notrunc`,
+  `--nonull3` and `--F1 0.5`. Before, with default options, they had 9 hits C doesn't
+  report and missed 3.
+- The 42 zero-basepair families (HMM-only pipeline, which uses the same SSV code) still
+  match. Two of their E-values differ from C in the last printed digit at the same score
+  (DLEU2_4 1.4 vs 1.5, TtnuCD7 0.97 vs 0.98), as they did before this patch. The cause
+  is HMM-only hit scores differing from C's by up to 5e-4 bits; not yet diagnosed, see
+  `ISSUE_hmmonly_score_precision.md`.

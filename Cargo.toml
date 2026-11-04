@@ -4,7 +4,7 @@ members = ["crates/*", "apps/genbank-summary/src-tauri", "apps/domainatoredux-gu
 exclude = ["wasm_apps/genbank-summary/wasm"]
 
 [workspace.package]
-version = "1.0.0-rc.2"
+version = "1.0.0-rc.3"
 edition = "2021"
 license = "MIT"
 rust-version = "1.94"
@@ -85,12 +85,14 @@ hdf5-pure = { path = "vendor/hdf5-pure" }
 # dependency: `candle-core`".
 candle-core = { path = "vendor/candle-core" }
 
-# Vendored infernox 0.2.0 with two patches. (1) `FaithfulConfig::whole_sequence`, which
+# Vendored infernox 0.2.0 with three patches. (1) `FaithfulConfig::whole_sequence`, which
 # searches each sequence as one window, the way pyinfernal (and so upstream's domainate)
 # does, instead of C cmsearch's 100 kb windows. Contigs longer than that otherwise keep
 # or lose near-threshold hits differently from upstream. (2) A bug fix: the HMM-only
 # pipeline (models with no base pairs) now runs C's MSV composition-bias filter, without
-# which it reported many extra weak hits. See vendor/infernox/PATCHES.md and UPSTREAM.md,
+# which it reported many extra weak hits. (3) A bug fix: the SSV filter breaks ties
+# between model positions in HMMER's striped order, so its windows, and the hits of
+# base-paired models, match C's. See vendor/infernox/PATCHES.md and UPSTREAM.md,
 # "Pinned dependency: `infernox`".
 infernox = { path = "vendor/infernox" }
 

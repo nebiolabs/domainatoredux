@@ -11,7 +11,6 @@ use domainator_core::tools::db_download::{
     db_download, is_fasta, needs_taxonomy, parse_date, Backend, DatasetsOptions, DbDownloadOptions,
     DirectOptions,
 };
-use domainator_core::tools::external::{resolve_binary, DATASETS};
 use domainator_core::tools::gene_call::{GeneCall, GeneCallOptions};
 use domainator_core::tools::select_common::parse_name_list;
 
@@ -141,17 +140,11 @@ pub fn run(args: &DbDownloadArgs) -> Result<()> {
                      Provide one, or pass --download_backend direct."
                 );
             };
-            let datasets = resolve_binary(
-                &DATASETS,
-                args.datasets_path.as_deref(),
-                "Install the NCBI Datasets CLI (e.g. `conda install -c conda-forge \
-                 ncbi-datasets-cli`).",
-            )?;
             Backend::Datasets(DatasetsOptions {
                 gene_call,
                 max_records,
                 cpu: cpus,
-                datasets,
+                datasets_path: args.datasets_path.clone(),
                 workdir: PathBuf::from(workdir),
                 include: args.datasets_include.clone(),
                 max_workers: args.datasets_max_workers,

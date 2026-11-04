@@ -346,8 +346,10 @@ pub fn build_msv_filter(p7: &P7Profile, max_length: usize) -> MsvFilter {
         tjb_b,
         rbv,
         rbv_t,
-        mmu: p7.evparam.lmmu,
-        mlambda: p7.evparam.lmlambda,
+        // C's om->evparam is float[] (the STATS line is read into float), and
+        // msvfilter.c passes those floats to esl_gumbel_invsurv.
+        mmu: p7.evparam.lmmu as f32 as f64,
+        mlambda: p7.evparam.lmlambda as f32 as f64,
         prefix,
         suffix,
         max_length,
@@ -520,9 +522,15 @@ unsafe fn ssv_row_avx2(
 /// `dsq` is 1-indexed with sentinels; residues at `1..=l`.
 fn ssv_diagonals(f: &MsvFilter, dsq: &[u8], l: usize, f1: f64) -> Vec<RawWin> {
     let ln2 = std::f64::consts::LN_2;
-    let p1 = f.max_length as f64 / (f.max_length as f64 + 1.0);
-    let nullsc = f.max_length as f64 * p1.ln() + (1.0 - p1).ln();
-    let invp = esl_gumbel_invsurv(f1, f.mmu, f.mlambda);
+    // C keeps these in float, and the ceil() below can land on the other side of an
+    // integer if they are computed in double. p7_bg.c:191 and p7_bg_NullOne:
+    //   bg->p1 = (float) L / (float) (L+1);
+    //   *ret_sc = (float) L * log(bg->p1) + log(1.-bg->p1);   /* float *ret_sc */
+    // msvfilter.c:312: float invP = esl_gumbel_invsurv(P, ...);
+    let ml = f.max_length as f32;
+    let p1 = ml / (ml + 1.0);
+    let nullsc = (ml as f64 * (p1 as f64).ln() + (1.0 - p1 as f64).ln()) as f32 as f64;
+    let invp = esl_gumbel_invsurv(f1, f.mmu, f.mlambda) as f32 as f64;
     // sc_thresh. C msvfilter.c:324:
     //   sc_thresh = (int) ceil( ( ( nullsc + (invP * eslCONST_LOG2) + 3.0 ) * om->scale_b )
     //                           + om->base_b + om->tec_b + om->tjb_b );
@@ -615,16 +623,29 @@ fn ssv_diagonals(f: &MsvFilter, dsq: &[u8], l: usize, f1: f64) -> Vec<RawWin> {
         }
         std::mem::swap(&mut dp, &mut new);
 
-        // end_k (argmax model position) only needed when the row triggers; recover
-        // it with a scalar rescan of dp (== new), matching the strict-`>` leftmost
-        // argmax the original scalar loop produced (msvfilter.c:373-381).
+        // end_k (argmax model position) only needed when the row triggers. C scans
+        // the row in its STRIPED layout, vector q outer and lane z inner, keeping the
+        // first strict maximum. Lane z of vector q holds model position q + Q*z + 1,
+        // so on a tie C keeps the position with the smallest (q, z), which is not the
+        // leftmost one. A different end position recovers a different diagonal and
+        // so a different window. msvfilter.c:373-381:
+        //   for (q = 0; q < Q; q++) {
+        //     u.v = dp[q];
+        //     for (k = 0; k < 16; k++) {
+        //       if (u.b[k] >= sc_thresh && u.b[k] > rem_sc && (q+Q*k+1) <= om->M) {
+        //         end = (q+Q*k+1); rem_sc = u.b[k]; } } ... }
+        // Q = p7O_NQB(M) = ESL_MAX(2, ((M-1)/16)+1) (impl_sse.h).
         let mut end_k = 0usize;
         if (xe as i32) >= sc_thresh {
-            let mut xe2 = 0u8;
-            for k in 1..=m {
-                if dp[k] > xe2 {
-                    xe2 = dp[k];
-                    end_k = k;
+            let nq = ((m.max(1) - 1) / 16 + 1).max(2);
+            let mut rem_sc: i32 = -1;
+            for q in 0..nq {
+                for z in 0..16 {
+                    let k = q + nq * z + 1;
+                    if k <= m && (dp[k] as i32) >= sc_thresh && (dp[k] as i32) > rem_sc {
+                        rem_sc = dp[k] as i32;
+                        end_k = k;
+                    }
                 }
             }
         }

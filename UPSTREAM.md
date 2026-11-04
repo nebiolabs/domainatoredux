@@ -7,9 +7,20 @@ file records how far the port is caught up and how to advance it.
 
 ## Upstream pin
 
-- **Caught up to:** `0aa79fe` — *foldseek pLM annotation better parallelism*
-  (2026-11-03; upstream `__version__` still 1.0.0-rc.2, two commits past tag
-  `v1.0.0-rc.2`, on `main`).
+- **Caught up to:** `3f2dc42` — *add dates to changelog* (2026-11-04; upstream
+  `__version__` 1.0.0-rc.3, one commit past tag `v1.0.0-rc.3`, on `main`).
+- **`0aa79fe..3f2dc42`** (release candidate 3), nothing left to port. `5954e2d` makes
+  `overlay` give exact ends for a domain on a partial CDS (it used to copy a plus-strand
+  CDS's `<` onto both ends) and makes `db_download` succeed with empty outputs when the
+  filters select no NCBI assemblies. The port already behaved that way in both cases,
+  except that with `--download_backend datasets` it looked for `datasets` before checking
+  the selection, so upstream's new test failed where `datasets` isn't installed. It is now
+  looked up in `process_datasets`, where upstream's `process_via_datasets` does.
+  `9d18007` and `cdb4d32` add tests and fixtures: two foldseek databases at once, and
+  `rfam_window_boundary.cm`, `rfam_hmmonly.cm` and `rfam_ssv_ties.cm`, whose tests pin
+  the vendored infernox patches (see "Pinned dependency: `infernox`"). `25e317b` and
+  `3f2dc42` are the release: `__version__` (`UPSTREAM_VERSION`, and so the regenerated
+  viewer shell's `domainatorVersion`) and the changelog.
 - **`67bad08..0aa79fe`**, ported. `c807588` rewords `compare_contigs`' help and its sort
   memory error to name `--genbank_out` instead of the 0.x `-o`. It also changes the
   `-o/--hdf_out` extension error, which now names the path and, for `compare_contigs`,
@@ -533,11 +544,11 @@ pinned exactly (`infernox = "=0.2.0"`), because a release that changed one hit w
 annotations, so a bump is a re-verification: the sweep's infernal rows (the upstream ones
 plus the `extra:infernal_*` set, which cuts the CopA site so the truncated passes run) and
 the aarch64 check. It is also **vendored** (`vendor/infernox/`, a `[patch.crates-io]` path
-entry) for two patches (`vendor/infernox/PATCHES.md`): the option
-`FaithfulConfig::whole_sequence`, and a fix to the HMM-only pipeline (below). A bump means
-re-applying whichever of them the new release lacks, or dropping the vendored copy once
-both are upstream. Both are drafted for necoli1822/infernox in
-`vendor/infernox/UPSTREAM_PR.md`, not yet sent.
+entry) for three patches (`vendor/infernox/PATCHES.md`): the option
+`FaithfulConfig::whole_sequence`, a fix to the HMM-only pipeline and a fix to the SSV
+filter's window definition (both below). A bump means re-applying whichever of them the
+new release lacks, or dropping the vendored copy once all three are upstream. All three
+are drafted for necoli1822/infernox in `vendor/infernox/UPSTREAM_PR.md`, not yet sent.
 `search/infernal.rs` reproduces what `pyinfernal.cmsearch(cms, block)` does, which differs
 from the `cmsearch` command line and from infernox's library defaults:
 
@@ -579,16 +590,31 @@ With the filter on, all 42 families match C hit for hit. This was also the likel
 of rbgportal's extra TtnuCD7 hit (score 19.4, past `-e 0.001`).
 - Sweep row: `extra:infernal_hmmonly` (`rfam_hmmonly.cm`: DLEU2_1 and TtnuCD7). It is
   `tolerated`, because one TtnuCD7 E-value differs in its second digit at the same score
-  (C prints the same difference).
-- Also pinned by `crates/domainator-cli/tests/infernal_hmmonly.rs` and upstream's
+  (0.97 here, 0.98 in C and pyinfernal; DLEU2_4 has the same kind of difference, 1.4 vs
+  1.5). HMM-only hit scores differ from C's by up to 5e-4 bits, and these two E-values
+  sit on a rounding boundary. Not diagnosed: `vendor/infernox/ISSUE_hmmonly_score_precision.md`.
+- Also pinned by `crates/domainator-cli/tests/infernal_rfam.rs` and upstream's
   `test_domainator_infernal_searches_models_without_basepairs`.
 
-**Open: base-paired models still differ from C in 6 of those 48 families.** The families
-are IRES_Tobamo, S16-Flavobacteria, mir-7616, plasmodium_snoR26, psm_mec_RNA and
-snoPyro_CD, all searched by the CM pipeline. They already differ at the first stage, the
-SSV window count. S16-Flavobacteria with `--toponly --notrunc` gives 1456 windows in C and
-1469 in infernox, so the cause is in window definition (`f1_msv_windows`), not the
-truncated passes. Not yet diagnosed. `vendor/infernox/PATCHES.md` has the numbers.
+**Fixed in the vendored copy: SSV windows broke ties differently from HMMER.** The other 6
+of those 48 families have base pairs and go through the CM pipeline (IRES_Tobamo,
+S16-Flavobacteria, mir-7616, plasmodium_snoR26, psm_mec_RNA, snoPyro_CD). They already
+differed from C at the first filter: S16-Flavobacteria with `--toponly --notrunc` gave
+1469 SSV windows where C gives 1456. When a row of the SSV DP crosses the threshold, the
+diagonal is traced back from the row's best model position. HMMER scans that row in its
+striped SIMD layout and keeps the first maximum it meets (`msvfilter.c:373-381`), so on a
+tie it doesn't keep the lowest position, which is what infernox kept. A different end
+position traces a different diagonal, so the window moves. With C's scan order, all 48
+families match C (hits, scores and the whole statistics block, also under
+`--toponly --notrunc`, `--nonull3` and `--F1 0.5`), and domainate matches upstream on all
+219 hits. The same patch computes the SSV threshold from `float` intermediates, as C does;
+that changes nothing on this input, but `hmmer-pure-rs` found the same `double` vs `float`
+difference moving the threshold's `ceil()`. hmmer-pure-rs's own SSV already scans in
+striped order.
+- Sweep row: `extra:infernal_ssv_ties` (`rfam_ssv_ties.cm`: S16-Flavobacteria), byte-identical.
+  Before the fix domainate reported 12 hits there instead of 9.
+- Also pinned by `crates/domainator-cli/tests/infernal_rfam.rs` and upstream's
+  `test_domainator_infernal_ssv_windows_match_infernal`.
 
 Hits Infernal marks as overlapping duplicates are dropped, as `cmsearch` drops them.
 pyinfernal keeps them in `TopHits` (flagged `duplicate`), and upstream's

@@ -1,6 +1,6 @@
 # Drafts for necoli1822/infernox
 
-These are two separate submissions. Nothing has been sent yet. Each patch is described in
+These are three separate submissions. Nothing has been sent yet. Each patch is described in
 `PATCHES.md`, and the code is in this directory (diff against the published 0.2.0).
 
 ---
@@ -89,18 +89,50 @@ suite's pyinfernal-based results. The test was NC_023573.1 (Staphylococcus phage
 
 ---
 
-## Possible issue: CM-pipeline SSV window definition (no fix yet)
+## PR 3: SSV filter picks a different diagonal end than HMMER on ties
 
-On the same input with `-Z 0.142094`, six base-paired families still differ from C:
-IRES_Tobamo, S16-Flavobacteria, mir-7616, plasmodium_snoR26, psm_mec_RNA and snoPyro_CD.
-They already differ at the first stage, the SSV window count:
+**Title:** SSV longtarget: break argmax ties in striped order, as HMMER does
 
-| Family | Options | C | infernox |
-|---|---|---|---|
-| S16-Flavobacteria | default | 2820 | 2830 |
-| S16-Flavobacteria | `--toponly --notrunc` | 1456 | 1469 |
-| snoPyro_CD | default | 877 | 875 |
+When a row of the SSV DP reaches the F1 threshold, `p7_SSVFilter_longtarget` finds the
+model position with the row's best score and traces the diagonal back from it. It scans
+the row in its striped layout (hmmer 3.4 `msvfilter.c:373-381`) and keeps the first strict
+maximum:
 
-The cause is therefore in `f1_msv_windows` (SSV longtarget, ExtendAndMerge, split > 2*cmW),
-not in the truncated passes or the bottom strand. I'll file this once I've found the first
-window that differs.
+```c
+for (q = 0; q < Q; q++) {
+  u.v = dp[q];
+  for (k = 0; k < 16; k++) { // unstripe
+    if (u.b[k] >= sc_thresh && u.b[k] > rem_sc && (q+Q*k+1) <= om->M) {
+      end = (q+Q*k+1);
+      rem_sc = u.b[k];
+    } } ... }
+```
+
+Lane `z` of vector `q` is model position `q + Q*z + 1`, so on a tie C keeps the position
+with the smallest `(q, z)`. `ssv_diagonals` in `cm_pipeline.rs` rescans the row in natural
+order and keeps the lowest position. Scores are saturating uint8, so ties are common. A
+different end position traces a different diagonal, and ExtendAndMerge turns it into a
+different window.
+
+**Reproduction** (Rfam 15.1, NC_023573.1, 142 kb):
+
+```
+cmfetch Rfam.cm S16-Flavobacteria > s16.cm
+cmsearch          --toponly --notrunc -Z 0.142094 s16.cm NC_023573.fa   # SSV: 1456 windows
+infernox-cmsearch --toponly --notrunc -Z 0.142094 s16.cm NC_023573.fa   # SSV: 1469 windows
+```
+
+With default options, C reports 9 hits for this family and infernox 0.2.0 reports 12.
+
+**Change.** In `ssv_diagonals`, find `end_k` with C's loop order, with
+`Q = p7O_NQB(M) = max(2, (M-1)/16 + 1)`. The same commit rounds `p1`, `nullsc`, `invP`
+and the MSV `mu`/`lambda` to `float` before `sc_thresh` is computed, since C holds them in
+`float` (`p7_bg.c:191`, `p7_bg_NullOne`, `msvfilter.c:312`, `om->evparam`). That doesn't
+change anything on this input, but hmmer-pure-rs found the same difference moving the
+threshold's `ceil()` on others. It can go in a separate commit if you prefer.
+
+**Tested.** Six base-paired Rfam families differed from C on this phage: IRES_Tobamo,
+S16-Flavobacteria, mir-7616, plasmodium_snoR26, psm_mec_RNA and snoPyro_CD. With the PR
+they match C in hits, scores and the whole statistics block. That holds with default
+options and with `--toponly --notrunc`, `--nonull3` and `--F1 0.5`. Together with PR 1,
+all 48 families that differed on this phage now match C.

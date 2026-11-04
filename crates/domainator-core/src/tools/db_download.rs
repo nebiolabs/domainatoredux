@@ -954,8 +954,10 @@ pub struct DatasetsOptions {
     pub max_records: Option<usize>,
     /// Threads for the local processing.
     pub cpu: usize,
-    /// The `datasets` executable.
-    pub datasets: PathBuf,
+    /// `--datasets_path`: an explicit `datasets` executable, else it is looked up the
+    /// usual way. Resolved by [`process_datasets`], so a selection with nothing to
+    /// download succeeds without `datasets` installed, as upstream's does.
+    pub datasets_path: Option<String>,
     pub workdir: PathBuf,
     pub include: String,
     pub max_workers: i64,
@@ -1070,6 +1072,12 @@ pub fn process_datasets(
     sink: &mut GenomeSink<'_>,
     options: &DatasetsOptions,
 ) -> io::Result<DownloadSummary> {
+    // First, as upstream's process_via_datasets does: `--max_records 0` still needs it.
+    let datasets = super::external::resolve_binary(
+        &super::external::DATASETS,
+        options.datasets_path.as_deref(),
+        "Install the NCBI Datasets CLI (e.g. `conda install -c conda-forge ncbi-datasets-cli`).",
+    )?;
     let mut accessions: Vec<String> = assemblies
         .iter()
         .map(|a| a.field("assembly_accession").map(str::to_string))
@@ -1097,7 +1105,7 @@ pub fn process_datasets(
     let zip_path = workdir.join("ncbi_dataset.zip");
     let extract_dir = workdir.join("extracted");
     std::fs::create_dir_all(&extract_dir)?;
-    let datasets = options.datasets.to_string_lossy().into_owned();
+    let datasets = datasets.to_string_lossy().into_owned();
     let path = |p: &Path| p.to_string_lossy().into_owned();
 
     let mut download = vec![
@@ -1551,7 +1559,8 @@ GCA_3.1\trepresentative genome\t9\tComplete Genome\t2019/03/10\tna\n";
         for (assemblies, max_records) in [(&one[..0], None), (&one[..], Some(0))] {
             let options = DatasetsOptions {
                 max_records,
-                datasets: dir.join("no-such-datasets"),
+                // An executable that is never run: running it would fail the download.
+                datasets_path: Some(std::env::current_exe().unwrap().to_string_lossy().into()),
                 workdir: dir.join("work"),
                 ..DatasetsOptions::default()
             };
@@ -1613,7 +1622,7 @@ GCA_3.1\trepresentative genome\t9\tComplete Genome\t2019/03/10\tna\n";
         let options = DatasetsOptions {
             max_records: Some(2),
             cpu: 2,
-            datasets: fake,
+            datasets_path: Some(fake.to_string_lossy().into()),
             workdir: dir.join("work"),
             include: "gbff".into(),
             max_workers: 10,

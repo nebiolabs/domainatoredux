@@ -4,7 +4,9 @@ This project uses its own [SemVer](https://semver.org/) numbering, independent o
 Python `domainator` package. Each entry says which upstream release (and commit) it is at
 parity with. How versions are assigned: `docs/development.md`, "Versioning and releases".
 
-## [Unreleased]
+## [1.0.0-rc.3] - 2026-11-04
+
+Parity: Python domainator 1.0.0-rc.3 @ `3f2dc42`.
 
 ### Fixed
 
@@ -18,7 +20,9 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 - **`db_download` succeeds when the filters select no NCBI assemblies**, for example an
   incremental update whose selection is all in `--exclude_accessions_file`. It leaves empty
   outputs and logs "0 assemblies to download" instead of failing after retrying
-  `datasets` (fixed upstream too).
+  `datasets` (fixed upstream too). With `--download_backend datasets` this works without
+  `datasets` installed, as upstream's does: the program is looked up only when there is
+  something to download.
 - **HMM files with a non-numeric MAP value load, as in HMMER.** The value is read as
   HMMER's `atoi` reads it, with a warning naming the file, line and model. Other HMM parse
   errors now give the file, line and model name, and are no longer printed in debug form.
@@ -35,6 +39,12 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
   skipped. On low-complexity sequence this gave many hits that Infernal and upstream don't
   report, for example 23 instead of 2 for Rfam's DLEU2_1 on a 142 kb phage. The fix is in
   the vendored infernox.
+- **`.cm` searches now find the same candidate regions as Infernal.** Infernal's first
+  filter places each candidate window from the model position that scores best, and
+  when several positions tied, the port picked a different one. The windows then
+  differed and some weak hits came and went, for example 3 extra hits for Rfam's
+  S16-Flavobacteria on a 142 kb phage. On that phage all 48 Rfam families that used to
+  disagree now give upstream's hits. The fix is in the vendored infernox.
 
 ## [1.0.0-rc.2] - 2026-11-03
 
