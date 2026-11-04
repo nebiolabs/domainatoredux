@@ -1,10 +1,10 @@
-# Domainator (Rust)
+# Domainatoredux
 
 Domainator annotates sequences with protein domains, extracts the genome neighborhoods
 around them, and turns collections of sequences into **sequence similarity networks
 (SSNs)** you can explore interactively.
 
-This is a from-scratch Rust implementation of the
+Domainatoredux is a from-scratch Rust implementation of the
 [Python Domainator suite](https://github.com/nebiolabs/domainator). It ships as:
 
 - **one command-line executable** — `domainatoredux <tool> [options]`, 47 tools, no
@@ -13,7 +13,9 @@ This is a from-scratch Rust implementation of the
   viewer, HMM logos and dialogs for running the tools;
 - **files that interoperate** with the Python suite in both directions.
 
-HMMER3 is built in as pure Rust, so a basic install needs nothing else at all.
+Most dependencies, including HMMER3, and Infernal, are built in as pure Rust, so a basic install needs nothing else at all.
+
+Additional functionality is available from external binaries such as Diamond, usearch, cdhit, Reseek, Foldseek, Orphos (prodigal).
 
 ## Install
 
