@@ -17,7 +17,9 @@
 //! seekable I/O layer imposes).
 
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, Write};
+
+use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 
 use crate::io::bgzf as io_bgzf;
@@ -108,7 +110,6 @@ fn split_db_name(path: &Path) -> (PathBuf, String, String, String) {
 /// Copy bytes `[start, end)` of `src` to `dst` (streamed).
 fn copy_byte_range(src: &Path, dst: &Path, start: u64, end: u64) -> io::Result<()> {
     let mut fh = File::open(src)?;
-    use std::io::Seek;
     fh.seek(io::SeekFrom::Start(start))?;
     let mut out = File::create(dst)?;
     let mut remaining = (end - start) as usize;
@@ -143,27 +144,27 @@ fn decompress_to_temp(input: &Path, tmp: &Path) -> io::Result<()> {
     out.flush()
 }
 
-/// Compress `src` to `dst` as standard BGZF (streamed).
-fn compress_to_bgzf(src: &Path, dst: &Path, level: u8) -> io::Result<()> {
+/// Compress bytes `[start, end)` of `src` to `dst` as standard BGZF, the blocks
+/// compressed in parallel on the current rayon pool (upstream hands its native
+/// compressor `--cpu` threads). The bytes do not depend on the thread count.
+fn compress_range_to_bgzf(
+    src: &Path,
+    start: u64,
+    end: u64,
+    dst: &Path,
+    level: u8,
+) -> io::Result<()> {
     let cl = bgzf::CompressionLevel::new(level).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("bad compression level {level}: {e:?}"),
         )
     })?;
-    let out = File::create(dst)?;
-    let mut writer = bgzf::Writer::new(io::BufWriter::new(out), cl);
     let mut fh = File::open(src)?;
-    let mut buf = vec![0u8; COPY_CHUNK];
-    loop {
-        let n = fh.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        writer.write_all(&buf[..n])?;
-    }
-    let mut w = writer.finish()?;
-    w.flush()
+    fh.seek(io::SeekFrom::Start(start))?;
+    let out = io::BufWriter::new(File::create(dst)?);
+    io_bgzf::compress_parallel(fh.take(end - start), out, cl)?;
+    Ok(())
 }
 
 /// Split `num_records` into at most `n_shards` contiguous groups balanced by count.
@@ -406,7 +407,7 @@ fn plan_input(
 }
 
 /// Execute one planned task: write the file (if needed) and its index (if requested).
-fn run_task(task: &Task, opts: &FormatDbOptions, log: &mut dyn Write) -> Result<Status, String> {
+fn run_task(task: &Task, opts: &FormatDbOptions) -> Result<Status, String> {
     let index_path = didx::index_path_for(&task.final_path);
     if !opts.force && task.final_path.exists() && (!task.do_index || index_path.exists()) {
         return Ok(Status::Skipped);
@@ -422,14 +423,14 @@ fn run_task(task: &Task, opts: &FormatDbOptions, log: &mut dyn Write) -> Result<
         let tmp = crate::io::temp_path_beside(&task.final_path);
         let mut staged = Staged(vec![tmp.clone()]);
         if task.out_bgzf {
-            // Copy the byte range to a plain temp beside the output, then BGZF it.
-            let plain_tmp = tmp.with_extension("plain.tmp");
-            staged.0.push(plain_tmp.clone());
-            copy_byte_range(&task.working, &plain_tmp, task.byte_start, task.byte_end)
-                .map_err(|e| format!("copying range: {e}"))?;
-            compress_to_bgzf(&plain_tmp, &tmp, opts.level)
-                .map_err(|e| format!("compressing {}: {e}", task.final_path.display()))?;
-            let _ = std::fs::remove_file(&plain_tmp);
+            compress_range_to_bgzf(
+                &task.working,
+                task.byte_start,
+                task.byte_end,
+                &tmp,
+                opts.level,
+            )
+            .map_err(|e| format!("compressing {}: {e}", task.final_path.display()))?;
         } else {
             copy_byte_range(&task.working, &tmp, task.byte_start, task.byte_end)
                 .map_err(|e| format!("copying range: {e}"))?;
@@ -447,13 +448,11 @@ fn run_task(task: &Task, opts: &FormatDbOptions, log: &mut dyn Write) -> Result<
     } else if task.do_index {
         write_index_for(&task.final_path, task.filetype, task.out_bgzf)?;
     }
-    let status = if task.needs_write {
+    Ok(if task.needs_write {
         Status::Written
     } else {
         Status::Indexed
-    };
-    writeln!(log, "{}\t{}", status.as_str(), task.final_path.display()).ok();
-    Ok(status)
+    })
 }
 
 /// Shard / compress / index `inputs`. Returns the list of final output paths.
@@ -486,17 +485,28 @@ pub fn format_db(
     let tmp = crate::tools::external::TempDir::new("domainatoredux_format_db")
         .map_err(|e| e.to_string())?;
 
-    let mut out_paths = Vec::new();
+    // Plan every input first (the serial decompress + offset scan), then run all
+    // the outputs together, as upstream does. Tasks run in parallel and each one's
+    // compressor splits its blocks across the same pool, so a lone large output
+    // gets every thread and many shards share them without oversubscribing.
+    let mut tasks = Vec::new();
     for input in inputs {
         let input_path = PathBuf::from(input);
         // Give each input its own temp working subdir to avoid clobbering.
         let sub = tmp.path().join(sanitize(input));
         std::fs::create_dir_all(&sub).map_err(|e| format!("creating temp subdir: {e}"))?;
-        let (tasks, _working_temp) = plan_input(&input_path, opts, &sub, log)?;
-        for task in &tasks {
-            run_task(task, opts, log)?;
-            out_paths.push(task.final_path.clone());
-        }
+        let (input_tasks, _working_temp) = plan_input(&input_path, opts, &sub, log)?;
+        tasks.extend(input_tasks);
+    }
+    let results: Vec<Result<Status, String>> =
+        tasks.par_iter().map(|task| run_task(task, opts)).collect();
+    // Report in task order once all have finished (upstream logs after its pool's
+    // map); the first failure in that order is the error.
+    let mut out_paths = Vec::with_capacity(tasks.len());
+    for (task, result) in tasks.iter().zip(results) {
+        let status = result?;
+        writeln!(log, "{}\t{}", status.as_str(), task.final_path.display()).ok();
+        out_paths.push(task.final_path.clone());
     }
     Ok(out_paths)
 }

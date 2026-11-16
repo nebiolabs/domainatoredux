@@ -1,10 +1,150 @@
 //! BGZF random access (lifted from the prototype `parser.rs::open_at`).
 
 use std::fs::File;
-use std::io::{self, BufReader, Read, Seek, SeekFrom};
+use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
+
+use rayon::prelude::*;
 
 use super::genbank::offsets::locus_unit_is_aa;
 use super::FileType;
+
+/// Blocks compressed per parallel batch: 256 x 64 KiB bounds a writer's buffer at
+/// ~16 MiB of input (plus its compressed copy) while keeping every thread busy.
+const COMPRESS_BATCH_BLOCKS: usize = 256;
+
+/// Compress everything `reader` yields into `writer` as BGZF, on the current rayon
+/// pool, and write the EOF block. See [`ParallelWriter`].
+pub fn compress_parallel<R: Read, W: Write>(
+    mut reader: R,
+    writer: W,
+    level: ::bgzf::CompressionLevel,
+) -> io::Result<W> {
+    let mut w = ParallelWriter::new(writer, level);
+    io::copy(&mut reader, &mut w)?;
+    w.finish()
+}
+
+/// A BGZF writer that compresses its blocks in parallel on the current rayon pool
+/// (the one `--cpu` sized).
+///
+/// It writes exactly the bytes `bgzf::Writer` writes for the same sequence of
+/// `write` and `flush` calls, whatever the thread count: blocks are cut at the same
+/// `BGZF_BLOCK_SIZE` boundaries counted from the last flush, a flush ends the
+/// current block short, each block is an independent gzip member, and compressed
+/// blocks are written back in order. Full blocks are held until a batch of 256
+/// (~16 MiB) has built up, so output reaches `inner` in bursts.
+///
+/// The batch is compressed on the calling thread's pool, and the call waits for
+/// it. That is safe as long as no pool worker blocks waiting on the thread that
+/// writes, which no tool does: outputs are written on the main thread or inside the
+/// pool's own `install`, where the waiting thread runs batch jobs itself.
+///
+/// Like `bgzf::Writer`, dropping it unfinished compresses what is buffered and
+/// writes the EOF block, ignoring errors; call [`ParallelWriter::finish`] to see them.
+pub struct ParallelWriter<W: Write> {
+    inner: Option<W>,
+    level: ::bgzf::CompressionLevel,
+    /// Uncompressed bytes not yet in a written block.
+    pending: Vec<u8>,
+    /// Pending bytes that trigger compressing the full blocks among them.
+    batch_bytes: usize,
+}
+
+impl<W: Write> ParallelWriter<W> {
+    pub fn new(inner: W, level: ::bgzf::CompressionLevel) -> Self {
+        Self::with_batch_blocks(inner, level, COMPRESS_BATCH_BLOCKS)
+    }
+
+    fn with_batch_blocks(inner: W, level: ::bgzf::CompressionLevel, blocks: usize) -> Self {
+        ParallelWriter {
+            inner: Some(inner),
+            level,
+            pending: Vec::new(),
+            batch_bytes: blocks.max(1) * ::bgzf::BGZF_BLOCK_SIZE,
+        }
+    }
+
+    /// Compress and write the first `len` pending bytes as blocks of
+    /// `BGZF_BLOCK_SIZE` (the last one shorter when `len` is not a multiple).
+    fn write_blocks(&mut self, len: usize) -> io::Result<()> {
+        if len == 0 {
+            return Ok(());
+        }
+        let inner = self
+            .inner
+            .as_mut()
+            .ok_or_else(|| io::Error::other("BGZF writer already finished"))?;
+        let level = self.level;
+        let blocks: Vec<Vec<u8>> = self.pending[..len]
+            .par_chunks(::bgzf::BGZF_BLOCK_SIZE)
+            .map_init(
+                || ::bgzf::Compressor::new(level),
+                |compressor, chunk| {
+                    let mut out = Vec::with_capacity(chunk.len() / 2);
+                    compressor
+                        .compress(chunk, &mut out)
+                        .map(|()| out)
+                        .map_err(io::Error::other)
+                },
+            )
+            .collect::<io::Result<_>>()?;
+        for compressed in &blocks {
+            inner.write_all(compressed)?;
+        }
+        self.pending.drain(..len);
+        Ok(())
+    }
+
+    /// Write what is buffered and the EOF block, and return the inner writer,
+    /// flushed.
+    pub fn finish(mut self) -> io::Result<W> {
+        self.write_blocks(self.pending.len())?;
+        let mut inner = self.inner.take().expect("checked by write_blocks");
+        let mut eof = Vec::new();
+        ::bgzf::Compressor::append_eof(&mut eof);
+        inner.write_all(&eof)?;
+        inner.flush()?;
+        Ok(inner)
+    }
+}
+
+impl<W: Write> Write for ParallelWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.inner.is_none() {
+            return Err(io::Error::other("BGZF writer already finished"));
+        }
+        self.pending.extend_from_slice(buf);
+        if self.pending.len() >= self.batch_bytes {
+            let full = self.pending.len() / ::bgzf::BGZF_BLOCK_SIZE * ::bgzf::BGZF_BLOCK_SIZE;
+            self.write_blocks(full)?;
+        }
+        Ok(buf.len())
+    }
+
+    /// Write every buffered byte, ending the current block short (as
+    /// `bgzf::Writer::flush` does), and flush the inner writer. No EOF block.
+    fn flush(&mut self) -> io::Result<()> {
+        self.write_blocks(self.pending.len())?;
+        match self.inner.as_mut() {
+            Some(inner) => inner.flush(),
+            None => Ok(()),
+        }
+    }
+}
+
+impl<W: Write> Drop for ParallelWriter<W> {
+    fn drop(&mut self) {
+        if self.inner.is_some() {
+            let _ = self.write_blocks(self.pending.len());
+            if let Some(inner) = self.inner.as_mut() {
+                let mut eof = Vec::new();
+                ::bgzf::Compressor::append_eof(&mut eof);
+                let _ = inner.write_all(&eof);
+                let _ = inner.flush();
+            }
+        }
+    }
+}
 
 /// Open `path` and position a reader at `seek_to`, decompressing BGZF on the fly.
 ///
@@ -216,5 +356,111 @@ pub fn scan_offsets(path: &str, filetype: FileType) -> io::Result<Vec<(u64, u64)
             for_each_block(path, |bs, data| scan.feed(bs, data))?;
             Ok(scan.out)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Text-like input that compresses but is not one repeated byte.
+    fn sample(len: usize) -> Vec<u8> {
+        let mut state = 0x2545_f491_u32;
+        (0..len)
+            .map(|i| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                if i % 61 == 60 {
+                    b'\n'
+                } else {
+                    b"ACGT"[(state % 4) as usize]
+                }
+            })
+            .collect()
+    }
+
+    fn serial(input: &[u8], level: ::bgzf::CompressionLevel) -> Vec<u8> {
+        let mut w = ::bgzf::Writer::new(Vec::new(), level);
+        w.write_all(input).unwrap();
+        w.finish().unwrap()
+    }
+
+    /// Writes `input` in pieces of `piece` bytes, flushing after every
+    /// `flush_every` pieces, through either writer.
+    fn drive<W: Write>(w: &mut W, input: &[u8], piece: usize, flush_every: usize) {
+        for (i, chunk) in input.chunks(piece).enumerate() {
+            w.write_all(chunk).unwrap();
+            if flush_every > 0 && i % flush_every == flush_every - 1 {
+                w.flush().unwrap();
+            }
+        }
+    }
+
+    /// The parallel writer writes exactly what `bgzf::Writer` writes for the same
+    /// writes and flushes, at any thread count, including inputs that end on a block
+    /// or batch boundary and flushes that end a block early.
+    #[test]
+    fn parallel_writer_matches_the_streaming_writer() {
+        let block = ::bgzf::BGZF_BLOCK_SIZE;
+        let level = ::bgzf::CompressionLevel::new(6).unwrap();
+        let cases = [
+            (0, 1000, 0),
+            (1, 1, 0),
+            (block - 1, 4096, 0),
+            (block, block, 0),
+            (block + 1, 8192, 0),
+            (3 * block, 3 * block, 0),
+            (7 * block + 123, 10_000, 0),
+            (7 * block + 123, 10_000, 9),
+            (5 * block, 70_000, 1),
+        ];
+        for (len, piece, flush_every) in cases {
+            let input = sample(len);
+            let mut serial = ::bgzf::Writer::new(Vec::new(), level);
+            drive(&mut serial, &input, piece, flush_every);
+            let expected = serial.finish().unwrap();
+            for threads in [1, 4] {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()
+                    .unwrap();
+                let got = pool.install(|| {
+                    let mut w = ParallelWriter::with_batch_blocks(Vec::new(), level, 3);
+                    drive(&mut w, &input, piece, flush_every);
+                    w.finish().unwrap()
+                });
+                let case =
+                    format!("len {len}, piece {piece}, flush {flush_every}, {threads} threads");
+                assert!(got == expected, "{case}");
+                let mut back = Vec::new();
+                ::bgzf::Reader::new(got.as_slice())
+                    .read_to_end(&mut back)
+                    .unwrap();
+                assert!(back == input, "{case}: round trip");
+            }
+        }
+        let input = sample(2 * block + 5);
+        let got = compress_parallel(input.as_slice(), Vec::new(), level).unwrap();
+        assert!(got == serial(&input, level), "compress_parallel");
+    }
+
+    /// Dropped unfinished, it still writes what it buffered and the EOF block, as
+    /// `bgzf::Writer` does.
+    #[test]
+    fn dropping_an_unfinished_writer_ends_the_stream() {
+        let level = ::bgzf::CompressionLevel::new(6).unwrap();
+        let input = sample(100_000);
+        let mut got = Vec::new();
+        {
+            let mut w = ParallelWriter::new(&mut got, level);
+            w.write_all(&input).unwrap();
+        }
+        let mut expected = Vec::new();
+        {
+            let mut w = ::bgzf::Writer::new(&mut expected, level);
+            w.write_all(&input).unwrap();
+        }
+        assert!(got == expected);
     }
 }

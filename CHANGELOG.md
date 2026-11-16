@@ -4,6 +4,27 @@ This project uses its own [SemVer](https://semver.org/) numbering, independent o
 Python `domainator` package. Each entry says which upstream release (and commit) it is at
 parity with. How versions are assigned: `docs/development.md`, "Versioning and releases".
 
+## [Unreleased]
+
+### Fixed
+
+- **`format_db --compress` uses `--cpu`.** It compressed on one core and wrote shards
+  one after another. Now shards are written in parallel, and each file's BGZF blocks are
+  compressed across the threads, as upstream's native compressor does. The output bytes
+  are unchanged and do not depend on the thread count. Compression reads the input range
+  directly instead of first copying it to a temporary file, and `--log_out` now lists
+  outputs skipped as already present (`skipped`), as upstream does.
+
+### Changed
+
+- **`.gz`/`.bgz` outputs are compressed on several cores.** Every tool's compressed
+  output, and the GUI's install of a reference FASTA, now compresses its BGZF blocks in
+  parallel instead of on the thread writing the records. A tool with `--cpu` uses that
+  many threads; one without it uses one per physical core the process may run on. The
+  bytes are unchanged and do not depend on the thread count. Compression was most of the
+  run for pass-through tools: `genbank_to_fasta` writing 100 MB of genomes to `.fna.bgz`
+  took 2.7 s and now takes 0.7 s.
+
 ## [1.0.0-rc.3] - 2026-11-04
 
 Parity: Python domainator 1.0.0-rc.3 @ `3f2dc42`.

@@ -4,13 +4,15 @@
 //! in its directory and renamed into place only when the run succeeds, so a failed run
 //! leaves nothing that looks like a result. A device or FIFO (`/dev/null`, a shell's
 //! `>(...)`) is written directly, since nothing can be renamed over it. A path ending in
-//! `.gz` or `.bgz` is compressed as BGZF, which gzip reads.
+//! `.gz` or `.bgz` is compressed as BGZF, which gzip reads, its blocks compressed in
+//! parallel on the `--cpu` pool (the bytes do not depend on the thread count).
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use domainator_core::io::bgzf::ParallelWriter;
 use domainator_core::io::genbank::writer::write_record;
 use domainator_core::io::{fasta, is_special_file, temp_path_beside};
 use domainator_core::matrix::estimate::estimate_write_size;
@@ -34,7 +36,7 @@ pub fn is_stdin(path: &str) -> bool {
 enum Sink {
     Stdout(BufWriter<io::Stdout>),
     File(BufWriter<File>),
-    Bgzf(bgzf::Writer<BufWriter<File>>),
+    Bgzf(ParallelWriter<BufWriter<File>>),
 }
 
 /// One output, open for writing. Call [`Output::finish`] when the run succeeded;
@@ -71,7 +73,7 @@ impl Output {
         let sink = if compressed {
             let level = bgzf::CompressionLevel::new(6)
                 .map_err(|e| anyhow::anyhow!("BGZF compression level: {e:?}"))?;
-            Sink::Bgzf(bgzf::Writer::new(file, level))
+            Sink::Bgzf(ParallelWriter::new(file, level))
         } else {
             Sink::File(file)
         };
@@ -101,7 +103,7 @@ impl Output {
         let sink = if path.ends_with(".gz") || path.ends_with(".bgz") {
             let level = bgzf::CompressionLevel::new(6)
                 .map_err(|e| anyhow::anyhow!("BGZF compression level: {e:?}"))?;
-            Sink::Bgzf(bgzf::Writer::new(file, level))
+            Sink::Bgzf(ParallelWriter::new(file, level))
         } else {
             Sink::File(file)
         };

@@ -877,12 +877,12 @@ fn write_payload<R: Read>(
         DbKind::Fasta => {
             let level = bgzf::CompressionLevel::new(6)
                 .map_err(|e| format!("bad compression level: {e:?}"))?;
-            let mut writer = bgzf::Writer::new(out, level);
-            std::io::copy(&mut decode(stream), &mut writer).map_err(|e| format!("writing: {e}"))?;
-            let mut inner = writer
-                .finish()
-                .map_err(|e| format!("finishing BGZF: {e}"))?;
-            return inner.flush().map_err(|e| format!("writing: {e}"));
+            // Blocks are compressed across the cores, which matters on a fast link:
+            // one core compresses ~100 MB/s of FASTA, under what a decoded download
+            // can deliver.
+            domainator_core::io::bgzf::compress_parallel(decode(stream), out, level)
+                .map_err(|e| format!("writing: {e}"))?;
+            return Ok(());
         }
         // Plain gzip is the storage format, so EBI's (and NCBI's) file is kept as
         // it arrived.
