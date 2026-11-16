@@ -62,6 +62,23 @@ pub fn structure_domainate(
     aligner: &Aligner,
     opts: &StructureDomainateOptions,
 ) -> io::Result<Vec<SeqRecord>> {
+    let mut records = Vec::new();
+    structure_domainate_stream(inputs, references, aligner, opts, |rec| {
+        records.push(rec);
+        Ok(())
+    })?;
+    Ok(records)
+}
+
+/// [`structure_domainate`], handing each record to `emit` as it is made (upstream's
+/// generator): only the hits, bounded by references x `--max_seqs`, are held.
+pub fn structure_domainate_stream(
+    inputs: &[String],
+    references: &[String],
+    aligner: &Aligner,
+    opts: &StructureDomainateOptions,
+    mut emit: impl FnMut(SeqRecord) -> io::Result<()>,
+) -> io::Result<()> {
     let prepared = prepare_databases(aligner, inputs, Some(references), opts.db_out.as_deref())?;
     aligner.check_capabilities(
         opts.alignment_type,
@@ -111,8 +128,8 @@ pub fn structure_domainate(
         aligner.copy_hits_tsv(prepared.work_dir.path(), path)?;
     }
 
-    let mut records = Vec::new();
-    for (name, sequence, source) in aligner.iter_sequences(&prepared.input_db)? {
+    for entry in aligner.iter_sequences(&prepared.input_db)? {
+        let (name, sequence, source) = entry?;
         let mut record = build_protein_record(&name, &sequence, source.as_deref(), None);
         if let Some(hits) = by_target.get(&name).filter(|h| !h.is_empty()) {
             add_protein_annotations(
@@ -125,7 +142,7 @@ pub fn structure_domainate(
                 opts.overlap_by_db,
             );
         }
-        records.push(record);
+        emit(record)?;
     }
-    Ok(records)
+    Ok(())
 }

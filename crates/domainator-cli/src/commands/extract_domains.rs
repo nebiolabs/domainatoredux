@@ -1,10 +1,12 @@
 use anyhow::{anyhow, Result};
 use domainator_config::args::ExtractDomainsArgs;
-use domainator_core::tools::extract_domains::{extract_domains, ExtractDomainsOptions};
+use domainator_core::tools::extract_domains::{
+    check_extract_domains_options, extract_domains_from_record, ExtractDomainsOptions,
+};
 use domainator_core::tools::select_common::parse_name_list;
 
-use super::load_seq_inputs;
-use crate::output::write_seq_outputs;
+use crate::input::{flat_map_records, InputMode, SeqInputs};
+use crate::output::write_seq_stream;
 
 pub fn run(args: &ExtractDomainsArgs) -> Result<()> {
     let extend = args.extend_range.unwrap_or(0);
@@ -30,8 +32,19 @@ pub fn run(args: &ExtractDomainsArgs) -> Result<()> {
         partial: args.partial.parse().map_err(|e: String| anyhow!(e))?,
         taxonomy: crate::taxonomy_filter(&args.taxonomy)?,
     };
-    let mut records = load_seq_inputs(&args.input)?;
-    crate::filter_contigs(&mut records, &args.contigs, args.contigs_file.as_deref())?;
-    let out = extract_domains(&records, &opts).map_err(|e| anyhow!(e))?;
-    write_seq_outputs(&out, args.genbank_out.as_deref(), args.fasta_out.as_deref())
+    check_extract_domains_options(&opts).map_err(|e| anyhow!(e))?;
+    let records = SeqInputs::new(&args.input, InputMode::DETECT)
+        .contigs(&args.contigs, args.contigs_file.as_deref())?;
+    let regions = flat_map_records(records, |rec| {
+        let mut out = Vec::new();
+        extract_domains_from_record(&rec, &opts, &mut out).map_err(|e| anyhow!(e))?;
+        Ok(out)
+    });
+    write_seq_stream(
+        regions,
+        args.genbank_out.as_deref(),
+        args.fasta_out.as_deref(),
+        None,
+    )?;
+    Ok(())
 }

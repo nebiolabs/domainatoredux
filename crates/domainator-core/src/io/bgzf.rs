@@ -14,7 +14,7 @@ use super::FileType;
 /// is an independent gzip member), decompress from there, and discard the
 /// within-block bytes. The returned reader yields the decompressed stream from the
 /// record boundary onward.
-pub fn open_at(path: &str, seek_to: u64, compressed: bool) -> io::Result<Box<dyn Read>> {
+pub fn open_at(path: &str, seek_to: u64, compressed: bool) -> io::Result<Box<dyn Read + Send>> {
     let mut file = File::open(path)?;
     if !compressed {
         if seek_to > 0 {

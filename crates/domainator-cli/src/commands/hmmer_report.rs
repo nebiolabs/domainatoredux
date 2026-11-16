@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use domainator_config::args::HmmerReportArgs;
-use domainator_core::tools::hmmer_report::{
-    hmmer_report, read_hmms_to_iterators, Analysis, OutputFormat,
-};
+use domainator_core::io::db_name_from_path;
+use domainator_core::tools::hmmer_report::{Analysis, HmmerReportWriter, OutputFormat};
 
+use super::for_each_hmm_input;
 use crate::output::{is_stdin, Output};
 
 pub fn run(args: &HmmerReportArgs) -> Result<()> {
@@ -12,30 +12,8 @@ pub fn run(args: &HmmerReportArgs) -> Result<()> {
         .iter()
         .map(|c| c.to_analysis())
         .collect::<Result<_>>()?;
-    let mut records = Vec::new();
-    for path in &args.input {
-        if is_stdin(path) {
-            // Read through a temporary file; the source is named `-`, as upstream's is.
-            let mut text = Vec::new();
-            std::io::Read::read_to_end(&mut std::io::stdin(), &mut text)
-                .context("reading standard input")?;
-            let tmp = std::env::temp_dir()
-                .join(format!("domainatoredux_stdin_{}.hmm", std::process::id()));
-            std::fs::write(&tmp, &text)?;
-            let read = read_hmms_to_iterators(&[tmp.to_string_lossy().into_owned()]);
-            let _ = std::fs::remove_file(&tmp);
-            let (_, hmms) = read
-                .map_err(|e| anyhow!(e))?
-                .pop()
-                .context("reading standard input")?;
-            records.push(("-".to_string(), hmms));
-        } else {
-            records.extend(
-                read_hmms_to_iterators(std::slice::from_ref(path)).map_err(|e| anyhow!(e))?,
-            );
-        }
-    }
-
+    let report =
+        HmmerReportWriter::new(&analyses, args.column_names.as_deref()).map_err(|e| anyhow!(e))?;
     let mut outputs = Vec::new();
     for (path, format) in [
         (&args.tsv_out, OutputFormat::Tsv),
@@ -48,20 +26,28 @@ pub fn run(args: &HmmerReportArgs) -> Result<()> {
         (&args.json_out, OutputFormat::Json),
     ] {
         if let Some(path) = path {
-            outputs.push((Output::create(path)?, format));
+            let mut out = Output::create(path)?;
+            let sink = report.start(format, &mut out).map_err(|e| anyhow!(e))?;
+            outputs.push((out, sink));
         }
     }
-    for (out, format) in &mut outputs {
-        hmmer_report(
-            &records,
-            &analyses,
-            args.column_names.as_deref(),
-            *format,
-            out,
-        )
-        .map_err(|e| anyhow!(e))?;
-    }
-    for (out, _) in outputs {
+    // Each batch of profiles written to every output as it is read. Standard input is
+    // named `-`, as upstream's is.
+    for_each_hmm_input(&args.input, |path, hmms| {
+        let source = if is_stdin(path) {
+            "-".to_string()
+        } else {
+            db_name_from_path(path)
+        };
+        for (out, sink) in &mut outputs {
+            report
+                .write_profiles(sink, out, &source, &hmms)
+                .map_err(|e| anyhow!(e))?;
+        }
+        Ok(())
+    })?;
+    for (mut out, sink) in outputs {
+        report.finish(sink, &mut out).map_err(|e| anyhow!(e))?;
         out.finish()?;
     }
     Ok(())

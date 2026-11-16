@@ -12,7 +12,10 @@ use hmmer_pure_rs::alphabet::AlphabetType;
 use hmmer_pure_rs::{Alphabet, Bg, Hmm};
 use rayon::prelude::*;
 
-use crate::search::hmm_compare::compare_hmmer;
+use crate::search::hmm_compare::{
+    check_alphabets_match, common_file_alphabet, compare_hmmer, mixed_alphabets_message,
+};
+use crate::tools::top_n::TopN;
 
 /// Options for [`hmmer_search`].
 pub struct HmmerSearchOptions {
@@ -39,26 +42,81 @@ pub fn hmmer_search<W: Write>(
     opts: &HmmerSearchOptions,
     out: &mut W,
 ) -> Result<usize, String> {
-    use crate::search::hmm_compare::{
-        check_alphabets_match, common_file_alphabet, common_hmm_alphabet,
-    };
-    let reference_alphabet = common_file_alphabet(references, "reference")?;
-    let references: Vec<&Hmm> = references.iter().flat_map(|(_, h)| h).collect();
-    let min_score = opts
-        .min_score
-        .unwrap_or_else(|| default_min_score(reference_alphabet).0);
-
-    // Best reference score per query, file by file (each file's alphabet checked
-    // first, so a mismatch is one clear line); a query is kept iff its best score
-    // passes the cutoff.
-    let mut kept: Vec<(&Hmm, f64)> = Vec::new();
+    let mut searcher = HmmerSearcher::new(references, opts)?;
     for (file, profiles) in queries {
-        let Some(alphabet) = common_hmm_alphabet(profiles, "input")? else {
-            continue; // no profiles in this file
+        searcher.search(file, profiles, out)?;
+    }
+    searcher.finish(out)
+}
+
+/// [`hmmer_search`] a batch of query profiles at a time, so the queries can be
+/// streamed: without `--max_hits` each kept profile is written as its batch is scored;
+/// with it, at most that many are held (upstream's heap).
+pub struct HmmerSearcher<'a> {
+    references: Vec<&'a Hmm>,
+    reference_alphabet: Option<AlphabetType>,
+    min_score: f64,
+    opts: &'a HmmerSearchOptions,
+    /// With `--max_hits`, the best kept profiles so far.
+    best: Option<TopN<Hmm>>,
+    kept: usize,
+    written: u64,
+    /// The query file being read: its name, alphabet, and first profile's name.
+    file: Option<(String, AlphabetType, String)>,
+}
+
+impl<'a> HmmerSearcher<'a> {
+    pub fn new(
+        references: &'a [(String, Vec<Hmm>)],
+        opts: &'a HmmerSearchOptions,
+    ) -> Result<Self, String> {
+        let reference_alphabet = common_file_alphabet(references, "reference")?;
+        let min_score = opts
+            .min_score
+            .unwrap_or_else(|| default_min_score(reference_alphabet).0);
+        Ok(HmmerSearcher {
+            references: references.iter().flat_map(|(_, h)| h).collect(),
+            reference_alphabet,
+            min_score,
+            opts,
+            best: opts.max_hits.map(|n| TopN::new(Some(n))),
+            kept: 0,
+            written: 0,
+            file: None,
+        })
+    }
+
+    /// Score the next `profiles` of the query file `file`: a query is kept iff its best
+    /// reference score passes the cutoff. Each file's alphabet is checked first, so a
+    /// mismatch is one clear line.
+    pub fn search<W: Write>(
+        &mut self,
+        file: &str,
+        profiles: &[Hmm],
+        out: &mut W,
+    ) -> Result<(), String> {
+        let Some(first) = profiles.first() else {
+            return Ok(()); // no profiles in this file
         };
-        check_alphabets_match(Some(alphabet), reference_alphabet, file, "hmmer_search")?;
+        if self.file.as_ref().is_none_or(|(name, ..)| name != file) {
+            self.file = Some((file.to_string(), first.abc_type, first.name.clone()));
+        }
+        let (_, alphabet, first_name) = self.file.as_ref().expect("set above");
+        let alphabet = *alphabet;
+        if let Some(mixed) = profiles.iter().find(|h| h.abc_type != alphabet) {
+            return Err(mixed_alphabets_message(
+                "input", first_name, alphabet, mixed,
+            ));
+        }
+        check_alphabets_match(
+            Some(alphabet),
+            self.reference_alphabet,
+            file,
+            "hmmer_search",
+        )?;
         let bg = Bg::new(&Alphabet::new(alphabet));
-        let best: Vec<Option<f64>> = crate::parallel::with_threads(opts.cpu, || {
+        let (references, min_score) = (&self.references, self.min_score);
+        let best: Vec<Option<f64>> = crate::parallel::with_threads(self.opts.cpu, || {
             profiles
                 .par_iter()
                 .map(|q| {
@@ -70,37 +128,46 @@ pub fn hmmer_search<W: Write>(
                 })
                 .collect()
         });
-        kept.extend(
-            profiles
-                .iter()
-                .zip(best)
-                .filter_map(|(q, b)| b.map(|s| (q, s))),
-        );
-    }
-    if let Some(n) = opts.max_hits {
-        // Rank by best score descending; ties keep input order.
-        kept.sort_by(|a, b| b.1.total_cmp(&a.1));
-        kept.truncate(n);
+        for (profile, best) in profiles.iter().zip(best) {
+            let Some(score) = best else {
+                continue;
+            };
+            match self.best.as_mut() {
+                // Ranked by best score descending; ties keep input order.
+                Some(top) => top.push(score, profile.clone()),
+                None => self.write(profile, out)?,
+            }
+        }
+        Ok(())
     }
 
-    let mut written: u64 = 0;
-    let mut buf: Vec<u8> = Vec::new();
-    for (profile, _) in &kept {
-        buf.clear();
+    fn write<W: Write>(&mut self, profile: &Hmm, out: &mut W) -> Result<(), String> {
+        let mut buf: Vec<u8> = Vec::new();
         write_hmm(&mut buf, profile).map_err(|e| format!("{e:?}"))?;
-        written += buf.len() as u64;
-        if let Some(max) = opts.max_output_bytes.filter(|&max| written > max) {
+        self.written += buf.len() as u64;
+        if let Some(max) = self.opts.max_output_bytes.filter(|&max| self.written > max) {
             return Err(crate::tools::output_guardrails::output_limit_message(
-                &opts.output_description,
-                written,
+                &self.opts.output_description,
+                self.written,
                 max,
                 &["--max_hits", "--min_score"],
                 None,
             ));
         }
         out.write_all(&buf).map_err(|e| e.to_string())?;
+        self.kept += 1;
+        Ok(())
     }
-    Ok(kept.len())
+
+    /// Write what `--max_hits` held; how many profiles were written in all.
+    pub fn finish<W: Write>(mut self, out: &mut W) -> Result<usize, String> {
+        if let Some(top) = self.best.take() {
+            for profile in top.into_sorted_vec() {
+                self.write(&profile, out)?;
+            }
+        }
+        Ok(self.kept)
+    }
 }
 
 /// The default `--min_score` for references of `alphabet`, and the alphabet's name

@@ -24,7 +24,7 @@ struct RecordBlock {
 
 /// Streaming GenBank reader over a (possibly BGZF) file from a record offset.
 pub struct GenbankReader {
-    lines: BufReader<Box<dyn Read>>,
+    lines: BufReader<Box<dyn Read + Send>>,
     default_molecule_type: Option<String>,
 }
 
@@ -41,6 +41,18 @@ impl GenbankReader {
             lines: BufReader::new(open_at(path, seek_to, compressed)?),
             default_molecule_type,
         })
+    }
+
+    /// Read records from any byte stream (already decompressed), such as standard
+    /// input or an [`crate::io::open_decompressed`] file.
+    pub fn from_reader(
+        reader: Box<dyn Read + Send>,
+        default_molecule_type: Option<String>,
+    ) -> Self {
+        GenbankReader {
+            lines: BufReader::new(reader),
+            default_molecule_type,
+        }
     }
 
     /// Read the next `LOCUS`..`//` block, or `None` at EOF.
@@ -130,11 +142,17 @@ impl Iterator for GenbankReader {
 /// Read all records from a GenBank file: plain, gzip or BGZF, judged by its content
 /// as upstream's `parse_seqfiles` reads it (see [`crate::io::open_decompressed`]).
 pub fn read_genbank(path: &str) -> std::io::Result<Vec<SeqRecord>> {
-    GenbankReader {
-        lines: BufReader::new(crate::io::open_decompressed(std::path::Path::new(path))?),
-        default_molecule_type: None,
-    }
-    .collect()
+    iter_genbank(path)?.collect()
+}
+
+/// The records of a GenBank file (plain, gzip or BGZF, judged by its content), read
+/// one at a time as the iterator is advanced, so a file of any size is read in
+/// constant memory.
+pub fn iter_genbank(path: &str) -> std::io::Result<GenbankReader> {
+    Ok(GenbankReader::from_reader(
+        crate::io::open_decompressed(std::path::Path::new(path))?,
+        None,
+    ))
 }
 
 /// Fast scan of a GenBank file (plain, gzip or BGZF): each record's `(id, name)` in file

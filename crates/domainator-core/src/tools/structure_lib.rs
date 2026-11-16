@@ -482,6 +482,10 @@ impl StructureDb {
 /// A stream of hits from a backend's result table.
 pub type Hits = Box<dyn Iterator<Item = io::Result<StructureHit>>>;
 
+/// A database's `(name, amino acid sequence, source file)` entries
+/// ([`Aligner::iter_sequences`]).
+pub type DbSequences = Box<dyn Iterator<Item = io::Result<(String, String, Option<String>)>>>;
+
 /// Lines of a result table, skipping empty ones, parsed one at a time.
 fn hits_from_lines(
     lines: impl Iterator<Item = io::Result<String>> + 'static,
@@ -1328,23 +1332,18 @@ impl Aligner {
     }
 
     /// `(name, amino acid sequence, source file)` for every entry of `db`, in database
-    /// order. reseek records no source files.
-    pub fn iter_sequences(
-        &self,
-        db: &StructureDb,
-    ) -> io::Result<Vec<(String, String, Option<String>)>> {
+    /// order, read one at a time. reseek records no source files.
+    pub fn iter_sequences(&self, db: &StructureDb) -> io::Result<DbSequences> {
         match self.backend {
             Backend::Foldseek => {
                 let sources = foldseek_lookup_sources(db)?;
                 let names = foldseek_read_names(&db.prefix)?;
-                Ok(read_flat_db(&db.prefix)?
-                    .into_iter()
-                    .map(|(key, sequence)| {
-                        let name = names.get(&key).cloned().unwrap_or_else(|| key.to_string());
-                        let source = sources.get(&name).cloned();
-                        (name, sequence, source)
-                    })
-                    .collect())
+                Ok(Box::new(read_flat_db(&db.prefix)?.map(move |entry| {
+                    let (key, sequence) = entry?;
+                    let name = names.get(&key).cloned().unwrap_or_else(|| key.to_string());
+                    let source = sources.get(&name).cloned();
+                    Ok((name, sequence, source))
+                })))
             }
             Backend::Reseek => {
                 let scratch = TempDir::new_in(
@@ -1364,7 +1363,11 @@ impl Aligner {
                     fasta_path.clone(),
                 ];
                 run_command(&argv, "reseek -convert -fasta", Some(&fasta_path), &[])?;
-                read_reseek_fasta(Path::new(&fasta_path))
+                Ok(Box::new(ReseekFasta {
+                    lines: BufReader::new(File::open(&fasta_path)?).lines(),
+                    name: None,
+                    _scratch: scratch,
+                }))
             }
         }
     }
@@ -1386,15 +1389,15 @@ impl Aligner {
             )));
         }
         let names = foldseek_read_names(&db.prefix)?;
-        Ok(read_flat_db(&ss)?
-            .into_iter()
-            .map(|(key, sequence)| {
-                (
+        read_flat_db(&ss)?
+            .map(|entry| {
+                let (key, sequence) = entry?;
+                Ok((
                     names.get(&key).cloned().unwrap_or_else(|| key.to_string()),
                     sequence,
-                )
+                ))
             })
-            .collect())
+            .collect()
     }
 
     /// Copy the backend's raw hit table out of the work directory (upstream
@@ -1571,29 +1574,56 @@ fn reseek_best_per_query(path: &Path, max_seqs: usize) -> io::Result<Vec<String>
 /// `key<TAB>offset<TAB>length` into the data file, whose records end `\n\0`. Read
 /// directly because the `_ss` sub-database has no header database, so `convert2fasta`
 /// refuses it.
-fn read_flat_db(prefix: &str) -> io::Result<Vec<(u64, String)>> {
+fn read_flat_db(prefix: &str) -> io::Result<FlatDb> {
     let index_path = format!("{prefix}.index");
     if !Path::new(&index_path).is_file() || !Path::new(prefix).is_file() {
         return Err(other_error(format!(
             "'{prefix}' is not a readable foldseek database."
         )));
     }
-    let mut data = File::open(prefix)?;
-    let mut out = Vec::new();
-    for line in BufReader::new(File::open(&index_path)?).lines() {
-        let line = line?;
-        let fields: Vec<&str> = line.split_whitespace().collect();
-        if fields.len() < 3 {
-            continue;
+    Ok(FlatDb {
+        data: File::open(prefix)?,
+        lines: BufReader::new(File::open(&index_path)?).lines(),
+        index_path,
+    })
+}
+
+/// The `(key, entry)` pairs of a foldseek flat database, in index order, read one at a
+/// time ([`read_flat_db`]).
+struct FlatDb {
+    data: File,
+    lines: io::Lines<BufReader<File>>,
+    index_path: String,
+}
+
+impl Iterator for FlatDb {
+    type Item = io::Result<(u64, String)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let line = match self.lines.next()? {
+                Ok(line) => line,
+                Err(e) => return Some(Err(e)),
+            };
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            if fields.len() < 3 {
+                continue;
+            }
+            return Some(self.entry(&fields, &line));
         }
-        let bad = || other_error(format!("Bad row in '{index_path}': {line}"));
+    }
+}
+
+impl FlatDb {
+    fn entry(&mut self, fields: &[&str], line: &str) -> io::Result<(u64, String)> {
+        let bad = || other_error(format!("Bad row in '{}': {line}", self.index_path));
         let key: u64 = fields[0].parse().map_err(|_| bad())?;
         let offset: u64 = fields[1].parse().map_err(|_| bad())?;
         let length: usize = fields[2].parse().map_err(|_| bad())?;
         use std::io::Seek;
-        data.seek(io::SeekFrom::Start(offset))?;
+        self.data.seek(io::SeekFrom::Start(offset))?;
         let mut record = vec![0u8; length];
-        let read = data.read(&mut record)?;
+        let read = self.data.read(&mut record)?;
         record.truncate(read);
         while record.last() == Some(&0) {
             record.pop();
@@ -1601,9 +1631,8 @@ fn read_flat_db(prefix: &str) -> io::Result<Vec<(u64, String)>> {
         while record.last() == Some(&b'\n') {
             record.pop();
         }
-        out.push((key, String::from_utf8_lossy(&record).into_owned()));
+        Ok((key, String::from_utf8_lossy(&record).into_owned()))
     }
-    Ok(out)
 }
 
 /// `{key: entry name}` from `<prefix>.lookup`.
@@ -1697,26 +1726,38 @@ fn foldseek_lookup_sources(db: &StructureDb) -> io::Result<HashMap<String, Strin
 
 /// Records of reseek's `-convert -fasta` output: the first header word, and the
 /// sequence lines joined.
-fn read_reseek_fasta(path: &Path) -> io::Result<Vec<(String, String, Option<String>)>> {
-    let mut out = Vec::new();
-    let mut name: Option<String> = None;
-    let mut chunks = String::new();
-    for line in BufReader::new(File::open(path)?).lines() {
-        let line = line?;
-        if let Some(header) = line.strip_prefix('>') {
-            if let Some(name) = name.take() {
-                out.push((name, std::mem::take(&mut chunks), None));
+/// The entries of the FASTA `reseek -convert -fasta` wrote, one at a time, keeping the
+/// scratch directory that holds it alive until they are read.
+struct ReseekFasta {
+    lines: io::Lines<BufReader<File>>,
+    /// The header of the entry being read.
+    name: Option<String>,
+    _scratch: TempDir,
+}
+
+impl Iterator for ReseekFasta {
+    type Item = io::Result<(String, String, Option<String>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut chunks = String::new();
+        loop {
+            match self.lines.next() {
+                Some(Err(e)) => return Some(Err(e)),
+                Some(Ok(line)) => {
+                    if let Some(header) = line.strip_prefix('>') {
+                        let next = header.split_whitespace().next().unwrap_or("").to_string();
+                        if let Some(name) = self.name.replace(next) {
+                            return Some(Ok((name, chunks, None)));
+                        }
+                        chunks.clear();
+                    } else if !line.is_empty() {
+                        chunks.push_str(line.trim());
+                    }
+                }
+                None => return self.name.take().map(|name| Ok((name, chunks, None))),
             }
-            name = Some(header.split_whitespace().next().unwrap_or("").to_string());
-            chunks.clear();
-        } else if !line.is_empty() {
-            chunks.push_str(line.trim());
         }
     }
-    if let Some(name) = name {
-        out.push((name, chunks, None));
-    }
-    Ok(out)
 }
 
 // ---------------------------------------------------------------- annotations

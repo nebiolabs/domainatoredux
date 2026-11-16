@@ -10,7 +10,9 @@
 //! draws (the page bins the lengths itself). The text report ([`render_text`]) is
 //! upstream's, laid out with [`text_table`].
 
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::convert::Infallible;
 
 use serde_json::{json, Map, Value};
 
@@ -142,13 +144,30 @@ pub fn summary_report(
     opts: &SummaryReportOptions,
     taxonomy: Option<&NCBITaxonomy>,
 ) -> SummaryReport {
+    match summary_report_stream(records.iter().map(Ok::<_, Infallible>), opts, taxonomy) {
+        Ok(report) => report,
+        Err(never) => match never {},
+    }
+}
+
+/// [`summary_report`] over records read one at a time, as upstream reads them: only
+/// the counts and one length per contig are kept, never the records. The first `Err`
+/// stops it.
+pub fn summary_report_stream<R, E>(
+    records: impl IntoIterator<Item = Result<R, E>>,
+    opts: &SummaryReportOptions,
+    taxonomy: Option<&NCBITaxonomy>,
+) -> Result<SummaryReport, E>
+where
+    R: Borrow<SeqRecord>,
+{
     let db_filter: Option<HashSet<&str>> = if opts.databases.is_empty() {
         None
     } else {
         Some(opts.databases.iter().map(String::as_str).collect())
     };
 
-    let mut lengths: Vec<f64> = Vec::with_capacity(records.len());
+    let mut lengths: Vec<f64> = Vec::new();
     let mut num_contigs = 0usize;
     let mut num_cdss = 0usize;
     let mut num_partial_cdss = 0usize;
@@ -163,6 +182,8 @@ pub fn summary_report(
     let mut taxa_counts: HashMap<i64, u64> = HashMap::new();
 
     for contig in records {
+        let contig = contig?;
+        let contig: &SeqRecord = contig.borrow();
         // cds_ids of the CDSs the partial filter drops.
         let mut excluded_cds_ids: HashSet<String> = HashSet::new();
         if !opts.partial.is_include() {
@@ -357,7 +378,7 @@ pub fn summary_report(
         })
         .collect();
 
-    SummaryReport {
+    Ok(SummaryReport {
         contigs: num_contigs,
         cdss: num_cdss,
         partial_cdss: num_partial_cdss,
@@ -371,7 +392,7 @@ pub fn summary_report(
         cooccurrence_counts,
         report_taxonomy: opts.report_taxonomy,
         taxonomy: taxonomy_rows,
-    }
+    })
 }
 
 /// The domain-by-domain co-occurrence matrix over every counted domain (upstream

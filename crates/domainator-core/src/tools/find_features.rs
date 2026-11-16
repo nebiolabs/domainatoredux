@@ -53,9 +53,33 @@ struct Motif {
 
 /// Annotate `records` (upstream `find_features`), returning all of them.
 pub fn find_features(
-    mut records: Vec<SeqRecord>,
+    records: Vec<SeqRecord>,
     opts: &FindFeaturesOptions,
 ) -> std::io::Result<Vec<SeqRecord>> {
+    let mut out = Vec::with_capacity(records.len());
+    find_features_stream(records.into_iter().map(Ok), opts, |rec| {
+        out.push(rec);
+        Ok::<(), std::io::Error>(())
+    })?;
+    Ok(out)
+}
+
+/// Records read per gene-calling run: one Orphos process per chunk, rather than per
+/// record or for the whole input.
+const CHUNK_RECORDS: usize = 1000;
+/// ... or fewer, once a chunk holds this many residues.
+const CHUNK_RESIDUES: usize = 64 << 20;
+
+/// [`find_features`] over records read one at a time, handing each annotated record to
+/// `emit` in input order, as upstream's generator yields them. Records are read in
+/// chunks (one gene-calling run each), and with TMbed held only until their group is
+/// predicted; the groups are upstream's however the input is chunked, since a group
+/// ends at the first record that brings its protein count to `--batch_size`.
+pub fn find_features_stream<E: From<std::io::Error>>(
+    records: impl IntoIterator<Item = Result<SeqRecord, E>>,
+    opts: &FindFeaturesOptions,
+    mut emit: impl FnMut(SeqRecord) -> Result<(), E>,
+) -> Result<(), E> {
     let motifs: Vec<Motif> = opts
         .motifs
         .iter()
@@ -72,11 +96,60 @@ pub fn find_features(
         })
         .collect();
 
-    // clean_rec, then genes for the nucleotide records left with no CDS, as in
-    // `domainate`; `--gene_call all` first drops every CDS and the domains on them.
+    #[cfg(feature = "plm")]
+    let mut tmbed_group = TmbedGroup::default();
+    let mut records = records.into_iter();
+    loop {
+        let mut chunk = Vec::new();
+        let mut residues = 0;
+        while chunk.len() < CHUNK_RECORDS && residues < CHUNK_RESIDUES {
+            let Some(rec) = records.next() else {
+                break;
+            };
+            let rec = rec?;
+            residues += rec.seq.len();
+            chunk.push(rec);
+        }
+        if chunk.is_empty() {
+            break;
+        }
+        prepare_chunk(&mut chunk, opts, &motifs)?;
+        #[cfg(feature = "plm")]
+        if let Some(run) = &opts.tmbed {
+            for rec in chunk {
+                if let Some(group) = tmbed_group.push(rec, run, opts.partial) {
+                    for rec in tmbed_group_done(group, run, opts.partial)? {
+                        emit(rec)?;
+                    }
+                }
+            }
+            continue;
+        }
+        for rec in chunk {
+            emit(rec)?;
+        }
+    }
+    #[cfg(feature = "plm")]
+    if let Some(run) = &opts.tmbed {
+        let group = std::mem::take(&mut tmbed_group.records);
+        for rec in tmbed_group_done(group, run, opts.partial)? {
+            emit(rec)?;
+        }
+    }
+    Ok(())
+}
+
+/// Everything but TMbed, for one chunk of records: clean_rec, then genes for the
+/// nucleotide records left with no CDS, as in `domainate` (`--gene_call all` first
+/// drops every CDS and the domains on them), then the motifs.
+fn prepare_chunk(
+    records: &mut [SeqRecord],
+    opts: &FindFeaturesOptions,
+    motifs: &[Motif],
+) -> std::io::Result<()> {
     if let Some(gene_call) = &opts.gene_call {
         if gene_call.scope == GeneCallScope::All {
-            clear_cds_annotations(&mut records);
+            clear_cds_annotations(records);
         }
     }
     let mut unannotated = Vec::new();
@@ -86,19 +159,50 @@ pub fn find_features(
         }
     }
     if let Some(gene_call) = &opts.gene_call {
-        call_genes(&mut records, &unannotated, &gene_call.options)?;
+        call_genes(records, &unannotated, &gene_call.options)?;
     }
-
     if !motifs.is_empty() {
-        for rec in &mut records {
-            annotate_motifs(rec, &motifs, opts.partial);
+        for rec in records.iter_mut() {
+            annotate_motifs(rec, motifs, opts.partial);
         }
     }
-    #[cfg(feature = "plm")]
-    if let Some(run) = &opts.tmbed {
-        annotate_tmbed(&mut records, run, opts.partial)?;
+    Ok(())
+}
+
+/// The records of the TMbed group being filled, and their protein count.
+#[cfg(feature = "plm")]
+#[derive(Default)]
+struct TmbedGroup {
+    records: Vec<SeqRecord>,
+    proteins: usize,
+}
+
+#[cfg(feature = "plm")]
+impl TmbedGroup {
+    /// Add `rec`; the whole group once it holds `batch_size` proteins.
+    fn push(&mut self, rec: SeqRecord, run: &TmbedRun, partial: Partial) -> Option<Vec<SeqRecord>> {
+        let threshold = usize::try_from(run.batch_size).unwrap_or(0);
+        self.proteins += annotated_proteins(&rec, partial).len();
+        self.records.push(rec);
+        if self.proteins >= threshold {
+            self.proteins = 0;
+            Some(std::mem::take(&mut self.records))
+        } else {
+            None
+        }
     }
-    Ok(records)
+}
+
+/// TMbed's features on one group of records, which [`annotate_tmbed`] predicts as
+/// a single group: none but its last record reaches the protein threshold.
+#[cfg(feature = "plm")]
+fn tmbed_group_done(
+    mut group: Vec<SeqRecord>,
+    run: &TmbedRun,
+    partial: Partial,
+) -> std::io::Result<Vec<SeqRecord>> {
+    annotate_tmbed(&mut group, run, partial)?;
+    Ok(group)
 }
 
 /// The proteins `find_features` annotates in `rec`, as `(CDS feature index, sequence)`:

@@ -3,9 +3,9 @@ use domainator_config::args::HmmerSearchArgs;
 use domainator_core::log;
 use domainator_core::search::hmm_compare::common_file_alphabet;
 use domainator_core::search::results::py_g;
-use domainator_core::tools::hmmer_search::{default_min_score, hmmer_search, HmmerSearchOptions};
+use domainator_core::tools::hmmer_search::{default_min_score, HmmerSearchOptions, HmmerSearcher};
 
-use super::{cpu_threads, read_hmm_inputs, usage_error, write_hmm_out};
+use super::{cpu_threads, for_each_hmm_input, read_hmm_inputs, usage_error, write_hmm_out};
 
 pub fn run(args: &HmmerSearchArgs) -> Result<()> {
     let max_hits = match args.max_hits {
@@ -37,9 +37,16 @@ pub fn run(args: &HmmerSearchArgs) -> Result<()> {
             py_g(min_score)
         ));
     }
-    let queries = read_hmm_inputs(&args.input)?;
+    // The queries are read a batch of profiles at a time.
     write_hmm_out(path, |mut out| {
-        hmmer_search(&queries, &references, &opts, &mut out)
+        let mut searcher = HmmerSearcher::new(&references, &opts)?;
+        for_each_hmm_input(&args.input, |file, queries| {
+            searcher
+                .search(file, &queries, &mut out)
+                .map_err(anyhow::Error::msg)
+        })
+        .map_err(|e| format!("{e:#}"))?;
+        searcher.finish(&mut out)
     })?;
     Ok(())
 }

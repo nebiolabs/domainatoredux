@@ -1,12 +1,10 @@
 use anyhow::{anyhow, Result};
 use domainator_config::args::FilterDomainsArgs;
-use domainator_core::tools::filter_domains::{
-    filter_domains, AnnotationType, FilterDomainsOptions,
-};
+use domainator_core::tools::filter_domains::{filter_record, AnnotationType, FilterDomainsOptions};
 use domainator_core::tools::select_common::parse_name_list;
 
-use super::load_seq_inputs;
-use crate::output::write_seq_outputs;
+use crate::input::{InputMode, SeqInputs};
+use crate::output::write_seq_stream;
 
 pub fn run(args: &FilterDomainsArgs) -> Result<()> {
     let opts = FilterDomainsOptions {
@@ -26,8 +24,18 @@ pub fn run(args: &FilterDomainsArgs) -> Result<()> {
             .parse::<AnnotationType>()
             .map_err(|e| anyhow!(e))?,
     };
-    let mut records = load_seq_inputs(&args.input)?;
-    crate::filter_contigs(&mut records, &args.contigs, args.contigs_file.as_deref())?;
-    let out = filter_domains(records, &opts);
-    write_seq_outputs(&out, args.genbank_out.as_deref(), args.fasta_out.as_deref())
+    let records = SeqInputs::new(&args.input, InputMode::DETECT)
+        .contigs(&args.contigs, args.contigs_file.as_deref())?
+        .map(|rec| {
+            let mut rec = rec?;
+            filter_record(&mut rec, &opts);
+            Ok(rec)
+        });
+    write_seq_stream(
+        records,
+        args.genbank_out.as_deref(),
+        args.fasta_out.as_deref(),
+        None,
+    )?;
+    Ok(())
 }

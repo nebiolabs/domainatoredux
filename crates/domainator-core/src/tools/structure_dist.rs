@@ -171,7 +171,8 @@ fn enumerate_entries(aligner: &Aligner, db: &StructureDb, label: &str) -> io::Re
     let mut index = HashMap::new();
     let mut names = Vec::new();
     let mut lengths = Vec::new();
-    for (name, sequence, _) in aligner.iter_sequences(db)? {
+    for entry in aligner.iter_sequences(db)? {
+        let (name, sequence, _) = entry?;
         if index.contains_key(&name) {
             crate::log::warn(format!(
                 "Duplicate entry name '{name}' in the {label} database; keeping the first and \

@@ -3,12 +3,12 @@ use std::io::Write;
 use anyhow::{anyhow, Context, Result};
 use domainator_config::args::ColorGenbankArgs;
 use domainator_core::tools::color_genbank::{
-    color_genbank, normalize_color_hex, read_color_table, ColorGenbankOptions, ColorMap,
-    ColorTargets,
+    color_seqrecord_by_domain, normalize_color_hex, read_color_table, ColorGenbankOptions,
+    ColorMap, ColorTargets,
 };
 
-use super::load_seq_inputs;
-use crate::output::{write_seq_outputs, Output};
+use crate::input::{InputMode, SeqInputs};
+use crate::output::{write_seq_stream, Output};
 
 pub fn run(args: &ColorGenbankArgs) -> Result<()> {
     let targets = ColorTargets::parse(&args.target).map_err(|e| anyhow!(e))?;
@@ -38,10 +38,19 @@ pub fn run(args: &ColorGenbankArgs) -> Result<()> {
         }
         .to_string(),
     };
-    let mut records = load_seq_inputs(&args.input)?;
-    crate::filter_contigs(&mut records, &args.contigs, args.contigs_file.as_deref())?;
-    let out = color_genbank(records, &mut color_map, &opts);
-    write_seq_outputs(&out, args.genbank_out.as_deref(), args.fasta_out.as_deref())?;
+    let colored = SeqInputs::new(&args.input, InputMode::DETECT)
+        .contigs(&args.contigs, args.contigs_file.as_deref())?
+        .map(|rec| {
+            let mut rec = rec?;
+            color_seqrecord_by_domain(&mut rec, &mut color_map, &opts);
+            Ok(rec)
+        });
+    write_seq_stream(
+        colored,
+        args.genbank_out.as_deref(),
+        args.fasta_out.as_deref(),
+        None,
+    )?;
     if let Some(path) = &args.color_table_out {
         let mut table = Output::create(path)?;
         for (annotation, color) in color_map.items() {

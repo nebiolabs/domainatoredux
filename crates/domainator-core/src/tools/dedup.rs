@@ -43,7 +43,7 @@ impl std::str::FromStr for Dedup {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Key {
     Id(String),
-    Sequence(Vec<u8>),
+    Sequence(crate::tools::deduplicate_genbank::SeqKey),
     /// No policy: every record is its own key.
     Arrival(u64),
 }

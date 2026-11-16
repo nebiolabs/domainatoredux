@@ -51,11 +51,11 @@ pub mod viewer;
 use std::io::Write;
 
 use anyhow::{Context, Result};
-use domainator_core::io::genbank::read_genbank;
-use domainator_core::search::hmm_read::{read_hmm_file, Hmm};
+use domainator_core::search::hmm_read::{for_each_hmm_batch, read_hmm_file, Hmm, HmmerError};
 use domainator_core::search::hmm_write::write_hmm_output;
 use domainator_core::seq::SeqRecord;
 
+use crate::input::{load_all, InputMode};
 use crate::output::{is_stdin, Output};
 
 /// A usage error: reported like clap's own (`error: ...`, exit 2), for a check that
@@ -76,45 +76,11 @@ pub fn cpu_threads(cpu: i64) -> Result<usize> {
     })
 }
 
-/// Read every `-i` input in order; `-` or `/dev/stdin` is GenBank on standard input.
+/// Every record of `inputs` (`-` is standard input, read as GenBank), FASTA read as
+/// protein. Only for a tool that needs them all at once; one that handles records
+/// one at a time reads [`crate::input::SeqInputs`].
 pub fn load_seq_inputs(inputs: &[String]) -> Result<Vec<SeqRecord>> {
-    let mut out = Vec::new();
-    for path in inputs {
-        if is_stdin(path) {
-            out.extend(read_stdin_genbank()?);
-        } else {
-            out.extend(crate::load(std::path::Path::new(path))?);
-        }
-    }
-    Ok(out)
-}
-
-/// Like [`load_seq_inputs`], with FASTA records given the molecule type `alphabet`
-/// (`protein` or `nucleotide`; upstream's `default_molecule_type`).
-pub fn load_typed_inputs(inputs: &[String], alphabet: &str) -> Result<Vec<SeqRecord>> {
-    let mut out = Vec::new();
-    for path in inputs {
-        if is_stdin(path) {
-            out.extend(read_stdin_genbank()?);
-        } else {
-            out.extend(crate::load_typed(std::path::Path::new(path), alphabet)?);
-        }
-    }
-    Ok(out)
-}
-
-pub(crate) fn read_stdin_genbank() -> Result<Vec<SeqRecord>> {
-    use std::io::Read;
-    let mut buf = String::new();
-    std::io::stdin()
-        .read_to_string(&mut buf)
-        .context("reading standard input")?;
-    let tmp = std::env::temp_dir().join(format!("domainatoredux_stdin_{}.gb", std::process::id()));
-    std::fs::write(&tmp, &buf)?;
-    let records =
-        read_genbank(&tmp.to_string_lossy()).context("parsing GenBank from standard input");
-    let _ = std::fs::remove_file(&tmp);
-    records
+    load_all(inputs, InputMode::DETECT)
 }
 
 /// Read HMM profile files, each with the name it is reported under; `-` reads standard
@@ -122,30 +88,68 @@ pub(crate) fn read_stdin_genbank() -> Result<Vec<SeqRecord>> {
 pub fn read_hmm_inputs(paths: &[String]) -> Result<Vec<(String, Vec<Hmm>)>> {
     let mut out = Vec::new();
     for path in paths {
-        let profiles = if is_stdin(path) {
-            use std::io::Read;
-            let mut text = Vec::new();
-            std::io::stdin()
-                .read_to_end(&mut text)
-                .context("reading standard input")?;
-            let tmp = std::env::temp_dir()
-                .join(format!("domainatoredux_stdin_{}.hmm", std::process::id()));
-            std::fs::write(&tmp, &text)?;
-            let read = read_hmm_file(&tmp);
-            let _ = std::fs::remove_file(&tmp);
-            read
-        } else {
-            read_hmm_file(std::path::Path::new(path))
-        };
-        let profiles = profiles.map_err(|e| {
-            anyhow::anyhow!(
-                "reading HMM profiles: {}",
-                domainator_core::search::hmm_read::error_message(std::path::Path::new(path), &e)
-            )
-        })?;
+        let profiles = with_hmm_path(path, read_hmm_file)?.map_err(|e| hmm_read_error(path, &e))?;
         out.push((path.clone(), profiles));
     }
     Ok(out)
+}
+
+/// [`read_hmm_inputs`] a batch of profiles at a time, file after file, so a library is
+/// never read whole: `f` gets each batch with the name of its file. A file with no
+/// profiles gets no call.
+pub fn for_each_hmm_input(
+    paths: &[String],
+    mut f: impl FnMut(&str, Vec<Hmm>) -> Result<()>,
+) -> Result<()> {
+    /// A read error, kept apart from `f`'s so it can be reported with its file.
+    enum BatchError {
+        Read(HmmerError),
+        Caller(anyhow::Error),
+    }
+    impl From<HmmerError> for BatchError {
+        fn from(e: HmmerError) -> Self {
+            BatchError::Read(e)
+        }
+    }
+    for path in paths {
+        let read = with_hmm_path(path, |p| {
+            for_each_hmm_batch(p, |batch| f(path, batch).map_err(BatchError::Caller))
+        })?;
+        match read {
+            Ok(()) => {}
+            Err(BatchError::Read(e)) => return Err(hmm_read_error(path, &e)),
+            Err(BatchError::Caller(e)) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+fn hmm_read_error(path: &str, e: &HmmerError) -> anyhow::Error {
+    anyhow::anyhow!(
+        "reading HMM profiles: {}",
+        domainator_core::search::hmm_read::error_message(std::path::Path::new(path), e)
+    )
+}
+
+/// Run `read` on the file `path` names; standard input is copied to a temporary file
+/// first, since the HMM reader may need to read a file twice.
+fn with_hmm_path<T>(path: &str, read: impl FnOnce(&std::path::Path) -> T) -> Result<T> {
+    if !is_stdin(path) {
+        return Ok(read(std::path::Path::new(path)));
+    }
+    struct Remove(std::path::PathBuf);
+    impl Drop for Remove {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let tmp = Remove(
+        std::env::temp_dir().join(format!("domainatoredux_stdin_{}.hmm", std::process::id())),
+    );
+    let mut file = std::fs::File::create(&tmp.0).context("staging standard input")?;
+    std::io::copy(&mut std::io::stdin().lock(), &mut file).context("reading standard input")?;
+    drop(file);
+    Ok(read(&tmp.0))
 }
 
 /// Write HMM profiles to `path` through `write`: `-` is standard output (never

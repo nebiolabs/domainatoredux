@@ -123,12 +123,39 @@ pub fn rotate_contigs(
     refs: Option<&References>,
     opts: &RotateContigsOptions,
 ) -> io::Result<Vec<SeqRecord>> {
+    let mut out = Vec::new();
+    rotate_contigs_stream(
+        records.into_iter().map(Ok::<_, io::Error>),
+        refs,
+        opts,
+        |rec| {
+            out.push(rec);
+            Ok(())
+        },
+    )?;
+    Ok(out)
+}
+
+/// [`rotate_contigs`] over records read one at a time, handing each rotated record to
+/// `emit` in input order: one batch of `batch_size` rotatable records is held at a
+/// time, as upstream's generator holds it.
+pub fn rotate_contigs_stream<E: From<io::Error>>(
+    records: impl IntoIterator<Item = Result<SeqRecord, E>>,
+    refs: Option<&References>,
+    opts: &RotateContigsOptions,
+    mut emit: impl FnMut(SeqRecord) -> Result<(), E>,
+) -> Result<(), E> {
     check_options(refs.is_some(), opts)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let mut records = prepare_records(records, opts.circularize).into_iter();
-    let mut out = Vec::new();
+    let mut records = records.into_iter();
     loop {
-        let chunk: Vec<SeqRecord> = records.by_ref().take(opts.batch_size).collect();
+        let mut chunk: Vec<SeqRecord> = Vec::new();
+        while chunk.len() < opts.batch_size {
+            let Some(rec) = records.next() else {
+                break;
+            };
+            chunk.extend(prepare_record(rec?, opts.circularize));
+        }
         if chunk.is_empty() {
             break;
         }
@@ -151,12 +178,11 @@ pub fn rotate_contigs(
                 .filter(|&(i, _)| !is_new[i] || (opts.keep_annotation && i == anchor))
                 .map(|(_, f)| f.clone())
                 .collect();
-            out.push(rotate_record(&rec, cut, reverse, &features, opts.keep_name));
+            emit(rotate_record(&rec, cut, reverse, &features, opts.keep_name))?;
         }
     }
-    Ok(out)
+    Ok(())
 }
-
 /// Whether `rec` is a protein, or holds letters that are not IUPAC nucleotide codes
 /// (FASTA records are read as DNA).
 fn is_protein(rec: &SeqRecord) -> bool {
@@ -167,35 +193,30 @@ fn is_protein(rec: &SeqRecord) -> bool {
             .any(|b| !NUCLEOTIDE_LETTERS.contains(&b.to_ascii_uppercase()))
 }
 
-/// The records that can be rotated, made circular; warns about the rest.
-fn prepare_records(records: Vec<SeqRecord>, circularize: bool) -> Vec<SeqRecord> {
-    let mut out = Vec::with_capacity(records.len());
-    for mut rec in records {
-        if is_protein(&rec) {
+/// `rec` made circular if it can be rotated; `None`, with a warning, if not.
+fn prepare_record(mut rec: SeqRecord, circularize: bool) -> Option<SeqRecord> {
+    if is_protein(&rec) {
+        crate::log::warn(format_args!(
+            "Contig {} is a protein sequence. Only nucleotide sequences can be rotated. \
+             Skipping contig.",
+            rec.id
+        ));
+        return None;
+    }
+    if rec.topology != Topology::Circular {
+        if !circularize {
             crate::log::warn(format_args!(
-                "Contig {} is a protein sequence. Only nucleotide sequences can be rotated. \
-                 Skipping contig.",
+                "Contig {} is not circular. Use --circularize to rotate linear contigs and \
+                 fasta records. Skipping contig.",
                 rec.id
             ));
-            continue;
+            return None;
         }
-        if rec.topology != Topology::Circular {
-            if !circularize {
-                crate::log::warn(format_args!(
-                    "Contig {} is not circular. Use --circularize to rotate linear contigs and \
-                     fasta records. Skipping contig.",
-                    rec.id
-                ));
-                continue;
-            }
-            rec.topology = Topology::Circular;
-            rec.annotations.topology = Some(Topology::Circular);
-        }
-        out.push(rec);
+        rec.topology = Topology::Circular;
+        rec.annotations.topology = Some(Topology::Circular);
     }
-    out
+    Some(rec)
 }
-
 /// Search `chunk` against `refs`, returning each record with a flag per feature: whether
 /// it is a new hit. domainate keeps the records in order, appends its hits after the
 /// existing `Domainator` features and, under `--gene_call all`, deletes those first.

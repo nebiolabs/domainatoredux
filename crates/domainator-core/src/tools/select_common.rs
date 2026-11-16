@@ -54,9 +54,10 @@ fn names_in_file(path: &str) -> std::io::Result<Vec<String>> {
         }
         return Ok(names);
     }
-    let records = match detect_filetype(p) {
-        Some(FileType::Genbank) => crate::io::genbank::read_genbank(path)?,
-        Some(FileType::Fasta) => crate::io::fasta::read_fasta(path, None)?,
+    // Only the record ids, read without parsing the records.
+    let ids = match detect_filetype(p) {
+        Some(FileType::Genbank) => crate::io::genbank::scan_genbank_ids(path)?,
+        Some(FileType::Fasta) => crate::io::fasta::scan_fasta_ids(path)?,
         None => {
             let text = std::fs::read_to_string(path)?;
             return Ok(text
@@ -67,7 +68,7 @@ fn names_in_file(path: &str) -> std::io::Result<Vec<String>> {
                 .collect());
         }
     };
-    Ok(records.into_iter().map(|r| r.id).collect())
+    Ok(ids.into_iter().map(|(id, _)| id).collect())
 }
 
 // ---------------------------------------------------------------------------

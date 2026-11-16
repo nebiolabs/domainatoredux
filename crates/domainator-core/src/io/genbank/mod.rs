@@ -5,5 +5,5 @@ pub mod parse;
 pub mod reader;
 pub mod writer;
 
-pub use reader::{read_genbank, scan_genbank_ids, GenbankReader};
+pub use reader::{iter_genbank, read_genbank, scan_genbank_ids, GenbankReader};
 pub use writer::write_genbank;

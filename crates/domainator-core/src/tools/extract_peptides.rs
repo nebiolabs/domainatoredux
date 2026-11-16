@@ -52,36 +52,70 @@ pub fn extract_peptides(
     records: &[SeqRecord],
     opts: &ExtractPeptidesOptions,
 ) -> Result<Vec<SeqRecord>, String> {
-    // Name precedence: name_field (if any) first, then the defaults.
-    let prec_owned = cds_name_precedence(
-        opts.name_field.as_deref(),
-        &["protein_id", "gene_id", "locus_tag", "gene"],
-    );
-    let expr = opts
-        .domain_expr
-        .as_deref()
-        .map(BooleanEvaluator::new)
-        .transpose()?;
-    let no_selectors = opts.target_cdss.is_none()
-        && opts.target_domains.is_none()
-        && expr.is_none()
-        && !opts.unannotated
-        && !opts.has_search_hit;
-    let invert = opts.invert && !no_selectors;
-    if opts.invert && no_selectors {
-        crate::log::warn(format_args!(
-            "Invert supplied with no selection criteria. Invert will be ignored."
-        ));
-    }
-
+    let extractor = PeptideExtractor::new(opts)?;
     let mut out = Vec::new();
     for contig in records {
+        extractor.extract(contig, &mut out)?;
+    }
+    Ok(out)
+}
+
+/// [`extract_peptides`] one record at a time, with the options resolved once, so
+/// records can be streamed through it (upstream's generator).
+pub struct PeptideExtractor<'a> {
+    opts: &'a ExtractPeptidesOptions,
+    prec_owned: Vec<&'a str>,
+    expr: Option<BooleanEvaluator>,
+    no_selectors: bool,
+    invert: bool,
+}
+
+impl<'a> PeptideExtractor<'a> {
+    /// Resolve `opts`; warns once if `--invert` is given without selectors.
+    pub fn new(opts: &'a ExtractPeptidesOptions) -> Result<Self, String> {
+        // Name precedence: name_field (if any) first, then the defaults.
+        let prec_owned = cds_name_precedence(
+            opts.name_field.as_deref(),
+            &["protein_id", "gene_id", "locus_tag", "gene"],
+        );
+        let expr = opts
+            .domain_expr
+            .as_deref()
+            .map(BooleanEvaluator::new)
+            .transpose()?;
+        let no_selectors = opts.target_cdss.is_none()
+            && opts.target_domains.is_none()
+            && expr.is_none()
+            && !opts.unannotated
+            && !opts.has_search_hit;
+        let invert = opts.invert && !no_selectors;
+        if opts.invert && no_selectors {
+            crate::log::warn(format_args!(
+                "Invert supplied with no selection criteria. Invert will be ignored."
+            ));
+        }
+        Ok(PeptideExtractor {
+            opts,
+            prec_owned,
+            expr,
+            no_selectors,
+            invert,
+        })
+    }
+
+    /// Append the peptides extracted from `contig` to `out`.
+    pub fn extract(&self, contig: &SeqRecord, out: &mut Vec<SeqRecord>) -> Result<(), String> {
+        let opts = self.opts;
+        let prec_owned = &self.prec_owned;
+        let expr = &self.expr;
+        let no_selectors = self.no_selectors;
+        let invert = self.invert;
         let cdss = DomainatorCds::list_from_contig(
             contig,
             opts.evalue,
             f64::NEG_INFINITY,
             true, // skip_pseudo
-            Some(&prec_owned),
+            Some(prec_owned),
             false, // no nucleic-acid annotations
         );
         let source_features: Vec<&SeqFeature> = contig
@@ -203,8 +237,8 @@ pub fn extract_peptides(
             };
             out.push(region);
         }
+        Ok(())
     }
-    Ok(out)
 }
 
 #[cfg(test)]

@@ -180,44 +180,80 @@ pub fn hmmer_select<W: Write>(
     opts: &SelectOptions,
     out: &mut W,
 ) -> Result<SelectSummary, String> {
-    if !opts.fields.name && !opts.fields.desc && !opts.fields.acc {
-        return Err("at least one of the searched fields must be enabled".into());
-    }
-    let regexes = compile_regexes(opts)?;
-    // `--alphabet` on its own leaves the text criteria nothing to match, so it
-    // means "every profile in the files that survive". With no criteria at all,
-    // keep the historical behavior of selecting nothing.
-    let match_all = regexes.is_empty()
-        && opts.exact.is_empty()
-        && opts.contains.is_empty()
-        && opts.alphabet.is_some();
-
-    let mut summary = SelectSummary {
-        found: 0,
-        skipped_files: 0,
-        skipped: Vec::new(),
-    };
-    let mut selected = opts.alphabet;
-    let mut selected_source = opts.alphabet.map(|_| "--alphabet".to_string());
+    let mut selector = ProfileSelector::new(opts)?;
     for (input_file, hmms) in inputs {
-        let Some(file_alphabet) = hmms.first().map(|h| h.abc_type) else {
+        let Some(first) = hmms.first() else {
             continue; // no profiles in this file
         };
+        if selector.start_file(input_file, first.abc_type)? {
+            selector.write_matching(hmms, out)?;
+        }
+    }
+    Ok(selector.finish())
+}
+
+/// [`hmmer_select`] a file, and a batch of profiles, at a time, so a library is
+/// streamed through it rather than read whole (upstream iterates each `HMMFile`).
+pub struct ProfileSelector<'a> {
+    opts: &'a SelectOptions,
+    regexes: Vec<regex::Regex>,
+    match_all: bool,
+    summary: SelectSummary,
+    selected: Option<AlphabetType>,
+    selected_source: Option<String>,
+}
+
+impl<'a> ProfileSelector<'a> {
+    pub fn new(opts: &'a SelectOptions) -> Result<Self, String> {
+        if !opts.fields.name && !opts.fields.desc && !opts.fields.acc {
+            return Err("at least one of the searched fields must be enabled".into());
+        }
+        let regexes = compile_regexes(opts)?;
+        // `--alphabet` on its own leaves the text criteria nothing to match, so it
+        // means "every profile in the files that survive". With no criteria at all,
+        // keep the historical behavior of selecting nothing.
+        let match_all = regexes.is_empty()
+            && opts.exact.is_empty()
+            && opts.contains.is_empty()
+            && opts.alphabet.is_some();
+        Ok(ProfileSelector {
+            opts,
+            regexes,
+            match_all,
+            summary: SelectSummary {
+                found: 0,
+                skipped_files: 0,
+                skipped: Vec::new(),
+            },
+            selected: opts.alphabet,
+            selected_source: opts.alphabet.map(|_| "--alphabet".to_string()),
+        })
+    }
+
+    /// Begin `input_file`, whose profiles are `file_alphabet`: whether its profiles are
+    /// considered (`false` when `--alphabet` skips it), or an error when it would mix
+    /// alphabets in the output.
+    pub fn start_file(
+        &mut self,
+        input_file: &str,
+        file_alphabet: AlphabetType,
+    ) -> Result<bool, String> {
+        let opts = self.opts;
         if let Some(requested) = opts.alphabet {
             if file_alphabet != requested {
-                summary.skipped.push(format!(
+                self.summary.skipped.push(format!(
                     "Skipping '{input_file}': its profiles are {}, not the requested {}.",
                     alphabet_name(file_alphabet),
                     alphabet_name(requested)
                 ));
-                summary.skipped_files += 1;
-                continue;
+                self.summary.skipped_files += 1;
+                return Ok(false);
             }
         }
-        match selected {
+        match self.selected {
             None => {
-                selected = Some(file_alphabet);
-                selected_source = Some(input_file.clone());
+                self.selected = Some(file_alphabet);
+                self.selected_source = Some(input_file.to_string());
             }
             Some(chosen) if chosen != file_alphabet => {
                 return Err(format!(
@@ -226,22 +262,31 @@ pub fn hmmer_select<W: Write>(
                      writing both into one output file would produce a file that cannot be read \
                      past its first profile. Pass --alphabet to keep only one alphabet, or run \
                      hmmer_select once per alphabet.",
-                    selected_source.as_deref().unwrap_or("--alphabet"),
+                    self.selected_source.as_deref().unwrap_or("--alphabet"),
                     alphabet_name(chosen),
                     alphabet_name(file_alphabet),
                 ));
             }
             Some(_) => {}
         }
+        Ok(true)
+    }
+
+    /// Write the profiles of the current file that match to `out`.
+    pub fn write_matching<W: Write>(&mut self, hmms: &[Hmm], out: &mut W) -> Result<(), String> {
         for hmm in hmms {
-            if match_all || profile_matches(hmm, opts, &regexes) {
+            if self.match_all || profile_matches(hmm, self.opts, &self.regexes) {
                 crate::search::hmm_write::write_hmm(out, hmm)
                     .map_err(|e| format!("writing profile: {e:?}"))?;
-                summary.found += 1;
+                self.summary.found += 1;
             }
         }
+        Ok(())
     }
-    Ok(summary)
+
+    pub fn finish(self) -> SelectSummary {
+        self.summary
+    }
 }
 
 #[cfg(test)]

@@ -5,7 +5,8 @@ use domainator_config::args::SortContigsArgs;
 use domainator_core::tools::select_common::parse_name_list;
 use domainator_core::tools::sort_contigs::{sort_contigs, SortContigsOptions};
 
-use super::{load_seq_inputs, usage_error};
+use super::usage_error;
+use crate::input::{until_error, InputMode, SeqInputs};
 use crate::output::write_seq_outputs;
 
 pub fn run(args: &SortContigsArgs) -> Result<()> {
@@ -26,13 +27,21 @@ pub fn run(args: &SortContigsArgs) -> Result<()> {
         .as_ref()
         .and(args.databases.as_ref())
         .map(|d| d.iter().cloned().collect());
-    let records = load_seq_inputs(&args.input)?;
     let opts = SortContigsOptions {
         max_hits,
         domains,
         databases,
     };
-    let sorted = sort_contigs(records, &opts).map_err(|e| anyhow::anyhow!(e))?;
+    let mut read_error = None;
+    let records = until_error(
+        SeqInputs::new(&args.input, InputMode::DETECT),
+        &mut read_error,
+    );
+    let sorted = sort_contigs(records, &opts);
+    if let Some(e) = read_error {
+        return Err(e);
+    }
+    let sorted = sorted.map_err(|e| anyhow::anyhow!(e))?;
     write_seq_outputs(
         &sorted,
         args.genbank_out.as_deref(),

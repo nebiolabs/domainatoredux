@@ -4,12 +4,20 @@ use anyhow::{anyhow, Context, Result};
 use domainator_config::args::RotateContigsArgs;
 use domainator_core::io::{detect_filetype, FileType};
 use domainator_core::tools::domainate;
-use domainator_core::tools::rotate_contigs::{check_options, rotate_contigs, RotateContigsOptions};
+use domainator_core::tools::rotate_contigs::{
+    check_options, rotate_contigs_stream, RotateContigsOptions,
+};
 use domainator_core::tools::select_common::parse_name_list;
 
 use super::domainate::count_peptides;
-use super::{cpu_threads, load_typed_inputs, usage_error};
-use crate::output::{is_stdin, write_seq_outputs};
+use super::{cpu_threads, usage_error};
+use crate::input::{InputMode, SeqInputs};
+use crate::output::{is_stdin, SeqWriter};
+
+/// FASTA input is nucleotide here.
+const NUCLEOTIDE: InputMode<'static> = InputMode::Detect {
+    fasta_type: "nucleotide",
+};
 
 pub fn run(args: &RotateContigsArgs) -> Result<()> {
     if args.evalue.0 > 10.0 {
@@ -54,32 +62,29 @@ pub fn run(args: &RotateContigsArgs) -> Result<()> {
         .transpose()
         .context("reading references")?;
 
-    let mut records = Vec::new();
+    // `-Z 0` counts the peptides first, in a pass of its own, as upstream does.
     let mut z = args.z;
-    for input in &args.input {
-        let loaded = load_typed_inputs(std::slice::from_ref(input), "nucleotide")?;
-        // Upstream's count_peptides: one per FASTA record, else one per protein record
-        // or CDS feature.
-        if args.z == 0 {
-            z += match detect_filetype(Path::new(input)) {
-                Some(FileType::Fasta) => loaded.len() as i64,
-                _ => loaded.iter().map(count_peptides).sum(),
-            };
+    if z == 0 {
+        for input in &args.input {
+            let fasta = detect_filetype(Path::new(input)) == Some(FileType::Fasta);
+            for record in SeqInputs::new(std::slice::from_ref(input), NUCLEOTIDE) {
+                // Upstream's count_peptides: one per FASTA record, else one per protein
+                // record or CDS feature.
+                z += if fasta { 1 } else { count_peptides(&record?) };
+            }
         }
-        records.extend(loaded);
     }
-    let rotated = rotate_contigs(
-        records,
+    let mut out = SeqWriter::new(args.genbank_out.as_deref(), args.fasta_out.as_deref(), None)?;
+    rotate_contigs_stream(
+        SeqInputs::new(&args.input, NUCLEOTIDE),
         refs.as_ref(),
         &RotateContigsOptions {
             z: z as f64,
             ..opts
         },
+        |rec| out.write(&rec),
     )
     .context("rotating contigs")?;
-    write_seq_outputs(
-        &rotated,
-        args.genbank_out.as_deref(),
-        args.fasta_out.as_deref(),
-    )
+    out.finish()?;
+    Ok(())
 }

@@ -593,17 +593,78 @@ pub fn domainate(
     refs: &References,
     opts: &DomainateOptions,
 ) -> std::io::Result<Vec<SeqRecord>> {
-    let empty_dropped = HashSet::new();
-    let taxonomy = opts.taxonomy.as_deref();
-    let rejected = |e: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, e);
+    prepare_records(&mut records, opts)?;
+    domainate_prepared(records, refs, opts)
+}
 
-    // clean_rec: nucleotide records get cds_id + /translation on every CDS. With
-    // `--gene_call all` every CDS (and the domains anchored on them) goes first; then
-    // the nucleotide records left with no CDS get genes called, as in Python, where
-    // `prodigal_CDS_annotate` runs right after `clean_rec` when it counts no CDS.
+/// [`domainate`] over records read one at a time, handing each annotated record to
+/// `emit` in input order, as upstream's generator yields them. Records are cleaned and
+/// gene-called a chunk at a time, then searched in upstream's batches: a batch ends
+/// at the first record that brings its count of searched proteins to `batch_size`
+/// (only protein references count proteins, so with nucleotide references alone the
+/// whole input is one batch, as upstream's is). Only the batch being filled is held.
+/// The batches matter beyond memory: an nhmmer or cmsearch E-value is relative to
+/// the residues of its batch.
+pub fn domainate_stream<E: From<std::io::Error>>(
+    records: impl IntoIterator<Item = Result<SeqRecord, E>>,
+    refs: &References,
+    opts: &DomainateOptions,
+    batch_size: i64,
+    mut emit: impl FnMut(SeqRecord) -> Result<(), E>,
+) -> Result<(), E> {
+    let counts_proteins = !refs.protein.is_empty() || opts.foldseek.is_some();
+    let mut records = records.into_iter();
+    let mut batch: Vec<SeqRecord> = Vec::new();
+    let mut proteins: i64 = 0;
+    loop {
+        let mut chunk = Vec::new();
+        let mut residues = 0;
+        while chunk.len() < PREPARE_RECORDS && residues < PREPARE_RESIDUES {
+            let Some(rec) = records.next() else {
+                break;
+            };
+            let rec = rec?;
+            residues += rec.seq.len();
+            chunk.push(rec);
+        }
+        if chunk.is_empty() {
+            break;
+        }
+        prepare_records(&mut chunk, opts)?;
+        for rec in chunk {
+            if counts_proteins {
+                proteins += record_peptides(&rec, 0, opts, false)?.len() as i64;
+            }
+            batch.push(rec);
+            if proteins >= batch_size {
+                for rec in domainate_prepared(std::mem::take(&mut batch), refs, opts)? {
+                    emit(rec)?;
+                }
+                proteins = 0;
+            }
+        }
+    }
+    if !batch.is_empty() {
+        for rec in domainate_prepared(batch, refs, opts)? {
+            emit(rec)?;
+        }
+    }
+    Ok(())
+}
+
+/// Records [`domainate_stream`] cleans and gene-calls together (one gene-calling run).
+const PREPARE_RECORDS: usize = 1000;
+/// ... or fewer, once they hold this many residues.
+const PREPARE_RESIDUES: usize = 64 << 20;
+
+/// clean_rec: nucleotide records get cds_id + /translation on every CDS. With
+/// `--gene_call all` every CDS (and the domains anchored on them) goes first; then
+/// the nucleotide records left with no CDS get genes called, as in Python, where
+/// `prodigal_CDS_annotate` runs right after `clean_rec` when it counts no CDS.
+fn prepare_records(records: &mut [SeqRecord], opts: &DomainateOptions) -> std::io::Result<()> {
     if let Some(gene_call) = &opts.gene_call {
         if gene_call.scope == GeneCallScope::All {
-            clear_cds_annotations(&mut records);
+            clear_cds_annotations(records);
         }
     }
     let mut unannotated = Vec::new();
@@ -613,64 +674,95 @@ pub fn domainate(
         }
     }
     if let Some(gene_call) = &opts.gene_call {
-        call_genes(&mut records, &unannotated, &gene_call.options)?;
+        call_genes(records, &unannotated, &gene_call.options)?;
     }
+    Ok(())
+}
 
-    // Protein search (hmmsearch + phmmer). Collect peptides across contigs.
-    // Protein record: "{i},0". Nucleotide record's CDSs: "{i},{feature_index}".
+/// The peptides of record `i` that the protein search covers (upstream `get_prot_list`):
+/// a protein record's sequence, or a nucleotide record's CDS translations, less those
+/// the taxonomy and `--partial` filters exclude and those too long to search (with a
+/// warning when `warn`). Named `"{i},0"` / `"{i},{feature_index}"`.
+fn record_peptides(
+    rec: &SeqRecord,
+    i: usize,
+    opts: &DomainateOptions,
+    warn: bool,
+) -> std::io::Result<Vec<(String, Vec<u8>)>> {
+    let empty_dropped = HashSet::new();
+    let taxonomy = opts.taxonomy.as_deref();
+    let rejected = |e: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, e);
     let mut peptides: Vec<(String, Vec<u8>)> = Vec::new();
     // Upstream skips a protein too long to search, with a warning.
-    let mut add = |name: String, pep: Vec<u8>, rec: &SeqRecord| {
+    let mut add = |name: String, pep: Vec<u8>| {
         if pep.len() > MAX_PROTEIN_SIZE {
-            crate::log::warn(format_args!(
-                "Skipping protein longer than {MAX_PROTEIN_SIZE} aa: {}",
-                rec.id
-            ));
+            if warn {
+                crate::log::warn(format_args!(
+                    "Skipping protein longer than {MAX_PROTEIN_SIZE} aa: {}",
+                    rec.id
+                ));
+            }
         } else {
             peptides.push((name, pep));
         }
     };
-    for (i, rec) in records.iter().enumerate() {
-        if rec.is_protein() {
-            if let Some(taxonomy) = taxonomy {
-                let context = || format!("record {:?}", rec.id);
-                if !taxonomy
-                    .allows(Some(record_taxid(rec)), context)
-                    .map_err(rejected)?
-                {
-                    continue;
-                }
-            }
-            if !opts.partial.allows(record_fragment_status(rec)) {
-                continue;
-            }
-            let pep: Vec<u8> = rec
-                .seq
-                .iter()
-                .copied()
-                .filter(|b| b.is_ascii_alphanumeric())
-                .collect();
-            add(format!("{i},0"), pep, rec);
-        } else {
-            for (j, pep) in rec.cds_peptides(&empty_dropped) {
-                if let Some(taxonomy) = taxonomy {
-                    // A CDS takes the taxid of the longest source covering it.
-                    let cds = &rec.features[j];
-                    let taxid = location_taxid(&rec.features, &cds.location);
-                    let context = || format!("record {:?}, CDS index {j}", rec.id);
-                    if !taxonomy.allows(taxid, context).map_err(rejected)? {
-                        continue;
-                    }
-                }
-                if !opts
-                    .partial
-                    .allows(feature_fragment_status(&rec.features[j]))
-                {
-                    continue;
-                }
-                add(format!("{i},{j}"), pep.into_bytes(), rec);
+    if rec.is_protein() {
+        if let Some(taxonomy) = taxonomy {
+            let context = || format!("record {:?}", rec.id);
+            if !taxonomy
+                .allows(Some(record_taxid(rec)), context)
+                .map_err(rejected)?
+            {
+                return Ok(peptides);
             }
         }
+        if !opts.partial.allows(record_fragment_status(rec)) {
+            return Ok(peptides);
+        }
+        let pep: Vec<u8> = rec
+            .seq
+            .iter()
+            .copied()
+            .filter(|b| b.is_ascii_alphanumeric())
+            .collect();
+        add(format!("{i},0"), pep);
+    } else {
+        for (j, pep) in rec.cds_peptides(&empty_dropped) {
+            if let Some(taxonomy) = taxonomy {
+                // A CDS takes the taxid of the longest source covering it.
+                let cds = &rec.features[j];
+                let taxid = location_taxid(&rec.features, &cds.location);
+                let context = || format!("record {:?}, CDS index {j}", rec.id);
+                if !taxonomy.allows(taxid, context).map_err(rejected)? {
+                    continue;
+                }
+            }
+            if !opts
+                .partial
+                .allows(feature_fragment_status(&rec.features[j]))
+            {
+                continue;
+            }
+            add(format!("{i},{j}"), pep.into_bytes());
+        }
+    }
+    Ok(peptides)
+}
+
+/// [`domainate`] on records [`prepare_records`] has already cleaned.
+fn domainate_prepared(
+    mut records: Vec<SeqRecord>,
+    refs: &References,
+    opts: &DomainateOptions,
+) -> std::io::Result<Vec<SeqRecord>> {
+    let taxonomy = opts.taxonomy.as_deref();
+    let rejected = |e: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, e);
+
+    // Protein search (hmmsearch + phmmer). Collect peptides across contigs.
+    // Protein record: "{i},0". Nucleotide record's CDSs: "{i},{feature_index}".
+    let mut peptides: Vec<(String, Vec<u8>)> = Vec::new();
+    for (i, rec) in records.iter().enumerate() {
+        peptides.extend(record_peptides(rec, i, opts, true)?);
     }
 
     // contig index -> (cds feature index -> SearchResults). Independent profiles

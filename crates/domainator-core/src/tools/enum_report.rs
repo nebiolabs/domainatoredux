@@ -955,7 +955,7 @@ pub struct RowTarget {
 // Same parameter list as `enum_report`.
 #[allow(clippy::too_many_arguments)]
 pub fn enum_report_with_targets<W: Write>(
-    mut records: Vec<(SeqRecord, String)>,
+    records: Vec<(SeqRecord, String)>,
     by: By,
     analyses: &[Analysis],
     column_names: Option<&[String]>,
@@ -965,93 +965,193 @@ pub fn enum_report_with_targets<W: Write>(
     format: OutputFormat,
     out: &mut W,
 ) -> Result<Vec<RowTarget>, String> {
-    // Build headers + types.
-    let mut headers: Vec<String> = vec!["contig".to_string()];
-    let mut types: Vec<ColType> = vec![ColType::Str];
-    if by == By::Cds || by == By::Domain {
-        headers.push("cds".to_string());
-        types.push(ColType::Str);
-    }
-    if by == By::Domain {
-        headers.push("domain".to_string());
-        types.push(ColType::Str);
-    }
-    for a in analyses {
-        for (name, t) in &a.columns {
-            headers.push(name.clone());
-            types.push(*t);
-        }
-    }
-    if let Some(cn) = column_names {
-        if cn.len() != headers.len() {
-            return Err(format!(
-                "The number of override column names must be the same as the number of columns.\nColumns:\n{}\nOverride columns:\n{}",
-                headers.join("; "),
-                cn.join("; ")
-            ));
-        }
-        headers = cn.to_vec();
-    }
-
-    let mut rows: Vec<Vec<Value>> = Vec::new();
+    let mut report = EnumReportWriter::new(
+        by,
+        analyses,
+        column_names,
+        ncbi_taxonomy,
+        databases,
+        partial,
+    )?;
+    let sink = report.start(format, out)?;
     let mut targets: Vec<RowTarget> = Vec::new();
-    for (contig_index, (rec, filename)) in records.iter_mut().enumerate() {
-        if let Some(dbs) = databases {
-            filter_domains_databases(rec, dbs);
+    for (mut rec, filename) in records {
+        report.add_record(&mut rec, &filename, &mut targets);
+        report.write_rows(&sink, out)?;
+    }
+    report.finish(sink, out)?;
+    Ok(targets)
+}
+
+/// [`enum_report`] one record at a time, to any number of outputs at once, as upstream
+/// writes each row to every writer as it goes: only the current record's rows are
+/// held. [`EnumReportWriter::start`] each output, then for each record
+/// [`EnumReportWriter::add_record`] and [`EnumReportWriter::write_rows`] to every
+/// output, then [`EnumReportWriter::finish`] each.
+pub struct EnumReportWriter<'a> {
+    by: By,
+    analyses: &'a [Analysis],
+    ncbi_taxonomy: Option<&'a NCBITaxonomy>,
+    databases: Option<&'a HashSet<String>>,
+    partial: Partial,
+    headers: Vec<String>,
+    types: Vec<ColType>,
+    /// The position of the next record, for [`RowTarget::contig`].
+    contig_index: usize,
+    /// The current record's rows.
+    rows: Vec<Vec<Value>>,
+}
+
+/// One output of an [`EnumReportWriter`], started.
+pub struct EnumSink {
+    kind: SinkKind,
+}
+
+enum SinkKind {
+    Tsv,
+    Json,
+    Html(TablePage),
+}
+
+impl<'a> EnumReportWriter<'a> {
+    /// The report's columns, or an error when `column_names` does not fit them.
+    // `enum_report`'s parameters, less the records and the output.
+    pub fn new(
+        by: By,
+        analyses: &'a [Analysis],
+        column_names: Option<&[String]>,
+        ncbi_taxonomy: Option<&'a NCBITaxonomy>,
+        databases: Option<&'a HashSet<String>>,
+        partial: Partial,
+    ) -> Result<Self, String> {
+        // Build headers + types.
+        let mut headers: Vec<String> = vec!["contig".to_string()];
+        let mut types: Vec<ColType> = vec![ColType::Str];
+        if by == By::Cds || by == By::Domain {
+            headers.push("cds".to_string());
+            types.push(ColType::Str);
         }
-        process_record(
-            rec,
-            contig_index,
+        if by == By::Domain {
+            headers.push("domain".to_string());
+            types.push(ColType::Str);
+        }
+        for a in analyses {
+            for (name, t) in &a.columns {
+                headers.push(name.clone());
+                types.push(*t);
+            }
+        }
+        if let Some(cn) = column_names {
+            if cn.len() != headers.len() {
+                return Err(format!(
+                    "The number of override column names must be the same as the number of columns.\nColumns:\n{}\nOverride columns:\n{}",
+                    headers.join("; "),
+                    cn.join("; ")
+                ));
+            }
+            headers = cn.to_vec();
+        }
+        Ok(EnumReportWriter {
             by,
             analyses,
             ncbi_taxonomy,
-            filename,
+            databases,
             partial,
-            &mut rows,
-            &mut targets,
-        );
+            headers,
+            types,
+            contig_index: 0,
+            rows: Vec::new(),
+        })
     }
 
-    match format {
-        OutputFormat::Tsv => {
-            writeln!(out, "{}", headers.join("\t")).map_err(|e| e.to_string())?;
-            for row in &rows {
-                let cells: Vec<String> = row
+    /// Write what precedes the rows in `format` to `out`.
+    pub fn start<W: Write>(&self, format: OutputFormat, out: &mut W) -> Result<EnumSink, String> {
+        let kind = match format {
+            OutputFormat::Tsv => {
+                writeln!(out, "{}", self.headers.join("\t")).map_err(|e| e.to_string())?;
+                SinkKind::Tsv
+            }
+            OutputFormat::Json => SinkKind::Json,
+            OutputFormat::Html { max_height } => {
+                let columns: Vec<(String, &str)> = self
+                    .headers
                     .iter()
-                    .enumerate()
-                    .map(|(i, v)| format_value(v, types[i]))
+                    .zip(&self.types)
+                    .map(|(name, t)| (name.clone(), t.name()))
                     .collect();
-                writeln!(out, "{}", cells.join("\t")).map_err(|e| e.to_string())?;
+                SinkKind::Html(
+                    TablePage::start(out, "Enum Report", "enum_report", &columns, max_height)
+                        .map_err(|e| e.to_string())?,
+                )
+            }
+        };
+        Ok(EnumSink { kind })
+    }
+
+    /// Compute the rows of the next record, appending a [`RowTarget`] per row to
+    /// `targets`. With `databases`, the record's domains are filtered first.
+    pub fn add_record(
+        &mut self,
+        rec: &mut SeqRecord,
+        filename: &str,
+        targets: &mut Vec<RowTarget>,
+    ) {
+        if let Some(dbs) = self.databases {
+            filter_domains_databases(rec, dbs);
+        }
+        self.rows.clear();
+        process_record(
+            rec,
+            self.contig_index,
+            self.by,
+            self.analyses,
+            self.ncbi_taxonomy,
+            filename,
+            self.partial,
+            &mut self.rows,
+            targets,
+        );
+        self.contig_index += 1;
+    }
+
+    /// Write the current record's rows to one output.
+    pub fn write_rows<W: Write>(&self, sink: &EnumSink, out: &mut W) -> Result<(), String> {
+        let (headers, types) = (&self.headers, &self.types);
+        for row in &self.rows {
+            match &sink.kind {
+                SinkKind::Tsv => {
+                    let cells: Vec<String> = row
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| format_value(v, types[i]))
+                        .collect();
+                    writeln!(out, "{}", cells.join("\t")).map_err(|e| e.to_string())?;
+                }
+                // Streaming NDJSON: one compact object per record, keyed by column name
+                // (column order preserved via serde_json's preserve_order feature). Not a
+                // JSON array -- NDJSON keeps the writer streaming and is what upstream's
+                // agent contract specifies. Missing values are null, so the key set is
+                // stable across rows.
+                SinkKind::Json => {
+                    let line = serde_json::to_string(&row_object(row, headers, types))
+                        .map_err(|e| e.to_string())?;
+                    writeln!(out, "{line}").map_err(|e| e.to_string())?;
+                }
+                SinkKind::Html(page) => page
+                    .row(out, &row_object(row, headers, types))
+                    .map_err(|e| e.to_string())?,
             }
         }
-        OutputFormat::Json => {
-            // Streaming NDJSON: one compact object per record, keyed by column name
-            // (column order preserved via serde_json's preserve_order feature). Not a
-            // JSON array -- NDJSON keeps the writer streaming and is what upstream's
-            // agent contract specifies. Missing values are null, so the key set is
-            // stable across rows.
-            for row in &rows {
-                let line = serde_json::to_string(&row_object(row, &headers, &types))
-                    .map_err(|e| e.to_string())?;
-                writeln!(out, "{line}").map_err(|e| e.to_string())?;
-            }
-        }
-        OutputFormat::Html { max_height } => {
-            let columns: Vec<(String, &str)> = headers
-                .iter()
-                .zip(&types)
-                .map(|(name, t)| (name.clone(), t.name()))
-                .collect();
-            let page = TablePage::start(out, "Enum Report", "enum_report", &columns, max_height)
-                .map_err(|e| e.to_string())?;
-            for row in &rows {
-                page.row(out, &row_object(row, &headers, &types))
-                    .map_err(|e| e.to_string())?;
-            }
-            page.finish(out).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Write what follows the rows.
+    pub fn finish<W: Write>(&self, sink: EnumSink, out: &mut W) -> Result<(), String> {
+        match sink.kind {
+            SinkKind::Html(page) => page.finish(out).map_err(|e| e.to_string()),
+            SinkKind::Tsv | SinkKind::Json => Ok(()),
         }
     }
-    Ok(targets)
 }
 
 /// Whether any requested analysis needs the NCBI taxonomy database.

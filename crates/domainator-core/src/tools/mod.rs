@@ -53,6 +53,7 @@ pub mod structure_to_genbank;
 pub mod summary_report;
 #[cfg(feature = "plm")]
 pub mod tmbed_model;
+pub mod top_n;
 pub mod transform_matrix;
 pub mod trim_contigs;
 pub mod viewer_bundle;

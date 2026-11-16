@@ -8,11 +8,11 @@ use domainator_core::seq::taxonomy::default_ncbi_taxonomy_path;
 use domainator_core::tools::report_html::{render_report, Encoding, SUMMARY_REPORT_SHELL};
 use domainator_core::tools::select_common::parse_name_list;
 use domainator_core::tools::summary_report::{
-    cooccurrence_matrix, domains_tsv, render_text, summary_report, to_html_data, to_json,
+    cooccurrence_matrix, domains_tsv, render_text, summary_report_stream, to_html_data, to_json,
     SummaryReportOptions,
 };
 
-use super::load_seq_inputs;
+use crate::input::{InputMode, SeqInputs};
 use crate::output::Output;
 
 pub fn run(args: &SummaryReportArgs) -> Result<()> {
@@ -35,10 +35,6 @@ pub fn run(args: &SummaryReportArgs) -> Result<()> {
         None
     };
 
-    let mut records = load_seq_inputs(&args.input)?;
-    if let Some(contigs) = &contigs {
-        records.retain(|r| contigs.contains(&r.id));
-    }
     let focus_domains: Vec<String> = focus_domains.into_iter().flatten().collect();
     let opts = SummaryReportOptions {
         focus_domains,
@@ -46,7 +42,11 @@ pub fn run(args: &SummaryReportArgs) -> Result<()> {
         report_taxonomy: args.taxonomy,
         partial,
     };
-    let report = summary_report(&records, &opts, taxonomy.as_ref());
+    let mut records = SeqInputs::new(&args.input, InputMode::DETECT);
+    if let Some(contigs) = contigs {
+        records = records.with_contigs(contigs);
+    }
+    let report = summary_report_stream(records, &opts, taxonomy.as_ref())?;
 
     if let Some(path) = &args.text_out {
         write_text(path, &render_text(&report))?;

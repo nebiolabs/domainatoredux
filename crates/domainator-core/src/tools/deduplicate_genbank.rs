@@ -1,10 +1,9 @@
 //! `deduplicate_genbank`: collapse redundant sequences from GenBank/FASTA input.
 //!
 //! - `hash` (pure Rust): exact-duplicate removal. Sequences are upper-cased and
-//!   stripped of leading/trailing `*`, then grouped by equality (optionally over
-//!   both nucleotide strands). This is a faithful port of the Python `hash`
-//!   algorithm — identical grouping without needing SHA-256, since the hashes
-//!   never appear in the output; equal sequences map to the same representative.
+//!   stripped of leading/trailing `*`, then grouped by their SHA-256 digests
+//!   (optionally over both nucleotide strands), as upstream groups them, so only
+//!   32 bytes per distinct sequence are held, never the sequences.
 //! - `cd-hit` / `cd-hit-est` / `diamond` / `usearch`: shell out to the external
 //!   clustering binary. `cd-hit` switches to `cd-hit-est` when the input is not
 //!   protein, mirroring Python.
@@ -21,7 +20,7 @@ use std::process::Command;
 use crate::seq::translate::revcomp;
 use crate::seq::SeqRecord;
 
-use super::external::{spawn_error, write_fasta_ids, TempDir};
+use super::external::{spawn_error, write_fasta_id, TempDir};
 
 /// Options for [`deduplicate`].
 pub struct DeduplicateOptions {
@@ -79,28 +78,196 @@ pub fn deduplicate(
     records: &[SeqRecord],
     opts: &DeduplicateOptions,
 ) -> Result<DedupResult, String> {
-    if opts.both_strands && opts.fasta_type != "nucleotide" {
-        return Err("--both_strands is only supported for nucleotide input.".into());
+    let mut deduplicator = Deduplicator::new(opts)?;
+    for record in records {
+        deduplicator.add(record)?;
     }
-    if opts.id < 0.0 || opts.id > 1.0 {
-        return Err(format!("id must be between 0 and 1, not {}", opts.id));
+    deduplicator.finish()
+}
+
+/// [`deduplicate`] over records fed one at a time, so they need not all be held: the
+/// `hash` algorithm keeps one digest per distinct sequence, and an external clusterer's
+/// input FASTA is written as the records arrive. [`DedupResult`] indices count the
+/// records in the order they were added.
+pub struct Deduplicator<'a> {
+    opts: &'a DeduplicateOptions,
+    added: usize,
+    state: DedupState,
+}
+
+enum DedupState {
+    Hash {
+        /// Sequence digest -> representative index. With `both_strands` a record
+        /// registers its forward and reverse-complement digests (as upstream).
+        seen: HashMap<SeqKey, usize>,
+        members: HashMap<usize, Vec<usize>>,
+        /// Upstream keys `cluster_members` off `seen.values()`, i.e. first-occurrence
+        /// order -- which for the hash path is just input order.
+        order: Vec<usize>,
+    },
+    External {
+        tool: ExternalTool,
+        tmp: TempDir,
+        input_fasta: PathBuf,
+        fasta: std::io::BufWriter<std::fs::File>,
+        /// The first record's molecule type, which decides protein-vs-nucleotide
+        /// behavior (upstream's `seqtype = first rec molecule_type`).
+        seqtype: Option<String>,
+    },
+}
+
+impl<'a> Deduplicator<'a> {
+    pub fn new(opts: &'a DeduplicateOptions) -> Result<Self, String> {
+        if opts.both_strands && opts.fasta_type != "nucleotide" {
+            return Err("--both_strands is only supported for nucleotide input.".into());
+        }
+        if opts.id < 0.0 || opts.id > 1.0 {
+            return Err(format!("id must be between 0 and 1, not {}", opts.id));
+        }
+        let tool = match opts.algorithm.as_str() {
+            "hash" => {
+                if opts.id != 1.0 {
+                    return Err(format!(
+                        "hash algorithm only valid for id = 1, not {}.",
+                        opts.id
+                    ));
+                }
+                return Ok(Deduplicator {
+                    opts,
+                    added: 0,
+                    state: DedupState::Hash {
+                        seen: HashMap::new(),
+                        members: HashMap::new(),
+                        order: Vec::new(),
+                    },
+                });
+            }
+            "diamond" => ExternalTool::Diamond,
+            "usearch" => ExternalTool::Usearch,
+            // Python's argparse only offers `cd-hit`, but its class registry accepts
+            // `cd-hit-est` too, and the caller substitutes it for non-protein input.
+            "cd-hit" => ExternalTool::CdHit { force_est: false },
+            "cd-hit-est" => ExternalTool::CdHit { force_est: true },
+            other => {
+                return Err(format!(
+                "unknown --algorithm {other:?} (have: hash, cd-hit, cd-hit-est, diamond, usearch)"
+            ))
+            }
+        };
+        let tmp = TempDir::new("domainatoredux_dedup").map_err(|e| e.to_string())?;
+        let input_fasta = tmp.path().join("input.fasta");
+        let fasta = std::io::BufWriter::new(
+            std::fs::File::create(&input_fasta).map_err(|e| e.to_string())?,
+        );
+        Ok(Deduplicator {
+            opts,
+            added: 0,
+            state: DedupState::External {
+                tool,
+                tmp,
+                input_fasta,
+                fasta,
+                seqtype: None,
+            },
+        })
     }
-    match opts.algorithm.as_str() {
-        "hash" => hash_dedup(records, opts),
-        "diamond" => external_dedup(records, opts, ExternalTool::Diamond),
-        "usearch" => external_dedup(records, opts, ExternalTool::Usearch),
-        // Python's argparse only offers `cd-hit`, but its class registry accepts
-        // `cd-hit-est` too, and the caller substitutes it for non-protein input.
-        "cd-hit" => external_dedup(records, opts, ExternalTool::CdHit { force_est: false }),
-        "cd-hit-est" => external_dedup(records, opts, ExternalTool::CdHit { force_est: true }),
-        other => Err(format!(
-            "unknown --algorithm {other:?} (have: hash, cd-hit, cd-hit-est, diamond, usearch)"
-        )),
+
+    /// Add the next record.
+    pub fn add(&mut self, record: &SeqRecord) -> Result<(), String> {
+        let i = self.added;
+        self.added += 1;
+        match &mut self.state {
+            DedupState::Hash {
+                seen,
+                members,
+                order,
+            } => {
+                let keys = sequence_keys(&record.seq, self.opts.both_strands);
+                let rep = match keys.iter().find_map(|k| seen.get(k).copied()) {
+                    Some(r) => r,
+                    None => {
+                        for k in keys {
+                            seen.entry(k).or_insert(i);
+                        }
+                        i
+                    }
+                };
+                members.entry(rep).or_default().push(i);
+                if rep == i {
+                    order.push(i);
+                }
+            }
+            DedupState::External {
+                tool,
+                fasta,
+                seqtype,
+                ..
+            } => {
+                if seqtype.is_none() {
+                    let first = record
+                        .molecule_type
+                        .clone()
+                        .unwrap_or_else(|| self.opts.fasta_type.clone());
+                    check_seqtype(tool, &first)?;
+                    *seqtype = Some(first);
+                }
+                // id=str(i), sequence upper-cased with `*` -> `f` (matches Python's
+                // fasta write).
+                let seq: Vec<u8> = record
+                    .seq
+                    .iter()
+                    .map(|b| match b.to_ascii_uppercase() {
+                        b'*' => b'f',
+                        u => u,
+                    })
+                    .collect();
+                write_fasta_id(fasta, &i.to_string(), &seq).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Cluster what was added.
+    pub fn finish(self) -> Result<DedupResult, String> {
+        match self.state {
+            DedupState::Hash { members, order, .. } => finalize(order, members),
+            DedupState::External {
+                tool,
+                tmp,
+                input_fasta,
+                mut fasta,
+                seqtype,
+            } => {
+                use std::io::Write;
+                fasta.flush().map_err(|e| e.to_string())?;
+                drop(fasta);
+                let seqtype = match seqtype {
+                    Some(seqtype) => seqtype,
+                    None => {
+                        check_seqtype(&tool, &self.opts.fasta_type)?;
+                        self.opts.fasta_type.clone()
+                    }
+                };
+                external_dedup(self.opts, tool, &tmp, &input_fasta, &seqtype)
+            }
+        }
     }
 }
 
-/// The normalized sequence key: upper-cased, with leading/trailing `*` stripped.
-fn hash_key(seq: &[u8]) -> Vec<u8> {
+/// The molecule types an external clusterer refuses.
+fn check_seqtype(tool: &ExternalTool, seqtype: &str) -> Result<(), String> {
+    if matches!(tool, ExternalTool::Diamond) && seqtype != "protein" {
+        return Err("diamond deduplication is only supported for protein input.".into());
+    }
+    Ok(())
+}
+
+/// A sequence's SHA-256 digest, standing in for the sequence when grouping exact
+/// duplicates (upstream `model.sequence_hashes`).
+pub(crate) type SeqKey = [u8; 32];
+
+/// The normalized sequence: upper-cased, with leading/trailing `*` stripped.
+fn normalized(seq: &[u8]) -> Vec<u8> {
     let upper: Vec<u8> = seq.iter().map(|b| b.to_ascii_uppercase()).collect();
     let start = upper.iter().position(|&b| b != b'*').unwrap_or(upper.len());
     let end = upper
@@ -110,56 +277,23 @@ fn hash_key(seq: &[u8]) -> Vec<u8> {
     upper[start..end].to_vec()
 }
 
-/// The keys identifying a sequence for exact-duplicate detection (upstream
-/// `model.sequence_hashes`, with the normalized sequences standing in for their
-/// SHA-256 digests): the [`hash_key`], plus its reverse complement with
-/// `both_strands`. Two sequences are duplicates if their keys share one. A plain
-/// complement or reverse is not the other strand, so neither counts (upstream
-/// `09ddc4d`).
-pub(crate) fn sequence_keys(seq: &[u8], both_strands: bool) -> Vec<Vec<u8>> {
-    let key = hash_key(seq);
-    if both_strands {
-        let rc = revcomp(&key);
-        vec![key, rc]
-    } else {
-        vec![key]
-    }
+fn digest(seq: &[u8]) -> SeqKey {
+    use sha2::Digest;
+    sha2::Sha256::digest(seq).into()
 }
 
-fn hash_dedup(records: &[SeqRecord], opts: &DeduplicateOptions) -> Result<DedupResult, String> {
-    if opts.id != 1.0 {
-        return Err(format!(
-            "hash algorithm only valid for id = 1, not {}.",
-            opts.id
-        ));
+/// The keys identifying a sequence for exact-duplicate detection (upstream
+/// `model.sequence_hashes`): the digest of the [`normalized`] sequence, plus that of
+/// its reverse complement with `both_strands`. Two sequences are duplicates if their
+/// keys share one. A plain complement or reverse is not the other strand, so neither
+/// counts (upstream `09ddc4d`).
+pub(crate) fn sequence_keys(seq: &[u8], both_strands: bool) -> Vec<SeqKey> {
+    let key = normalized(seq);
+    if both_strands {
+        vec![digest(&key), digest(&revcomp(&key))]
+    } else {
+        vec![digest(&key)]
     }
-    // Sequence key -> representative index. For both_strands a record registers
-    // its forward and reverse-complement keys (mirroring Python).
-    let mut seen: HashMap<Vec<u8>, usize> = HashMap::new();
-    let mut members: HashMap<usize, Vec<usize>> = HashMap::new();
-    // Python keys `cluster_members` off `seen.values()`, i.e. first-occurrence
-    // order -- which for the hash path is just input order.
-    let mut order: Vec<usize> = Vec::new();
-
-    for (i, rec) in records.iter().enumerate() {
-        let keys = sequence_keys(&rec.seq, opts.both_strands);
-        let rep = keys.iter().find_map(|k| seen.get(k).copied());
-        let rep = match rep {
-            Some(r) => r,
-            None => {
-                for k in &keys {
-                    seen.entry(k.clone()).or_insert(i);
-                }
-                i
-            }
-        };
-        members.entry(rep).or_default().push(i);
-        if rep == i {
-            order.push(i);
-        }
-    }
-
-    finalize(order, members)
 }
 
 /// The oldest diamond this port supports for `--algorithm diamond`.
@@ -199,53 +333,21 @@ enum ExternalTool {
 }
 
 fn external_dedup(
-    records: &[SeqRecord],
     opts: &DeduplicateOptions,
     tool: ExternalTool,
+    tmp: &TempDir,
+    input_fasta: &Path,
+    seqtype: &str,
 ) -> Result<DedupResult, String> {
-    // Molecule type of the first record decides protein-vs-nucleotide behavior
-    // (mirrors Python's `seqtype = first rec molecule_type`).
-    let seqtype = records
-        .first()
-        .and_then(|r| r.molecule_type.clone())
-        .unwrap_or_else(|| opts.fasta_type.clone());
-    if matches!(tool, ExternalTool::Diamond) && seqtype != "protein" {
-        return Err("diamond deduplication is only supported for protein input.".into());
-    }
-
-    let tmp = TempDir::new("domainatoredux_dedup").map_err(|e| e.to_string())?;
-    let input_fasta = tmp.path().join("input.fasta");
-    // id=str(i), sequence upper-cased with `*` -> `f` (matches Python's fasta write).
-    let cleaned: Vec<(String, Vec<u8>)> = records
-        .iter()
-        .enumerate()
-        .map(|(i, r)| {
-            let seq: Vec<u8> = r
-                .seq
-                .iter()
-                .map(|b| {
-                    let u = b.to_ascii_uppercase();
-                    if u == b'*' {
-                        b'f'
-                    } else {
-                        u
-                    }
-                })
-                .collect();
-            (i.to_string(), seq)
-        })
-        .collect();
-    write_fasta_ids(&cleaned, &input_fasta).map_err(|e| e.to_string())?;
-
     let cpus = crate::parallel::resolve_cpu(opts.cpu);
     let clusters_by_str = match tool {
-        ExternalTool::Diamond => run_diamond(opts, &tmp, &input_fasta, cpus)?,
-        ExternalTool::Usearch => run_usearch(opts, &tmp, &input_fasta, cpus, records)?,
+        ExternalTool::Diamond => run_diamond(opts, tmp, input_fasta, cpus)?,
+        ExternalTool::Usearch => run_usearch(opts, tmp, input_fasta, cpus)?,
         // Python substitutes cd-hit-est for cd-hit whenever the input is not protein.
         ExternalTool::CdHit { force_est } => run_cdhit(
             opts,
-            &tmp,
-            &input_fasta,
+            tmp,
+            input_fasta,
             cpus,
             force_est || seqtype != "protein",
         )?,
@@ -591,7 +693,6 @@ fn run_usearch(
     tmp: &TempDir,
     input_fasta: &Path,
     cpus: usize,
-    _records: &[SeqRecord],
 ) -> Result<Vec<(String, Vec<String>)>, String> {
     let bin = match &opts.bin_path {
         Some(p) => PathBuf::from(p),

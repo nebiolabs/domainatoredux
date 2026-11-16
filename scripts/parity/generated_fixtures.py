@@ -80,10 +80,22 @@ def generate(data_dir, test_dir, out_dir):
     _selection_fixtures(data, out)
     _split_by_cluster_fixtures(data, out)
     _foldseek_fixtures(data, out)
+    _batch_fixtures(data, out)
 
     # test_find_features.py's test_motif_integration writes this protein to a
     # temporary file.
     (out / "motif_test.fasta").write_text(">test\nMKFLDDHSAXXPXXXXCILLFNILCLFPVLA\n")
+
+
+def _batch_fixtures(data, out):
+    """A 300 bp stretch of pDONR201 as an nhmmer query. Every contig of
+    pDONR201_multi_genemark.gb carries it, so with protein references beside it the
+    nhmmer E-values show which records were searched together: they are relative to
+    the residues of a `--batch_size` batch."""
+    from Bio import SeqIO
+
+    record = next(SeqIO.parse(str(data / "pDONR201.fasta"), "fasta"))
+    (out / "pdonr_fragment.fna").write_text(f">pdonr_fragment\n{record.seq[1000:1300]}\n")
 
 
 def _foldseek_fixtures(data, out):

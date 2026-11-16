@@ -2,11 +2,11 @@ use std::collections::HashSet;
 
 use anyhow::{anyhow, Result};
 use domainator_config::args::SelectByContigArgs;
-use domainator_core::tools::select_by_contig::{select_by_contig, SelectByContigOptions};
+use domainator_core::tools::select_by_contig::{ContigSelector, SelectByContigOptions};
 use domainator_core::tools::select_common::parse_name_list;
 
-use super::load_seq_inputs;
-use crate::output::write_seq_outputs;
+use crate::input::{InputMode, SeqInputs};
+use crate::output::write_seq_stream;
 
 fn set<T: Clone + Eq + std::hash::Hash>(list: &Option<Vec<T>>) -> Option<HashSet<T>> {
     list.as_ref().map(|v| v.iter().cloned().collect())
@@ -52,11 +52,27 @@ pub fn run(args: &SelectByContigArgs) -> Result<()> {
         has_search_hit: args.has_search_hit,
         partial: args.partial.parse().map_err(|e: String| anyhow!(e))?,
     };
-    let records = load_seq_inputs(&args.input)?;
-    let selected = select_by_contig(records, &opts).map_err(|e| anyhow!(e))?;
-    write_seq_outputs(
-        &selected,
+    let selector = ContigSelector::new(&opts).map_err(|e| anyhow!(e))?;
+    // Lazy, so with --max_records reading stops at the last record kept, as
+    // upstream's generator does.
+    let selected = SeqInputs::new(&args.input, InputMode::DETECT)
+        .filter_map(|rec| {
+            let rec = match rec {
+                Ok(rec) => rec,
+                Err(e) => return Some(Err(e)),
+            };
+            match selector.selects(&rec) {
+                Ok(true) => Some(Ok(rec)),
+                Ok(false) => None,
+                Err(e) => Some(Err(anyhow!(e))),
+            }
+        })
+        .take(opts.first.unwrap_or(usize::MAX));
+    write_seq_stream(
+        selected,
         args.genbank_out.as_deref(),
         args.fasta_out.as_deref(),
-    )
+        None,
+    )?;
+    Ok(())
 }

@@ -122,56 +122,67 @@ pub fn extract_unannotated(
 ) -> Result<Vec<SeqRecord>, String> {
     let mut out = Vec::new();
     for rec in records {
-        if rec.molecule_type.as_deref() != Some("protein") {
-            return Err("extract_unannotated currently only supports protein sequences.".into());
-        }
-        if let Some(taxonomy) = &opts.taxonomy {
-            if !taxonomy.matches(rec, None)? {
-                continue;
-            }
-        }
-        let rec_len = rec.seq.len() as i64;
-        let hits = selected_hits(rec, opts);
-
-        // Build the domains envelope (concatenation of hit parts), then invert.
-        let mut domain_parts: Vec<(i64, i64, i32)> = Vec::new();
-        for f in &hits {
-            domain_parts.extend(feature_loc_parts(f));
-        }
-        let regions: Vec<(i64, i64, i32)> = if domain_parts.is_empty() {
-            vec![(0, rec_len, 1)]
-        } else {
-            match inverted(&domain_parts, rec_len) {
-                Some(r) => r,
-                None => continue,
-            }
-        };
-
-        // Filter by size.
-        let mut regions: Vec<(i64, i64, i32)> = regions
-            .into_iter()
-            .filter(|&(s, e, _)| (e - s) >= opts.lb.unwrap_or(0))
-            .collect();
-        if regions.is_empty() {
-            continue;
-        }
-        if opts.largest {
-            regions.sort_by_key(|&(s, e, _)| std::cmp::Reverse(e - s));
-            regions.truncate(1);
-        }
-
-        for (s, e, st) in regions {
-            let loc = Loc::single(s, e, st);
-            let mut slice = slice_from_location(rec, &loc, &rec.features);
-            // Only proteins are supported, so nothing is reverse complemented and
-            // `--keep_direction` has no effect.
-            if !opts.keep_parent_id {
-                slice.id = loc.region_id(rec, false);
-            }
-            out.push(slice);
-        }
+        extract_unannotated_from_record(rec, opts, &mut out)?;
     }
     Ok(out)
+}
+
+/// Append the regions [`extract_unannotated`] extracts from `rec` to `out`, for
+/// records streamed one at a time.
+pub fn extract_unannotated_from_record(
+    rec: &SeqRecord,
+    opts: &ExtractUnannotatedOptions,
+    out: &mut Vec<SeqRecord>,
+) -> Result<(), String> {
+    if rec.molecule_type.as_deref() != Some("protein") {
+        return Err("extract_unannotated currently only supports protein sequences.".into());
+    }
+    if let Some(taxonomy) = &opts.taxonomy {
+        if !taxonomy.matches(rec, None)? {
+            return Ok(());
+        }
+    }
+    let rec_len = rec.seq.len() as i64;
+    let hits = selected_hits(rec, opts);
+
+    // Build the domains envelope (concatenation of hit parts), then invert.
+    let mut domain_parts: Vec<(i64, i64, i32)> = Vec::new();
+    for f in &hits {
+        domain_parts.extend(feature_loc_parts(f));
+    }
+    let regions: Vec<(i64, i64, i32)> = if domain_parts.is_empty() {
+        vec![(0, rec_len, 1)]
+    } else {
+        match inverted(&domain_parts, rec_len) {
+            Some(r) => r,
+            None => return Ok(()),
+        }
+    };
+
+    // Filter by size.
+    let mut regions: Vec<(i64, i64, i32)> = regions
+        .into_iter()
+        .filter(|&(s, e, _)| (e - s) >= opts.lb.unwrap_or(0))
+        .collect();
+    if regions.is_empty() {
+        return Ok(());
+    }
+    if opts.largest {
+        regions.sort_by_key(|&(s, e, _)| std::cmp::Reverse(e - s));
+        regions.truncate(1);
+    }
+
+    for (s, e, st) in regions {
+        let loc = Loc::single(s, e, st);
+        let mut slice = slice_from_location(rec, &loc, &rec.features);
+        // Only proteins are supported, so nothing is reverse complemented and
+        // `--keep_direction` has no effect.
+        if !opts.keep_parent_id {
+            slice.id = loc.region_id(rec, false);
+        }
+        out.push(slice);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

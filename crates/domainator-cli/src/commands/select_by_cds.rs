@@ -2,14 +2,13 @@ use std::collections::HashSet;
 
 use anyhow::{anyhow, Result};
 use domainator_config::args::SelectByCdsArgs;
-use domainator_core::seq::SeqRecord;
 use domainator_core::tools::dedup::{Dedup, RecordDeduplicator};
 use domainator_core::tools::neighborhood::validate_range;
-use domainator_core::tools::select_by_cds::{pad_records, select_by_cds, SelectByCdsOptions};
+use domainator_core::tools::select_by_cds::{pad_records, CdsSelector, SelectByCdsOptions};
 use domainator_core::tools::select_common::parse_name_list;
 
-use super::load_seq_inputs;
-use crate::output::write_seq_outputs;
+use crate::input::{InputMode, SeqInputs};
+use crate::output::SeqWriter;
 
 pub fn run(args: &SelectByCdsArgs) -> Result<()> {
     let range = validate_range(
@@ -65,24 +64,35 @@ pub fn run(args: &SelectByCdsArgs) -> Result<()> {
         partial: args.partial.parse().map_err(|e: String| anyhow!(e))?,
     };
 
-    let mut records = load_seq_inputs(&args.input)?;
-    if let Some(set) = &target_contigs {
-        records.retain(|r| set.contains(&r.id));
+    let mut records = SeqInputs::new(&args.input, InputMode::DETECT);
+    if let Some(set) = target_contigs {
+        records = records.with_contigs(set);
     }
-    let regions = select_by_cds(&records, &opts).map_err(|e| anyhow!(e))?;
+    let selector = CdsSelector::new(&opts).map_err(|e| anyhow!(e))?;
     // Upstream `deduplicate_and_pad`: the --dedup policy, before padding.
     let dedup: Dedup = args.dedup.parse().map_err(|e: String| anyhow!(e))?;
     let mut deduplicator = RecordDeduplicator::new(dedup);
-    let mut kept = Vec::with_capacity(regions.len());
-    for region in regions {
-        if deduplicator.keep(&region.record).map_err(|e| anyhow!(e))? {
-            kept.push(region);
+    let mut out = SeqWriter::new(args.genbank_out.as_deref(), args.fasta_out.as_deref(), None)?;
+    // `--pad` aligns the focus CDSs across every region, so only then are they held;
+    // otherwise each region is written as it is found.
+    let mut held = Vec::new();
+    for rec in records {
+        for region in selector.select(&rec?).map_err(|e| anyhow!(e))? {
+            if deduplicator.keep(&region.record).map_err(|e| anyhow!(e))? {
+                if args.pad {
+                    held.push(region);
+                } else {
+                    out.write(&region.record)?;
+                }
+            }
         }
     }
-    let mut regions = kept;
     if args.pad {
-        pad_records(&mut regions, anchor);
+        pad_records(&mut held, anchor);
+        for region in &held {
+            out.write(&region.record)?;
+        }
     }
-    let out: Vec<SeqRecord> = regions.into_iter().map(|r| r.record).collect();
-    write_seq_outputs(&out, args.genbank_out.as_deref(), args.fasta_out.as_deref())
+    out.finish()?;
+    Ok(())
 }

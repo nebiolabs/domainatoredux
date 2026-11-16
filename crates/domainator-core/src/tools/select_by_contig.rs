@@ -79,28 +79,72 @@ pub fn select_by_contig(
     records: Vec<SeqRecord>,
     opts: &SelectByContigOptions,
 ) -> Result<Vec<SeqRecord>, String> {
-    let expr = opts
-        .domain_expr
-        .as_deref()
-        .map(BooleanEvaluator::new)
-        .transpose()?;
-    let def_re = compile(opts.definition_regex.as_deref())?;
-    let seq_re = compile(opts.sequence_regex.as_deref())?;
-    let name_re = compile(opts.contigs_regex.as_deref())?;
-
-    let search_score_lb = opts.search_score_lb;
-    let search_score_ub = opts.search_score_ub;
-    let use_search_score = search_score_lb.is_some() || search_score_ub.is_some();
-    let score_lb = search_score_lb.unwrap_or(f64::NEG_INFINITY);
-    let score_ub = search_score_ub.unwrap_or(f64::INFINITY);
-
+    let selector = ContigSelector::new(opts)?;
     let mut out = Vec::new();
     for contig in records {
+        if selector.selects(&contig)? {
+            out.push(contig);
+            if opts.first == Some(out.len()) {
+                break;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// [`select_by_contig`]'s test for one record, with the options compiled once, so
+/// records can be streamed through it. `opts.first` is the caller's to apply.
+pub struct ContigSelector<'a> {
+    opts: &'a SelectByContigOptions,
+    expr: Option<BooleanEvaluator>,
+    def_re: Option<Regex>,
+    seq_re: Option<Regex>,
+    name_re: Option<Regex>,
+    use_search_score: bool,
+    score_lb: f64,
+    score_ub: f64,
+}
+
+impl<'a> ContigSelector<'a> {
+    pub fn new(opts: &'a SelectByContigOptions) -> Result<Self, String> {
+        let expr = opts
+            .domain_expr
+            .as_deref()
+            .map(BooleanEvaluator::new)
+            .transpose()?;
+        let def_re = compile(opts.definition_regex.as_deref())?;
+        let seq_re = compile(opts.sequence_regex.as_deref())?;
+        let name_re = compile(opts.contigs_regex.as_deref())?;
+
+        let search_score_lb = opts.search_score_lb;
+        let search_score_ub = opts.search_score_ub;
+        let use_search_score = search_score_lb.is_some() || search_score_ub.is_some();
+        let score_lb = search_score_lb.unwrap_or(f64::NEG_INFINITY);
+        let score_ub = search_score_ub.unwrap_or(f64::INFINITY);
+        Ok(ContigSelector {
+            opts,
+            expr,
+            def_re,
+            seq_re,
+            name_re,
+            use_search_score,
+            score_lb,
+            score_ub,
+        })
+    }
+
+    /// Whether `contig` is selected.
+    pub fn selects(&self, contig: &SeqRecord) -> Result<bool, String> {
+        let opts = self.opts;
+        let (expr, def_re, seq_re, name_re) =
+            (&self.expr, &self.def_re, &self.seq_re, &self.name_re);
+        let (use_search_score, score_lb, score_ub) =
+            (self.use_search_score, self.score_lb, self.score_ub);
         // Fragment filter (filter_by_partial), applied before the others.
         if !opts.partial.is_include() {
-            let status = contig_has_fragment(&contig).then_some("?");
+            let status = contig_has_fragment(contig).then_some("?");
             if !opts.partial.allows(status) {
-                continue;
+                return Ok(false);
             }
         }
         // Length filter.
@@ -109,16 +153,16 @@ pub fn select_by_contig(
             let lb = opts.length_lb.unwrap_or(0);
             let ub = opts.length_ub.unwrap_or(i64::MAX);
             if size < lb || size > ub {
-                continue;
+                return Ok(false);
             }
         }
         // CDS-count filter.
         if opts.cds_count_lb.is_some() || opts.cds_count_ub.is_some() {
-            let n = count_cds(&contig);
+            let n = count_cds(contig);
             let lb = opts.cds_count_lb.unwrap_or(0);
             let ub = opts.cds_count_ub.unwrap_or(i64::MAX);
             if n < lb || n > ub {
-                continue;
+                return Ok(false);
             }
         }
 
@@ -222,19 +266,13 @@ pub fn select_by_contig(
         }
         if selected {
             if let Some(taxonomy) = &opts.taxonomy {
-                if !taxonomy.matches(&contig, None)? {
-                    continue;
-                }
-            }
-            out.push(contig);
-            if let Some(first) = opts.first {
-                if out.len() == first {
-                    break;
+                if !taxonomy.matches(contig, None)? {
+                    return Ok(false);
                 }
             }
         }
+        Ok(selected)
     }
-    Ok(out)
 }
 
 /// A feature's `score` (NaN when it has none, which no range contains).

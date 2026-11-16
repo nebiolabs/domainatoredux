@@ -57,14 +57,19 @@ fn records(aligner: &Aligner, db: &StructureDb, store_3di: bool) -> io::Result<V
     } else {
         Default::default()
     };
-    Ok(aligner
+    aligner
         .iter_sequences(db)?
-        .into_iter()
-        .map(|(name, sequence, source)| {
+        .map(|entry| {
+            let (name, sequence, source) = entry?;
             let threedi = store_3di
                 .then(|| threedi.get(&name).map(String::as_str))
                 .flatten();
-            build_protein_record(&name, &sequence, source.as_deref(), threedi)
+            Ok(build_protein_record(
+                &name,
+                &sequence,
+                source.as_deref(),
+                threedi,
+            ))
         })
-        .collect())
+        .collect()
 }

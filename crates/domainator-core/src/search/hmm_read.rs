@@ -30,7 +30,8 @@
 use std::io::Read;
 use std::path::Path;
 
-use hmmer_pure_rs::errors::{HmmerError, HmmerResult};
+pub use hmmer_pure_rs::errors::HmmerError;
+use hmmer_pure_rs::errors::HmmerResult;
 /// The profile type every reader here returns, for callers outside the core.
 pub use hmmer_pure_rs::hmm::Hmm;
 use hmmer_pure_rs::hmm::{
@@ -58,6 +59,20 @@ pub fn read_hmm_file(path: &Path) -> HmmerResult<Vec<Hmm>> {
     read_hmm_file_chunked(path, RECORDS_PER_CHUNK, 2 * rayon::current_num_threads())
 }
 
+/// [`read_hmm_file`] a batch of profiles at a time, in file order, so a caller that
+/// handles each profile on its own never holds the whole library (upstream iterates
+/// a `HMMFile`). `f`'s first error stops the read and is returned.
+///
+/// A file the crate must see whole (mixed format versions or alphabets) is detected
+/// only partway through; the profiles already handed to `f` stay handed, and `f` gets
+/// the rest of what [`read_hmm_file_serial`] reads, or its error.
+pub fn for_each_hmm_batch<E: From<HmmerError>>(
+    path: &Path,
+    f: impl FnMut(Vec<Hmm>) -> Result<(), E>,
+) -> Result<(), E> {
+    for_each_hmm_batch_chunked(path, RECORDS_PER_CHUNK, 2 * rayon::current_num_threads(), f)
+}
+
 /// [`read_hmm_file`] with the chunk shape spelled out, so a test can cross chunk
 /// and batch boundaries without thousands of records.
 fn read_hmm_file_chunked(
@@ -65,23 +80,49 @@ fn read_hmm_file_chunked(
     records_per_chunk: usize,
     batch_len: usize,
 ) -> HmmerResult<Vec<Hmm>> {
+    let mut hmms = Vec::new();
+    for_each_hmm_batch_chunked(path, records_per_chunk, batch_len, |batch| {
+        hmms.extend(batch);
+        Ok::<(), HmmerError>(())
+    })?;
+    Ok(hmms)
+}
+
+/// [`for_each_hmm_batch`] with the chunk shape spelled out.
+fn for_each_hmm_batch_chunked<E: From<HmmerError>>(
+    path: &Path,
+    records_per_chunk: usize,
+    batch_len: usize,
+    mut f: impl FnMut(Vec<Hmm>) -> Result<(), E>,
+) -> Result<(), E> {
     let mut reader =
         std::io::BufReader::new(crate::io::open_decompressed(path).map_err(HmmerError::Io)?);
     let mut format: Option<Vec<u8>> = None;
     let mut mixed_formats = false;
     let mut next_line = 1;
-    let mut hmms = Vec::new();
-    let mut chunks = |reader: &mut _| {
-        read_chunks(
-            reader,
-            records_per_chunk,
-            batch_len,
-            &mut format,
-            &mut mixed_formats,
-            &mut next_line,
-        )
+    let mut alphabet = None;
+    let mut delivered = 0;
+    // The whole-file read, minus the profiles `f` already has.
+    let serial_rest = |delivered: usize, f: &mut dyn FnMut(Vec<Hmm>) -> Result<(), E>| {
+        let rest: Vec<Hmm> = read_hmm_file_serial(path)?
+            .into_iter()
+            .skip(delivered)
+            .collect();
+        if rest.is_empty() {
+            Ok(())
+        } else {
+            f(rest)
+        }
     };
-    let mut batch = chunks(&mut reader).map_err(HmmerError::Io)?;
+    let mut batch = read_chunks(
+        &mut reader,
+        records_per_chunk,
+        batch_len,
+        &mut format,
+        &mut mixed_formats,
+        &mut next_line,
+    )
+    .map_err(HmmerError::Io)?;
     while !batch.is_empty() {
         // Parse in the caller's pool (the global one outside any) while this thread
         // decompresses the next batch; a plain thread would always use the global pool.
@@ -94,22 +135,36 @@ fn read_hmm_file_chunked(
                     .map(|(first_line, chunk)| parse_records(chunk, path, *first_line))
                     .collect::<Vec<_>>();
             });
-            chunks(&mut reader)
+            read_chunks(
+                &mut reader,
+                records_per_chunk,
+                batch_len,
+                &mut format,
+                &mut mixed_formats,
+                &mut next_line,
+            )
         });
+        let mut hmms = Vec::new();
         for chunk in parsed {
             match chunk {
                 Ok(chunk) => hmms.extend(chunk),
-                Err(ParseFailure::InRecord(e)) => return Err(e),
-                Err(ParseFailure::AcrossRecords(_)) => return read_hmm_file_serial(path),
+                Err(ParseFailure::InRecord(e)) => return Err(e.into()),
+                Err(ParseFailure::AcrossRecords(_)) => return serial_rest(delivered, &mut f),
             }
+        }
+        let mixed_alphabets = hmms
+            .iter()
+            .any(|h| *alphabet.get_or_insert(h.abc_type) != h.abc_type);
+        if mixed_formats || mixed_alphabets {
+            return serial_rest(delivered, &mut f);
+        }
+        delivered += hmms.len();
+        if !hmms.is_empty() {
+            f(hmms)?;
         }
         batch = next.map_err(HmmerError::Io)?;
     }
-    let mixed_alphabets = hmms.windows(2).any(|w| w[0].abc_type != w[1].abc_type);
-    if mixed_formats || mixed_alphabets {
-        return read_hmm_file_serial(path);
-    }
-    Ok(hmms)
+    Ok(())
 }
 
 /// Up to `count` chunks of `records_per_chunk` whole records each, each ending on

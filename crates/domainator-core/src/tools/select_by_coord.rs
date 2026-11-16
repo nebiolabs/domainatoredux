@@ -237,13 +237,42 @@ pub fn select_by_coord(
     records: &[(String, SeqRecord)],
     selections: &[CoordinateSelection],
 ) -> Result<Vec<SeqRecord>, String> {
-    let mut by_contig: HashMap<&str, Vec<&CoordinateSelection>> = HashMap::new();
-    for s in selections {
-        by_contig.entry(s.contig.as_str()).or_default().push(s);
-    }
+    let selector = CoordSelector::new(selections);
     let mut out = Vec::new();
     for (basename, contig) in records {
-        if let Some(sels) = by_contig.get(contig.id.as_str()) {
+        selector.select(basename, contig, &mut out)?;
+    }
+    Ok(out)
+}
+
+/// [`select_by_coord`] one record at a time, with the table indexed by contig once.
+pub struct CoordSelector<'a> {
+    by_contig: HashMap<&'a str, Vec<&'a CoordinateSelection>>,
+}
+
+impl<'a> CoordSelector<'a> {
+    pub fn new(selections: &'a [CoordinateSelection]) -> Self {
+        let mut by_contig: HashMap<&str, Vec<&CoordinateSelection>> = HashMap::new();
+        for s in selections {
+            by_contig.entry(s.contig.as_str()).or_default().push(s);
+        }
+        CoordSelector { by_contig }
+    }
+
+    /// Whether any row of the table names this contig (upstream reads only those).
+    pub fn wants(&self, contig_id: &str) -> bool {
+        self.by_contig.contains_key(contig_id)
+    }
+
+    /// Append the regions the table selects from `contig`, read from a file named
+    /// `basename`, to `out`.
+    pub fn select(
+        &self,
+        basename: &str,
+        contig: &SeqRecord,
+        out: &mut Vec<SeqRecord>,
+    ) -> Result<(), String> {
+        if let Some(sels) = self.by_contig.get(contig.id.as_str()) {
             for sel in sels {
                 if let Some(f) = &sel.file {
                     if f != basename {
@@ -253,8 +282,8 @@ pub fn select_by_coord(
                 out.push(extract_coordinate_region(contig, sel)?);
             }
         }
+        Ok(())
     }
-    Ok(out)
 }
 
 #[cfg(test)]

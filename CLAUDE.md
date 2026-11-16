@@ -65,7 +65,11 @@ turns a `--config` file (upstream's flat format) into command-line arguments bef
 one clap parse, so CLI flags win and every check applies to files too; `--print_config`
 and `domainatoredux describe` (`manifest.rs`, upstream's manifest v1 format) are read off
 the clap command. Outputs go through `crates/domainator-cli/src/output.rs` (`-` = stdout,
-atomic temp-file writes, `.gz`/`.bgz` = BGZF). Errors print as one line,
+atomic temp-file writes, `.gz`/`.bgz` = BGZF). Sequence inputs are read lazily through
+`crates/domainator-cli/src/input.rs` (`SeqInputs`, `-` = stdin) and records written as
+they are made (`SeqWriter`/`write_seq_stream`), as upstream's generators do, so a tool's
+memory does not grow with its input; `load_all` is only for a tool that needs every
+record at once (a global sort, padding, one HTML page). Errors print as one line,
 `domainatoredux <tool>: error: ...` (`report_error`, shared with the GUI worker). The
 report tools' `--columns` take upstream's `name:arg:arg` tokens, parsed against the
 catalogs in `columns.rs` (the clap value type, so a bad token fails at parse time).

@@ -16,6 +16,7 @@ use super::structure_lib::{
     build_protein_record, hit_to_search_result, prepare_databases, warn_on_saturation, Aligner,
     Hits, SearchRequest,
 };
+use super::top_n::TopN;
 use crate::search::results::SearchResult;
 use crate::seq::SeqRecord;
 
@@ -65,15 +66,16 @@ struct Group {
 }
 
 /// Group target-sorted hits, dropping hits outside the E-value bounds and targets left
-/// with none. `counts` tallies every hit per query, for the saturation warning.
+/// with none, handing each group to `on_group` as soon as its last hit is read.
+/// `counts` tallies every hit per query, for the saturation warning.
 fn group_hits_by_target(
     hits: Hits,
     db_name: &str,
     opts: &StructureSearchOptions,
     program: &str,
     counts: &mut HashMap<String, usize>,
-) -> io::Result<Vec<Group>> {
-    let mut groups: Vec<Group> = Vec::new();
+    mut on_group: impl FnMut(Group) -> io::Result<()>,
+) -> io::Result<()> {
     let mut current: Option<Group> = None;
     for hit in hits {
         let hit = hit?;
@@ -84,7 +86,9 @@ fn group_hits_by_target(
             continue;
         };
         if current.as_ref().is_none_or(|g| g.target != hit.target) {
-            groups.extend(current.take().filter(|g| !g.hits.is_empty()));
+            if let Some(done) = current.take().filter(|g| !g.hits.is_empty()) {
+                on_group(done)?;
+            }
             current = Some(Group {
                 target: hit.target.clone(),
                 hits: Vec::new(),
@@ -98,8 +102,10 @@ fn group_hits_by_target(
             }
         }
     }
-    groups.extend(current.filter(|g| !g.hits.is_empty()));
-    Ok(groups)
+    if let Some(done) = current.filter(|g| !g.hits.is_empty()) {
+        on_group(done)?;
+    }
+    Ok(())
 }
 
 fn build_record(group: Group, opts: &StructureSearchOptions) -> io::Result<SeqRecord> {
@@ -132,16 +138,6 @@ fn best_score(group: &Group) -> f64 {
         .fold(f64::NEG_INFINITY, f64::max)
 }
 
-/// With `max_hits`, the best `max_hits` groups by best hit score, best first, ties in
-/// arrival order (upstream's `(score, -counter)` heap).
-fn select_best(mut groups: Vec<Group>, max_hits: Option<usize>) -> Vec<Group> {
-    if let Some(n) = max_hits {
-        groups.sort_by(|a, b| best_score(b).total_cmp(&best_score(a)));
-        groups.truncate(n);
-    }
-    groups
-}
-
 /// The database records that matched a reference: in target order, or best first with
 /// `--max_hits`.
 pub fn structure_search(
@@ -150,6 +146,27 @@ pub fn structure_search(
     aligner: &Aligner,
     opts: &StructureSearchOptions,
 ) -> io::Result<Vec<SeqRecord>> {
+    let mut records = Vec::new();
+    structure_search_stream(inputs, references, aligner, opts, |rec| {
+        records.push(rec);
+        Ok(())
+    })?;
+    Ok(records)
+}
+
+/// [`structure_search`], handing each record to `emit` as it is made: with a backend
+/// that reports target sequences and no `--max_hits`, as each target's last hit is
+/// read, as upstream yields them; with `--max_hits`, at most that many targets are
+/// held (upstream's heap). Only a backend without target sequences (reseek) and no
+/// `--max_hits` holds every hit target, for the one pass over the database that finds
+/// their sequences.
+pub fn structure_search_stream(
+    inputs: &[String],
+    references: &[String],
+    aligner: &Aligner,
+    opts: &StructureSearchOptions,
+    mut emit: impl FnMut(SeqRecord) -> io::Result<()>,
+) -> io::Result<()> {
     let prepared = prepare_databases(aligner, inputs, Some(references), opts.db_out.as_deref())?;
     aligner.check_capabilities(
         opts.alignment_type,
@@ -174,17 +191,39 @@ pub fn structure_search(
         prepared.work_dir.path(),
     )?;
     let mut counts = HashMap::new();
-    let groups = group_hits_by_target(hits, &db_name, opts, aligner.name(), &mut counts)?;
-    let selected = select_best(groups, opts.max_hits);
-
-    let records = if aligner.provides_target_sequence() {
-        selected
-            .into_iter()
-            .map(|g| build_record(g, opts))
-            .collect::<io::Result<Vec<_>>>()?
+    let program = aligner.name();
+    if aligner.provides_target_sequence() && opts.max_hits.is_none() {
+        group_hits_by_target(hits, &db_name, opts, program, &mut counts, |group| {
+            emit(build_record(group, opts)?)
+        })?;
     } else {
-        with_database_sequences(selected, aligner, &prepared.input_db, opts)?
-    };
+        let mut selected = Vec::new();
+        match opts.max_hits {
+            // The best `n` targets by best hit score, best first, ties in arrival order
+            // (upstream's `(score, -counter)` heap).
+            Some(n) => {
+                let mut best = TopN::new(Some(n));
+                group_hits_by_target(hits, &db_name, opts, program, &mut counts, |group| {
+                    best.push(best_score(&group), group);
+                    Ok(())
+                })?;
+                selected = best.into_sorted_vec();
+            }
+            None => group_hits_by_target(hits, &db_name, opts, program, &mut counts, |group| {
+                selected.push(group);
+                Ok(())
+            })?,
+        }
+        if aligner.provides_target_sequence() {
+            for group in selected {
+                emit(build_record(group, opts)?)?;
+            }
+        } else {
+            for record in with_database_sequences(selected, aligner, &prepared.input_db, opts)? {
+                emit(record)?;
+            }
+        }
+    }
     warn_on_saturation(
         &counts,
         aligner.effective_max_seqs(opts.max_seqs),
@@ -193,9 +232,8 @@ pub fn structure_search(
     if let Some(path) = &opts.hits_tsv_out {
         aligner.copy_hits_tsv(prepared.work_dir.path(), path)?;
     }
-    Ok(records)
+    Ok(())
 }
-
 /// Records for a backend whose hits carry no target sequences (reseek): the sequences
 /// come from one pass over the database. Without `--max_hits` records come out in
 /// database order, as upstream's do.
@@ -210,13 +248,17 @@ fn with_database_sequences(
     }
     let wanted: HashSet<&str> = selected.iter().map(|g| g.target.as_str()).collect();
     let mut found: Vec<(String, String)> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-    for (name, sequence, _) in aligner.iter_sequences(db)? {
+    // Each found target's position in `found`; a later copy's sequence replaces it.
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    for entry in aligner.iter_sequences(db)? {
+        let (name, sequence, _) = entry?;
         if wanted.contains(name.as_str()) {
-            if seen.insert(name.clone()) {
-                found.push((name, sequence));
-            } else if let Some(slot) = found.iter_mut().find(|(n, _)| *n == name) {
-                slot.1 = sequence;
+            match seen.get(&name) {
+                Some(&slot) => found[slot].1 = sequence,
+                None => {
+                    seen.insert(name.clone(), found.len());
+                    found.push((name, sequence));
+                }
             }
             if seen.len() == wanted.len() {
                 break;
@@ -226,7 +268,7 @@ fn with_database_sequences(
     let mut missing: Vec<&str> = wanted
         .iter()
         .copied()
-        .filter(|t| !seen.contains(*t))
+        .filter(|t| !seen.contains_key(*t))
         .collect();
     if !missing.is_empty() {
         missing.sort_unstable();

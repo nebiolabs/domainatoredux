@@ -248,3 +248,9 @@ find_features	extra:test_find_features_tmbed_membrane_proteins#0	extra_invocatio
 find_features	extra:test_find_features_tmbed_cds_regions_lie_in_their_cds#0	extra_invocations.tsv	-i	@DATA@/tmbed/tm_contigs.gb	-o	@TMP@/out.gb	--tmbed	--device	None	--tmbed_model_dir	@TMBED@
 find_features	extra:find_features_tmbed#0	extra_invocations.tsv	-i	@DATA@/tmbed/tm_proteins.fasta	@DATA@/FeSOD_20.fasta	-o	@TMP@/out.gb	--fasta_out	@TMP@/out.fasta	--tmbed	--motif	N-{P}-[ST]-{P}	--device	None	--tmbed_model_dir	@TMBED@	--batch_size	3
 find_features	extra:find_features_tmbed#1	extra_invocations.tsv	-i	@DATA@/tmbed/tm_contigs.gb	@DATA@/JABFVH010000506_extraction.gb	-o	@TMP@/out.gb	--tmbed	--partial	exclude	--device	None	--tmbed_model_dir	@TMBED@
+# domainate --batch_size with protein and nucleotide references together. Upstream ends
+# a batch once it holds that many searched proteins, and an nhmmer E-value is relative to
+# the residues of its batch, so a small batch changes them. No upstream test sets
+# --batch_size; the port once searched every record at once and differed here.
+domainate	extra:domainate_batch_size#0	extra_invocations.tsv	-i	@DATA@/pDONR201_multi_genemark.gb	-r	@DATA@/pdonr_hmms_1.hmm	@GEN@/pdonr_fragment.fna	-o	@TMP@/out.gb	--batch_size	2
+domainate	extra:domainate_batch_size#1	extra_invocations.tsv	-i	@DATA@/pDONR201_multi_genemark.gb	-r	@DATA@/pdonr_hmms_1.hmm	@GEN@/pdonr_fragment.fna	-o	@TMP@/out.gb

@@ -66,6 +66,16 @@ pub fn read_fasta_decompressed(
     parse_fasta(reader, u64::MAX, molecule_type)
 }
 
+/// The records of a FASTA file (plain, gzip or BGZF, judged by its content), read one
+/// at a time as the iterator is advanced. `molecule_type` as in [`read_fasta`].
+pub fn iter_fasta(
+    path: &str,
+    molecule_type: Option<&str>,
+) -> io::Result<FastaReader<BufReader<Box<dyn io::Read + Send>>>> {
+    let reader = BufReader::new(super::open_decompressed(std::path::Path::new(path))?);
+    Ok(FastaReader::new(reader, molecule_type))
+}
+
 fn parse_fasta<R: BufRead>(
     reader: R,
     max_recs: u64,

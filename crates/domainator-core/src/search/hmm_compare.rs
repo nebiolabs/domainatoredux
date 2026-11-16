@@ -460,20 +460,31 @@ pub fn common_hmm_alphabet(
         match found {
             None => found = Some((hmm.abc_type, hmm.name.as_str())),
             Some((abc, first_name)) if abc != hmm.abc_type => {
-                return Err(format!(
-                    "The {role} profiles mix alphabets: '{first_name}' is {}, but '{}' is \
-                     {}. An .hmm file is locked to the alphabet of its first profile, so a \
-                     mixed set cannot be read back. Split them by alphabet, or rebuild one \
-                     side with hmmer_build --alphabet.",
-                    alphabet_name(abc),
-                    hmm.name,
-                    alphabet_name(hmm.abc_type)
-                ))
+                return Err(mixed_alphabets_message(role, first_name, abc, hmm));
             }
             Some(_) => {}
         }
     }
     Ok(found.map(|(abc, _)| abc))
+}
+
+/// [`common_hmm_alphabet`]'s error: `hmm` is not `first_alphabet`, the alphabet of the
+/// profile named `first_name`.
+pub fn mixed_alphabets_message(
+    role: &str,
+    first_name: &str,
+    first_alphabet: hmmer_pure_rs::alphabet::AlphabetType,
+    hmm: &Hmm,
+) -> String {
+    format!(
+        "The {role} profiles mix alphabets: '{first_name}' is {}, but '{}' is \
+         {}. An .hmm file is locked to the alphabet of its first profile, so a \
+         mixed set cannot be read back. Split them by alphabet, or rebuild one \
+         side with hmmer_build --alphabet.",
+        alphabet_name(first_alphabet),
+        hmm.name,
+        alphabet_name(hmm.abc_type)
+    )
 }
 
 /// The alphabet shared by a set of hmm files, each given as its name and profiles

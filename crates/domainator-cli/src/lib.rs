@@ -16,16 +16,14 @@ use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use domainator_config as config;
 
 mod commands;
+pub mod input;
 pub mod output;
 
-use domainator_core::io::genbank::{read_genbank, write_genbank};
-use domainator_core::io::{detect_filetype, fasta, FileType};
 use domainator_core::seq::taxonomy::{default_ncbi_taxonomy_path, NCBITaxonomy};
 use domainator_core::seq::taxonomy_download;
 use domainator_core::seq::SeqRecord;
 use domainator_core::tools;
 use domainator_core::tools::gene_call;
-use domainator_core::tools::select_common::parse_name_list;
 
 #[derive(Parser)]
 #[command(name = "domainatoredux", version, long_version = domainator_core::version::LONG_VERSION, about = "Domainatoredux: protein-domain / SSN analysis (a Rust port of domainator)")]
@@ -160,17 +158,6 @@ enum Command {
     FormatDb(config::args::FormatDbArgs),
 }
 
-fn load(input: &Path) -> Result<Vec<SeqRecord>> {
-    let path = input.to_str().context("non-UTF8 path")?;
-    match detect_filetype(input) {
-        Some(FileType::Genbank) => read_genbank(path).with_context(|| format!("reading {path}")),
-        Some(FileType::Fasta) => {
-            fasta::read_fasta(path, Some("protein")).with_context(|| format!("reading {path}"))
-        }
-        None => Err(unknown_file_type(input)),
-    }
-}
-
 /// The error for a sequence input of no recognized type; a structure file says what to
 /// do with it instead (upstream `parse_seqfiles`).
 fn unknown_file_type(input: &Path) -> anyhow::Error {
@@ -184,20 +171,6 @@ fn unknown_file_type(input: &Path) -> anyhow::Error {
     } else {
         anyhow::anyhow!("could not detect file type from extension: {shown}")
     }
-}
-
-/// Filter `records` in place to those whose LOCUS name (Python's `contig.id`) is
-/// in the `--contigs`/`--contigs_file` set. A no-op when both are empty.
-pub(crate) fn filter_contigs(
-    records: &mut Vec<SeqRecord>,
-    contigs: &[String],
-    contigs_file: Option<&str>,
-) -> Result<()> {
-    let set = parse_name_list(contigs, contigs_file)?;
-    if let Some(set) = set {
-        records.retain(|r| set.contains(&r.id));
-    }
-    Ok(())
 }
 
 /// Read a color table: a TSV with no header mapping a value to a hex color, which is
@@ -225,11 +198,7 @@ fn load_taxonomy(path: &str, update: bool) -> Result<NCBITaxonomy> {
 /// Load a sequence file, treating FASTA as `fasta_type` (protein/nucleotide).
 pub(crate) fn load_typed(input: &Path, fasta_type: &str) -> Result<Vec<SeqRecord>> {
     let path = input.to_str().context("non-UTF8 path")?;
-    match detect_filetype(input) {
-        Some(FileType::Genbank) => read_genbank(path).context("reading GenBank"),
-        Some(FileType::Fasta) => fasta::read_fasta(path, Some(fasta_type)).context("reading FASTA"),
-        None => Err(unknown_file_type(input)),
-    }
+    input::load_all(&[path.to_string()], input::InputMode::Detect { fasta_type })
 }
 
 /// Parse a `FromStr` choice (`--mode`, `--scope`), keeping its own error message.
@@ -460,26 +429,35 @@ pub fn clap_error(e: &anyhow::Error) -> Option<&clap::Error> {
 fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Inspect { input, verbose } => {
-            let records = load(&input)?;
-            println!("{} records", records.len());
-            if verbose {
-                for r in &records {
-                    println!(
+            // The count comes first, so the per-record lines (not the records) wait.
+            let path = input.to_str().context("non-UTF8 path")?.to_string();
+            let mut count = 0usize;
+            let mut lines = Vec::new();
+            for r in input::SeqInputs::new(&[path], input::InputMode::DETECT) {
+                let r = r?;
+                count += 1;
+                if verbose {
+                    lines.push(format!(
                         "  id={} name={} mol={:?} len={} features={}",
                         r.id,
                         r.name,
                         r.molecule_type,
                         r.len(),
                         r.features.len()
-                    );
+                    ));
                 }
+            }
+            println!("{count} records");
+            for line in lines {
+                println!("{line}");
             }
         }
         Command::Convert { input, output } => {
-            let records = load(&input)?;
+            let path = input.to_str().context("non-UTF8 path")?.to_string();
             let out = output.to_str().context("non-UTF8 path")?;
-            write_genbank(out, &records).context("writing GenBank")?;
-            println!("wrote {} records to {}", records.len(), output.display());
+            let records = input::SeqInputs::new(&[path], input::InputMode::DETECT);
+            let n = output::write_seq_stream(records, Some(out), None, None)?;
+            println!("wrote {n} records to {}", output.display());
         }
         Command::Domainate(args) => commands::domainate::run(&args)?,
         Command::DomainSearch(args) => commands::domain_search::run(&args)?,

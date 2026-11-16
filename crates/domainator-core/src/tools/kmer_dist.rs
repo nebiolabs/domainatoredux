@@ -17,7 +17,7 @@ use std::str::FromStr;
 
 use rayon::prelude::*;
 
-use crate::io::{fasta, genbank::read_genbank, FileType};
+use crate::io::{fasta, genbank::iter_genbank, FileType};
 use crate::matrix::mst_knn::{apply_mst_knn, sparsify_option_label, TreeTies};
 use crate::matrix::transform::apply_mode;
 use crate::matrix::{build_sparse_max, DataMatrix};
@@ -148,17 +148,12 @@ pub fn kmer_dist(
     };
     let self_comparison = input == reference && input_format == reference_format;
 
-    let mut query_records = read_records(input, input_format, &opts.alphabet)?;
-    let mut reference_records = if self_comparison {
-        Vec::new()
-    } else {
-        read_records(reference, reference_format, &opts.alphabet)?
-    };
-    let input_molecule = molecule_type(input, &query_records)?;
+    // Records are read in chunks when their k-mers are built; here only the first.
+    let input_molecule = molecule_type(input, input_format, &opts.alphabet)?;
     let reference_molecule = if self_comparison {
         input_molecule.clone()
     } else {
-        molecule_type(reference, &reference_records)?
+        molecule_type(reference, reference_format, &opts.alphabet)?
     };
     if input_molecule != reference_molecule {
         return Err(invalid(
@@ -193,30 +188,18 @@ pub fn kmer_dist(
     };
 
     let mut table = KmerTable::default();
-    let query = represent(
-        input,
-        input_format,
-        &mut query_records,
-        &mut table,
-        ksize,
-        opts,
-        "query",
-    )?;
-    drop(query_records);
+    let query = represent(input, input_format, &mut table, ksize, opts, "query")?;
     let reference = if self_comparison {
         None
     } else {
-        let representation = represent(
+        Some(represent(
             reference,
             reference_format,
-            &mut reference_records,
             &mut table,
             ksize,
             opts,
             "reference",
-        )?;
-        drop(reference_records);
-        Some(representation)
+        )?)
     };
 
     let feature_count = table.ids.len();
@@ -292,18 +275,32 @@ fn resolve_file_type(path: &str, format: Option<FileType>, label: &str) -> io::R
         .ok_or_else(|| invalid(format!("{label} must be a fasta or genbank file.")))
 }
 
-fn read_records(path: &str, format: FileType, alphabet: &str) -> io::Result<Vec<SeqRecord>> {
-    match format {
-        FileType::Fasta => fasta::read_fasta(path, Some(alphabet)),
-        FileType::Genbank => read_genbank(path),
-    }
+/// The records of `path`, read one at a time.
+fn iter_records(
+    path: &str,
+    format: FileType,
+    alphabet: &str,
+) -> io::Result<Box<dyn Iterator<Item = io::Result<SeqRecord>>>> {
+    Ok(match format {
+        FileType::Fasta => Box::new(fasta::iter_fasta(path, Some(alphabet))?),
+        FileType::Genbank => Box::new(iter_genbank(path)?),
+    })
+}
+
+/// The ids of `path`'s records, in order, read without parsing the records.
+fn record_ids(path: &str, format: FileType) -> io::Result<Vec<String>> {
+    let ids = match format {
+        FileType::Fasta => fasta::scan_fasta_ids(path)?,
+        FileType::Genbank => crate::io::genbank::scan_genbank_ids(path)?,
+    };
+    Ok(ids.into_iter().map(|(id, _)| id).collect())
 }
 
 /// The molecule type of a file, read off its first record as upstream does (so an
 /// empty file has none and fails the same way a mixed one would).
-fn molecule_type(path: &str, records: &[SeqRecord]) -> io::Result<Option<String>> {
-    match records.first() {
-        Some(record) => Ok(record.molecule_type.clone()),
+fn molecule_type(path: &str, format: FileType, alphabet: &str) -> io::Result<Option<String>> {
+    match iter_records(path, format, alphabet)?.next().transpose()? {
+        Some(record) => Ok(record.molecule_type),
         None => Err(invalid(format!(
             "Mixed molecule types within a single input are not supported: {path}"
         ))),
@@ -339,7 +336,6 @@ struct Representation {
 fn represent(
     path: &str,
     format: FileType,
-    records: &mut [SeqRecord],
     table: &mut KmerTable,
     ksize: usize,
     opts: &KmerDistOptions,
@@ -355,58 +351,84 @@ fn represent(
              --nucleotide_kmers to compare whole-contig nucleotide k-mers.",
         ));
     }
+    // The ids alone are checked first, as upstream checks them before any k-mer.
+    let ids = record_ids(path, format)?;
     let mut seen = HashSet::new();
-    if records
-        .iter()
-        .any(|record| !seen.insert(record.id.as_str()))
-    {
+    if ids.iter().any(|id| !seen.insert(id.as_str())) {
         return Err(invalid(format!("Duplicate record ids found in {path}")));
     }
-    if records.is_empty() {
+    if ids.is_empty() {
         return Err(invalid(format!("No sequence records found in {path}")));
     }
-    if !opts.nucleotide_kmers {
-        prepare_translations(records, opts.gene_call.as_ref())?;
-    }
+    drop(seen);
 
-    let bar = Progress::new(
-        opts.progress,
-        records.len(),
-        &format!("Parsing {label} k-mers"),
-    );
-    let mut kmers = Vec::with_capacity(records.len());
-    for record in records.iter() {
-        let mut words = Words::default();
-        if record.is_protein() {
-            words.add_protein(&record.seq);
-        } else if opts.nucleotide_kmers {
-            words.set_nucleotide(&record.seq);
-        } else {
-            for (_, peptide) in record.cds_peptides(&HashSet::new()) {
-                if peptide.len() > MAX_PROTEIN_SIZE {
-                    crate::log::warn(format_args!(
-                        "Skipping protein longer than {MAX_PROTEIN_SIZE} aa: {}",
-                        record.id
-                    ));
-                } else {
-                    words.add_protein(peptide.as_bytes());
-                }
-            }
+    let bar = Progress::new(opts.progress, ids.len(), &format!("Parsing {label} k-mers"));
+    let mut names = Vec::with_capacity(ids.len());
+    let mut lengths = Vec::with_capacity(ids.len());
+    let mut kmers = Vec::with_capacity(ids.len());
+    drop(ids);
+    // A chunk at a time (one gene-calling run each), so only the k-mers of the records
+    // already read are held, never the records.
+    let mut records = iter_records(path, format, &opts.alphabet)?;
+    loop {
+        let mut chunk: Vec<SeqRecord> = records
+            .by_ref()
+            .take(RECORDS_PER_CHUNK)
+            .collect::<io::Result<_>>()?;
+        if chunk.is_empty() {
+            break;
         }
-        let mut ids: Vec<u32> = words
-            .kmers(ksize)
-            .into_iter()
-            .map(|kmer| table.id(kmer))
-            .collect();
-        ids.sort_unstable();
-        kmers.push(ids);
-        bar.inc(1);
+        if !opts.nucleotide_kmers {
+            prepare_translations(&mut chunk, opts.gene_call.as_ref())?;
+        }
+        for record in &chunk {
+            names.push(record.id.clone());
+            lengths.push(record.len() as i64);
+            kmers.push(record_kmers(record, table, ksize, opts));
+            bar.inc(1);
+        }
     }
     Ok(Representation {
-        names: records.iter().map(|r| r.id.clone()).collect(),
-        lengths: records.iter().map(|r| r.len() as i64).collect(),
+        names,
+        lengths,
         kmers,
     })
+}
+
+/// Records read per chunk by [`represent`].
+const RECORDS_PER_CHUNK: usize = 1000;
+
+/// One record's k-mer ids, sorted.
+fn record_kmers(
+    record: &SeqRecord,
+    table: &mut KmerTable,
+    ksize: usize,
+    opts: &KmerDistOptions,
+) -> Vec<u32> {
+    let mut words = Words::default();
+    if record.is_protein() {
+        words.add_protein(&record.seq);
+    } else if opts.nucleotide_kmers {
+        words.set_nucleotide(&record.seq);
+    } else {
+        for (_, peptide) in record.cds_peptides(&HashSet::new()) {
+            if peptide.len() > MAX_PROTEIN_SIZE {
+                crate::log::warn(format_args!(
+                    "Skipping protein longer than {MAX_PROTEIN_SIZE} aa: {}",
+                    record.id
+                ));
+            } else {
+                words.add_protein(peptide.as_bytes());
+            }
+        }
+    }
+    let mut ids: Vec<u32> = words
+        .kmers(ksize)
+        .into_iter()
+        .map(|kmer| table.id(kmer))
+        .collect();
+    ids.sort_unstable();
+    ids
 }
 
 /// Give every CDS of the nucleotide records its translation, calling genes first where

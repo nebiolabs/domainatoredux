@@ -6,7 +6,7 @@ use domainator_core::tools::neighborhood::{validate_range, Range};
 use domainator_core::tools::select_common::parse_name_list;
 
 use super::{cpu_threads, usage_error};
-use crate::output::{write_seq_outputs_capped, OutputCap};
+use crate::output::{OutputCap, SeqWriter};
 
 pub fn run(args: &DomainSearchArgs) -> Result<()> {
     let cpu = cpu_threads(args.cpu)?;
@@ -103,10 +103,7 @@ pub fn run(args: &DomainSearchArgs) -> Result<()> {
         partial: args.partial.parse().map_err(|e: String| anyhow!(e))?,
         gene_call: crate::gene_call_request(args.gene_call.as_deref(), cpu)?,
     };
-    let hits =
-        domain_search::domain_search(&args.input, &dbs, &opts).context("running domain_search")?;
-    write_seq_outputs_capped(
-        &hits,
+    let mut out = SeqWriter::new(
         args.genbank_out.as_deref(),
         args.fasta_out.as_deref(),
         max_bytes.map(|max_bytes| OutputCap {
@@ -121,5 +118,20 @@ pub fn run(args: &DomainSearchArgs) -> Result<()> {
                 "Avoid --whole_contig on broad searches unless you expect very few hits.",
             ),
         }),
-    )
+    )?;
+    // The cap's error (or a write error) stops the search, as upstream's does.
+    let mut write_error = None;
+    let searched = domain_search::domain_search_stream(&args.input, &dbs, &opts, |rec| {
+        out.write(&rec).map_err(|e| {
+            let message = format!("{e:#}");
+            write_error = Some(e);
+            std::io::Error::other(message)
+        })
+    });
+    if let Some(e) = write_error {
+        return Err(e);
+    }
+    searched.context("running domain_search")?;
+    out.finish()?;
+    Ok(())
 }

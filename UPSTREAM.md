@@ -565,10 +565,10 @@ from the `cmsearch` command line and from infernox's library defaults:
 - **`Z` is the block's residue count, not doubled** for two strands (pyinfernal sets
   `Z = targets.total_length()`; cmsearch's default is twice that). infernox takes `Z` in
   megabases and truncates, so `z_megabases` steps the float until it lands exactly.
-  domainate's `-Z` applies to HMM searches only, upstream and here. One known difference:
-  upstream calls its search once per `--batch_size` proteins when protein references are
-  in the run, so its CM `Z` is each batch's residue count, while ours is the whole input's.
-  The two agree for CM-only runs and for inputs under one batch.
+  domainate's `-Z` applies to HMM searches only, upstream and here. Both search once per
+  `--batch_size` proteins when protein references are in the run, so the CM `Z` (and the
+  nhmmer one) is each batch's residue count; with nucleic-acid references alone the input
+  is one batch. The `extra:domainate_batch_size` sweep rows pin it.
 - **Truncated hits are on** (`notrunc: false`); infernox's `FaithfulConfig::default()` has
   them off, and that alone drops every hit cut by a contig end.
 - **`E = 10`**, pyinfernal's pipeline default, is the scan cutoff; `--evalue` (capped at 10

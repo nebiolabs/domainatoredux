@@ -9,7 +9,8 @@ use domainator_core::tools::domainate::{self, DomainateOptions};
 use domainator_core::tools::external::{resolve_binary, FOLDSEEK};
 
 use super::{cpu_threads, usage_error};
-use crate::output::{write_seq_outputs_capped, OutputCap};
+use crate::input::{until_error, InputMode, SeqInputs};
+use crate::output::{OutputCap, SeqWriter};
 
 /// Why `--esm2_3di_weights` is refused: upstream runs the ESM-2 3B 3Di model in PyTorch.
 const ESM2_3DI_UNSUPPORTED: &str = "--esm2_3di_weights is not supported by domainatoredux: \
@@ -65,23 +66,20 @@ pub fn run(args: &DomainateArgs) -> Result<()> {
         )),
         _ => None,
     };
-    let mut records = Vec::new();
+    let mode = InputMode::Detect {
+        fasta_type: &args.alphabet,
+    };
+    // `-Z 0` counts the peptides first, in a pass of its own, as upstream does.
     let mut z = args.z;
-    for input in &args.input {
-        let path = Path::new(input);
-        let loaded = crate::load_typed(path, &args.alphabet)?;
-        // Upstream's count_peptides: one per FASTA record, else one per protein record
-        // or CDS feature.
-        if args.z == 0 {
-            z += match detect_filetype(path) {
-                Some(FileType::Fasta) => loaded.len() as i64,
-                _ => loaded.iter().map(count_peptides).sum(),
-            };
+    if z == 0 {
+        for input in &args.input {
+            let fasta = detect_filetype(Path::new(input)) == Some(FileType::Fasta);
+            for record in SeqInputs::new(std::slice::from_ref(input), mode) {
+                // Upstream's count_peptides: one per FASTA record, else one per protein
+                // record or CDS feature.
+                z += if fasta { 1 } else { count_peptides(&record?) };
+            }
         }
-        records.extend(loaded);
-    }
-    if dbs.has_nucleotide() && records.iter().any(SeqRecord::is_protein) {
-        anyhow::bail!("Cannot search protein inputs with a nucleotide reference.");
     }
     let opts = DomainateOptions {
         z: z as f64,
@@ -100,9 +98,18 @@ pub fn run(args: &DomainateArgs) -> Result<()> {
         foldseek,
         ..Default::default()
     };
-    let annotated = domainate::domainate(records, &dbs, &opts).context("running domainate")?;
-    write_seq_outputs_capped(
-        &annotated,
+    let has_nucleotide = dbs.has_nucleotide();
+    let checked = SeqInputs::new(&args.input, mode).map(|record| {
+        let record = record?;
+        if has_nucleotide && record.is_protein() {
+            anyhow::bail!("Cannot search protein inputs with a nucleotide reference.");
+        }
+        Ok(record)
+    });
+    // A read error (or a protein record) ends the input; it is reported as itself.
+    let mut input_error = None;
+    let records = until_error(checked, &mut input_error).map(Ok::<_, anyhow::Error>);
+    let mut out = SeqWriter::new(
         args.genbank_out.as_deref(),
         args.fasta_out.as_deref(),
         max_bytes.map(|max_bytes| OutputCap {
@@ -110,7 +117,22 @@ pub fn run(args: &DomainateArgs) -> Result<()> {
             mitigation: &["--max_hits_per_cds", "--evalue"],
             extra_guidance: None,
         }),
-    )
+    )?;
+    // The cap's error (or a write error) stops the run, unwrapped.
+    let mut write_error = None;
+    let annotated = domainate::domainate_stream(records, &dbs, &opts, args.batch_size, |rec| {
+        out.write(&rec).map_err(|e| {
+            let message = anyhow!("{e:#}");
+            write_error = Some(e);
+            message
+        })
+    });
+    if let Some(e) = input_error.or(write_error) {
+        return Err(e);
+    }
+    annotated.context("running domainate")?;
+    out.finish()?;
+    Ok(())
 }
 
 /// Upstream `count_peptides_in_record`: a protein record is one peptide, a

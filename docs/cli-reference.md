@@ -215,6 +215,13 @@ as [`gene_call`](#gene_call) does in its default meta mode, so a bare genome can
 annotated in one step; give a nonzero `-Z` with it, since the database size is fixed
 before genes are called.
 
+A FASTA reference's alphabet is guessed from its first record, as HMMER's Easel library
+does, and must hold for the whole file. DNA with IUPAC ambiguity codes (`R`, `Y`, ...)
+counts as nucleotide. These are errors, never a search with the wrong alphabet: a first
+record too short or too unusual to classify; nucleotide and protein records mixed in one
+file (split them into two `-r` files); DNA containing letters only a protein has (`E`,
+`F`, `I`, `L`, `P`, `Q`, ...).
+
 ```bash
 domainatoredux domainate -i contigs.gb -r pfam-A.hmm rebase_gold.fasta \
   -o annotated.gb -e 1e-5 --cpu 0
@@ -227,7 +234,8 @@ annotates everything, `domain_search` selects. It reads possibly sharded, BGZF-c
 and `.didx`-indexed databases (see [`format_db`](#format_db)), so it is the tool for
 searching something large. Give `-i` several inputs to search them together; they cannot
 come from standard input, and at least one of `-o/--genbank_out` and `--fasta_out` is
-required.
+required. References (`-r`) are read as for [`domainate`](#domainate), FASTA alphabet
+detection included.
 
 It also does **neighborhood extraction**: rather than the hit CDS alone, emit the
 surrounding region. `--whole_contig` for the entire contig (a circular contig stays circular, rotated so the

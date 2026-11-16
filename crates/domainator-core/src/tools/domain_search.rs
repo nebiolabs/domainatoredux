@@ -234,6 +234,26 @@ pub fn domain_search(
     refs: &References,
     opts: &DomainSearchOptions,
 ) -> std::io::Result<Vec<SeqRecord>> {
+    let mut out = Vec::new();
+    domain_search_stream(input_files, refs, opts, |rec| {
+        out.push(rec);
+        Ok(())
+    })?;
+    Ok(out)
+}
+
+/// [`domain_search`], handing each hit record to `emit` in output order. Partitions
+/// are searched a window at a time, in parallel; without `--max_hits` or `--pad` each
+/// window's hits are emitted before the next window is read, as upstream yields hits
+/// from its bounded pool, so memory is bounded by the window rather than the search.
+/// `--max_hits` holds that many hits per partition in flight, and `--pad`, which
+/// aligns every region, holds them all.
+pub fn domain_search_stream(
+    input_files: &[String],
+    refs: &References,
+    opts: &DomainSearchOptions,
+    mut emit: impl FnMut(SeqRecord) -> std::io::Result<()> + Send,
+) -> std::io::Result<()> {
     if opts.dedup == Dedup::SequenceRc && opts.translate {
         return Err(invalid_input(
             "--dedup sequence_rc is only supported for nucleotide output.".into(),
@@ -289,100 +309,42 @@ pub fn domain_search(
         ..Default::default()
     };
 
-    // Parallel map preserves partition order; results are concatenated in order.
-    let per_part: Vec<std::io::Result<Vec<Region>>> =
-        crate::parallel::with_threads(opts.cpu, || {
-            use rayon::prelude::*;
-            parts
-                .par_iter()
-                .map(|p| {
-                    let records = read_partition(
-                        &p.path,
-                        p.offset,
-                        p.n_records,
-                        p.filetype,
-                        p.compressed,
-                        &opts.alphabet,
-                    )?;
-                    let mut emitted = Vec::new();
-                    for rec in domainate(records, refs, &dopts)? {
-                        // Protein hits pass through whole; nucleotide hits go through
-                        // neighborhood extraction.
-                        if rec.molecule_type.as_deref() == Some("protein") {
-                            // Decoy filter: drop the protein if its best hit is a decoy.
-                            if let Some(decoys) = &opts.decoys {
-                                if best_hit_name(&rec).is_some_and(|n| decoys.contains(&n)) {
-                                    continue;
-                                }
-                            }
-                            // A whole-protein hit is not a neighborhood, so there is
-                            // nothing to align: `--pad` only right-pads these to a common
-                            // length, and the CLI refuses the combination anyway.
-                            emitted.push(Region::whole(rec));
-                        } else if opts.translate {
-                            emitted.extend(
-                                crate::tools::neighborhood::translate_peptides(
-                                    &rec,
-                                    opts.strand,
-                                    opts.decoys.as_ref(),
-                                )
-                                .into_iter()
-                                .map(Region::whole),
-                            );
-                        } else {
-                            emitted.extend(select_by_cds_hits(
-                                &rec,
-                                opts.range,
-                                opts.normalize_direction,
-                                opts.strand,
-                                opts.max_region_overlap,
-                                opts.decoys.as_ref(),
-                                opts.max_hits_per_contig,
-                            )?);
-                        }
-                    }
-                    // With --max_hits each partition keeps only its own top
-                    // `max_hits` unique keys before reaching the parent: a key it drops
-                    // already has `max_hits` better ones here, and the merge cannot lose
-                    // distinct keys (one ID is one sequence), so this is lossless and
-                    // bounds the parent's memory by O(partitions * max_hits).
-                    match opts.max_hits {
-                        None => Ok(emitted),
-                        Some(max_hits) => {
-                            let mut top = top_hits(max_hits, opts.dedup)?;
-                            for region in emitted {
-                                add_hit(&mut top, region)?;
-                            }
-                            Ok(top.into_sorted())
-                        }
-                    }
-                })
-                .collect()
-        });
-
     // Partitions merge in order, so "arrival" (the tie-break, and which copy is
     // first) is deterministic here where upstream's process pool makes it arbitrary.
-    let mut out: Vec<Region> = Vec::new();
-    match opts.max_hits {
-        None => {
-            let mut deduplicator = RecordDeduplicator::new(opts.dedup);
+    let mut deduplicator = RecordDeduplicator::new(opts.dedup);
+    let mut top = opts
+        .max_hits
+        .map(|max_hits| top_hits(max_hits, opts.dedup))
+        .transpose()?;
+    let mut held: Vec<Region> = Vec::new();
+    crate::parallel::with_threads(opts.cpu, || -> std::io::Result<()> {
+        use rayon::prelude::*;
+        // Enough partitions in flight to keep every thread busy past a slow one.
+        let window = 4 * rayon::current_num_threads();
+        for chunk in parts.chunks(window.max(1)) {
+            // Parallel map preserves partition order.
+            let per_part: Vec<std::io::Result<Vec<Region>>> = chunk
+                .par_iter()
+                .map(|p| search_partition(p, refs, &dopts, opts))
+                .collect();
             for part_result in per_part {
                 for region in part_result? {
-                    if deduplicator.keep(&region.record).map_err(invalid_input)? {
-                        out.push(region);
+                    if let Some(top) = top.as_mut() {
+                        add_hit(top, region)?;
+                    } else if deduplicator.keep(&region.record).map_err(invalid_input)? {
+                        if opts.pad {
+                            held.push(region);
+                        } else {
+                            emit(region.record)?;
+                        }
                     }
                 }
             }
         }
-        Some(max_hits) => {
-            let mut top = top_hits(max_hits, opts.dedup)?;
-            for part_result in per_part {
-                for region in part_result? {
-                    add_hit(&mut top, region)?;
-                }
-            }
-            out = top.into_sorted();
-        }
+        Ok(())
+    })?;
+    if let Some(top) = top {
+        held = top.into_sorted();
     }
 
     // Upstream `deduplicate_and_pad(best_first=True)`. `--pad` aligns the focus CDSs
@@ -390,10 +352,82 @@ pub fn domain_search(
     // sorts by score first whether or not `--max_hits` is set (a stable sort, so a
     // `--max_hits` order stands).
     if opts.pad {
-        out.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
-        pad_records(&mut out, opts.anchor);
+        held.sort_by(|a, b| best_score(&b.record).total_cmp(&best_score(&a.record)));
+        pad_records(&mut held, opts.anchor);
     }
-    Ok(out.into_iter().map(|r| r.record).collect())
+    for region in held {
+        emit(region.record)?;
+    }
+    Ok(())
+}
+
+/// One partition's hits: its records read, domainated, and turned into output regions.
+fn search_partition(
+    p: &crate::io::partition::Partition,
+    refs: &References,
+    dopts: &DomainateOptions,
+    opts: &DomainSearchOptions,
+) -> std::io::Result<Vec<Region>> {
+    let records = read_partition(
+        &p.path,
+        p.offset,
+        p.n_records,
+        p.filetype,
+        p.compressed,
+        &opts.alphabet,
+    )?;
+    let mut emitted = Vec::new();
+    for rec in domainate(records, refs, dopts)? {
+        // Protein hits pass through whole; nucleotide hits go through
+        // neighborhood extraction.
+        if rec.molecule_type.as_deref() == Some("protein") {
+            // Decoy filter: drop the protein if its best hit is a decoy.
+            if let Some(decoys) = &opts.decoys {
+                if best_hit_name(&rec).is_some_and(|n| decoys.contains(&n)) {
+                    continue;
+                }
+            }
+            // A whole-protein hit is not a neighborhood, so there is
+            // nothing to align: `--pad` only right-pads these to a common
+            // length, and the CLI refuses the combination anyway.
+            emitted.push(Region::whole(rec));
+        } else if opts.translate {
+            emitted.extend(
+                crate::tools::neighborhood::translate_peptides(
+                    &rec,
+                    opts.strand,
+                    opts.decoys.as_ref(),
+                )
+                .into_iter()
+                .map(Region::whole),
+            );
+        } else {
+            emitted.extend(select_by_cds_hits(
+                &rec,
+                opts.range,
+                opts.normalize_direction,
+                opts.strand,
+                opts.max_region_overlap,
+                opts.decoys.as_ref(),
+                opts.max_hits_per_contig,
+            )?);
+        }
+    }
+    // With --max_hits each partition keeps only its own top
+    // `max_hits` unique keys before reaching the parent: a key it drops
+    // already has `max_hits` better ones here, and the merge cannot lose
+    // distinct keys (one ID is one sequence), so this is lossless and
+    // bounds the parent's memory by O(partitions * max_hits).
+    match opts.max_hits {
+        None => Ok(emitted),
+        Some(max_hits) => {
+            let mut top = top_hits(max_hits, opts.dedup)?;
+            for region in emitted {
+                add_hit(&mut top, region)?;
+            }
+            Ok(top.into_sorted())
+        }
+    }
 }
 
 #[cfg(test)]

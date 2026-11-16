@@ -102,15 +102,39 @@ pub fn clean_sequences(
     opts: &CleanSequencesOptions,
     stats: &mut CleaningStats,
 ) -> Vec<SeqRecord> {
-    let canonical: &[u8] = if opts.fasta_type == "protein" {
-        CANONICAL_PROTEIN
-    } else {
-        CANONICAL_NUCLEOTIDE
-    };
-    let mut seen: HashMap<String, usize> = HashMap::new();
-    let mut out = Vec::new();
+    let mut cleaner = SequenceCleaner::new(opts);
+    records
+        .into_iter()
+        .filter_map(|contig| cleaner.clean(contig, stats))
+        .collect()
+}
 
-    for mut contig in records {
+/// [`clean_sequences`] one record at a time, for records streamed through it. Holds
+/// the names seen so far, which `--deduplicate_names` renames against.
+pub struct SequenceCleaner<'a> {
+    opts: &'a CleanSequencesOptions,
+    canonical: &'static [u8],
+    seen: HashMap<String, usize>,
+}
+
+impl<'a> SequenceCleaner<'a> {
+    pub fn new(opts: &'a CleanSequencesOptions) -> Self {
+        let canonical: &'static [u8] = if opts.fasta_type == "protein" {
+            CANONICAL_PROTEIN
+        } else {
+            CANONICAL_NUCLEOTIDE
+        };
+        SequenceCleaner {
+            opts,
+            canonical,
+            seen: HashMap::new(),
+        }
+    }
+
+    /// Clean one record, updating `stats`; `None` when it is filtered out.
+    pub fn clean(&mut self, mut contig: SeqRecord, stats: &mut CleaningStats) -> Option<SeqRecord> {
+        let opts = self.opts;
+        let canonical = self.canonical;
         stats.input_count += 1;
         let original_name = contig.id.clone();
         let original_seq = contig.seq.clone();
@@ -124,12 +148,12 @@ pub fn clean_sequences(
 
         if opts.filter_by_aa && has_non_canonical(&contig.seq, canonical) {
             stats.filtered_count += 1;
-            continue;
+            return None;
         }
 
         if contig.seq.is_empty() {
             stats.empty_after_strip_count += 1;
-            continue;
+            return None;
         }
 
         if opts.clean_name {
@@ -138,7 +162,7 @@ pub fn clean_sequences(
         }
 
         if opts.deduplicate_names {
-            let new_name = deduplicate_name(&contig.id, &mut seen);
+            let new_name = deduplicate_name(&contig.id, &mut self.seen);
             if new_name != contig.id {
                 contig.name = new_name.clone();
                 contig.id = new_name;
@@ -152,9 +176,8 @@ pub fn clean_sequences(
             stats.sequences_changed_count += 1;
         }
         stats.output_count += 1;
-        out.push(contig);
+        Some(contig)
     }
-    out
 }
 
 #[cfg(test)]

@@ -60,26 +60,51 @@ pub fn select_by_cds(
     records: &[SeqRecord],
     opts: &SelectByCdsOptions,
 ) -> Result<Vec<Region>, String> {
-    let expr = opts
-        .domain_expr
-        .as_deref()
-        .map(BooleanEvaluator::new)
-        .transpose()?;
-    let no_selectors = opts.target_cdss.is_none()
-        && opts.target_domains.is_none()
-        && opts.domain_expr.is_none()
-        && !opts.has_search_hit
-        && !opts.unannotated;
-    if no_selectors && opts.invert {
-        crate::log::warn(format_args!(
-            "Invert supplied with no selection criteria. Invert will be ignored."
-        ));
-    }
+    let selector = CdsSelector::new(opts)?;
     let mut out = Vec::new();
     for rec in records {
-        out.extend(select_one(rec, opts, expr.as_ref(), no_selectors)?);
+        out.extend(selector.select(rec)?);
     }
     Ok(out)
+}
+
+/// [`select_by_cds`] one record at a time, with the options resolved once, so records
+/// can be streamed through it.
+pub struct CdsSelector<'a> {
+    opts: &'a SelectByCdsOptions,
+    expr: Option<BooleanEvaluator>,
+    no_selectors: bool,
+}
+
+impl<'a> CdsSelector<'a> {
+    /// Resolve `opts`; warns once if `--invert` is given without selectors.
+    pub fn new(opts: &'a SelectByCdsOptions) -> Result<Self, String> {
+        let expr = opts
+            .domain_expr
+            .as_deref()
+            .map(BooleanEvaluator::new)
+            .transpose()?;
+        let no_selectors = opts.target_cdss.is_none()
+            && opts.target_domains.is_none()
+            && opts.domain_expr.is_none()
+            && !opts.has_search_hit
+            && !opts.unannotated;
+        if no_selectors && opts.invert {
+            crate::log::warn(format_args!(
+                "Invert supplied with no selection criteria. Invert will be ignored."
+            ));
+        }
+        Ok(CdsSelector {
+            opts,
+            expr,
+            no_selectors,
+        })
+    }
+
+    /// The regions around the CDSs selected in `rec`, in CDS order.
+    pub fn select(&self, rec: &SeqRecord) -> Result<Vec<Region>, String> {
+        select_one(rec, self.opts, self.expr.as_ref(), self.no_selectors)
+    }
 }
 
 fn select_one(

@@ -1,9 +1,9 @@
 use anyhow::{bail, Result};
 use domainator_config::args::StructureSearchArgs;
-use domainator_core::tools::structure_search::{structure_search, StructureSearchOptions};
+use domainator_core::tools::structure_search::{structure_search_stream, StructureSearchOptions};
 
 use super::structure_to_genbank::{aligner, check_backend, max_seqs};
-use crate::output::{write_seq_outputs_capped, OutputCap};
+use crate::output::{OutputCap, SeqWriter};
 
 pub fn run(args: &StructureSearchArgs) -> Result<()> {
     let max_hits = match args.max_hits {
@@ -29,9 +29,7 @@ pub fn run(args: &StructureSearchArgs) -> Result<()> {
         database_name: args.database_name.clone(),
         hits_tsv_out: args.hits_tsv_out.clone(),
     };
-    let records = structure_search(&args.input, &args.reference, &aligner, &opts)?;
-    write_seq_outputs_capped(
-        &records,
+    let mut out = SeqWriter::new(
         args.genbank_out.as_deref(),
         args.fasta_out.as_deref(),
         max_bytes.map(|max_bytes| OutputCap {
@@ -39,5 +37,11 @@ pub fn run(args: &StructureSearchArgs) -> Result<()> {
             mitigation: &["--max_hits", "-e/--evalue"],
             extra_guidance: None,
         }),
-    )
+    )?;
+    structure_search_stream(&args.input, &args.reference, &aligner, &opts, |rec| {
+        out.write(&rec)
+            .map_err(|e| std::io::Error::other(format!("{e:#}")))
+    })?;
+    out.finish()?;
+    Ok(())
 }

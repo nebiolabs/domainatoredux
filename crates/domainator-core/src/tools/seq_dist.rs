@@ -11,7 +11,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::io::{detect_filetype, fasta, genbank::read_genbank, FileType};
+use crate::io::{detect_filetype, fasta, genbank::iter_genbank, FileType};
 use crate::matrix::mst_knn::{apply_mst_knn, sparsify_option_label, TreeTies};
 use crate::matrix::transform::{apply_mode, symmetrize, transform_values};
 use crate::matrix::{build_sparse_max, DataMatrix};
@@ -148,19 +148,43 @@ struct Seqs {
 }
 
 fn load_seqs(path: &str, kind: InputKind) -> std::io::Result<Seqs> {
-    let recs = match kind {
-        InputKind::Fasta => fasta::read_fasta(path, Some("protein"))?,
-        InputKind::Genbank => read_genbank(path)?,
-        InputKind::Hmm => unreachable!("load_seqs called for HMM input"),
-    };
     let mut index = NameIndex::new();
     let mut records = Vec::new();
-    for r in recs {
-        let name = r.id;
-        index.push(name.clone(), r.seq.len() as i64);
-        records.push((name, r.seq));
+    for r in iter_seqs(path, kind)? {
+        let (name, seq) = r?;
+        index.push(name.clone(), seq.len() as i64);
+        records.push((name, seq));
     }
     Ok(Seqs { records, index })
+}
+
+type SeqIter = Box<dyn Iterator<Item = std::io::Result<(String, Vec<u8>)>>>;
+
+/// The `(id, residues)` of `path`'s records, read one at a time: only the sequence of
+/// each parsed record is kept, never its features.
+fn iter_seqs(path: &str, kind: InputKind) -> std::io::Result<SeqIter> {
+    Ok(match kind {
+        InputKind::Fasta => {
+            Box::new(fasta::iter_fasta(path, Some("protein"))?.map(|r| r.map(|r| (r.id, r.seq))))
+        }
+        InputKind::Genbank => Box::new(iter_genbank(path)?.map(|r| r.map(|r| (r.id, r.seq)))),
+        InputKind::Hmm => unreachable!("iter_seqs called for HMM input"),
+    })
+}
+
+/// Copy `path`'s sequences into the FASTA `fasta` for DIAMOND, record by record, with
+/// headers that are just the record id (so DIAMOND's `qseqid`/`sseqid` match the name
+/// index exactly). Returns the name index; no sequence is kept.
+fn stage_diamond_fasta(path: &str, kind: InputKind, fasta: &Path) -> std::io::Result<NameIndex> {
+    let mut w = std::io::BufWriter::new(std::fs::File::create(fasta)?);
+    let mut index = NameIndex::new();
+    for r in iter_seqs(path, kind)? {
+        let (name, seq) = r?;
+        super::external::write_fasta_id(&mut w, &name, &seq)?;
+        index.push(name, seq.len() as i64);
+    }
+    std::io::Write::flush(&mut w)?;
+    Ok(index)
 }
 
 fn load_hmms(path: &str) -> std::io::Result<(Vec<hmmer_pure_rs::Hmm>, NameIndex)> {
@@ -868,10 +892,8 @@ fn run_diamond(
 
     // Normalize input/reference to FASTA whose header first token is the record
     // id, so DIAMOND's `qseqid`/`sseqid` match the name index exactly.
-    let input_seqs = load_seqs(input, input_kind)?;
     let input_fasta = tmp.path().join("input.fasta");
-    write_diamond_fasta(&input_seqs.records, &input_fasta)?;
-    let row_index = input_seqs.index;
+    let row_index = stage_diamond_fasta(input, input_kind, &input_fasta)?;
 
     if let Some(advice) = diamond_preflight_warning(
         sensitivity,
@@ -887,10 +909,9 @@ fn run_diamond(
     let (ref_fasta, col_index) = if same {
         (input_fasta.clone(), clone_index(&row_index))
     } else {
-        let ref_seqs = load_seqs(ref_path, ref_kind)?;
         let ref_fasta = tmp.path().join("ref.fasta");
-        write_diamond_fasta(&ref_seqs.records, &ref_fasta)?;
-        (ref_fasta, ref_seqs.index)
+        let col_index = stage_diamond_fasta(ref_path, ref_kind, &ref_fasta)?;
+        (ref_fasta, col_index)
     };
 
     // Build the reference database (db.dmnd) under the temp dir.
@@ -1053,12 +1074,6 @@ fn run_diamond(
     bar.advance_to(row_index.names.len() as u64);
 
     Ok((cells, row_index, col_index))
-}
-
-/// Write `(id, residues)` records as FASTA whose header is just the id, so
-/// DIAMOND's `qseqid`/`sseqid` columns equal the record id.
-fn write_diamond_fasta(records: &[(String, Vec<u8>)], path: &Path) -> std::io::Result<()> {
-    super::external::write_fasta_ids(records, path)
 }
 
 /// Locate the `diamond` executable: `$DOMAINATOREDUX_DIAMOND` / `$DIAMOND`, then a

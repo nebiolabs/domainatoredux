@@ -6,9 +6,13 @@
 use std::cmp::Ordering;
 use std::io::{self, Write};
 
+use hmmer_pure_rs::alphabet::AlphabetType;
 use hmmer_pure_rs::{Alphabet, Bg, Hmm};
 
-use crate::search::hmm_compare::{compare_hmmer, compare_hmmer_aligned};
+use crate::search::hmm_compare::{
+    check_alphabets_match, common_file_alphabet, compare_hmmer, compare_hmmer_aligned,
+    mixed_alphabets_message,
+};
 
 /// Options for [`hmmer_compare`].
 pub struct HmmerCompareOptions {
@@ -61,21 +65,78 @@ pub fn hmmer_compare(
     mut tsv_out: Option<&mut dyn Write>,
     mut alignments_out: Option<&mut dyn Write>,
 ) -> io::Result<()> {
-    use crate::search::hmm_compare::{
-        check_alphabets_match, common_file_alphabet, common_hmm_alphabet,
-    };
-    let to_err = |m: String| io::Error::new(io::ErrorKind::InvalidInput, m);
-    let reference_alphabet = common_file_alphabet(references, "reference").map_err(to_err)?;
-    let references: Vec<&Hmm> = references.iter().flat_map(|(_, h)| h).collect();
+    let mut comparer = HmmerComparer::new(
+        references,
+        opts,
+        reborrow(&mut tsv_out),
+        alignments_out.is_some(),
+    )?;
+    for (file, profiles) in queries {
+        comparer.compare(
+            file,
+            profiles,
+            reborrow(&mut tsv_out),
+            reborrow(&mut alignments_out),
+        )?;
+    }
+    Ok(())
+}
 
-    let mut written: u64 = 0;
-    let mut account = |bytes: u64| -> io::Result<()> {
-        written += bytes;
-        match opts.max_output_bytes {
-            Some(max) if written > max => Err(io::Error::other(
+/// An optional output, borrowed again for one call.
+pub fn reborrow<'s>(out: &'s mut Option<&mut dyn Write>) -> Option<&'s mut dyn Write> {
+    match out {
+        Some(out) => Some(&mut **out),
+        None => None,
+    }
+}
+
+/// [`hmmer_compare`] a batch of query profiles at a time, so the queries can be
+/// streamed: each batch's hits are written before the next is read (upstream writes
+/// each query's hits as its worker finishes). Give it the same outputs every time.
+pub struct HmmerComparer<'a> {
+    references: Vec<&'a Hmm>,
+    reference_alphabet: Option<AlphabetType>,
+    opts: &'a HmmerCompareOptions,
+    aligned: bool,
+    written: u64,
+    /// The query file being read: its name, alphabet, and first profile's name.
+    file: Option<(String, AlphabetType, String)>,
+}
+
+impl<'a> HmmerComparer<'a> {
+    /// Check the references and write the table's header to `tsv_out`. `aligned`:
+    /// whether alignments are to be written.
+    pub fn new(
+        references: &'a [(String, Vec<Hmm>)],
+        opts: &'a HmmerCompareOptions,
+        tsv_out: Option<&mut dyn Write>,
+        aligned: bool,
+    ) -> io::Result<Self> {
+        let reference_alphabet = common_file_alphabet(references, "reference").map_err(to_err)?;
+        let mut comparer = HmmerComparer {
+            references: references.iter().flat_map(|(_, h)| h).collect(),
+            reference_alphabet,
+            opts,
+            aligned,
+            written: 0,
+            file: None,
+        };
+        let header = "query\treference\tscore\n";
+        if let Some(out) = tsv_out {
+            comparer.account(header.len() as u64)?;
+            out.write_all(header.as_bytes())?;
+        }
+        Ok(comparer)
+    }
+
+    /// Count `bytes` against `--max_output_gb`.
+    fn account(&mut self, bytes: u64) -> io::Result<()> {
+        self.written += bytes;
+        match self.opts.max_output_bytes {
+            Some(max) if self.written > max => Err(io::Error::other(
                 crate::tools::output_guardrails::output_limit_message(
                     "hmmer_compare output",
-                    written,
+                    self.written,
                     max,
                     &["--max_hits_per_query", "--min_score", "--alignments_out"],
                     None,
@@ -83,28 +144,45 @@ pub fn hmmer_compare(
             )),
             _ => Ok(()),
         }
-    };
-    let header = "query\treference\tscore\n";
-    if let Some(out) = tsv_out.as_mut() {
-        account(header.len() as u64)?;
-        out.write_all(header.as_bytes())?;
     }
-    let aligned = alignments_out.is_some();
 
-    for (file, profiles) in queries {
-        let Some(alphabet) = common_hmm_alphabet(profiles, "input").map_err(to_err)? else {
-            continue; // no profiles in this file
+    /// Compare the next `profiles` of the query file `file` and write their hits.
+    pub fn compare(
+        &mut self,
+        file: &str,
+        profiles: &[Hmm],
+        mut tsv_out: Option<&mut dyn Write>,
+        mut alignments_out: Option<&mut dyn Write>,
+    ) -> io::Result<()> {
+        let Some(first) = profiles.first() else {
+            return Ok(()); // no profiles in this file
         };
-        check_alphabets_match(Some(alphabet), reference_alphabet, file, "hmmer_compare")
-            .map_err(to_err)?;
-        let bg = Bg::new(&Alphabet::new(profiles[0].abc_type));
+        if self.file.as_ref().is_none_or(|(name, ..)| name != file) {
+            self.file = Some((file.to_string(), first.abc_type, first.name.clone()));
+        }
+        let (_, alphabet, first_name) = self.file.as_ref().expect("set above");
+        let alphabet = *alphabet;
+        if let Some(mixed) = profiles.iter().find(|h| h.abc_type != alphabet) {
+            return Err(to_err(mixed_alphabets_message(
+                "input", first_name, alphabet, mixed,
+            )));
+        }
+        check_alphabets_match(
+            Some(alphabet),
+            self.reference_alphabet,
+            file,
+            "hmmer_compare",
+        )
+        .map_err(to_err)?;
+        let bg = Bg::new(&Alphabet::new(alphabet));
         // Score each query against all references in parallel; `map` preserves query
         // order so output is identical regardless of thread count.
+        let (references, aligned, opts) = (&self.references, self.aligned, self.opts);
         let per_query: Vec<Vec<Hit>> = crate::parallel::with_threads(opts.cpu, || {
             use rayon::prelude::*;
             profiles
                 .par_iter()
-                .map(|q| query_hits(q, &references, &bg, aligned, opts))
+                .map(|q| query_hits(q, references, &bg, aligned, opts))
                 .collect()
         });
         for hit in per_query.into_iter().flatten() {
@@ -116,7 +194,7 @@ pub fn hmmer_compare(
             );
             let alignment = hit.alignment.map(|text| format!("{row}{text}\n\n"));
             let tsv_bytes = if tsv_out.is_some() { row.len() } else { 0 };
-            account((tsv_bytes + alignment.as_ref().map_or(0, String::len)) as u64)?;
+            self.account((tsv_bytes + alignment.as_ref().map_or(0, String::len)) as u64)?;
             if let Some(out) = tsv_out.as_mut() {
                 out.write_all(row.as_bytes())?;
             }
@@ -124,8 +202,12 @@ pub fn hmmer_compare(
                 out.write_all(alignment.as_bytes())?;
             }
         }
+        Ok(())
     }
-    Ok(())
+}
+
+fn to_err(message: String) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, message)
 }
 
 /// One query's hits at or above the cutoff, best first (ties by reference name), at

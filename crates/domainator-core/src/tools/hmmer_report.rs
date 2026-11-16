@@ -237,68 +237,114 @@ pub fn hmmer_report<W: Write>(
     format: OutputFormat,
     out: &mut W,
 ) -> Result<(), String> {
-    // Header: leading `name`, then one column per analysis (flag order).
-    let mut headers: Vec<String> = vec!["name".to_string()];
-    for a in analyses {
-        headers.push(a.column.clone());
+    let report = HmmerReportWriter::new(analyses, column_names)?;
+    let sink = report.start(format, out)?;
+    for (source, hmms) in records {
+        report.write_profiles(&sink, out, source, hmms)?;
     }
-    if let Some(cn) = column_names {
-        if cn.len() != headers.len() {
-            return Err(format!(
-                "The number of override column names must be the same as the number of columns.\nColumns:\n{}\nOverride columns:\n{}",
-                headers.join("; "),
-                cn.join("; ")
-            ));
+    report.finish(sink, out)
+}
+
+/// [`hmmer_report`] a batch of profiles at a time, to any number of outputs at once,
+/// as upstream writes each row to every writer as it goes.
+pub struct HmmerReportWriter<'a> {
+    analyses: &'a [Analysis],
+    headers: Vec<String>,
+}
+
+/// One output of a [`HmmerReportWriter`], started.
+pub enum HmmerSink {
+    Tsv,
+    Json,
+    Html(TablePage),
+}
+
+impl<'a> HmmerReportWriter<'a> {
+    /// The report's columns, or an error when `column_names` does not fit them.
+    pub fn new(analyses: &'a [Analysis], column_names: Option<&[String]>) -> Result<Self, String> {
+        // Header: leading `name`, then one column per analysis (flag order).
+        let mut headers: Vec<String> = vec!["name".to_string()];
+        for a in analyses {
+            headers.push(a.column.clone());
         }
-        headers = cn.to_vec();
+        if let Some(cn) = column_names {
+            if cn.len() != headers.len() {
+                return Err(format!(
+                    "The number of override column names must be the same as the number of columns.\nColumns:\n{}\nOverride columns:\n{}",
+                    headers.join("; "),
+                    cn.join("; ")
+                ));
+            }
+            headers = cn.to_vec();
+        }
+        Ok(HmmerReportWriter { analyses, headers })
     }
 
-    // Build all rows.
-    let mut rows: Vec<Vec<Value>> = Vec::new();
-    for (source, hmms) in records {
+    /// Write what precedes the rows in `format` to `out`.
+    pub fn start<W: Write>(&self, format: OutputFormat, out: &mut W) -> Result<HmmerSink, String> {
+        Ok(match format {
+            OutputFormat::Tsv => {
+                writeln!(out, "{}", self.headers.join("\t")).map_err(|e| e.to_string())?;
+                HmmerSink::Tsv
+            }
+            OutputFormat::Json => HmmerSink::Json,
+            OutputFormat::Html { max_height } => {
+                let types =
+                    std::iter::once(ColType::Str).chain(self.analyses.iter().map(|a| a.col_type));
+                let columns: Vec<(String, &str)> = self
+                    .headers
+                    .iter()
+                    .zip(types)
+                    .map(|(name, t)| (name.clone(), t.name()))
+                    .collect();
+                HmmerSink::Html(
+                    TablePage::start(out, "HMMER Report", "hmmer_report", &columns, max_height)
+                        .map_err(|e| e.to_string())?,
+                )
+            }
+        })
+    }
+
+    /// Write one row per profile of `hmms`, read from `source`, to one output.
+    pub fn write_profiles<W: Write>(
+        &self,
+        sink: &HmmerSink,
+        out: &mut W,
+        source: &str,
+        hmms: &[Hmm],
+    ) -> Result<(), String> {
         for hmm in hmms {
             let mut row: Vec<Value> = vec![Value::Str(profile_name(hmm))];
-            for a in analyses {
+            for a in self.analyses {
                 row.push(a.compute(source, hmm));
             }
-            rows.push(row);
+            match sink {
+                HmmerSink::Tsv => {
+                    let cells: Vec<String> = row.iter().map(format_value).collect();
+                    writeln!(out, "{}", cells.join("\t")).map_err(|e| e.to_string())?;
+                }
+                // Streaming NDJSON, one compact object per profile -- upstream's agent
+                // contract, not a JSON array.
+                HmmerSink::Json => {
+                    let line = serde_json::to_string(&row_object(&row, &self.headers))
+                        .map_err(|e| e.to_string())?;
+                    writeln!(out, "{line}").map_err(|e| e.to_string())?;
+                }
+                HmmerSink::Html(page) => page
+                    .row(out, &row_object(&row, &self.headers))
+                    .map_err(|e| e.to_string())?,
+            }
         }
+        Ok(())
     }
 
-    match format {
-        OutputFormat::Tsv => {
-            writeln!(out, "{}", headers.join("\t")).map_err(|e| e.to_string())?;
-            for row in &rows {
-                let cells: Vec<String> = row.iter().map(format_value).collect();
-                writeln!(out, "{}", cells.join("\t")).map_err(|e| e.to_string())?;
-            }
-        }
-        OutputFormat::Json => {
-            // Streaming NDJSON, one compact object per profile -- upstream's agent
-            // contract, not a JSON array.
-            for row in rows.iter() {
-                let line =
-                    serde_json::to_string(&row_object(row, &headers)).map_err(|e| e.to_string())?;
-                writeln!(out, "{line}").map_err(|e| e.to_string())?;
-            }
-        }
-        OutputFormat::Html { max_height } => {
-            let types = std::iter::once(ColType::Str).chain(analyses.iter().map(|a| a.col_type));
-            let columns: Vec<(String, &str)> = headers
-                .iter()
-                .zip(types)
-                .map(|(name, t)| (name.clone(), t.name()))
-                .collect();
-            let page = TablePage::start(out, "HMMER Report", "hmmer_report", &columns, max_height)
-                .map_err(|e| e.to_string())?;
-            for row in &rows {
-                page.row(out, &row_object(row, &headers))
-                    .map_err(|e| e.to_string())?;
-            }
-            page.finish(out).map_err(|e| e.to_string())?;
+    /// Write what follows the rows.
+    pub fn finish<W: Write>(&self, sink: HmmerSink, out: &mut W) -> Result<(), String> {
+        match sink {
+            HmmerSink::Html(page) => page.finish(out).map_err(|e| e.to_string()),
+            HmmerSink::Tsv | HmmerSink::Json => Ok(()),
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

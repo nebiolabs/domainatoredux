@@ -107,8 +107,8 @@ pub struct DomainateArgs {
     /// together.
     #[arg(long)]
     pub overlap_by_db: bool,
-    /// How many target sequences to search at one time in a batch. Accepted for
-    /// compatibility with upstream; domainatoredux searches all of them at once.
+    /// How many target sequences to search at one time in a batch. Increasing this
+    /// number might improve speeds at the cost of memory.
     #[arg(long, default_value_t = 10000, allow_negative_numbers = true)]
     pub batch_size: i64,
     /// When activated, new CDS annotations will be added with Orphos (Prodigal) in

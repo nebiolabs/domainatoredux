@@ -96,7 +96,7 @@ pub fn is_compressed_path(path: &Path) -> bool {
 /// any name reads correctly, and so does an uncompressed file named `.gz`.
 /// `MultiGzDecoder` rather than `GzDecoder`: BGZF is a chain of gzip members, and
 /// a single-member decoder silently stops after the first 64 KiB block.
-pub fn open_decompressed(path: &Path) -> std::io::Result<Box<dyn std::io::Read>> {
+pub fn open_decompressed(path: &Path) -> std::io::Result<Box<dyn std::io::Read + Send>> {
     let file = std::fs::File::open(path)?;
     if has_gzip_magic(path) {
         Ok(Box::new(flate2::read::MultiGzDecoder::new(
@@ -104,6 +104,33 @@ pub fn open_decompressed(path: &Path) -> std::io::Result<Box<dyn std::io::Read>>
         )))
     } else {
         Ok(Box::new(file))
+    }
+}
+
+/// A byte stream decompressed if its content is gzip (plain or BGZF), decided by
+/// its first two bytes, as [`open_decompressed`] decides for a file. For a stream that
+/// cannot be reopened, such as standard input.
+pub fn decompress_stream(
+    mut stream: impl std::io::Read + Send + 'static,
+) -> std::io::Result<Box<dyn std::io::Read + Send>> {
+    use std::io::Read;
+    let mut magic = [0u8; 2];
+    let mut got = 0;
+    while got < magic.len() {
+        match stream.read(&mut magic[got..]) {
+            Ok(0) => break,
+            Ok(n) => got += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    let replayed = std::io::Cursor::new(magic[..got].to_vec()).chain(stream);
+    if magic[..got] == GZIP_MAGIC {
+        Ok(Box::new(flate2::read::MultiGzDecoder::new(
+            std::io::BufReader::new(replayed),
+        )))
+    } else {
+        Ok(Box::new(replayed))
     }
 }
 

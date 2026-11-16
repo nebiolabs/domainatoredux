@@ -1,11 +1,12 @@
 use anyhow::{anyhow, Context, Result};
 use domainator_config::args::FindFeaturesArgs;
 use domainator_core::plm::tmbed::Tmbed;
-use domainator_core::tools::find_features::{find_features, FindFeaturesOptions, TmbedRun};
+use domainator_core::tools::find_features::{find_features_stream, FindFeaturesOptions, TmbedRun};
 use domainator_core::tools::tmbed_model;
 
-use super::{cpu_threads, load_typed_inputs};
-use crate::output::write_seq_outputs;
+use super::cpu_threads;
+use crate::input::{InputMode, SeqInputs};
+use crate::output::SeqWriter;
 
 pub fn run(args: &FindFeaturesArgs) -> Result<()> {
     let cpu = cpu_threads(args.cpu)?;
@@ -35,13 +36,18 @@ pub fn run(args: &FindFeaturesArgs) -> Result<()> {
         gene_call: crate::gene_call_request(args.gene_call.as_deref(), cpu)?,
         tmbed,
     };
-    let records = load_typed_inputs(&args.input, &args.alphabet)?;
+    let records = SeqInputs::new(
+        &args.input,
+        InputMode::Detect {
+            fasta_type: &args.alphabet,
+        },
+    );
+    let mut out = SeqWriter::new(args.genbank_out.as_deref(), args.fasta_out.as_deref(), None)?;
     // The thread pool bounds TMbed's matrix multiplications as well.
-    let annotated = domainator_core::parallel::with_threads(cpu, || find_features(records, &opts))
-        .context("running find_features")?;
-    write_seq_outputs(
-        &annotated,
-        args.genbank_out.as_deref(),
-        args.fasta_out.as_deref(),
-    )
+    domainator_core::parallel::with_threads(cpu, || {
+        find_features_stream(records, &opts, |rec| out.write(&rec))
+    })
+    .context("running find_features")?;
+    out.finish()?;
+    Ok(())
 }

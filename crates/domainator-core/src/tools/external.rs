@@ -70,13 +70,19 @@ pub(crate) fn spawn_error(e: std::io::Error, bin: &Path, hint: &str) -> std::io:
 pub(crate) fn write_fasta_ids(records: &[(String, Vec<u8>)], path: &Path) -> std::io::Result<()> {
     let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
     for (id, seq) in records {
-        writeln!(w, ">{id}")?;
-        for chunk in seq.chunks(60) {
-            w.write_all(chunk)?;
-            w.write_all(b"\n")?;
-        }
+        write_fasta_id(&mut w, id, seq)?;
     }
     w.flush()
+}
+
+/// One record of [`write_fasta_ids`].
+pub(crate) fn write_fasta_id(w: &mut impl Write, id: &str, seq: &[u8]) -> std::io::Result<()> {
+    writeln!(w, ">{id}")?;
+    for chunk in seq.chunks(60) {
+        w.write_all(chunk)?;
+        w.write_all(b"\n")?;
+    }
+    Ok(())
 }
 
 /// A uniquely-named temporary directory removed (recursively) on drop. Avoids a

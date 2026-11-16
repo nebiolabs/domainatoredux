@@ -224,21 +224,31 @@ pub fn trim_contigs(
     records: Vec<SeqRecord>,
     opts: &TrimContigsOptions,
 ) -> Result<Vec<SeqRecord>, String> {
-    let expr = opts
-        .domain_expr
+    let expr = trim_contigs_expr(opts)?;
+    Ok(records
+        .into_iter()
+        .filter_map(|record| trim_record(record, opts, expr.as_ref()))
+        .collect())
+}
+
+/// `--domain_expr` compiled, for [`trim_record`].
+pub fn trim_contigs_expr(opts: &TrimContigsOptions) -> Result<Option<BooleanEvaluator>, String> {
+    opts.domain_expr
         .as_deref()
         .map(BooleanEvaluator::new)
-        .transpose()?;
-    let mut out = Vec::new();
-    for record in records {
-        // Circular contigs are linearized before trimming (topology dropped).
-        let mut record = record;
-        record.topology = Topology::Linear;
-        if let Some(t) = trim_contig(&record, opts, expr.as_ref()) {
-            out.push(t);
-        }
-    }
-    Ok(out)
+        .transpose()
+}
+
+/// Trim one record, or `None` when nothing of it is kept; for records streamed one at
+/// a time. `expr` is [`trim_contigs_expr`]'s.
+pub fn trim_record(
+    mut record: SeqRecord,
+    opts: &TrimContigsOptions,
+    expr: Option<&BooleanEvaluator>,
+) -> Option<SeqRecord> {
+    // Circular contigs are linearized before trimming (topology dropped).
+    record.topology = Topology::Linear;
+    trim_contig(&record, opts, expr)
 }
 
 #[cfg(test)]

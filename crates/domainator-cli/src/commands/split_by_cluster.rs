@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use domainator_config::args::SplitByClusterArgs;
 use domainator_core::io::fasta;
+use domainator_core::io::genbank::scan_genbank_ids;
 use domainator_core::io::genbank::writer::write_record;
 use domainator_core::matrix::read_matrix;
 use domainator_core::search::hmm_read::{read_hmm_file, Hmm};
@@ -16,6 +17,7 @@ use domainator_core::tools::split_by_cluster::{
     input_labels, output_extension, plan_output_paths, InputKind, OutputPlan,
 };
 
+use crate::input::{InputMode, SeqInputs};
 use crate::output::Output;
 
 pub fn run(args: &SplitByClusterArgs) -> Result<()> {
@@ -37,7 +39,15 @@ pub fn run(args: &SplitByClusterArgs) -> Result<()> {
     let matrix = read_matrix(&args.matrix).with_context(|| format!("reading {}", args.matrix))?;
     let clusters = cluster_membership(&matrix, args.threshold.0).map_err(|e| anyhow!(e))?;
 
-    let input_data = read_input(input, kind)?;
+    // Sequence records are streamed into their outputs unless they are padded per
+    // output, so only their ids are read up front, for the check against the matrix.
+    let streamed =
+        matches!(kind, InputKind::Genbank | InputKind::Fasta) && !args.pad_on_search_hits;
+    let input_data = if streamed {
+        InputData::Streamed(scan_labels(input, kind)?)
+    } else {
+        read_input(input, kind)?
+    };
     let labels = input_labels(input_data.labels(), kind).map_err(|e| anyhow!(e))?;
     check_labels_match(&matrix.rows, &labels).map_err(|e| anyhow!(e))?;
 
@@ -53,7 +63,7 @@ pub fn run(args: &SplitByClusterArgs) -> Result<()> {
     let cluster_of = |label: &str| clusters.of_label[label];
 
     match input_data {
-        InputData::Records(records) if args.pad_on_search_hits => {
+        InputData::Records(records) => {
             // Each output's records are padded together, so the hits line up per file.
             let mut regions: BTreeMap<&Path, Vec<Region>> = BTreeMap::new();
             for record in &records {
@@ -71,16 +81,7 @@ pub fn run(args: &SplitByClusterArgs) -> Result<()> {
                 Ok(())
             })
         }
-        InputData::Records(records) => write_each(&plan, |path, out| {
-            for record in records_for(&records, &plan, path, &cluster_of) {
-                if kind == InputKind::Genbank {
-                    write_record(out, record)?;
-                } else {
-                    fasta::write_fasta_bp(out, std::slice::from_ref(record))?;
-                }
-            }
-            Ok(())
-        }),
+        InputData::Streamed(_) => write_streamed(&plan, &args.input, kind, &cluster_of),
         InputData::Cm(models) => write_each(&plan, |path, out| {
             for (name, text) in &models {
                 if plan.destination(cluster_of(name)) == Some(path) {
@@ -96,7 +97,10 @@ pub fn run(args: &SplitByClusterArgs) -> Result<()> {
 /// The input, read once: its labels are checked against the matrix before anything
 /// is written.
 enum InputData {
+    /// Every record, for `--pad_on_search_hits`.
     Records(Vec<SeqRecord>),
+    /// The records' ids only; the records are streamed by [`write_streamed`].
+    Streamed(Vec<String>),
     Hmm(Vec<Hmm>),
     Cm(Vec<(String, String)>),
 }
@@ -105,6 +109,7 @@ impl InputData {
     fn labels(&self) -> Vec<String> {
         match self {
             InputData::Records(records) => records.iter().map(|r| r.id.clone()).collect(),
+            InputData::Streamed(ids) => ids.clone(),
             InputData::Hmm(profiles) => profiles.iter().map(|p| p.name.clone()).collect(),
             InputData::Cm(models) => models.iter().map(|(name, _)| name.clone()).collect(),
         }
@@ -127,16 +132,51 @@ fn read_input(input: &Path, kind: InputKind) -> Result<InputData> {
     })
 }
 
-/// The records `plan` sends to `path`, in input order.
-fn records_for<'a>(
-    records: &'a [SeqRecord],
-    plan: &'a OutputPlan,
-    path: &'a Path,
-    cluster_of: &'a impl Fn(&str) -> i64,
-) -> impl Iterator<Item = &'a SeqRecord> {
-    records
-        .iter()
-        .filter(move |r| plan.destination(cluster_of(&r.id)) == Some(path))
+/// The ids of a sequence file's records, in order, without parsing their features or
+/// reading their sequences.
+fn scan_labels(input: &Path, kind: InputKind) -> Result<Vec<String>> {
+    let path = input.to_str().context("non-UTF8 path")?;
+    let ids = match kind {
+        InputKind::Genbank => scan_genbank_ids(path),
+        _ => fasta::scan_fasta_ids(path),
+    }
+    .with_context(|| format!("reading {path}"))?;
+    Ok(ids.into_iter().map(|(id, _)| id).collect())
+}
+
+/// One pass over the records, each written to its cluster's output as it is read, with
+/// every output open at once (upstream's handles), so the files appear only if all of
+/// them were written.
+fn write_streamed(
+    plan: &OutputPlan,
+    input: &str,
+    kind: InputKind,
+    cluster_of: &impl Fn(&str) -> i64,
+) -> Result<()> {
+    let mut outputs: HashMap<&Path, Output> = HashMap::new();
+    for path in plan.paths() {
+        let name = path.to_str().context("non-UTF8 output path")?;
+        outputs.insert(path, Output::create(name)?);
+    }
+    for record in SeqInputs::new(std::slice::from_ref(&input.to_string()), InputMode::DETECT) {
+        let record = record?;
+        let Some(path) = plan.destination(cluster_of(&record.id)) else {
+            continue;
+        };
+        let out = outputs.get_mut(path).expect("every destination is planned");
+        if kind == InputKind::Genbank {
+            write_record(out, &record)
+        } else {
+            fasta::write_fasta_bp(out, std::slice::from_ref(&record))
+        }
+        .with_context(|| format!("writing {}", path.display()))?;
+    }
+    for path in plan.paths() {
+        if let Some(out) = outputs.remove(path) {
+            out.finish()?;
+        }
+    }
+    Ok(())
 }
 
 /// Write every planned output with `write`, each through [`Output`], so the files

@@ -183,49 +183,112 @@ pub fn write_seq_outputs_capped(
     fasta_out: Option<&str>,
     cap: Option<OutputCap<'_>>,
 ) -> Result<()> {
-    let mut gb = genbank.map(Output::create).transpose()?;
-    let mut fa = fasta_out.map(Output::create).transpose()?;
-    let description = || {
-        [("GenBank", genbank), ("FASTA", fasta_out)]
-            .iter()
-            .filter_map(|(kind, path)| path.map(|p| format!("{kind} output '{p}'")))
-            .collect::<Vec<_>>()
-            .join(" and ")
-    };
-    let mut written: u64 = 0;
-    let (mut gb_buf, mut fa_buf) = (Vec::new(), Vec::new());
+    let mut out = SeqWriter::new(genbank, fasta_out, cap)?;
     for rec in records {
-        gb_buf.clear();
-        fa_buf.clear();
-        if gb.is_some() {
-            write_record(&mut gb_buf, rec).context("writing GenBank")?;
+        out.write(rec)?;
+    }
+    out.finish()?;
+    Ok(())
+}
+
+/// [`write_seq_outputs_capped`] for records that arrive one at a time, such as a
+/// tool's per-record results over [`crate::input::SeqInputs`]: each is written as it
+/// comes, so the records are never all in memory. The first error stops the run, and
+/// leaves no file at either path. Returns the number of records written.
+pub fn write_seq_stream<I>(
+    records: I,
+    genbank: Option<&str>,
+    fasta_out: Option<&str>,
+    cap: Option<OutputCap<'_>>,
+) -> Result<usize>
+where
+    I: IntoIterator<Item = Result<SeqRecord>>,
+{
+    let mut out = SeqWriter::new(genbank, fasta_out, cap)?;
+    for rec in records {
+        out.write(&rec?)?;
+    }
+    out.finish()
+}
+
+/// A GenBank output, a FASTA output, or both, open for writing record by record
+/// (upstream's `SeqOutputs`). Call [`SeqWriter::finish`] when the run succeeded;
+/// dropping it unfinished removes both temporary files.
+pub struct SeqWriter<'a> {
+    gb: Option<Output>,
+    fa: Option<Output>,
+    genbank: Option<&'a str>,
+    fasta_out: Option<&'a str>,
+    cap: Option<OutputCap<'a>>,
+    written: u64,
+    records: usize,
+    gb_buf: Vec<u8>,
+    fa_buf: Vec<u8>,
+}
+
+impl<'a> SeqWriter<'a> {
+    pub fn new(
+        genbank: Option<&'a str>,
+        fasta_out: Option<&'a str>,
+        cap: Option<OutputCap<'a>>,
+    ) -> Result<SeqWriter<'a>> {
+        Ok(SeqWriter {
+            gb: genbank.map(Output::create).transpose()?,
+            fa: fasta_out.map(Output::create).transpose()?,
+            genbank,
+            fasta_out,
+            cap,
+            written: 0,
+            records: 0,
+            gb_buf: Vec::new(),
+            fa_buf: Vec::new(),
+        })
+    }
+
+    /// Write one record to each output.
+    pub fn write(&mut self, rec: &SeqRecord) -> Result<()> {
+        self.gb_buf.clear();
+        self.fa_buf.clear();
+        if self.gb.is_some() {
+            write_record(&mut self.gb_buf, rec).context("writing GenBank")?;
         }
-        if fa.is_some() {
-            fasta::write_fasta_bp(&mut fa_buf, std::slice::from_ref(rec))
+        if self.fa.is_some() {
+            fasta::write_fasta_bp(&mut self.fa_buf, std::slice::from_ref(rec))
                 .context("writing FASTA")?;
         }
-        written += (gb_buf.len() + fa_buf.len()) as u64;
-        if let Some(cap) = &cap {
-            if written > cap.max_bytes {
+        self.written += (self.gb_buf.len() + self.fa_buf.len()) as u64;
+        if let Some(cap) = &self.cap {
+            if self.written > cap.max_bytes {
+                let description = [("GenBank", self.genbank), ("FASTA", self.fasta_out)]
+                    .iter()
+                    .filter_map(|(kind, path)| path.map(|p| format!("{kind} output '{p}'")))
+                    .collect::<Vec<_>>()
+                    .join(" and ");
                 anyhow::bail!(output_limit_message(
-                    &description(),
-                    written,
+                    &description,
+                    self.written,
                     cap.max_bytes,
                     cap.mitigation,
                     cap.extra_guidance,
                 ));
             }
         }
-        if let Some(w) = gb.as_mut() {
-            w.write_all(&gb_buf).context("writing GenBank")?;
+        if let Some(w) = self.gb.as_mut() {
+            w.write_all(&self.gb_buf).context("writing GenBank")?;
         }
-        if let Some(w) = fa.as_mut() {
-            w.write_all(&fa_buf).context("writing FASTA")?;
+        if let Some(w) = self.fa.as_mut() {
+            w.write_all(&self.fa_buf).context("writing FASTA")?;
         }
+        self.records += 1;
+        Ok(())
     }
-    gb.map(Output::finish).transpose()?;
-    fa.map(Output::finish).transpose()?;
-    Ok(())
+
+    /// Flush both outputs and move them into place; the number of records written.
+    pub fn finish(self) -> Result<usize> {
+        self.gb.map(Output::finish).transpose()?;
+        self.fa.map(Output::finish).transpose()?;
+        Ok(self.records)
+    }
 }
 
 /// `--hdf_out` must name an hdf5 file (upstream `resolve_matrix_outputs`); `hint` is

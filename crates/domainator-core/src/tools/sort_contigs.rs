@@ -4,6 +4,8 @@
 
 use std::collections::HashSet;
 
+use crate::tools::top_n::TopN;
+
 use crate::seq::{SeqFeature, SeqRecord};
 use crate::{DOMAIN_FEATURE_NAME, DOMAIN_SEARCH_BEST_HIT_NAME};
 
@@ -88,22 +90,17 @@ fn best_score(rec: &SeqRecord, opts: &SortContigsOptions) -> Result<f64, String>
 }
 
 /// Sort `records` by descending best score, keeping the top `max_hits`. Ties keep
-/// input order (a stable secondary key).
+/// input order (a stable secondary key). With `max_hits`, at most that many records
+/// are held at once, as upstream's heap holds them, so the input can be streamed.
 pub fn sort_contigs(
-    records: Vec<SeqRecord>,
+    records: impl IntoIterator<Item = SeqRecord>,
     opts: &SortContigsOptions,
 ) -> Result<Vec<SeqRecord>, String> {
-    let mut scored: Vec<(f64, usize, SeqRecord)> = Vec::with_capacity(records.len());
-    for (i, rec) in records.into_iter().enumerate() {
-        let s = best_score(&rec, opts)?;
-        scored.push((s, i, rec));
+    let mut kept = TopN::new(opts.max_hits);
+    for rec in records {
+        kept.push(best_score(&rec, opts)?, rec);
     }
-    // Descending score; stable on original index for ties.
-    scored.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
-    if let Some(n) = opts.max_hits {
-        scored.truncate(n);
-    }
-    Ok(scored.into_iter().map(|(_, _, r)| r).collect())
+    Ok(kept.into_sorted_vec())
 }
 
 #[cfg(test)]
