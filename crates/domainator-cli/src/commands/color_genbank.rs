@@ -11,6 +11,8 @@ use crate::input::{InputMode, SeqInputs};
 use crate::output::{write_seq_stream, Output};
 
 pub fn run(args: &ColorGenbankArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let targets = ColorTargets::parse(&args.target).map_err(|e| anyhow!(e))?;
     let mut color_map = match &args.color_table {
         Some(path) => {

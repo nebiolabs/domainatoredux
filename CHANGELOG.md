@@ -19,11 +19,18 @@ parity with. How versions are assigned: `docs/development.md`, "Versioning and r
 
 - **`.gz`/`.bgz` outputs are compressed on several cores.** Every tool's compressed
   output, and the GUI's install of a reference FASTA, now compresses its BGZF blocks in
-  parallel instead of on the thread writing the records. A tool with `--cpu` uses that
-  many threads; one without it uses one per physical core the process may run on. The
-  bytes are unchanged and do not depend on the thread count. Compression was most of the
-  run for pass-through tools: `genbank_to_fasta` writing 100 MB of genomes to `.fna.bgz`
-  took 2.7 s and now takes 0.7 s.
+  parallel instead of on the thread writing the records, using the tool's `--cpu`
+  threads. The bytes are unchanged and do not depend on the thread count. Compression was
+  most of the run for pass-through tools: `genbank_to_fasta` writing 100 MB of genomes to
+  `.fna.bgz` took 2.7 s and now takes 0.7 s.
+
+### Added
+
+- **`--cpu` on the single-threaded sequence tools** (`select_by_contig`, `select_by_cds`,
+  `select_by_coord`, `extract_domains`, `extract_peptides`, `extract_unannotated`,
+  `genbank_to_fasta`, `filter_domains`, `trim_contigs`, `sort_contigs`, `color_genbank`,
+  `clean_sequences`), setting the threads that compress a `.gz`/`.bgz` output. Upstream's
+  versions of these tools have no `--cpu`.
 
 ## [1.0.0-rc.3] - 2026-11-04
 

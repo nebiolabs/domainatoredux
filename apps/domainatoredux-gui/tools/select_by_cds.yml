@@ -99,3 +99,6 @@ fields:
     # its version; a job refreshing it in place would bypass that.
     show: false
     label: "Update taxonomy"
+  - name: cpu
+    show: false
+    label: "Cpu"

@@ -24,3 +24,6 @@ fields:
     select: none
   - name: databases
     label: "Databases"
+  - name: cpu
+    show: false
+    label: "Cpu"

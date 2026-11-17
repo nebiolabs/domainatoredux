@@ -13,6 +13,8 @@ fn set<T: Clone + Eq + std::hash::Hash>(list: &Option<Vec<T>>) -> Option<HashSet
 }
 
 pub fn run(args: &SelectByContigArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let target_contigs = parse_name_list(
         args.contigs.as_deref().unwrap_or_default(),
         args.contigs_file.as_deref(),

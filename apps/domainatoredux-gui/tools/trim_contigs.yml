@@ -43,3 +43,6 @@ fields:
   - name: contigs_file
     show: false
     label: "Contigs file"
+  - name: cpu
+    show: false
+    label: "Cpu"

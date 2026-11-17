@@ -37,3 +37,6 @@ fields:
     file_type: text
     sources: workspace_first
     select: none
+  - name: cpu
+    show: false
+    label: "Cpu"

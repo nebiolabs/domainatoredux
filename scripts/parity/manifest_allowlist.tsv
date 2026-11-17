@@ -6,4 +6,16 @@
 # Classes: deferred: (not ported, on purpose)  port-only: (ours alone)
 #          upstream: (upstream should change)   todo: (the 1.0 migration; none may remain)
 tool	parameter	aspect	ours	upstream	class	note
+clean_sequences	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
+color_genbank	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
+extract_domains	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
+extract_peptides	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
+extract_unannotated	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
+filter_domains	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
+genbank_to_fasta	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
 gene_call	-	tool	true	false	port-only:	
+select_by_cds	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
+select_by_contig	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
+select_by_coord	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
+sort_contigs	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread
+trim_contigs	cpu	extra	{"name":"cpu","flags":["--cpu"],"default":0,"kind":"value","type":"integer","required":false}	null	port-only:	threads for compressing .gz/.bgz outputs; upstream runs this tool on one thread

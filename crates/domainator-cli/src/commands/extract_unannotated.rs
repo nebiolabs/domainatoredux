@@ -8,6 +8,8 @@ use crate::input::{flat_map_records, InputMode, SeqInputs};
 use crate::output::write_seq_stream;
 
 pub fn run(args: &ExtractUnannotatedArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let opts = ExtractUnannotatedOptions {
         evalue: args.evalue.map(|e| e.0),
         score: args.min_annotation_score.map(|s| s.0),

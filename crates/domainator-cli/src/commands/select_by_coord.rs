@@ -6,6 +6,8 @@ use crate::input::{InputMode, SeqInputs};
 use crate::output::{is_stdin, SeqWriter};
 
 pub fn run(args: &SelectByCoordArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let table = std::fs::read_to_string(&args.coords)
         .with_context(|| format!("reading coordinate table {}", args.coords))?;
     let selections = parse_coordinate_table(&table).map_err(|e| anyhow!(e))?;

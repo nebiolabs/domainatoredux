@@ -9,6 +9,8 @@ use crate::input::{InputMode, SeqInputs};
 use crate::output::write_seq_stream;
 
 pub fn run(args: &TrimContigsArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let (kb_truncation, cds_truncation) = validate_range(
         args.kb_range.map(|v| v.0),
         args.kb_left.map(|v| v.0),

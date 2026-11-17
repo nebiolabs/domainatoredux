@@ -7,6 +7,8 @@ use crate::input::{InputMode, SeqInputs};
 use crate::output::write_seq_stream;
 
 pub fn run(args: &FilterDomainsArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let opts = FilterDomainsOptions {
         evalue: args.evalue.map_or(f64::INFINITY, |e| e.0),
         max_overlap: args.max_overlap.0,

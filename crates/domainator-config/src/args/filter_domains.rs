@@ -52,4 +52,9 @@ pub struct FilterDomainsArgs {
     /// Which type of annotations to filter (domainator, domain_search, all).
     #[arg(long, default_value = "all", value_parser = ["domainator", "domain_search", "all"])]
     pub annotation_type: String,
+    // Port-only: upstream's tool runs on one thread. Here `.gz`/`.bgz` outputs are
+    // compressed on this many.
+    /// Threads for compressing a .gz or .bgz output (0: one thread per physical core).
+    #[arg(long, default_value_t = 0, allow_negative_numbers = true)]
+    pub cpu: i64,
 }

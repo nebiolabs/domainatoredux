@@ -10,6 +10,8 @@ use crate::input::{until_error, InputMode, SeqInputs};
 use crate::output::write_seq_outputs;
 
 pub fn run(args: &SortContigsArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let max_hits = match args.max_hits {
         Some(n) if n < 1 => {
             return Err(usage_error(

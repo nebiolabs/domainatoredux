@@ -82,3 +82,6 @@ fields:
   - name: partial
     label: "Fragments"
     help: "Which contigs to select, by fragment status. A nucleotide contig is a fragment if any of its CDSs is. Not affected by Invert."
+  - name: cpu
+    show: false
+    label: "Cpu"

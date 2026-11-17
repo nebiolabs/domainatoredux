@@ -11,3 +11,6 @@ fields:
   - name: fasta_out
     label: "Output (FASTA)"
     output_name: "{stem}.fasta"
+  - name: cpu
+    show: false
+    label: "Cpu"

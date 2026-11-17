@@ -10,6 +10,8 @@ use crate::input::{InputMode, SeqInputs};
 use crate::output::{write_seq_stream, Output};
 
 pub fn run(args: &CleanSequencesArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let opts = CleanSequencesOptions {
         fasta_type: args.alphabet.clone(),
         clean_name: args.clean_name,

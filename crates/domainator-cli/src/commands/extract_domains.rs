@@ -9,6 +9,8 @@ use crate::input::{flat_map_records, InputMode, SeqInputs};
 use crate::output::write_seq_stream;
 
 pub fn run(args: &ExtractDomainsArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let extend = args.extend_range.unwrap_or(0);
     let opts = ExtractDomainsOptions {
         evalue: args.evalue.map(|e| e.0),

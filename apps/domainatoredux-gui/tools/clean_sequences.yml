@@ -26,3 +26,6 @@ fields:
   - name: log_out
     show: false
     label: "Log"
+  - name: cpu
+    show: false
+    label: "Cpu"

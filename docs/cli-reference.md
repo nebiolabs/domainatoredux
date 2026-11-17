@@ -54,8 +54,15 @@ same usage error either way. See [Config files](config-and-agents.md).
 
 **`--cpu 0` means one thread per physical core** this process may use, and 0 is the
 default. Only `domainate`, `domain_search`, `gene_call`, `deduplicate_genbank`,
-`seq_dist`, `compare_contigs`, `hmmer_compare` and `hmmer_search` are threaded; output
-is deterministic regardless of thread count.
+`seq_dist`, `compare_contigs`, `hmmer_compare`, `hmmer_search` and `format_db` are
+threaded; output is deterministic regardless of thread count.
+
+**Compressed outputs use several cores.** An output path ending `.gz` or `.bgz` is written
+as BGZF, with its blocks compressed in parallel; the bytes do not depend on the thread
+count. A tool's `--cpu` sets the number of threads. The sequence tools that are otherwise
+single-threaded (`select_by_*`, `extract_*`, `genbank_to_fasta`, `filter_domains`,
+`trim_contigs`, `sort_contigs`, `color_genbank`, `clean_sequences`) have a `--cpu` for
+this alone, which upstream's do not. Tools without one use one thread per physical core.
 
 **stdin and stdout.** `-i -` reads GenBank from stdin and `-o -` writes to stdout, so
 tools pipe:

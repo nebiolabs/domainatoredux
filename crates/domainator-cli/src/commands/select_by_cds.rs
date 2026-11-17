@@ -11,6 +11,8 @@ use crate::input::{InputMode, SeqInputs};
 use crate::output::SeqWriter;
 
 pub fn run(args: &SelectByCdsArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let range = validate_range(
         args.whole_contig,
         args.kb_range.map(|v| v.0),

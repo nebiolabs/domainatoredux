@@ -60,4 +60,9 @@ pub struct ExtractUnannotatedArgs {
     /// --largest. Not a cutoff on the input protein length. Default: no cutoff.
     #[arg(long, allow_negative_numbers = true)]
     pub min_region_length: Option<i64>,
+    // Port-only: upstream's tool runs on one thread. Here `.gz`/`.bgz` outputs are
+    // compressed on this many.
+    /// Threads for compressing a .gz or .bgz output (0: one thread per physical core).
+    #[arg(long, default_value_t = 0, allow_negative_numbers = true)]
+    pub cpu: i64,
 }

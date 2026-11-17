@@ -7,6 +7,8 @@ use crate::input::{flat_map_records, InputMode, SeqInputs};
 use crate::output::write_seq_stream;
 
 pub fn run(args: &ExtractPeptidesArgs) -> Result<()> {
+    // Only validated here: the run's pool is sized from it before dispatch.
+    super::cpu_threads(args.cpu)?;
     let target_domains = parse_name_list(
         args.domains.as_deref().unwrap_or_default(),
         args.domains_file.as_deref(),
